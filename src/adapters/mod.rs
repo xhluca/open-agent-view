@@ -2,6 +2,7 @@ mod claude;
 mod codex;
 mod docker;
 mod fixture;
+mod managed_docker;
 
 use std::path::PathBuf;
 
@@ -11,6 +12,12 @@ pub use claude::{parse_claude_sessions, ClaudeSource};
 pub use codex::{parse_codex_thread_list, CodexSource};
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
+pub use managed_docker::{
+    DockerAuthority, DockerContainer, DockerProvider, DockerProviderCommand,
+    EnrolledDockerContainer, ManagedDockerContainer, ManagedDockerCreateSpec,
+    ManagedDockerOwner, ManagedDockerRuntime, ENABLED_LABEL, INSTANCE_LABEL,
+    MANAGED_LABEL, PROVIDERS_LABEL, VERSION_LABEL,
+};
 
 use crate::domain::{AgentSession, SessionSnapshot};
 

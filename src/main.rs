@@ -123,6 +123,7 @@ fn main() -> Result<()> {
     };
     let control = ControlHub::new(
         !cli.no_host_claude,
+        !cli.no_host_codex,
         cli.claude_bin.clone(),
         cli.codex_bin.clone(),
         cli.docker_bin.clone(),
@@ -138,7 +139,9 @@ fn main() -> Result<()> {
             engine.add_source(ClaudeSource::host(cli.claude_bin));
         }
         if !cli.no_host_codex {
-            engine.add_source(CodexSource::host(cli.codex_bin));
+            if let Some(supervisor) = control.codex_supervisor() {
+                engine.add_source(CodexSource::managed(supervisor));
+            }
         }
         for container in cli.docker_containers {
             let target = DockerTarget::inspect(&container, &cli.docker_bin)?;

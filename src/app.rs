@@ -78,7 +78,7 @@ pub struct App {
 
 impl App {
     pub fn new(snapshot: SessionSnapshot) -> Self {
-        Self {
+        let mut app = Self {
             snapshot,
             view_mode: ViewMode::Status,
             selection: None,
@@ -90,17 +90,19 @@ impl App {
             details: BTreeMap::new(),
             refreshed_at: SystemTime::now(),
             should_quit: false,
-        }
+        };
+        app.reconcile_selection();
+        app
     }
 
     pub fn replace_snapshot(&mut self, snapshot: SessionSnapshot) {
         self.snapshot = snapshot;
         self.refreshed_at = SystemTime::now();
-        if let Some(SelectionKey::Session(id)) = &self.selection {
-            if !self.snapshot.sessions.iter().any(|session| &session.id == id) {
-                self.selection = None;
-                self.overlay = Overlay::None;
-            }
+        let previous_selection = self.selection.clone();
+        self.reconcile_selection();
+        if self.selection != previous_selection {
+            self.overlay = Overlay::None;
+            self.input.clear();
         }
     }
 
@@ -212,13 +214,9 @@ impl App {
 
     pub fn escape(&mut self) -> AppAction {
         match self.overlay {
-            Overlay::None if self.selection.is_none() => {
+            Overlay::None => {
                 self.should_quit = true;
                 AppAction::Quit
-            }
-            Overlay::None => {
-                self.selection = None;
-                AppAction::None
             }
             _ => {
                 self.overlay = Overlay::None;
@@ -241,10 +239,8 @@ impl App {
             ViewMode::Status => ViewMode::Directory,
             ViewMode::Directory => ViewMode::Status,
         };
-        if matches!(self.selection, Some(SelectionKey::Group(_))) {
-            self.selection = None;
-        }
         self.collapsed.clear();
+        self.reconcile_selection();
     }
 
     pub fn toggle_peek(&mut self) {
@@ -283,7 +279,8 @@ impl App {
 
     pub fn start_confirm(&mut self) {
         if let Some(session) = self.selected_session() {
-            let required = if session.state == SessionState::Working {
+            let running = is_active_session_state(session.state);
+            let required = if running {
                 Capability::Interrupt
             } else {
                 Capability::Delete
@@ -297,9 +294,17 @@ impl App {
             }
             self.overlay = Overlay::Confirm(ConfirmTarget::Session {
                 id: session.id.clone(),
-                running: session.state == SessionState::Working,
+                running,
             });
         } else if let Some(group) = self.selected_group() {
+            if group
+                .sessions
+                .iter()
+                .any(|index| is_active_session_state(self.snapshot.sessions[*index].state))
+            {
+                self.set_notice("bulk stop is unavailable; select one running session");
+                return;
+            }
             let deletable = group.sessions.iter().all(|index| {
                 self.snapshot.sessions[*index]
                     .capabilities
@@ -377,6 +382,7 @@ impl App {
             },
             ComposerMode::Filter => {
                 self.filter = input;
+                self.reconcile_selection();
                 AppAction::None
             }
         }
@@ -420,7 +426,10 @@ impl App {
         let mut groups: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
         for (index, session) in self.snapshot.sessions.iter().enumerate() {
             if self.filtered(session) {
-                groups.entry(session.cwd.clone()).or_default().push(index);
+                groups
+                    .entry(project_group_path(&session.cwd))
+                    .or_default()
+                    .push(index);
             }
         }
         groups
@@ -432,6 +441,36 @@ impl App {
             })
             .collect()
     }
+
+    fn reconcile_selection(&mut self) {
+        let keys = self.selectable_keys();
+        if self
+            .selection
+            .as_ref()
+            .is_some_and(|selection| keys.contains(selection))
+        {
+            return;
+        }
+        self.selection = keys
+            .iter()
+            .find(|key| matches!(key, SelectionKey::Session(_)))
+            .cloned()
+            .or_else(|| keys.first().cloned());
+    }
+}
+
+pub(crate) fn is_active_session_state(state: SessionState) -> bool {
+    state != SessionState::Completed
+}
+
+pub(crate) fn project_group_path(path: &std::path::Path) -> PathBuf {
+    let components = path.components().collect::<Vec<_>>();
+    let worktree_marker = components.windows(2).position(|pair| {
+        pair[0].as_os_str() == ".claude" && pair[1].as_os_str() == "worktrees"
+    });
+    worktree_marker
+        .map(|index| components[..index].iter().collect())
+        .unwrap_or_else(|| path.to_path_buf())
 }
 
 fn abbreviate_home(path: &std::path::Path) -> String {
@@ -480,7 +519,8 @@ mod tests {
             warnings: vec![],
         });
 
-        app.select_previous();
+        assert_eq!(app.selection, Some(SelectionKey::Session("one".into())));
+        app.selection = Some(SelectionKey::Session("two".into()));
         assert_eq!(app.selection, Some(SelectionKey::Session("two".into())));
         app.select_next();
         assert_eq!(
@@ -511,5 +551,88 @@ mod tests {
         app.filter = "SUMMARY ONE".into();
 
         assert_eq!(app.groups()[0].sessions, vec![0]);
+    }
+
+    #[test]
+    fn escape_quits_directly_from_a_selected_row() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("one", SessionState::Working)],
+            warnings: vec![],
+        });
+
+        assert_eq!(app.escape(), AppAction::Quit);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn filter_reconciles_a_selection_that_is_no_longer_visible() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![
+                session("one", SessionState::Working),
+                session("two", SessionState::Completed),
+            ],
+            warnings: vec![],
+        });
+        app.start_filter();
+        app.input = "two".into();
+
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.selection, Some(SelectionKey::Session("two".into())));
+    }
+
+    #[test]
+    fn claude_worktrees_group_under_the_owning_project() {
+        let mut item = session("one", SessionState::Working);
+        item.cwd = PathBuf::from("/repo/.claude/worktrees/topic/src");
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_view();
+
+        assert_eq!(app.groups()[0].label, "/repo");
+        assert_eq!(app.groups()[0].key, "cwd:/repo");
+    }
+
+    #[test]
+    fn needs_input_is_treated_as_running_for_confirmation() {
+        let mut item = session("one", SessionState::NeedsInput);
+        item.capabilities.insert(Capability::Interrupt);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+
+        app.start_confirm();
+        assert_eq!(
+            app.overlay,
+            Overlay::Confirm(ConfirmTarget::Session {
+                id: "one".into(),
+                running: true,
+            })
+        );
+        assert_eq!(
+            app.activate(),
+            AppAction::Interrupt {
+                session_id: "one".into()
+            }
+        );
+    }
+
+    #[test]
+    fn active_groups_do_not_offer_bulk_deletion() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("one", SessionState::Working)],
+            warnings: vec![],
+        });
+        app.selection = Some(SelectionKey::Group("state:Working".into()));
+
+        app.start_confirm();
+
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("bulk stop is unavailable; select one running session")
+        );
     }
 }

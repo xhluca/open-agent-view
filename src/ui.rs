@@ -4,8 +4,11 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::prelude::{Color, Frame, Line, Modifier, Span, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 
-use crate::app::{App, ComposerMode, ConfirmTarget, Overlay, SelectionKey, ViewMode};
-use crate::domain::{AgentSession, Provider, SessionState};
+use crate::app::{
+    is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
+    SelectionKey, ViewMode,
+};
+use crate::domain::{AgentSession, Capability, Provider, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -30,7 +33,14 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
     let composer_height = match app.overlay {
         Overlay::Peek => 7.min(area.height.saturating_sub(5)),
-        Overlay::Help => 5.min(area.height.saturating_sub(5)),
+        Overlay::Help => {
+            let help_lines = pack_help_actions(
+                help_actions(app),
+                area.width.saturating_sub(2) as usize,
+            )
+            .len() as u16;
+            (3 + help_lines).min(area.height.saturating_sub(5))
+        }
         _ => 3,
     };
     let header_height = if area.height < 16 { 2 } else { 4 };
@@ -57,12 +67,10 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 }
 
 fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let cwd = std::env::current_dir()
-        .ok()
-        .map(|path| abbreviate_path(&path))
-        .unwrap_or_else(|| "unknown directory".into());
+    let cwd = header_directory(app);
     let completed = app.snapshot.count(SessionState::Completed);
-    let working = app.snapshot.count(SessionState::Working);
+    let working = app.snapshot.count(SessionState::ReadyForReview)
+        + app.snapshot.count(SessionState::Working);
     let awaiting = app.snapshot.count(SessionState::NeedsInput);
     let providers = provider_summary(app);
     let title = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
@@ -233,7 +241,14 @@ fn render_session_row(
 fn render_bottom_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
     match &app.overlay {
         Overlay::Peek => render_peek(frame, app, area),
-        Overlay::Help => render_help(frame, area),
+        Overlay::Help => {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(3.min(area.height)), Constraint::Min(0)])
+                .split(area);
+            render_composer(frame, app, chunks[0]);
+            render_help(frame, app, chunks[1]);
+        }
         _ => render_composer(frame, app, area),
     }
 }
@@ -322,19 +337,13 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
     }
 }
 
-fn render_help(frame: &mut Frame<'_>, area: Rect) {
-    let lines = vec![
-        Line::from("↑/↓ or j/k navigate    enter open/collapse    space peek/reply"),
-        Line::from("ctrl+s switch views    ctrl+r rename          ctrl+x stop/delete"),
-        Line::from("/ filter                tab new task           esc back/quit    ? close"),
-    ];
+fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let lines = pack_help_actions(help_actions(app), area.width.saturating_sub(2) as usize)
+        .into_iter()
+        .map(|line| Line::from(format!("  {line}")))
+        .collect::<Vec<_>>();
     frame.render_widget(
         Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title(" shortcuts ")
-                    .borders(Borders::TOP | Borders::BOTTOM),
-            )
             .style(Style::default().bg(BG).fg(DIM)),
         area,
     );
@@ -346,49 +355,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     } else if let Some(warning) = app.snapshot.warnings.first() {
         format!("warning: {warning}")
     } else {
-        match &app.overlay {
-            Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
-            Overlay::Composer(ComposerMode::Rename { .. }) => {
-                "enter to save · esc to cancel".into()
-            }
-            Overlay::Composer(_) => "enter to create · ctrl+j for newline · esc to clear".into(),
-            Overlay::Peek if app.input.is_empty() => {
-                let control = app
-                    .selected_session()
-                    .map(|session| {
-                        if session.capabilities.contains(&crate::domain::Capability::Interrupt) {
-                            " · ctrl+x to stop"
-                        } else if session.capabilities.contains(&crate::domain::Capability::Delete) {
-                            " · ctrl+x to delete"
-                        } else {
-                            " · observe-only"
-                        }
-                    })
-                    .unwrap_or_default();
-                format!("enter to open · space to close{control}")
-            }
-            Overlay::Peek => "enter to send · esc to close".into(),
-            Overlay::Help => "? or esc to close shortcuts".into(),
-            Overlay::None if matches!(app.selection, Some(SelectionKey::Group(_))) => {
-                "enter to collapse/expand · ctrl+x to delete all · ? for shortcuts".into()
-            }
-            Overlay::None if app.selected_session().is_some() => {
-                let control = app
-                    .selected_session()
-                    .map(|session| {
-                        if session.capabilities.contains(&crate::domain::Capability::Interrupt) {
-                            " · ctrl+x to stop"
-                        } else if session.capabilities.contains(&crate::domain::Capability::Delete) {
-                            " · ctrl+x to delete"
-                        } else {
-                            " · observe-only"
-                        }
-                    })
-                    .unwrap_or_default();
-                format!("enter to open · space to reply{control} · ? for shortcuts")
-            }
-            _ => "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into(),
-        }
+        contextual_footer(app, area.width)
     };
     frame.render_widget(
         Paragraph::new(footer)
@@ -396,6 +363,145 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .alignment(Alignment::Left),
         area,
     );
+}
+
+fn contextual_footer(app: &App, width: u16) -> String {
+    match &app.overlay {
+        Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
+        Overlay::Composer(ComposerMode::Rename { .. }) => "enter to save · esc to cancel".into(),
+        Overlay::Composer(_) if width >= 70 => {
+            "enter to create · ctrl+j for newline · esc to clear".into()
+        }
+        Overlay::Composer(_) => "enter to create · esc to clear".into(),
+        Overlay::Peek if app.input.is_empty() && width >= 80 => format!(
+            "enter to open · space to close{}",
+            app.selected_session()
+                .map(session_control_suffix)
+                .unwrap_or_default()
+        ),
+        Overlay::Peek if app.input.is_empty() && width >= 55 => {
+            "enter to open · space to close".into()
+        }
+        Overlay::Peek if app.input.is_empty() => "enter to open".into(),
+        Overlay::Peek => "enter to send · esc to close".into(),
+        Overlay::Help => String::new(),
+        Overlay::None if matches!(app.selection, Some(SelectionKey::Group(_))) => {
+            let action = if selected_group_can_delete(app) {
+                " · ctrl+x to delete all"
+            } else {
+                ""
+            };
+            let verb = app
+                .selected_group()
+                .map(|group| {
+                    if app.collapsed.contains(&group.key) {
+                        "expand"
+                    } else {
+                        "collapse"
+                    }
+                })
+                .unwrap_or("collapse/expand");
+            if width >= 80 {
+                format!("enter to {verb}{action} · ? for shortcuts")
+            } else {
+                format!("enter to {verb} · ? for shortcuts")
+            }
+        }
+        Overlay::None if app.selected_session().is_some() && width >= 80 => {
+            let control = app
+                .selected_session()
+                .map(session_control_suffix)
+                .unwrap_or_default();
+            format!("enter to open · space to reply{control} · ? for shortcuts")
+        }
+        Overlay::None if app.selected_session().is_some() && width >= 55 => {
+            "enter to open · space to reply · ? for shortcuts".into()
+        }
+        Overlay::None if app.selected_session().is_some() => {
+            "enter to open · ? for shortcuts".into()
+        }
+        _ if width >= 70 => {
+            "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into()
+        }
+        _ => "↑/↓ to select · ? for shortcuts".into(),
+    }
+}
+
+fn selected_group_can_delete(app: &App) -> bool {
+    app.selected_group().is_some_and(|group| {
+        group.sessions.iter().all(|index| {
+            let session = &app.snapshot.sessions[*index];
+            !is_active_session_state(session.state)
+                && session.capabilities.contains(&Capability::Delete)
+        })
+    })
+}
+
+fn session_control_suffix(session: &AgentSession) -> &'static str {
+    if is_active_session_state(session.state) {
+        if session.capabilities.contains(&Capability::Interrupt) {
+            " · ctrl+x to stop"
+        } else {
+            " · observe-only"
+        }
+    } else if session.capabilities.contains(&Capability::Delete) {
+        " · ctrl+x to delete"
+    } else {
+        " · observe-only"
+    }
+}
+
+fn help_actions(app: &App) -> Vec<String> {
+    let mut actions = Vec::new();
+    if app.selected_session().is_some() {
+        actions.push("ctrl+r to rename".into());
+    }
+    actions.push("ctrl+s to switch views".into());
+    actions.push("ctrl+j for newline".into());
+    actions.push("/ to filter".into());
+    actions.push("tab for new task".into());
+    if let Some(session) = app.selected_session() {
+        let action = if is_active_session_state(session.state)
+            && session.capabilities.contains(&Capability::Interrupt)
+        {
+            Some("ctrl+x to stop")
+        } else if !is_active_session_state(session.state)
+            && session.capabilities.contains(&Capability::Delete)
+        {
+            Some("ctrl+x to delete")
+        } else {
+            None
+        };
+        if let Some(action) = action {
+            actions.push(action.into());
+        }
+    } else if selected_group_can_delete(app) {
+        actions.push("ctrl+x to delete all".into());
+    }
+    actions.push("esc to quit".into());
+    actions.push("? to close".into());
+    actions
+}
+
+fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<String> {
+    let mut lines = vec![String::new()];
+    for action in actions {
+        let line = lines.last_mut().expect("help always has one line");
+        let added = if line.is_empty() {
+            action.len()
+        } else {
+            4 + action.len()
+        };
+        if !line.is_empty() && line.len() + added > width {
+            lines.push(action);
+        } else {
+            if !line.is_empty() {
+                line.push_str("    ");
+            }
+            line.push_str(&action);
+        }
+    }
+    lines
 }
 
 fn render_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -558,6 +664,27 @@ fn truncate(input: &str, width: usize) -> String {
     output
 }
 
+fn header_directory(app: &App) -> String {
+    let selected_directory = if app.view_mode == ViewMode::Directory {
+        app.selected_session()
+            .map(|session| project_group_path(&session.cwd))
+            .or_else(|| {
+                app.selected_group().and_then(|group| {
+                    group
+                        .sessions
+                        .first()
+                        .map(|index| project_group_path(&app.snapshot.sessions[*index].cwd))
+                })
+            })
+    } else {
+        None
+    };
+    selected_directory
+        .or_else(|| std::env::current_dir().ok())
+        .map(|path| abbreviate_path(&path))
+        .unwrap_or_else(|| "unknown directory".into())
+}
+
 fn abbreviate_path(path: &std::path::Path) -> String {
     std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
@@ -623,6 +750,7 @@ mod tests {
         assert!(rendered.contains("Working"));
         assert!(rendered.contains("Completed"));
         assert!(rendered.contains("describe a task for a new session"));
+        assert!(rendered.contains("1 awaiting input · 2 working · 1 completed"));
     }
 
     #[test]
@@ -634,6 +762,81 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
 
         assert!(buffer_text(terminal.backend().buffer()).contains("needs at least"));
+    }
+
+    #[test]
+    fn narrow_footer_keeps_the_help_affordance() {
+        let app = App::new(SessionSnapshot {
+            sessions: vec![session("worker", SessionState::Working)],
+            warnings: vec![],
+        });
+        let backend = TestBackend::new(40, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("enter to open · ? for shortcuts"));
+        assert!(!rendered.contains("space to reply"));
+    }
+
+    #[test]
+    fn help_is_contextual_and_does_not_advertise_ungranted_control() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("worker", SessionState::Working)],
+            warnings: vec![],
+        });
+        app.toggle_help();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("ctrl+r to rename"));
+        assert!(rendered.contains("ctrl+s to switch views"));
+        assert!(rendered.contains("describe a task for a new session"));
+        assert!(!rendered.contains("ctrl+x to stop"));
+        assert!(!rendered.contains("j/k"));
+    }
+
+    #[test]
+    fn completed_control_is_labeled_delete_not_stop() {
+        let mut item = session("done", SessionState::Completed);
+        item.capabilities.insert(Capability::Delete);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_help();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("ctrl+x to delete"));
+        assert!(!rendered.contains("ctrl+x to stop"));
+    }
+
+    #[test]
+    fn directory_view_header_tracks_the_selected_project() {
+        let mut item = session("worker", SessionState::Working);
+        item.cwd = PathBuf::from("/different/project/.claude/worktrees/topic");
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_view();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("Claude · /different/project"));
+        assert!(rendered.contains("/different/project"));
+        assert!(!rendered.contains(".claude/worktrees"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

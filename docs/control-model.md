@@ -5,15 +5,15 @@ not permission to interrupt or delete it.
 
 ## Current capability matrix
 
-| Operation | Host Claude | External Codex | Explicit Docker target |
-| --- | --- | --- | --- |
-| Discover | `claude agents --json` | App Server `thread/list` | Provider protocol through exact container ID |
-| Inspect | `claude logs`, reconstructed as a terminal screen | Thread summary; full read pending | Claude logs; Codex summary |
-| Open | `claude attach` | `codex resume` | Interactive `docker exec` to the provider CLI |
-| Launch | `claude --background` | Disabled until durable supervisor | Disabled for observe-only containers |
-| Stop | `claude stop`, owned sessions only | Disabled | Disabled for observe-only containers |
-| Inline reply | Not exposed by the supported non-TTY CLI | Requires owning App Server | Disabled |
-| Delete | No supported Claude command | Owning App Server only | Disabled |
+| Operation | Host Claude | Managed host Codex | External host Codex | Explicit Docker target |
+| --- | --- | --- | --- | --- |
+| Discover | `claude agents --json` | Owning App Server `thread/list` | Same read surface | Provider protocol through exact container ID |
+| Inspect | `claude logs`, reconstructed as a terminal screen | Thread summary; full read pending | Thread summary; full read pending | Claude logs; Codex summary |
+| Open | `claude attach` | `codex --remote … resume` against the owning server | `codex resume` | Interactive `docker exec` to the provider CLI |
+| Launch | `claude --background` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
+| Interrupt | `claude stop`, owned sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
+| Inline reply or approval | Not exposed by the supported non-TTY CLI | Native TUI only in this milestone | Native TUI only | Disabled |
+| Archive or delete | No supported Claude command | Disabled | Disabled | Disabled |
 
 Opening a session temporarily suspends the dashboard's alternate screen and
 runs the provider's native interactive client with inherited terminal I/O.
@@ -45,23 +45,47 @@ to stop or remove a Docker container.
 
 ## Codex ownership boundary
 
-The read-only adapter keeps one App Server process alive per configured target
-for the lifetime of the dashboard. That avoids spawning a new server on every
-refresh and preserves process-local status.
+Host Codex discovery and launch share one reconnectable App Server listening on
+a Unix socket. The server is detached from the dashboard and remains running
+after `coding-agents` exits. A later dashboard connects through
+`codex app-server proxy` and reloads the exact thread and active-turn IDs it
+created. State lives in:
 
-It still does not claim ownership of pre-existing threads. Codex live control
-belongs to the App Server process that started or resumed the thread. Durable
-launch, steer, interrupt, approval, archive, and delete will be enabled only
-after a reconnectable supervisor owns that App Server endpoint.
+```text
+$XDG_STATE_HOME/open-agent-view/codex-supervisor/
+```
+
+or `~/.local/state/open-agent-view/codex-supervisor/`. The directory is
+current-user-owned and mode `0700`; its lock, log, and JSON record are regular
+current-user-owned files with no group/other access. The record contains the
+server PID, Linux `/proc` start token, exact command line, socket path, and
+owned thread/turn IDs.
+
+Before reconnecting or changing an ownership record, the supervisor verifies
+both the persisted start token and exact command line. It never signals a PID
+loaded from disk. A dead or mismatched record causes a new uniquely named
+socket to be created; a verified live process with an unavailable socket is
+reported as an error and is not replaced. This deliberately favors avoiding
+the wrong process over automatic cleanup.
+
+Only host Codex threads recorded by this supervisor receive Interrupt, and
+only while their recorded turn remains active. Pre-existing host threads and
+all Docker Codex threads remain observe/open-only. Launch uses
+`approvalPolicy: on-request` and the `workspace-write` sandbox; it does not
+weaken the user's sandbox to gain automation.
 
 ## Deliberate limitations
 
 - Inline Claude replies are not implemented by scraping private IPC or editing
   transcript files. Press Enter to attach and reply through Claude itself.
-- Codex launch is disabled instead of starting a turn that would be terminated
-  when the dashboard exits.
+- Server requests for command approval or user input are not answered in the
+  dashboard yet. Open the owned session in the native TUI to respond.
+- There is not yet a `coding-agents` status/stop command for the detached Codex
+  server. Logs append without rotation. Stale sockets and unverified PIDs are
+  intentionally left untouched.
+- Durable Codex supervision currently requires Linux because safe PID reuse
+  detection relies on `/proc/<pid>/stat` and `/proc/<pid>/cmdline`.
 - Docker containers supplied with `--docker-container` are observe-only.
 - Group deletion is disabled whenever any member lacks Delete authority.
 - Prompt and session values are always command arguments, never interpolated
   into a shell string.
-

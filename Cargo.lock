@@ -329,6 +329,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "libc",
  "pretty_assertions",
  "ratatui",
  "serde",

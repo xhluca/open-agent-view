@@ -13,7 +13,7 @@
 - [x] Add navigation, details, help, filtering, and JSON output.
 - [x] Cover parsers and layout with deterministic tests.
 - [ ] Enrich Claude rows with supported latest-message metadata when available.
-- [ ] Retain one supervised Codex App Server per configured target.
+- [x] Retain one reconnectable host Codex App Server across dashboard restarts.
 
 ## Milestone 2 — Managed sessions
 
@@ -21,9 +21,16 @@
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native Claude/Codex sessions from a selected row.
 - [x] Stop only exact Claude sessions launched by `coding-agents`.
-- [ ] Own Codex tasks through a durable, reconnectable App Server supervisor.
-- Resume/reply, interrupt, archive, and delete with explicit confirmations.
-- Surface logs and provider errors without leaking credentials.
+- [x] Own host Codex launch and exact-turn interrupt through a durable,
+  reconnectable App Server supervisor.
+- [ ] Reply/steer, archive, and delete with explicit confirmations where the
+  provider exposes a safe supported operation.
+- [x] Interrupt owned Claude sessions and exact active Codex turns.
+- [x] Surface supported Claude logs and provider errors without leaking
+  credentials.
+- [x] Implement immutable-ID and authority-gated managed-Docker primitives.
+- [ ] Expose managed-Docker create/start/stop/remove through confirmed CLI/UI
+  workflows and persist external ownership records.
 
 ## Milestone 3 — Distribution
 

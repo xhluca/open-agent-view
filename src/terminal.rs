@@ -85,15 +85,15 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
 
     match key.code {
         KeyCode::Esc => app.escape(),
-        KeyCode::Char('?') => {
+        KeyCode::Char('?') if app.overlay == Overlay::None || app.overlay == Overlay::Help => {
             app.toggle_help();
             AppAction::None
         }
-        KeyCode::Up | KeyCode::Char('k') if app.overlay == Overlay::None => {
+        KeyCode::Up if app.overlay == Overlay::None => {
             app.select_previous();
             AppAction::None
         }
-        KeyCode::Down | KeyCode::Char('j') if app.overlay == Overlay::None => {
+        KeyCode::Down if app.overlay == Overlay::None => {
             app.select_next();
             AppAction::None
         }
@@ -292,5 +292,91 @@ impl Drop for TerminalSession {
             crossterm::cursor::Show
         );
         let _ = self.terminal.show_cursor();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use std::path::PathBuf;
+
+    use crossterm::event::KeyEventKind;
+
+    use crate::app::{ComposerMode, SelectionKey};
+    use crate::domain::{
+        AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
+    };
+
+    use super::*;
+
+    fn app() -> App {
+        App::new(SessionSnapshot {
+            sessions: vec![AgentSession {
+                id: "worker".into(),
+                provider_session_id: "worker".into(),
+                provider: Provider::Claude,
+                runtime: Runtime::Host,
+                kind: SessionKind::Background,
+                name: "worker".into(),
+                cwd: PathBuf::from("/work"),
+                state: SessionState::Working,
+                summary: "working".into(),
+                raw_state: None,
+                pid: None,
+                started_at: None,
+                updated_at: None,
+                pull_requests: None,
+                capabilities: BTreeSet::from([Capability::Inspect]),
+            }],
+            warnings: vec![],
+        })
+    }
+
+    fn key(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn printable_j_starts_a_task_instead_of_moving_the_list() {
+        let mut app = app();
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("worker".into()))
+        );
+
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('j'))),
+            AppAction::None
+        );
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "j");
+    }
+
+    #[test]
+    fn question_mark_is_text_inside_the_composer() {
+        let mut app = app();
+        app.start_new_session(Some('w'));
+
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('?'))),
+            AppAction::None
+        );
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "w?");
+    }
+
+    #[test]
+    fn question_mark_toggles_help_from_the_list() {
+        let mut app = app();
+
+        handle_key(&mut app, key(KeyCode::Char('?')));
+        assert_eq!(app.overlay, Overlay::Help);
+        handle_key(&mut app, key(KeyCode::Char('?')));
+        assert_eq!(app.overlay, Overlay::None);
     }
 }

@@ -1,10 +1,6 @@
 use std::collections::BTreeSet;
-use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
-use std::sync::Mutex;
-use std::thread::{self, JoinHandle};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -12,6 +8,8 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{DiscoveryRequest, SessionSource};
+use crate::codex_rpc::{AppServerClient, AppServerInvocation};
+use crate::codex_supervisor::CodexSupervisor;
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionState,
 };
@@ -29,40 +27,32 @@ const SOURCE_KINDS: [&str; 10] = [
     "unknown",
 ];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct Invocation {
-    program: String,
-    prefix_args: Vec<String>,
-}
-
-impl Invocation {
-    fn host(executable: impl Into<String>) -> Self {
-        Self {
-            program: executable.into(),
-            prefix_args: Vec::new(),
-        }
-    }
-
-    fn docker(container: impl Into<String>) -> Self {
-        Self {
-            program: "docker".into(),
-            prefix_args: vec!["exec".into(), "-i".into(), container.into(), "codex".into()],
-        }
-    }
+enum ConnectionFactory {
+    Direct(AppServerInvocation),
+    Managed(Arc<CodexSupervisor>),
 }
 
 pub struct CodexSource {
     label: String,
-    invocation: Invocation,
+    factory: ConnectionFactory,
     runtime: Runtime,
-    connection: Mutex<Option<AppServerTransport>>,
+    connection: Mutex<Option<AppServerClient>>,
 }
 
 impl CodexSource {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
             label: "Codex (host)".into(),
-            invocation: Invocation::host(executable),
+            factory: ConnectionFactory::Direct(AppServerInvocation::direct(executable)),
+            runtime: Runtime::Host,
+            connection: Mutex::new(None),
+        }
+    }
+
+    pub fn managed(supervisor: Arc<CodexSupervisor>) -> Self {
+        Self {
+            label: "Codex (managed host)".into(),
+            factory: ConnectionFactory::Managed(supervisor),
             runtime: Runtime::Host,
             connection: Mutex::new(None),
         }
@@ -77,7 +67,7 @@ impl CodexSource {
         let container_id = container_id.into();
         Self {
             label: format!("Codex ({container_name})"),
-            invocation: Invocation::docker(container_id.clone()),
+            factory: ConnectionFactory::Direct(AppServerInvocation::docker(container_id.clone())),
             runtime: Runtime::Docker {
                 container_id,
                 container_name,
@@ -100,7 +90,10 @@ impl SessionSource for CodexSource {
             .lock()
             .map_err(|_| anyhow!("Codex connection lock was poisoned"))?;
         if connection.is_none() {
-            *connection = Some(AppServerTransport::connect(&self.invocation)?);
+            *connection = Some(match &self.factory {
+                ConnectionFactory::Direct(invocation) => AppServerClient::connect(invocation)?,
+                ConnectionFactory::Managed(supervisor) => supervisor.connect_client()?,
+            });
         }
         let transport = connection.as_mut().expect("connection initialized");
 
@@ -139,129 +132,6 @@ impl SessionSource for CodexSource {
                     .unwrap_or(true)
         });
         Ok(records)
-    }
-}
-
-struct AppServerTransport {
-    child: Child,
-    stdin: ChildStdin,
-    lines: Receiver<Result<String, String>>,
-    stdout_reader: Option<JoinHandle<()>>,
-    stderr_reader: Option<JoinHandle<Vec<u8>>>,
-    next_id: u64,
-}
-
-impl AppServerTransport {
-    fn connect(invocation: &Invocation) -> Result<Self> {
-        let mut args = invocation.prefix_args.clone();
-        args.extend([
-            "app-server".into(),
-            "--listen".into(),
-            "stdio://".into(),
-        ]);
-        let mut child = Command::new(&invocation.program)
-            .args(args)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| format!("failed to start {} app-server", invocation.program))?;
-        let stdin = child.stdin.take().context("failed to capture app-server stdin")?;
-        let stdout = child
-            .stdout
-            .take()
-            .context("failed to capture app-server stdout")?;
-        let stderr = child
-            .stderr
-            .take()
-            .context("failed to capture app-server stderr")?;
-        let (sender, lines) = mpsc::channel();
-        let stdout_reader = thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let message = line.map_err(|error| error.to_string());
-                if sender.send(message).is_err() {
-                    break;
-                }
-            }
-        });
-        let stderr_reader = thread::spawn(move || {
-            let mut stderr = stderr.take(128 * 1024);
-            let mut bytes = Vec::new();
-            let _ = stderr.read_to_end(&mut bytes);
-            bytes
-        });
-
-        let mut transport = Self {
-            child,
-            stdin,
-            lines,
-            stdout_reader: Some(stdout_reader),
-            stderr_reader: Some(stderr_reader),
-            next_id: 1,
-        };
-        transport.request(
-            "initialize",
-            json!({
-                "clientInfo": {
-                    "name": "open_agent_view",
-                    "title": "Open Agent View",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }),
-        )?;
-        transport.notify("initialized", json!({}))?;
-        Ok(transport)
-    }
-
-    fn request(&mut self, method: &str, params: Value) -> Result<Value> {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.send(json!({"method": method, "id": id, "params": params}))?;
-        let deadline = std::time::Instant::now() + Duration::from_secs(8);
-        loop {
-            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-            let line = self
-                .lines
-                .recv_timeout(remaining)
-                .map_err(|error| anyhow!("timed out waiting for {method}: {error}"))?
-                .map_err(|error| anyhow!("app-server stdout error: {error}"))?;
-            let message: Value = serde_json::from_str(&line)
-                .with_context(|| format!("invalid app-server JSONL: {line}"))?;
-            if message.get("id").and_then(Value::as_u64) != Some(id) {
-                continue;
-            }
-            if let Some(error) = message.get("error") {
-                bail!("app-server {method} failed: {error}");
-            }
-            return message
-                .get("result")
-                .cloned()
-                .context("app-server response omitted result");
-        }
-    }
-
-    fn notify(&mut self, method: &str, params: Value) -> Result<()> {
-        self.send(json!({"method": method, "params": params}))
-    }
-
-    fn send(&mut self, message: Value) -> Result<()> {
-        serde_json::to_writer(&mut self.stdin, &message)?;
-        self.stdin.write_all(b"\n")?;
-        self.stdin.flush()?;
-        Ok(())
-    }
-}
-
-impl Drop for AppServerTransport {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        if let Some(reader) = self.stdout_reader.take() {
-            let _ = reader.join();
-        }
-        if let Some(reader) = self.stderr_reader.take() {
-            let _ = reader.join();
-        }
     }
 }
 

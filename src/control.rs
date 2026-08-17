@@ -10,6 +10,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionSnapshot};
+use crate::codex_supervisor::CodexSupervisor;
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,6 +28,7 @@ pub struct ControlOutcome {
 
 pub struct ControlHub {
     claude: Option<ClaudeController>,
+    codex: Option<Arc<CodexSupervisor>>,
     claude_bin: String,
     codex_bin: String,
     docker_bin: String,
@@ -37,6 +39,7 @@ pub struct ControlHub {
 impl ControlHub {
     pub fn new(
         claude_enabled: bool,
+        codex_enabled: bool,
         claude_bin: impl Into<String>,
         codex_bin: impl Into<String>,
         docker_bin: impl Into<String>,
@@ -44,12 +47,18 @@ impl ControlHub {
         launch_cwd: PathBuf,
     ) -> Result<Self> {
         let claude_bin = claude_bin.into();
+        let codex_bin = codex_bin.into();
         let registry = OwnershipRegistry::load(default_registry_path()?)?;
         Ok(Self {
             claude: claude_enabled
                 .then(|| ClaudeController::host(claude_bin.clone(), registry)),
+            codex: if codex_enabled {
+                Some(Arc::new(CodexSupervisor::host(codex_bin.clone())?))
+            } else {
+                None
+            },
             claude_bin,
-            codex_bin: codex_bin.into(),
+            codex_bin,
             docker_bin: docker_bin.into(),
             launch_provider,
             launch_cwd,
@@ -73,6 +82,13 @@ impl ControlHub {
                 session.capabilities.insert(Capability::Interrupt);
             }
         }
+        if let Some(supervisor) = &self.codex {
+            supervisor.enrich(snapshot);
+        }
+    }
+
+    pub fn codex_supervisor(&self) -> Option<Arc<CodexSupervisor>> {
+        self.codex.clone()
     }
 
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
@@ -87,9 +103,17 @@ impl ControlHub {
                 .as_ref()
                 .context("host Claude launch is disabled")?
                 .launch(&request),
-            Provider::Codex => bail!(
-                "Codex launch requires the durable App Server supervisor, which is not enabled yet"
-            ),
+            Provider::Codex => {
+                let thread_id = self
+                    .codex
+                    .as_ref()
+                    .context("host Codex launch is disabled")?
+                    .launch(&request.prompt, &request.cwd)?;
+                Ok(ControlOutcome {
+                    message: format!("started managed Codex thread {thread_id}"),
+                    provider_session_hint: Some(thread_id),
+                })
+            }
             Provider::Other(name) => bail!("no launch controller is configured for {name}"),
         }
     }
@@ -101,9 +125,19 @@ impl ControlHub {
                 .as_ref()
                 .context("Claude control is disabled")?
                 .stop(session),
-            Provider::Codex => bail!(
-                "this Codex thread is not owned by the current App Server supervisor"
-            ),
+            Provider::Codex => {
+                self.codex
+                    .as_ref()
+                    .context("host Codex control is disabled")?
+                    .interrupt(session)?;
+                Ok(ControlOutcome {
+                    message: format!(
+                        "interrupted managed Codex thread {}",
+                        session.provider_session_id
+                    ),
+                    provider_session_hint: Some(session.provider_session_id.clone()),
+                })
+            }
             Provider::Other(ref name) => bail!("no controller is configured for {name}"),
         }
     }
@@ -140,6 +174,10 @@ impl ControlHub {
     }
 
     pub fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        let managed_codex_remote = self
+            .codex
+            .as_ref()
+            .and_then(|supervisor| supervisor.remote_url_if_owned(session));
         let mut command = match (&session.provider, &session.runtime) {
             (Provider::Claude, Runtime::Host) => {
                 let mut command = Command::new(&self.claude_bin);
@@ -150,9 +188,17 @@ impl ControlHub {
             }
             (Provider::Codex, Runtime::Host) => {
                 let mut command = Command::new(&self.codex_bin);
-                command
-                    .args(["resume", &session.provider_session_id])
-                    .current_dir(&session.cwd);
+                if let Some(remote) = managed_codex_remote.as_deref() {
+                    command.args([
+                        "--remote",
+                        remote,
+                        "resume",
+                        &session.provider_session_id,
+                    ]);
+                } else {
+                    command.args(["resume", &session.provider_session_id]);
+                }
+                command.current_dir(&session.cwd);
                 command
             }
             (Provider::Claude, Runtime::Docker { container_id, .. }) => {

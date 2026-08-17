@@ -14,7 +14,7 @@ planned adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
 > [!IMPORTANT]
 > This repository is pre-alpha. Existing host sessions and explicitly enrolled
 > Docker containers are observe-only. Lifecycle controls are enabled only for
-> host Claude sessions launched and recorded by this installation.
+> host Claude and Codex sessions launched and recorded by this installation.
 
 ## What works
 
@@ -66,14 +66,17 @@ The container remains observe-only. Refresh will never start, restart, or stop
 it as a side effect.
 
 New-session prompts launch host Claude by default. Choose a launch directory or
-an alternate future provider with:
+the managed host Codex provider with:
 
 ```console
 coding-agents --launch-cwd /path/to/project --launch-provider claude
+coding-agents --launch-cwd /path/to/project --launch-provider codex
 ```
 
-Codex launch is deliberately rejected until a durable App Server supervisor is
-available; read-only discovery and native `codex resume` opening already work.
+Managed Codex tasks use a private Unix-socket App Server that survives dashboard
+restarts. Only exact threads and active turns launched through this supervisor
+can be interrupted; pre-existing host threads and Docker threads remain
+observe/open-only.
 
 Check the installed providers and any explicitly selected containers without
 starting the dashboard:
@@ -96,7 +99,7 @@ coding-agents doctor --docker-container my-agent-container
 | `ctrl+r` | Enter rename composition |
 | `ctrl+x` | Arm an exact-target stop/delete confirmation |
 | `?` | Show contextual shortcuts |
-| `esc` | Close the current mode, clear selection, then quit |
+| `esc` | Close the current mode, or quit directly from the session list |
 
 ## Development
 
@@ -123,9 +126,9 @@ See [the approved product specification](docs/product-spec.md),
 
 ## Status
 
-Pre-alpha. The dashboard and ownership-gated host Claude launch/stop path are
-usable; durable Codex supervision and managed-container creation are next. See
-[ROADMAP.md](ROADMAP.md).
+Pre-alpha. The dashboard supports ownership-gated host Claude launch/stop and
+durable managed host Codex launch/interrupt. See [ROADMAP.md](ROADMAP.md) for
+the remaining control and distribution work.
 
 ## Non-affiliation
 
