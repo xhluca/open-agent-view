@@ -1,0 +1,30 @@
+[package]
+name = "open-agent-view"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Open terminal dashboard for supervising Claude and Codex coding agents"
+license = "MIT"
+repository = "https://github.com/xhluca/open-agent-view"
+readme = "README.md"
+keywords = ["agents", "codex", "claude", "tui", "terminal"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "coding-agents"
+path = "src/main.rs"
+
+[dependencies]
+# Exact versions keep the project buildable with the documented Rust 1.75 MSRV.
+anyhow = "=1.0.86"
+clap = { version = "=4.5.4", features = ["derive"] }
+crossterm = "=0.27.0"
+ratatui = "=0.26.3"
+serde = { version = "=1.0.203", features = ["derive"] }
+serde_json = "=1.0.117"
+# Ratatui's compatible range otherwise resolves to a release requiring Rust 1.85.
+unicode-segmentation = "=1.12.0"
+
+[dev-dependencies]
+pretty_assertions = "=1.4.0"
+tempfile = "=3.10.1"
