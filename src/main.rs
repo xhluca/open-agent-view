@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
     ClaudeSource, CodexSource, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
 };
 use open_agent_view::control::ControlHub;
 use open_agent_view::domain::Provider;
+use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::terminal::run_dashboard;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -18,12 +19,21 @@ enum LaunchProvider {
     Codex,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
+enum Commands {
+    /// Check provider, Docker, and target availability without changing them.
+    Doctor,
+}
+
 /// Open terminal dashboard for Claude and Codex coding agents.
 #[derive(Debug, Parser)]
 #[command(name = "coding-agents", version, about)]
 struct Cli {
-    /// Print the normalized session snapshot as JSON and exit.
-    #[arg(long)]
+    #[command(subcommand)]
+    command: Option<Commands>,
+
+    /// Print machine-readable JSON instead of the interactive or text view.
+    #[arg(long, global = true)]
     json: bool,
 
     /// Include completed sessions in JSON output (the TUI includes them by default).
@@ -43,7 +53,7 @@ struct Cli {
     fixture: Option<PathBuf>,
 
     /// Claude executable used for host discovery.
-    #[arg(long, default_value = "claude", value_name = "PATH")]
+    #[arg(long, default_value = "claude", value_name = "PATH", global = true)]
     claude_bin: String,
 
     /// Disable Claude discovery on the host.
@@ -51,7 +61,7 @@ struct Cli {
     no_host_claude: bool,
 
     /// Codex executable used for host discovery through App Server.
-    #[arg(long, default_value = "codex", value_name = "PATH")]
+    #[arg(long, default_value = "codex", value_name = "PATH", global = true)]
     codex_bin: String,
 
     /// Disable Codex discovery on the host.
@@ -59,11 +69,15 @@ struct Cli {
     no_host_codex: bool,
 
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
-    #[arg(long = "docker-container", value_name = "NAME_OR_ID")]
+    #[arg(
+        long = "docker-container",
+        value_name = "NAME_OR_ID",
+        global = true
+    )]
     docker_containers: Vec<String>,
 
     /// Docker executable used for explicitly enrolled container targets.
-    #[arg(long, default_value = "docker", value_name = "PATH")]
+    #[arg(long, default_value = "docker", value_name = "PATH", global = true)]
     docker_bin: String,
 
     /// Provider used by the new-session composer.
@@ -81,6 +95,24 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    if cli.command == Some(Commands::Doctor) {
+        let report = diagnose(
+            &cli.claude_bin,
+            &cli.codex_bin,
+            &cli.docker_bin,
+            &cli.docker_containers,
+        );
+        if cli.json {
+            serde_json::to_writer_pretty(io::stdout().lock(), &report)?;
+            println!();
+        } else {
+            print!("{}", render_text(&report));
+        }
+        if report.has_errors() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,

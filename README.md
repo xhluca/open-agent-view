@@ -12,9 +12,9 @@ using its own implementation, identity, and provider-neutral data model. The
 planned adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
 
 > [!IMPORTANT]
-> This repository is pre-alpha. Read-only host and explicitly enrolled Docker
-> discovery is implemented. Lifecycle controls remain disabled unless a future
-> owning supervisor can prove authority over the selected session.
+> This repository is pre-alpha. Existing host sessions and explicitly enrolled
+> Docker containers are observe-only. Lifecycle controls are enabled only for
+> host Claude sessions launched and recorded by this installation.
 
 ## What works
 
@@ -41,25 +41,25 @@ tool. See [the control model](docs/control-model.md) and
 Launch the dashboard:
 
 ```console
-cargo run --
+coding-agents
 ```
 
 If only Claude is installed on the host:
 
 ```console
-cargo run -- --no-host-codex
+coding-agents --no-host-codex
 ```
 
 Emit normalized JSON, including completed sessions:
 
 ```console
-cargo run -- --json --all
+coding-agents --json --all
 ```
 
 Observe both providers in an explicitly selected, already-running container:
 
 ```console
-cargo run -- --docker-container my-agent-container
+coding-agents --docker-container my-agent-container
 ```
 
 The container remains observe-only. Refresh will never start, restart, or stop
@@ -74,6 +74,14 @@ coding-agents --launch-cwd /path/to/project --launch-provider claude
 
 Codex launch is deliberately rejected until a durable App Server supervisor is
 available; read-only discovery and native `codex resume` opening already work.
+
+Check the installed providers and any explicitly selected containers without
+starting the dashboard:
+
+```console
+coding-agents doctor
+coding-agents doctor --docker-container my-agent-container
+```
 
 ### Keyboard map
 
@@ -95,13 +103,14 @@ available; read-only discovery and native `codex resume` opening already work.
 The minimum supported Rust version is 1.75.
 
 ```console
-cargo test
+cargo test --locked
 cargo run -- --help
-cargo install --path .
+cargo install --path . --locked
 ```
 
 See [the approved product specification](docs/product-spec.md),
-[architecture](docs/architecture.md), and [exploration notes](docs/exploration/README.md).
+[architecture](docs/architecture.md), [validation record](docs/testing.md), and
+[exploration notes](docs/exploration/README.md).
 
 ## Safety model
 
