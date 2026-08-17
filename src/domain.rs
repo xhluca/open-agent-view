@@ -42,6 +42,16 @@ pub enum Runtime {
     },
 }
 
+/// How the provider reports the session's execution style.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionKind {
+    Interactive,
+    Background,
+    Managed,
+    Unknown,
+}
+
 impl Runtime {
     pub fn label(&self) -> &str {
         match self {
@@ -105,17 +115,45 @@ pub struct AgentSession {
     pub provider_session_id: String,
     pub provider: Provider,
     pub runtime: Runtime,
+    pub kind: SessionKind,
     pub name: String,
     pub cwd: PathBuf,
     pub state: SessionState,
     pub summary: String,
     pub raw_state: Option<String>,
     pub pid: Option<u32>,
+    #[serde(default, with = "optional_system_time_millis")]
     pub started_at: Option<SystemTime>,
+    #[serde(default, with = "optional_system_time_millis")]
     pub updated_at: Option<SystemTime>,
     pub pull_requests: Option<u32>,
     #[serde(default)]
     pub capabilities: BTreeSet<Capability>,
+}
+
+mod optional_system_time_millis {
+    use std::time::{Duration, SystemTime};
+
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<SystemTime>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let milliseconds = value
+            .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64);
+        serializer.serialize_some(&milliseconds)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<SystemTime>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let milliseconds = Option::<u64>::deserialize(deserializer)?;
+        Ok(milliseconds
+            .map(|value| SystemTime::UNIX_EPOCH + Duration::from_millis(value)))
+    }
 }
 
 impl AgentSession {
@@ -166,6 +204,7 @@ mod tests {
             provider_session_id: "abc".into(),
             provider: Provider::Claude,
             runtime: Runtime::Host,
+            kind: SessionKind::Background,
             name: "example".into(),
             cwd: PathBuf::from("/work"),
             state: SessionState::Working,
@@ -185,5 +224,31 @@ mod tests {
         assert_eq!(snapshot.count(SessionState::Working), 1);
         assert_eq!(snapshot.count(SessionState::Completed), 0);
     }
-}
 
+    #[test]
+    fn timestamps_serialize_as_unix_milliseconds() {
+        let time = SystemTime::UNIX_EPOCH + Duration::from_millis(1_234);
+
+        let json = serde_json::to_string(&AgentSession {
+            id: "id".into(),
+            provider_session_id: "id".into(),
+            provider: Provider::Claude,
+            runtime: Runtime::Host,
+            kind: SessionKind::Background,
+            name: "name".into(),
+            cwd: PathBuf::from("/work"),
+            state: SessionState::Working,
+            summary: String::new(),
+            raw_state: None,
+            pid: None,
+            started_at: Some(time),
+            updated_at: None,
+            pull_requests: None,
+            capabilities: BTreeSet::new(),
+        })
+        .unwrap();
+
+        assert!(json.contains("\"started_at\":1234"));
+        assert!(json.contains("\"updated_at\":null"));
+    }
+}
