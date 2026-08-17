@@ -3,12 +3,20 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 use open_agent_view::adapters::{
     ClaudeSource, CodexSource, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
 };
+use open_agent_view::control::ControlHub;
+use open_agent_view::domain::Provider;
 use open_agent_view::terminal::run_dashboard;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum LaunchProvider {
+    Claude,
+    Codex,
+}
 
 /// Open terminal dashboard for Claude and Codex coding agents.
 #[derive(Debug, Parser)]
@@ -58,6 +66,14 @@ struct Cli {
     #[arg(long, default_value = "docker", value_name = "PATH")]
     docker_bin: String,
 
+    /// Provider used by the new-session composer.
+    #[arg(long, value_enum, default_value_t = LaunchProvider::Claude)]
+    launch_provider: LaunchProvider,
+
+    /// Working directory used for newly launched sessions.
+    #[arg(long, value_name = "PATH")]
+    launch_cwd: Option<PathBuf>,
+
     /// Provider refresh interval in milliseconds.
     #[arg(long, default_value_t = 1500, value_parser = clap::value_parser!(u64).range(250..))]
     refresh_ms: u64,
@@ -65,6 +81,22 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let launch_cwd = match cli.launch_cwd {
+        Some(path) => path,
+        None => std::env::current_dir()?,
+    };
+    let launch_provider = match cli.launch_provider {
+        LaunchProvider::Claude => Provider::Claude,
+        LaunchProvider::Codex => Provider::Codex,
+    };
+    let control = ControlHub::new(
+        !cli.no_host_claude,
+        cli.claude_bin.clone(),
+        cli.codex_bin.clone(),
+        cli.docker_bin.clone(),
+        launch_provider,
+        launch_cwd,
+    )?;
 
     let mut engine = DiscoveryEngine::new();
     if let Some(fixture) = cli.fixture {
@@ -98,7 +130,8 @@ fn main() -> Result<()> {
     };
 
     if cli.json {
-        let snapshot = engine.discover(&request);
+        let mut snapshot = engine.discover(&request);
+        control.enrich(&mut snapshot);
         serde_json::to_writer_pretty(io::stdout().lock(), &snapshot)?;
         println!();
         return Ok(());
@@ -108,7 +141,12 @@ fn main() -> Result<()> {
         bail!("the dashboard requires a TTY; use --json for machine-readable output");
     }
 
-    run_dashboard(&engine, &request, Duration::from_millis(cli.refresh_ms))?;
+    run_dashboard(
+        &engine,
+        &request,
+        Duration::from_millis(cli.refresh_ms),
+        &control,
+    )?;
 
     Ok(())
 }

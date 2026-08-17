@@ -54,6 +54,12 @@ sessions will use a small local supervisor so work can continue when the TUI
 closes. The supervisor owns process identifiers and logs; provider sessions
 remain the source of truth for conversation state.
 
+The implemented Claude path uses Claude's own background service. The
+dashboard persists only a provider/runtime/session ownership record and invokes
+the supported `attach`, `logs`, and `stop` commands. Codex discovery retains
+one App Server subprocess per target for the dashboard lifetime; launch remains
+disabled until that subprocess moves behind the durable supervisor.
+
 ## Docker boundary
 
 Docker is a runtime wrapper, not a provider. A container can expose Claude,
@@ -66,4 +72,3 @@ container and qualifies session identifiers with the container ID.
 Protocol parsing is fixture-driven and version-aware. Unknown fields are
 ignored, unknown states are preserved, and malformed records do not discard
 healthy sessions from other providers.
-

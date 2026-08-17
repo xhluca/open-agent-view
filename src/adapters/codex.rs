@@ -3,6 +3,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::Mutex;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, SystemTime};
 
@@ -54,6 +55,7 @@ pub struct CodexSource {
     label: String,
     invocation: Invocation,
     runtime: Runtime,
+    connection: Mutex<Option<AppServerTransport>>,
 }
 
 impl CodexSource {
@@ -62,6 +64,7 @@ impl CodexSource {
             label: "Codex (host)".into(),
             invocation: Invocation::host(executable),
             runtime: Runtime::Host,
+            connection: Mutex::new(None),
         }
     }
 
@@ -80,6 +83,7 @@ impl CodexSource {
                 container_name,
                 image: image.into(),
             },
+            connection: Mutex::new(None),
         }
     }
 }
@@ -91,25 +95,19 @@ impl SessionSource for CodexSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        let mut transport = AppServerTransport::spawn(&self.invocation)?;
-        transport.request(
-            1,
-            "initialize",
-            json!({
-                "clientInfo": {
-                    "name": "open_agent_view",
-                    "title": "Open Agent View",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }),
-        )?;
-        transport.notify("initialized", json!({}))?;
+        let mut connection = self
+            .connection
+            .lock()
+            .map_err(|_| anyhow!("Codex connection lock was poisoned"))?;
+        if connection.is_none() {
+            *connection = Some(AppServerTransport::connect(&self.invocation)?);
+        }
+        let transport = connection.as_mut().expect("connection initialized");
 
         let mut cursor: Option<String> = None;
         let mut records = Vec::new();
-        for request_id in 2..=12 {
+        for _ in 0..=10 {
             let response = transport.request(
-                request_id,
                 "thread/list",
                 json!({
                     "archived": false,
@@ -150,10 +148,11 @@ struct AppServerTransport {
     lines: Receiver<Result<String, String>>,
     stdout_reader: Option<JoinHandle<()>>,
     stderr_reader: Option<JoinHandle<Vec<u8>>>,
+    next_id: u64,
 }
 
 impl AppServerTransport {
-    fn spawn(invocation: &Invocation) -> Result<Self> {
+    fn connect(invocation: &Invocation) -> Result<Self> {
         let mut args = invocation.prefix_args.clone();
         args.extend([
             "app-server".into(),
@@ -192,16 +191,31 @@ impl AppServerTransport {
             bytes
         });
 
-        Ok(Self {
+        let mut transport = Self {
             child,
             stdin,
             lines,
             stdout_reader: Some(stdout_reader),
             stderr_reader: Some(stderr_reader),
-        })
+            next_id: 1,
+        };
+        transport.request(
+            "initialize",
+            json!({
+                "clientInfo": {
+                    "name": "open_agent_view",
+                    "title": "Open Agent View",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            }),
+        )?;
+        transport.notify("initialized", json!({}))?;
+        Ok(transport)
     }
 
-    fn request(&mut self, id: u64, method: &str, params: Value) -> Result<Value> {
+    fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        let id = self.next_id;
+        self.next_id += 1;
         self.send(json!({"method": method, "id": id, "params": params}))?;
         let deadline = std::time::Instant::now() + Duration::from_secs(8);
         loop {

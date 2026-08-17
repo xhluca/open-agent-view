@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use crate::domain::{AgentSession, SessionSnapshot, SessionState};
+use crate::domain::{AgentSession, Capability, SessionSnapshot, SessionState};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ViewMode {
@@ -45,6 +45,8 @@ pub enum AppAction {
     None,
     Refresh,
     Quit,
+    Open { session_id: String },
+    Inspect { session_id: String },
     Launch { prompt: String },
     Reply { session_id: String, prompt: String },
     Rename { session_id: String, name: String },
@@ -69,6 +71,7 @@ pub struct App {
     pub filter: String,
     pub collapsed: BTreeSet<String>,
     pub notice: Option<String>,
+    pub details: BTreeMap<String, String>,
     pub refreshed_at: SystemTime,
     pub should_quit: bool,
 }
@@ -84,6 +87,7 @@ impl App {
             filter: String::new(),
             collapsed: BTreeSet::new(),
             notice: None,
+            details: BTreeMap::new(),
             refreshed_at: SystemTime::now(),
             should_quit: false,
         }
@@ -168,10 +172,12 @@ impl App {
                 AppAction::None
             }
             Overlay::Details => AppAction::None,
-            Overlay::Peek if self.input.trim().is_empty() => {
-                self.overlay = Overlay::Details;
-                AppAction::None
-            }
+            Overlay::Peek if self.input.trim().is_empty() => AppAction::Open {
+                session_id: self
+                    .selected_session()
+                    .map(|session| session.id.clone())
+                    .unwrap_or_default(),
+            },
             Overlay::Peek => {
                 let Some(session) = self.selected_session() else {
                     return AppAction::None;
@@ -193,8 +199,11 @@ impl App {
                     AppAction::None
                 }
                 Some(SelectionKey::Session(_)) => {
-                    self.overlay = Overlay::Details;
-                    AppAction::None
+                    let session_id = self
+                        .selected_session()
+                        .map(|session| session.id.clone())
+                        .unwrap_or_default();
+                    AppAction::Open { session_id }
                 }
                 None => AppAction::None,
             },
@@ -274,11 +283,32 @@ impl App {
 
     pub fn start_confirm(&mut self) {
         if let Some(session) = self.selected_session() {
+            let required = if session.state == SessionState::Working {
+                Capability::Interrupt
+            } else {
+                Capability::Delete
+            };
+            if !session.capabilities.contains(&required) {
+                self.set_notice(format!(
+                    "{} is observe-only; {:?} authority was not granted",
+                    session.name, required
+                ));
+                return;
+            }
             self.overlay = Overlay::Confirm(ConfirmTarget::Session {
                 id: session.id.clone(),
                 running: session.state == SessionState::Working,
             });
         } else if let Some(group) = self.selected_group() {
+            let deletable = group.sessions.iter().all(|index| {
+                self.snapshot.sessions[*index]
+                    .capabilities
+                    .contains(&Capability::Delete)
+            });
+            if !deletable {
+                self.set_notice("this group includes observe-only sessions");
+                return;
+            }
             self.overlay = Overlay::Confirm(ConfirmTarget::Group {
                 key: group.key,
                 session_ids: group
@@ -302,6 +332,15 @@ impl App {
 
     pub fn set_notice(&mut self, notice: impl Into<String>) {
         self.notice = Some(notice.into());
+    }
+
+    pub fn set_detail(&mut self, session_id: String, detail: String) {
+        self.details.insert(session_id, detail);
+    }
+
+    pub fn selected_detail(&self) -> Option<&str> {
+        let session = self.selected_session()?;
+        self.details.get(&session.id).map(String::as_str)
     }
 
     pub fn filtered(&self, session: &AgentSession) -> bool {

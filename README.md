@@ -18,16 +18,23 @@ planned adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
 
 ## What works
 
-- Host Claude discovery through `claude agents --json`.
+- Host Claude discovery through `claude agents --json`, background launch, and
+  ownership-gated stop.
 - Host Codex discovery through the official App Server JSONL protocol.
 - Explicit, observe-only Docker targets with immutable container-ID pinning.
 - Status and directory grouping, cyclic navigation, collapsible groups,
   peek/reply composition, details, filtering, help, and confirmation states.
+- Native session opening through `claude attach` and `codex resume`, with safe
+  terminal suspension/restoration.
+- Claude log reconstruction through a VT100 parser for a useful peek instead of
+  leaking raw terminal control sequences.
 - Deterministic JSON output and Ratatui test-backend coverage.
 
-The dashboard intentionally does not claim control over arbitrary Codex
+The dashboard intentionally does not claim control over arbitrary Claude or Codex
 processes: live Codex ownership is local to the App Server process that started
-or resumed the thread. See [the Codex exploration](docs/exploration/codex-integration.md).
+or resumed the thread, and existing Claude sessions were not launched by this
+tool. See [the control model](docs/control-model.md) and
+[Codex exploration](docs/exploration/codex-integration.md).
 
 ## Usage
 
@@ -57,6 +64,16 @@ cargo run -- --docker-container my-agent-container
 
 The container remains observe-only. Refresh will never start, restart, or stop
 it as a side effect.
+
+New-session prompts launch host Claude by default. Choose a launch directory or
+an alternate future provider with:
+
+```console
+coding-agents --launch-cwd /path/to/project --launch-provider claude
+```
+
+Codex launch is deliberately rejected until a durable App Server supervisor is
+available; read-only discovery and native `codex resume` opening already work.
 
 ### Keyboard map
 
@@ -97,8 +114,9 @@ See [the approved product specification](docs/product-spec.md),
 
 ## Status
 
-Pre-alpha. The read-only dashboard milestone is usable; provider-owned process
-control and durable supervision are next. See [ROADMAP.md](ROADMAP.md).
+Pre-alpha. The dashboard and ownership-gated host Claude launch/stop path are
+usable; durable Codex supervision and managed-container creation are next. See
+[ROADMAP.md](ROADMAP.md).
 
 ## Non-affiliation
 

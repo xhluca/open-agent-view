@@ -17,8 +17,11 @@
 
 ## Milestone 2 — Managed sessions
 
-- Launch Claude and Codex tasks from the composer.
-- Persist managed process metadata across dashboard restarts.
+- [x] Launch host Claude tasks from the composer.
+- [x] Persist Claude ownership metadata across dashboard restarts.
+- [x] Open provider-native Claude/Codex sessions from a selected row.
+- [x] Stop only exact Claude sessions launched by `coding-agents`.
+- [ ] Own Codex tasks through a durable, reconnectable App Server supervisor.
 - Resume/reply, interrupt, archive, and delete with explicit confirmations.
 - Surface logs and provider errors without leaking credentials.
 

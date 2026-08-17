@@ -287,22 +287,29 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT))
         .style(Style::default().bg(BG));
-    let summary = if session.summary.is_empty() {
-        "No summary is available from this provider."
-    } else {
-        &session.summary
-    };
+    let summary = app.selected_detail().unwrap_or_else(|| {
+        if session.summary.is_empty() {
+            "No summary is available from this provider."
+        } else {
+            &session.summary
+        }
+    });
     let reply = if app.input.is_empty() {
         Span::styled("❯ reply", Style::default().fg(DIM))
     } else {
         Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
     };
+    let summary_capacity = area.height.saturating_sub(4).max(1) as usize;
+    let summary_lines: Vec<_> = summary.lines().collect();
+    let summary_start = summary_lines.len().saturating_sub(summary_capacity);
+    let mut lines: Vec<Line<'_>> = summary_lines[summary_start..]
+        .iter()
+        .map(|line| Line::from((*line).to_owned()))
+        .collect();
+    lines.push(Line::default());
+    lines.push(Line::from(reply));
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(summary.to_owned()),
-            Line::default(),
-            Line::from(reply),
-        ])
+        Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: true }),
         area,
@@ -346,15 +353,39 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             }
             Overlay::Composer(_) => "enter to create · ctrl+j for newline · esc to clear".into(),
             Overlay::Peek if app.input.is_empty() => {
-                "enter to open · space to close · ctrl+x to delete".into()
+                let control = app
+                    .selected_session()
+                    .map(|session| {
+                        if session.capabilities.contains(&crate::domain::Capability::Interrupt) {
+                            " · ctrl+x to stop"
+                        } else if session.capabilities.contains(&crate::domain::Capability::Delete) {
+                            " · ctrl+x to delete"
+                        } else {
+                            " · observe-only"
+                        }
+                    })
+                    .unwrap_or_default();
+                format!("enter to open · space to close{control}")
             }
-            Overlay::Peek => "enter to send · esc to close · ctrl+x to delete".into(),
+            Overlay::Peek => "enter to send · esc to close".into(),
             Overlay::Help => "? or esc to close shortcuts".into(),
             Overlay::None if matches!(app.selection, Some(SelectionKey::Group(_))) => {
                 "enter to collapse/expand · ctrl+x to delete all · ? for shortcuts".into()
             }
             Overlay::None if app.selected_session().is_some() => {
-                "enter to open · space to reply · ctrl+x to stop/delete · ? for shortcuts".into()
+                let control = app
+                    .selected_session()
+                    .map(|session| {
+                        if session.capabilities.contains(&crate::domain::Capability::Interrupt) {
+                            " · ctrl+x to stop"
+                        } else if session.capabilities.contains(&crate::domain::Capability::Delete) {
+                            " · ctrl+x to delete"
+                        } else {
+                            " · observe-only"
+                        }
+                    })
+                    .unwrap_or_default();
+                format!("enter to open · space to reply{control} · ? for shortcuts")
             }
             _ => "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into(),
         }

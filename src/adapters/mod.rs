@@ -21,7 +21,7 @@ pub struct DiscoveryRequest {
     pub cwd: Option<PathBuf>,
 }
 
-pub trait SessionSource {
+pub trait SessionSource: Send + Sync {
     fn label(&self) -> &str;
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>>;
 }
