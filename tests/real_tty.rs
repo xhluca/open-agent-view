@@ -266,7 +266,7 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.1")
+        screen.contains("Open Agent View v0.1.2")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -304,7 +304,9 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(b"approval");
     app.send(ENTER);
     let filtered = app.wait_for("applied filter", |screen| {
-        screen.contains("approval-needed") && !screen.contains("release-reviewer")
+        screen.contains("approval-needed")
+            && !screen.contains("release-reviewer")
+            && screen.contains("type to start a new session · / to change filter")
     });
     assert!(filtered.contains("type to start a new session · / to change filter"));
 
@@ -581,7 +583,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.1")
+        screen.contains("Open Agent View v0.1.2")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

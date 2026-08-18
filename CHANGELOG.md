@@ -8,10 +8,11 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-08-18
+## [0.1.2] - 2026-08-18
 
-The `v0.1.0` build tag did not publish a GitHub release because its native
-macOS gate exposed a portability error. It was not moved or reused.
+The `v0.1.0` and `v0.1.1` build tags did not publish GitHub releases because
+their native gates exposed a macOS portability error and a terminal-test
+repaint race, respectively. Neither tag was moved or reused.
 
 ### Added
 
@@ -68,7 +69,7 @@ macOS gate exposed a portability error. It was not moved or reused.
 
 ### Known limitations
 
-- Version 0.1.1 is a private preview rather than a supported public stable
+- Version 0.1.2 is a private preview rather than a supported public stable
   release or package-registry distribution.
 - No authenticated Claude/Codex lifecycle has been recorded inside the fresh
   credential-free Docker TUI probes.
