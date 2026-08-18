@@ -107,9 +107,6 @@ impl SessionSource for PiSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        if !request.include_completed {
-            return Ok(Vec::new());
-        }
         if !self.session_dir.exists() {
             return Ok(Vec::new());
         }
@@ -127,11 +124,12 @@ impl SessionSource for PiSource {
             let started_at = metadata.created().ok();
             let updated_at = metadata.modified().ok();
             let session = parse_pi_session_file(&file, started_at, updated_at)?;
-            if request
-                .cwd
-                .as_ref()
-                .map(|cwd| session.cwd.starts_with(cwd))
-                .unwrap_or(true)
+            if (request.include_completed || session.state != SessionState::Completed)
+                && request
+                    .cwd
+                    .as_ref()
+                    .map(|cwd| session.cwd.starts_with(cwd))
+                    .unwrap_or(true)
             {
                 sessions.push(session);
             }
@@ -460,6 +458,21 @@ mod tests {
 
         assert_eq!(session.state, SessionState::Unknown);
         assert_eq!(session.name, "Keep working");
+    }
+
+    #[test]
+    fn incomplete_history_is_visible_without_include_completed() {
+        let directory = tempdir().unwrap();
+        let input = r#"{"type":"session","version":3,"id":"abc","timestamp":"2026-08-18T12:00:00Z","cwd":"/work"}
+{"type":"message","id":"a1","parentId":null,"timestamp":"2026-08-18T12:00:01Z","message":{"role":"user","content":"Keep working"}}
+"#;
+        fs::write(directory.path().join("one.jsonl"), input).unwrap();
+        let source = PiSource::host(directory.path());
+
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].state, SessionState::Unknown);
     }
 
     #[test]
