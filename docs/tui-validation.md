@@ -60,7 +60,7 @@ scripts/real-tui-tests.sh
 
 This runs `cargo test --locked --test real_tty -- --test-threads=1`. It uses
 `libc::openpty`, feeds real key bytes, parses output with VT100 semantics, and
-isolates `HOME` and `XDG_STATE_HOME`. Five tests create PTYs at 120×34, 105×30,
+isolates `HOME` and `XDG_STATE_HOME`. Six tests create PTYs at 120×34, 105×30,
 100×28, 90×24, 55×18, and 31×7 (the narrow/fallback test creates two PTYs).
 They cover startup/sections, help, status/directory grouping, filter
 apply/cancel/clear, multiline launch/cancellation, inspect peek, rename
