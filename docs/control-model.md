@@ -3,7 +3,7 @@
 The dashboard separates **visibility** from **authority**. Finding a session is
 not permission to interrupt or delete it.
 
-## Current capability matrix
+## Claude and Codex capability matrix
 
 | Operation | Host Claude | Managed host Codex | External host Codex | Explicit Docker target |
 | --- | --- | --- | --- | --- |
@@ -115,6 +115,39 @@ The initial decision set is intentionally narrow:
 
 No request is answered automatically on receipt, disconnect, or restart.
 
+## Pi ownership boundary
+
+Pi exposes a documented stdio JSONL RPC mode but no socket for attaching to an
+arbitrary running process. On Linux, Open Agent View starts one detached
+supervisor that retains the exact stdin/stdout pipes for every Pi process it
+launches. Dashboard restarts reconnect through a private Unix socket. Existing
+JSONL history and unrelated live Pi processes never acquire control authority.
+
+| Operation | OAV-owned live Pi RPC | Existing/unrelated Pi history |
+| --- | --- | --- |
+| Discover | Supervisor live state plus its private JSONL store | Documented JSONL store |
+| Inspect | Bounded `get_messages` transcript | Bounded persisted transcript |
+| Open | Refused while RPC is live to prevent concurrent writers | `pi --session ID --session-dir DIR` |
+| Launch/reply | `prompt`; active work uses exact `steer` behavior | Disabled |
+| Interrupt | `abort` on the exact owned live process | Disabled |
+| Confirmation/input | Exact pending extension request ID; selections require an exact option | Disabled |
+| Delete/archive | Disabled | Disabled |
+
+The supervisor state is under `$XDG_STATE_HOME/open-agent-view/pi/`, or
+`~/.local/state/open-agent-view/pi/`. Before any reconnect or control request,
+the saved daemon PID must match both its Linux `/proc` start token and exact
+command-line bytes. The containing directory is current-user-owned mode `0700`;
+records, locks, logs, and sockets have no group/other access. Symlinks and
+wrong-owner/permissive authority files are refused. The daemon request socket
+is inside that private directory, bounds request/response size, and will not be
+started merely by session discovery.
+
+Pi's `--no-approve` means ignore untrusted project-local configuration; it is
+not an operating-system sandbox. Built-in tools still run with the managed Pi
+process's user permissions. Use a separate OS/container boundary when the task
+requires one. Durable Pi control currently requires Linux; macOS keeps
+history inspection and native resume only.
+
 ## Managed Docker ownership
 
 `coding-agents docker create` accepts only a digest-pinned image and creates a
@@ -151,6 +184,8 @@ state.
   intentionally left untouched.
 - Durable Codex supervision currently requires Linux because safe PID reuse
   detection relies on `/proc/<pid>/stat` and `/proc/<pid>/cmdline`.
+- Durable Pi supervision has the same Linux process-identity requirement;
+  unrelated Pi sessions remain inspect/open-only on every platform.
 - Docker containers supplied with `--docker-container` are observe-only;
   managed lifecycle requires creation plus the separate owner record.
 - Group deletion is disabled whenever any member lacks Delete authority.

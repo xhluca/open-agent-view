@@ -74,6 +74,9 @@ coding-agents --docker-container my-agent-container
 
 # Check every configured CLI without starting the dashboard.
 coding-agents doctor
+
+# Make new tasks durable Pi RPC sessions on Linux.
+coding-agents --launch-provider pi
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
@@ -90,15 +93,15 @@ every CLI.
 | --- | --- | --- |
 | Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch and interrupt exact OAV-owned host sessions |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
-| Pi | Documented host JSONL history | Read-only inspect and native resume |
+| Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; owned launch, reply/steer, request handling, and interrupt |
 | OpenCode | Persisted host history through the official CLI | Read-only export/inspect and native resume |
 | GitHub Copilot CLI | Persisted host sessions through official ACP `session/list` | Native resume; connection-owned ACP control is tested but not yet exposed as dashboard authority |
 | Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |
 | Cursor | No automatic global listing—the provider exposes only a TTY picker | Exact native resume and managed-run protocol groundwork; a durable supervisor is not yet integrated |
 
-Claude and Codex have the broadest managed lifecycle today. The other adapters
-deliberately prefer honest read-only coverage over inferring live state or
-scraping undocumented stores. See the [provider exploration notes](docs/exploration/README.md)
+Claude, Codex, and Pi have managed lifecycle support today. The other adapters
+deliberately prefer honest read-only coverage where no durable ownership channel
+exists. See the [provider exploration notes](docs/exploration/README.md)
 for the tested versions, isolation setup, protocol observations, and remaining
 boundaries.
 

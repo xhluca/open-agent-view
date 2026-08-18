@@ -1,6 +1,8 @@
 # Pi provider exploration
 
-Status: discovery and read-only transcript inspection implemented; durable managed RPC control is not yet integrated.
+Status: documented history discovery and transcript inspection are implemented
+on every supported platform. Linux additionally supports durable OAV-owned RPC
+launch, reconnect, reply/steer, interrupt, confirmation, and structured input.
 
 Explored on 2026-08-18 against:
 
@@ -73,7 +75,7 @@ The supported launch shape is:
 pi --mode rpc --session-dir <owned-directory> --name <name>
 ```
 
-Commands important to a future durable controller include:
+Commands used by the durable controller include:
 
 - `get_state`: session ID/file/name, streaming state, queue depth, and model;
 - `prompt`: start a turn, steer, or enqueue a follow-up;
@@ -85,7 +87,44 @@ Commands important to a future durable controller include:
 
 Events include agent/turn/message/tool lifecycle, queue changes, compaction, retry, and extension UI requests.
 
-The key ownership limitation is transport-related: RPC is stdio-only. An arbitrary Pi TUI or RPC process does not expose an attachable socket. Open Agent View can safely control only a process it launched and whose exact stdin/stdout channel it still owns. Durable control across dashboard restarts therefore needs a small OAV-owned proxy/daemon with a private Unix socket and verified PID identity; simply saving a PID is not sufficient.
+The key ownership limitation is transport-related: RPC is stdio-only. An
+arbitrary Pi TUI or RPC process does not expose an attachable socket. Open Agent
+View therefore controls only processes launched by its durable supervisor. The
+supervisor owns the exact Pi stdin/stdout pipes and exposes a user-private Unix
+socket to dashboard clients. Closing and reopening `coding-agents` reconnects
+to the supervisor; it does not attempt to reconstruct or steal provider pipes.
+
+Managed sessions use:
+
+```console
+coding-agents --launch-provider pi
+```
+
+The first submitted task starts a hidden `coding-agents` supervisor, which in
+turn launches:
+
+```text
+pi --mode rpc --no-approve --session-dir <oav-private-sessions> --name <task-name>
+```
+
+The supervisor correlates every command response by exact RPC request ID,
+tracks lifecycle events, and retains pending extension dialog IDs. `prompt`
+uses `streamingBehavior: steer` only while the exact owned process reports a
+working turn; idle/completed sessions receive an ordinary prompt. `abort`
+interrupts only an exact owned live process. Confirmation and input responses
+must match the current pending request; selections must exactly match a
+presented option.
+
+State lives under `$XDG_STATE_HOME/open-agent-view/pi/`, or
+`~/.local/state/open-agent-view/pi/`. The directory is mode `0700`; records,
+locks, sockets, and logs are user-private. Before reconnecting, Linux verifies
+the daemon's `/proc` start token and exact command-line bytes. Symlinked,
+cross-user, group/world-accessible, oversized, or malformed authority records
+are refused. Discovery never starts the daemon as a side effect.
+
+Managed supervision is currently Linux-only because that exact PID-reuse check
+uses `/proc`. macOS retains history discovery, inspection, and native resume.
+An unrelated live Pi process remains history-only everywhere.
 
 Pi's project-trust prompt is not a tool sandbox. In RPC mode, unapproved project-local settings/extensions are ignored, while built-in tools still run with the Pi process's operating-system permissions. Managed launch must preserve Pi's default non-trust behavior and should recommend Docker or another OS boundary for unattended work.
 
@@ -95,7 +134,8 @@ Pi's project-trust prompt is not a tool sandbox. In RPC mode, unapproved project
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Existing JSONL history | yes | yes | possible via `pi --session <id>` | no | no | no | no |
 | Existing unrelated live Pi | history only | persisted text | possible | no | no | no | no |
-| OAV-owned live RPC (planned) | yes | yes | requires handoff design | yes | yes | yes, exact request ID | owned only |
+| OAV-owned live RPC on Linux | yes | live RPC | refused while live to avoid concurrent writers | yes | yes | yes, exact request ID | no |
+| OAV-owned RPC after process exit | persisted history | yes | yes | no | no | no | no |
 
 ## Isolated real-CLI validation
 
@@ -115,9 +155,20 @@ Verified:
 - coexistence through the provider-neutral discovery engine unit suite;
 - exact native TUI resume by UUID with a custom session directory and clean terminal restoration;
 - combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory.
+- an isolated process-level fake RPC provider covering launch, transcript
+  inspection, active steer, confirmation allow/deny capabilities, structured
+  text response, interrupt, unowned-ID refusal, and clean shutdown;
+- a second supervisor client reconnecting through the persisted exact daemon
+  identity while the managed Pi child remained live;
+- state-directory, ownership-record mode, and symlink refusal tests;
+- Linux managed wiring plus the non-Linux history-only fallback at compile time.
 
 Not claimed:
 
 - a model-backed prompt, because the isolation test intentionally supplied no real credentials;
 - reconnection to a pre-existing Pi process, because the provider has no such transport;
-- safe control of sessions not launched by Open Agent View.
+- safe control of sessions not launched by Open Agent View;
+- durable managed control on macOS until an equally strong process-identity
+  primitive replaces the Linux `/proc` check;
+- concurrent native-TUI attachment to a live managed RPC session, which is
+  deliberately refused to avoid two writers.

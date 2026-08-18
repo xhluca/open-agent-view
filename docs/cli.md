@@ -17,13 +17,20 @@ coding-agents [OPTIONS]
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
 | `--cwd PATH` | Keep sessions whose working directory starts with `PATH`. |
 | `--fixture FILE` | Read a normalized snapshot/session array instead of probing providers; all provider operations are fenced. |
+| `--no-host-providers` | Disable every host provider while retaining explicit Docker targets. |
 | `--claude-bin PATH` | Use a particular Claude executable; default `claude`. |
 | `--no-host-claude` | Disable host Claude discovery and control. |
 | `--codex-bin PATH` | Use a particular Codex executable; default `codex`. |
 | `--no-host-codex` | Disable host Codex discovery and supervision. |
+| `--pi-bin PATH` / `--pi-session-dir PATH` | Select Pi and optionally override its documented history store. |
+| `--no-host-pi` | Disable host Pi history and managed supervision. |
+| `--opencode-bin PATH` / `--no-host-opencode` | Select or disable host OpenCode discovery. |
+| `--copilot-bin PATH` / `--no-host-copilot` | Select or disable GitHub Copilot CLI discovery. |
+| `--cursor-bin PATH` / `--no-host-cursor` | Select or disable host Cursor support. |
+| `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
 | `--docker-container NAME_OR_ID` | Observe both providers in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--launch-provider claude\|codex` | Provider for new-session prompts; default Claude. |
+| `--launch-provider claude\|codex\|pi` | Provider for new-session prompts; default Claude. Pi managed launch currently requires Linux. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 1500 ms. |
 
@@ -139,6 +146,11 @@ summary and right-aligned metadata:
 | `C@D` | Claude in an explicitly enrolled Docker container |
 | `X@H` | Codex on the host |
 | `X@D` | Codex in an explicitly enrolled Docker container |
+| `P@H` | Pi on the host |
+| `O@H` | OpenCode on the host |
+| `R@H` | Cursor on the host |
+| `G@H` | GitHub Copilot CLI on the host |
+| `A@H` | Antigravity CLI on the host |
 | `?@H` / `?@D` | Unknown/future provider on host / in Docker |
 
 The `X` distinguishes Codex from Claude while keeping every marker three
@@ -151,7 +163,7 @@ or container runtime label.
 | Group heading | `enter` | Collapse or expand the group. |
 | Session row | `enter` | Suspend the dashboard and open the provider-native interface. |
 | Session row | `space` | Inspect transcript/request details when capability is advertised. |
-| Inspect peek | type, `enter` | Send an owned Codex reply/steer or the current structured answer. |
+| Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
 | Inspect peek | `y` / `n` | Allow once / deny only when the exact capability is advertised. |
 | Inspect peek | `enter` with no text | Open the provider-native interface. |
 | Session list | `ctrl+s` | Toggle status and working-directory grouping. |
@@ -183,6 +195,7 @@ when `XDG_STATE_HOME` is unset, the current implementation stores:
 | --- | --- |
 | `ownership.json` | Exact host Claude session prefixes launched here. |
 | `codex-supervisor/` | Detached App Server record, socket, locks, log, and owned Codex thread/turn IDs. |
+| `pi/` | Detached Linux RPC supervisor record, socket, locks/logs, and OAV-owned Pi session history. |
 | `managed-docker/owners.json` | Exact external proof for managed-container lifecycle. |
 
 These files contain authority metadata and should not be shared between users.

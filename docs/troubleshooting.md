@@ -9,7 +9,7 @@ coding-agents doctor
 coding-agents --json --all
 ```
 
-Add `--no-host-claude` or `--no-host-codex` to isolate one host adapter, and
+Add the provider's `--no-host-*` flag to isolate one host adapter, and
 add an exact `--docker-container NAME_OR_ID` only when you intend to inspect
 that running container. Do not paste unreviewed provider transcripts, state
 files, environment output, or Docker inspection output into an issue; they can
@@ -24,17 +24,19 @@ relevant SSH/container option.
 
 ## One provider is unavailable
 
-`doctor` reports missing host Claude/Codex executables as warnings because a
+`doctor` reports missing host provider executables as warnings because a
 single-provider or Docker-only setup is valid. Confirm that the same shell can
-run `claude --version`, `codex --version`, or `docker version` as applicable.
-If the executable has a nonstandard location, pass `--claude-bin`,
-`--codex-bin`, or `--docker-bin` explicitly.
+run the provider's `--version` command or `docker version` as applicable. If
+the executable has a nonstandard location, pass its `--*-bin` option
+explicitly.
 
 Use a temporary adapter exclusion to regain the dashboard while investigating:
 
 ```console
 coding-agents --no-host-codex
 coding-agents --no-host-claude
+coding-agents --no-host-pi
+coding-agents --no-host-opencode
 ```
 
 An explicitly selected Docker container is stricter: it must exist and already
@@ -85,6 +87,32 @@ If normal restart does not recover, close all Open Agent View dashboards,
 preserve a private copy of the entire `codex-supervisor` directory for
 diagnosis, and report the redacted error plus binary/provider versions. Manual
 process cleanup is intentionally outside the supported pre-alpha workflow.
+
+## Pi supervisor cannot reconnect
+
+Managed Linux Pi state is under:
+
+```text
+$XDG_STATE_HOME/open-agent-view/pi/
+```
+
+or `~/.local/state/open-agent-view/pi/`. Inspect `supervisor.log` for daemon
+startup/transport errors and `pi-rpc.log` for provider stderr. These files may
+contain private paths or provider messages; redact them before sharing.
+
+The saved daemon PID is not authority by itself. Open Agent View requires the
+exact Linux start token, command line, private socket location, owner, and file
+modes. A dead daemon is ignored and a later managed launch can create a new
+one. A verified live daemon whose socket is unavailable is reported and not
+replaced. Never kill the numeric PID or unlink the socket solely from the JSON
+record.
+
+Only sessions launched through this supervisor can be controlled. A Pi JSONL
+session found in the ordinary history store is intentionally inspect/open-only.
+A live managed Pi session also refuses native open to prevent two writers; use
+peek/reply controls, interrupt it, or wait for it to finish. On macOS, all Pi
+sessions use the history/native-open path because durable supervision currently
+depends on Linux `/proc` identity.
 
 ## Runtime state permissions are refused
 

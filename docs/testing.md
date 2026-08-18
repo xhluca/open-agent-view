@@ -23,6 +23,12 @@ checks; the guide also contains release gates that are not yet complete.
   exact active-turn steer, idle reply, archive, and delete. It also asserts
   mode `0700` for the state directory and `0600` for the ownership record. The
   mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
+- A disposable mock Pi RPC executable covers managed launch, live discovery,
+  transcript inspection, active steer, confirmation, structured text input,
+  interrupt, exact unowned-ID refusal, and shutdown. A second dashboard client
+  reconnects through the same verified daemon while its Pi child remains live.
+  Panic-safe cleanup stops the exact test daemon; separate tests reject
+  symlinked state and permissive/replaced authority records.
 - Disposable provider fixtures cover the additional host adapters without
   touching user credentials or session stores. Cursor tests own a temporary
   executable, workspace, registry, logs, and child process while exercising
@@ -106,6 +112,12 @@ checks; the guide also contains release gates that are not yet complete.
   documented authentication error for session creation. No model task was
   dispatched; provider-specific details and exact commands are recorded under
   `docs/exploration/`.
+- Pi 0.84.2 was exercised with temporary configuration/session directories,
+  offline startup, and no credentials. Strict RPC JSONL, canonical session
+  identity, state/name commands, a built-in bash-tool event path that did not
+  invoke a model, clean EOF, and exact native TUI resume/terminal restoration
+  were verified. The managed model-prompt lifecycle uses the isolated mock
+  above; no authenticated model call is claimed.
 - The official Cursor, Copilot, and Antigravity install/version/help paths were
   then repeated in three new `--rm` containers using pinned Debian/Node image
   digests, tmpfs homes, and no host mounts. Cursor's current installer returned
@@ -154,6 +166,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Every current TUI action route and all normalized states in a real PTY | Five-test `real_tty` harness using the canonical fixture | Verified |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
+| Pi durable RPC launch/reconnect/reply/request/interrupt ownership | Disposable mock RPC plus isolated real non-model protocol/TUI probes | Verified on Linux |
 | Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
 | Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
 | Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
@@ -218,6 +231,10 @@ examples.
   PID, and stale sockets are not unlinked automatically.
 - Managed Codex launches use `on-request` approvals and `workspace-write`, with
   no danger-full-access or approval-bypass fallback.
+- Managed Pi reconnect requires an exact Linux PID start token and command
+  line, with private state/socket/record modes and symlink refusal. Only the
+  daemon's in-memory canonical session IDs receive mutations; external JSONL
+  history remains inspect/open-only.
 - Managed-Docker tests use an injected command runner: no test contacts the
   Docker daemon. They cover locked/atomic private ownership persistence,
   random instance IDs, stopped-only creation, exact start/remove argv,
@@ -251,3 +268,5 @@ examples.
   does not survive a dashboard restart. Antigravity exposes only its documented
   last-conversation-per-workspace cache; complete history and inline controls
   are not claimed.
+- Durable Pi supervision currently requires Linux `/proc` identity. macOS
+  retains documented history discovery, inspection, and native resume.

@@ -28,6 +28,9 @@ authenticated fresh-container end-to-end run.
 - [x] Stop only exact Claude sessions launched by `coding-agents`.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
   reconnectable App Server supervisor.
+- [x] Own Linux Pi launch, reconnect, reply/steer, exact dialog response, and
+  interrupt through a durable stdio-RPC supervisor; retain history-only support
+  elsewhere.
 - [x] Reply/steer, archive, and delete owned Codex threads with explicit
   capability checks and confirmations.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.
@@ -62,6 +65,9 @@ authenticated fresh-container end-to-end run.
   isolated real PTYs, including wide, ordinary, narrow, and too-small layouts.
 - [x] Recheck the populated Open Agent View and empty Claude reference TUIs in
   separate fresh Docker PTYs at wide, narrow, and tiny sizes.
+- [x] Probe Pi's real RPC and native-TUI contracts in disposable credential-free
+  directories, and cover the managed model lifecycle with an isolated fake RPC
+  provider.
 - [ ] Complete an explicitly authorized authenticated Claude and Codex
   lifecycle in dedicated fresh environments.
 - [ ] Validate and record SSH, additional terminal/theme combinations, and any

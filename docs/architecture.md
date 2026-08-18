@@ -11,7 +11,8 @@ application state + commands
   |
 normalized session model
   |
-provider adapters (Claude, Codex, Docker, fixtures)
+provider adapters (Claude, Codex, Pi, OpenCode, Cursor, Copilot,
+                   Antigravity, Docker, fixtures)
 ```
 
 The TUI does not interpret provider-specific JSON or invoke CLIs directly.
@@ -66,6 +67,16 @@ Server-initiated requests are reduced into a volatile per-connection queue;
 they are never reconstructed from transcript files. A separate process-held
 controller lease ensures that only one dashboard instance advertises response
 authority for a supervisor.
+
+Managed Pi uses a separate detached supervisor because Pi's public RPC
+transport is stdio-only. The supervisor retains the child pipes, correlates
+JSONL responses, reduces lifecycle/dialog events, and exposes a private Unix
+socket to later dashboard clients. Exact Linux process identity protects the
+supervisor endpoint; canonical Pi session UUIDs protect every child operation.
+The same adapter also reads Pi's documented JSONL store. Those external history
+records remain inspect/open-only and are never promoted based on timestamps or
+PIDs.
+
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.
 
