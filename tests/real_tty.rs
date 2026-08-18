@@ -203,12 +203,11 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         screen.contains("reply refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
     });
-    // The first Escape leaves the refused reply composer; the second closes
-    // Peek. The following wait and Cursor interaction prove neither quits.
-    app.send(ESC);
+    // A refused reply clears the draft but remains in Peek. One Escape closes
+    // Peek; sending another before observing the list can quit the dashboard.
     app.send(ESC);
     app.wait_for("managed Pi peek close", |screen| {
-        !screen.contains("pi-refactor · Pi")
+        !screen.contains("pi-refactor · Pi") && screen.contains("pi-refactor")
     });
 
     app.send(b"/");
@@ -247,12 +246,12 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         screen.contains("approval response refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
     });
-    // Approval refusal remains in Peek: dismiss the refusal layer, then Peek.
-    // The directory-view assertion below proves the dashboard remains alive.
-    app.send(ESC);
+    // Approval refusal also remains in Peek, so wait for one Escape to expose
+    // the list before sending any subsequent global shortcut.
     app.send(ESC);
     app.wait_for("managed Copilot peek close", |screen| {
         !screen.contains("copilot-acp-session · GitHub Copilot")
+            && screen.contains("copilot-acp-session")
     });
 
     app.send(CTRL_S);
