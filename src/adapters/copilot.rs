@@ -10,9 +10,10 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use super::copilot_managed::CopilotSupervisor;
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, ProviderController};
-use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionState};
+use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: u64 = 8 * 1024 * 1024;
@@ -575,12 +576,21 @@ impl CopilotInvocation {
 /// it is never inferred merely because ACP session/list returned a record.
 pub struct CopilotController {
     invocation: CopilotInvocation,
+    supervisor: Option<Arc<CopilotSupervisor>>,
 }
 
 impl CopilotController {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
             invocation: CopilotInvocation::host(executable),
+            supervisor: None,
+        }
+    }
+
+    pub fn managed(supervisor: Arc<CopilotSupervisor>) -> Self {
+        Self {
+            invocation: CopilotInvocation::host(supervisor.executable()),
+            supervisor: Some(supervisor),
         }
     }
 }
@@ -590,9 +600,69 @@ impl ProviderController for CopilotController {
         Provider::GitHubCopilot
     }
 
+    fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        if let Some(supervisor) = &self.supervisor {
+            supervisor.enrich(snapshot);
+        }
+    }
+
+    fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::GitHubCopilot {
+            bail!("the GitHub Copilot controller cannot launch another provider");
+        }
+        let session_id = self
+            .managed_supervisor()?
+            .launch(&request.prompt, &request.cwd)?;
+        Ok(ControlOutcome {
+            message: format!("launched managed GitHub Copilot session {session_id}"),
+            provider_session_hint: Some(session_id),
+        })
+    }
+
+    fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.managed_supervisor()?.interrupt(session)?;
+        Ok(ControlOutcome {
+            message: format!("cancelled {}", session.name),
+            provider_session_hint: None,
+        })
+    }
+
+    fn inspect(&self, session: &AgentSession) -> Result<String> {
+        self.managed_supervisor()?.inspect(session)
+    }
+
+    fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        self.managed_supervisor()?.reply(session, prompt)?;
+        Ok(ControlOutcome {
+            message: format!("sent a prompt to {}", session.name),
+            provider_session_hint: None,
+        })
+    }
+
+    fn resolve_approval(&self, session: &AgentSession, accept: bool) -> Result<ControlOutcome> {
+        self.managed_supervisor()?
+            .resolve_approval(session, accept)?;
+        Ok(ControlOutcome {
+            message: format!(
+                "{} the pending request for {}",
+                if accept { "allowed once" } else { "rejected" },
+                session.name
+            ),
+            provider_session_hint: None,
+        })
+    }
+
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.provider != Provider::GitHubCopilot || session.runtime != Runtime::Host {
             bail!("the GitHub Copilot host controller cannot open this session");
+        }
+        if self
+            .supervisor
+            .as_ref()
+            .map(|supervisor| supervisor.owns(session))
+            .unwrap_or(false)
+        {
+            bail!("a connection-owned Copilot session cannot be opened concurrently");
         }
         let spec = self
             .invocation
@@ -611,6 +681,14 @@ impl ProviderController for CopilotController {
             message: format!("returned from {}", session.name),
             provider_session_hint: None,
         })
+    }
+}
+
+impl CopilotController {
+    fn managed_supervisor(&self) -> Result<&CopilotSupervisor> {
+        self.supervisor
+            .as_deref()
+            .context("managed GitHub Copilot ACP control is not configured")
     }
 }
 

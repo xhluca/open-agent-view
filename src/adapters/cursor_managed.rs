@@ -12,9 +12,13 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::cursor::{parse_cursor_chat_id, parse_cursor_stream_event, CursorInvocation, CursorStreamEvent};
+use super::cursor::{
+    parse_cursor_chat_id, parse_cursor_stream_event, CursorInvocation, CursorStreamEvent,
+};
 use super::{DiscoveryRequest, SessionSource};
-use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
+use crate::domain::{
+    AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
+};
 use crate::process::{CommandRunner, ProcessRunner};
 
 const REGISTRY_VERSION: u32 = 1;
@@ -105,6 +109,7 @@ impl CursorSupervisor {
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
+        require_process_identity_support()?;
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the Cursor launch prompt cannot be empty");
@@ -251,9 +256,8 @@ impl CursorSupervisor {
     fn spawn_turn(&self, session_id: &str, cwd: &Path, prompt: &str, new: bool) -> Result<()> {
         require_safe_session_id(session_id)?;
         require_absolute_workspace(cwd)?;
-        let existing = self.with_locked_registry(|registry| {
-            Ok(registry.sessions.get(session_id).cloned())
-        })?;
+        let existing =
+            self.with_locked_registry(|registry| Ok(registry.sessions.get(session_id).cloned()))?;
         if let Some(record) = existing.as_ref() {
             if verify_process(&record.process)? {
                 bail!("Cursor session {session_id} already has an active owned process");
@@ -290,7 +294,9 @@ impl CursorSupervisor {
                 Ok(())
             });
         }
-        let mut child = command.spawn().context("failed to launch managed Cursor turn")?;
+        let mut child = command
+            .spawn()
+            .context("failed to launch managed Cursor turn")?;
         let process = match wait_for_identity(child.id(), IDENTITY_TIMEOUT) {
             Ok(identity) => identity,
             Err(error) => {
@@ -357,7 +363,10 @@ impl CursorSupervisor {
         Ok(())
     }
 
-    fn with_locked_registry<T>(&self, operation: impl FnOnce(&mut CursorRegistry) -> Result<T>) -> Result<T> {
+    fn with_locked_registry<T>(
+        &self,
+        operation: impl FnOnce(&mut CursorRegistry) -> Result<T>,
+    ) -> Result<T> {
         let lock = private_lock_file(&self.lock_path)?;
         flock_exclusive(&lock)?;
         let mut registry = read_registry(&self.registry_path)?;
@@ -514,7 +523,10 @@ fn read_registry(path: &Path) -> Result<CursorRegistry> {
     let registry: CursorRegistry = serde_json::from_str(&input)
         .with_context(|| format!("invalid Cursor ownership registry {}", path.display()))?;
     if registry.version != REGISTRY_VERSION {
-        bail!("unsupported Cursor ownership registry version {}", registry.version);
+        bail!(
+            "unsupported Cursor ownership registry version {}",
+            registry.version
+        );
     }
     for (id, record) in &registry.sessions {
         require_safe_session_id(id)?;
@@ -522,8 +534,12 @@ fn read_registry(path: &Path) -> Result<CursorRegistry> {
             bail!("Cursor registry key does not match its session ID");
         }
         require_absolute_workspace(&record.cwd)?;
-        if !record.stdout_path.starts_with(path.parent().unwrap_or(Path::new("/invalid")))
-            || !record.stderr_path.starts_with(path.parent().unwrap_or(Path::new("/invalid")))
+        if !record
+            .stdout_path
+            .starts_with(path.parent().unwrap_or(Path::new("/invalid")))
+            || !record
+                .stderr_path
+                .starts_with(path.parent().unwrap_or(Path::new("/invalid")))
         {
             bail!("Cursor registry log path escaped its private state directory");
         }
@@ -558,7 +574,10 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
 fn ensure_private_file(path: &Path) -> Result<()> {
     let permissions = fs::metadata(path)?.permissions().mode() & 0o777;
     if permissions & 0o077 != 0 {
-        bail!("private Cursor state file {} is accessible by other users", path.display());
+        bail!(
+            "private Cursor state file {} is accessible by other users",
+            path.display()
+        );
     }
     Ok(())
 }
@@ -712,8 +731,20 @@ fn require_absolute_workspace(cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn require_process_identity_support() -> Result<()> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn require_process_identity_support() -> Result<()> {
+    bail!("safe managed Cursor processes currently require Linux process identity support")
+}
+
 fn file_updated_at(path: &Path) -> Option<SystemTime> {
-    fs::metadata(path).and_then(|metadata| metadata.modified()).ok()
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
 }
 
 fn millis_to_time(milliseconds: u64) -> Option<SystemTime> {
@@ -729,6 +760,7 @@ fn now_millis() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
 
     use tempfile::tempdir;
@@ -756,6 +788,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn managed_launch_discovery_inspection_interrupt_and_reply_are_isolated() {
         let directory = tempdir().unwrap();
         let executable = directory.path().join("cursor-agent-mock");
@@ -794,7 +827,9 @@ while :; do sleep 1; done
         )
         .unwrap();
 
-        let session_id = supervisor.launch("test managed Cursor", &workspace).unwrap();
+        let session_id = supervisor
+            .launch("test managed Cursor", &workspace)
+            .unwrap();
         assert_eq!(session_id, "mock-session-1");
         let request = DiscoveryRequest {
             include_completed: true,
@@ -833,10 +868,11 @@ while :; do sleep 1; done
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn tampered_process_identity_is_never_signalled() {
         let directory = tempdir().unwrap();
-        let _supervisor = CursorSupervisor::with_state_dir("unused", directory.path().join("state"))
-            .unwrap();
+        let _supervisor =
+            CursorSupervisor::with_state_dir("unused", directory.path().join("state")).unwrap();
         let mut child = Command::new("sh")
             .args(["-c", "trap 'exit 0' INT; while :; do sleep 1; done"])
             .spawn()
@@ -849,6 +885,7 @@ while :; do sleep 1; done
         let _ = child.wait();
     }
 
+    #[cfg(target_os = "linux")]
     fn wait_for_session(
         supervisor: &CursorSupervisor,
         request: &DiscoveryRequest,
@@ -860,7 +897,10 @@ while :; do sleep 1; done
             if session.state == expected {
                 return session;
             }
-            assert!(Instant::now() < deadline, "session never reached {expected:?}");
+            assert!(
+                Instant::now() < deadline,
+                "session never reached {expected:?}"
+            );
             thread::sleep(Duration::from_millis(25));
         }
     }

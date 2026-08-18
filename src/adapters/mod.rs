@@ -2,6 +2,7 @@ mod antigravity;
 mod claude;
 mod codex;
 mod copilot;
+mod copilot_managed;
 mod cursor;
 mod cursor_managed;
 mod docker;
@@ -28,6 +29,7 @@ pub use copilot::{
     CopilotInvocation, CopilotPermissionOption, CopilotPermissionRequest, CopilotSessionInfo,
     CopilotSessionPage, CopilotSource,
 };
+pub use copilot_managed::CopilotSupervisor;
 pub use cursor::{
     parse_cursor_chat_id, parse_cursor_stream_event, CursorCommandSpec, CursorController,
     CursorInvocation, CursorStreamEvent,
