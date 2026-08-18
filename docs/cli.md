@@ -24,13 +24,13 @@ coding-agents [OPTIONS]
 | `--no-host-codex` | Disable host Codex discovery and supervision. |
 | `--pi-bin PATH` / `--pi-session-dir PATH` | Select Pi and optionally override its documented history store. |
 | `--no-host-pi` | Disable host Pi history and managed supervision. |
-| `--opencode-bin PATH` / `--no-host-opencode` | Select or disable host OpenCode discovery. |
+| `--opencode-bin PATH` / `--no-host-opencode` | Select or disable OpenCode history plus durable managed supervision on Linux. |
 | `--copilot-bin PATH` / `--no-host-copilot` | Select or disable persisted Copilot discovery and process-local managed ACP control. |
 | `--cursor-bin PATH` / `--no-host-cursor` | Select or disable OAV-owned managed Cursor support on Linux. Cursor has no machine-readable global list. |
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--launch-provider claude\|codex\|pi\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
+| `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 1500 ms. |
 
@@ -55,11 +55,11 @@ coding-agents doctor --docker-container exact-name-or-id
 ```
 
 The composer uses exactly one `--launch-provider`. Claude and Codex follow
-their documented ownership models; Pi and Cursor use durable Linux supervisors.
-Copilot retains one process-local ACP control connection for sessions launched
-by the current dashboard. A later dashboard may still list a persisted Copilot
-session, but that row is observe/native-open rather than silently inheriting
-control.
+their documented ownership models; Pi, OpenCode, and Cursor use durable Linux
+supervisors. Copilot retains one process-local ACP control connection for
+sessions launched by the current dashboard. A later dashboard may still list a
+persisted Copilot session, but that row is observe/native-open rather than
+silently inheriting control.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -201,6 +201,11 @@ and only the exact `allow_once`/`reject_once` choices offered by a pending ACP
 permission request. Persisted Copilot rows from `session/list` do not inherit
 those controls.
 
+Managed OpenCode rows on Linux expose Inspect and Reply; while the owned server
+reports active work they also expose Interrupt. They refuse native open through
+a second server and do not yet expose provider permission or structured-input
+requests. External OpenCode history remains inspect/native-open only.
+
 ## Runtime state paths
 
 Under `$XDG_STATE_HOME/open-agent-view/`, or `~/.local/state/open-agent-view/`
@@ -211,6 +216,7 @@ when `XDG_STATE_HOME` is unset, the current implementation stores:
 | `ownership.json` | Exact host Claude session prefixes launched here. |
 | `codex-supervisor/` | Detached App Server record, socket, locks, log, and owned Codex thread/turn IDs. |
 | `pi/` | Detached Linux RPC supervisor record, socket, locks/logs, and OAV-owned Pi session history. |
+| `opencode/` | Private authenticated-loopback server record, lock, log, and exact OAV-owned OpenCode session IDs. |
 | `cursor/` | Linux ownership registry, process identities, locks, and bounded logs for OAV-owned Cursor runs. |
 | `managed-docker/owners.json` | Exact external proof for managed-container lifecycle. |
 

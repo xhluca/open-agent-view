@@ -79,7 +79,7 @@ coding-agents --docker-container my-agent-container
 coding-agents doctor
 
 # Choose a managed task backend (Claude is the default).
-coding-agents --launch-provider copilot
+coding-agents --launch-provider opencode
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
@@ -97,15 +97,16 @@ every CLI.
 | Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch and interrupt exact OAV-owned host sessions |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; owned launch, reply/steer, request handling, and interrupt |
-| OpenCode | Persisted host history through the official CLI | Read-only export/inspect and native resume |
+| OpenCode | Persisted host history, plus durable OAV-managed authenticated loopback sessions on Linux | External history inspect/native resume; owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
 | GitHub Copilot CLI | Persisted host sessions from ACP `session/list`, plus process-local OAV-owned ACP sessions | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
 | Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |
 
-Claude and Codex have managed paths, as do durable Pi and OAV-owned Cursor
-sessions on Linux. Copilot control lasts for the dashboard process's retained
-ACP connection. OpenCode, Antigravity, and unrelated provider records remain
-read-only/native-open. See the [provider exploration notes](docs/exploration/README.md)
+Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
+OAV-owned Cursor control. Copilot control lasts for the dashboard process's
+retained ACP connection. Antigravity and unrelated provider records remain
+read-only/native-open. On non-Linux platforms, Pi and OpenCode keep their
+history/native-open paths. See the [provider exploration notes](docs/exploration/README.md)
 for tested versions, isolation setup, protocol observations, and boundaries.
 
 ## Safety model

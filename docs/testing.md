@@ -29,6 +29,13 @@ checks; the guide also contains release gates that are not yet complete.
   reconnects through the same verified daemon while its Pi child remains live.
   Panic-safe cleanup stops the exact test daemon; separate tests reject
   symlinked state and permissive/replaced authority records.
+- A disposable authenticated OpenCode loopback fixture covers durable managed
+  launch, dashboard reconnect, discovery, transcript inspection, active/idle
+  reply, interrupt, exact unowned-ID refusal, and panic-safe pidfd shutdown. It
+  verifies the private state modes plus exact Linux process and listener
+  identity. A separate credential-empty real OpenCode server probe covers
+  create, accepted async prompt, list, inspect, and exact shutdown without
+  claiming a model-backed turn.
 - Disposable provider fixtures cover the additional host adapters without
   touching user credentials or session stores. Cursor tests own a temporary
   executable, workspace, registry, logs, and child process while exercising
@@ -175,6 +182,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/interrupt ownership | Disposable mock RPC plus isolated real non-model protocol/TUI probes | Verified on Linux |
+| OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt ownership | Disposable managed-server fixture plus isolated real credential-empty server probe | Verified on Linux |
 | Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
 | Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
 | Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
@@ -243,6 +251,10 @@ examples.
   line, with private state/socket/record modes and symlink refusal. Only the
   daemon's in-memory canonical session IDs receive mutations; external JSONL
   history remains inspect/open-only.
+- Managed OpenCode reconnect requires the exact Linux process start token and
+  command line, ownership of the recorded loopback listener, an authenticated
+  health response, and a canonical session ID in the private `0600` record.
+  External CLI history never gains server authority.
 - Managed-Docker tests use an injected command runner: no test contacts the
   Docker daemon. They cover locked/atomic private ownership persistence,
   random instance IDs, stopped-only creation, exact start/remove argv,
@@ -267,6 +279,9 @@ examples.
 - Claude inline reply and rename, for which the explored CLI exposes no safe
   background-agent command. Enter hands the terminal to Claude's native attach
   interface; owned Codex threads support inline idle reply and active steer.
+- Managed OpenCode permission and structured-input requests are not yet exposed
+  inline. Durable supervision requires Linux; other platforms retain external
+  history inspection and native resume.
 - Cursor has no documented global machine-readable inventory. Only sessions
   created through its OAV-owned Linux supervisor are shown and controlled;
   macOS has no managed Cursor discovery/control until an equally race-safe

@@ -26,6 +26,9 @@ and future released versions are intended to follow Semantic Versioning.
   Antigravity CLI, with provider-specific read-only/native-open boundaries.
 - Durable Linux Pi supervision for OAV-owned launch, reconnect, inspect,
   reply/steer, exact dialog response, and interrupt.
+- Durable Linux OpenCode supervision through an authenticated loopback server
+  for OAV-owned launch, reconnect, discovery, inspection, reply, and interrupt;
+  external CLI history remains inspect/native-open only.
 - Managed Linux Cursor launch, rediscovery, bounded inspection, idle reply, and
   verified-process interrupt for OAV-owned runs; external/global listing stays
   unavailable because Cursor exposes only a TTY picker.
@@ -48,6 +51,9 @@ and future released versions are intended to follow Semantic Versioning.
   signals a PID loaded directly from disk.
 - Managed Pi and Cursor control verifies private ownership state and exact
   Linux process identity; unrelated provider records never gain authority.
+- Managed OpenCode control requires its private `0600` record, authenticated
+  health check, and exact Linux process/listener identity before reconnect or
+  mutation; external history IDs never confer authority.
 - Copilot control is restricted to the retained ACP connection and exact
   pending session/request/option IDs; no persisted list result is adopted.
 - Expanded or incompletely rendered provider requests remain native-only; no
@@ -62,9 +68,10 @@ and future released versions are intended to follow Semantic Versioning.
   is published.
 - No authenticated Claude/Codex lifecycle has been recorded inside the fresh
   credential-free Docker TUI probes.
-- Durable Pi and Cursor managed control require Linux. Cursor has no supported
-  external/global list, and Copilot managed authority ends with the dashboard's
-  retained ACP connection.
+- Durable Pi, OpenCode, and Cursor managed control require Linux. External
+  OpenCode history stays inspect/native-open and has no inline approval/input;
+  Cursor has no supported external/global list, and Copilot managed authority
+  ends with the dashboard's retained ACP connection.
 - File-change acceptance, permission grants, MCP form/URL acceptance, secret
   input, Codex supervisor stop/status/log rotation, and managed-container
   session launch/control remain incomplete.

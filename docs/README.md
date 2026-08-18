@@ -33,7 +33,7 @@ are doing; do not infer release readiness from the package version in
 - [`claude agents` behavior](exploration/claude-agents.md)
 - [Codex App Server integration](exploration/codex-integration.md)
 - [Pi persistence and RPC integration](exploration/pi-integration.md)
-- [OpenCode history integration](exploration/opencode-integration.md)
+- [OpenCode history and managed-server integration](exploration/opencode-integration.md)
 - [Cursor managed-run boundary](exploration/cursor-integration.md)
 - [GitHub Copilot ACP integration](exploration/github-copilot-integration.md)
 - [Antigravity workspace-cache integration](exploration/antigravity-integration.md)

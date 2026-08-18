@@ -1,10 +1,10 @@
 # OpenCode provider exploration
 
 Status: history discovery and read-only transcript inspection are implemented.
-The provider layer also implements Linux-only durable owned-server launch,
-reconnect, live discovery, inspection, reply, and interrupt; ordinary history
-remains read-only. CLI construction must select the managed constructors to
-enable that authority.
+On Linux, the CLI wires one shared durable owned-server supervisor into both
+discovery and control for launch, reconnect, live discovery, inspection, reply,
+and interrupt; ordinary history remains read-only/native-open. Other platforms
+keep the history/native-open path.
 
 Explored on 2026-08-18 against:
 

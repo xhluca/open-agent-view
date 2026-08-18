@@ -148,6 +148,39 @@ process's user permissions. Use a separate OS/container boundary when the task
 requires one. Durable Pi control currently requires Linux; macOS keeps
 history inspection and native resume only.
 
+## OpenCode ownership boundary
+
+OpenCode's CLI history and export commands are read-only discovery surfaces.
+On Linux, Open Agent View additionally launches one durable `opencode serve`
+process bound to an ephemeral `127.0.0.1` port with a random Basic-auth secret.
+It stores the server identity and only the canonical session IDs it created in:
+
+```text
+$XDG_STATE_HOME/open-agent-view/opencode/server.json
+```
+
+or `~/.local/state/open-agent-view/opencode/server.json`. The containing
+directory is current-user-owned mode `0700`; the record, lock, and log are
+private regular files, with the authority record mode `0600`. A later dashboard
+reconnects only after matching the Linux process start token and exact command
+line, proving that process owns the recorded loopback listener, and completing
+an authenticated health request. A PID, listener, password, or history ID alone
+never grants authority.
+
+| Operation | OAV-owned managed OpenCode session | External CLI history |
+| --- | --- | --- |
+| Discover | Exact owned IDs plus authenticated server status | Read-only global CLI projection |
+| Inspect | Bounded server message transcript | Bounded `opencode export` transcript |
+| Open | Refused while owned by the managed server | `opencode --session ID` |
+| Launch/reply | Create through the owned server; `prompt_async` for new work | Disabled |
+| Interrupt | Authenticated abort only for an owned working session | Disabled |
+| Permission/input | Not yet exposed by the dashboard | Disabled |
+| Archive/delete | Disabled | Disabled |
+
+The supervisor intentionally does not attach to an arbitrary OpenCode TUI or
+unregistered random server. Durable managed control requires Linux; other
+platforms retain CLI history inspection and native resume.
+
 ## Cursor ownership boundary
 
 Cursor exposes a TTY-only history picker, not a machine-readable global session
@@ -237,6 +270,9 @@ state.
   detection relies on `/proc/<pid>/stat` and `/proc/<pid>/cmdline`.
 - Durable Pi supervision has the same Linux process-identity requirement;
   unrelated Pi sessions remain inspect/open-only on every platform.
+- Managed OpenCode reconnect requires an authenticated loopback server plus
+  exact Linux process/listener identity; external history stays inspect/open-only.
+  Permission and structured-input requests remain provider-native.
 - Managed Cursor sessions require Linux and only OAV-owned runs are listed;
   Cursor's external TTY picker is not scraped.
 - Managed Copilot control is process-local to one retained ACP connection;

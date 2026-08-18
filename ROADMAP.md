@@ -33,6 +33,9 @@ authenticated fresh-container end-to-end run.
 - [x] Own Linux Pi launch, reconnect, reply/steer, exact dialog response, and
   interrupt through a durable stdio-RPC supervisor; retain history-only support
   elsewhere.
+- [x] Own Linux OpenCode launch, reconnect, live discovery, inspection, reply,
+  and interrupt through an authenticated loopback server; keep external history
+  inspect/native-open only.
 - [x] Own Linux Cursor launch, rediscovery, bounded inspection, idle reply, and
   exact verified-process interrupt without scraping its external TTY picker.
 - [x] Own process-local Copilot ACP launch, prompt/reply, inspection, cancel,
@@ -76,6 +79,9 @@ authenticated fresh-container end-to-end run.
 - [x] Probe Pi's real RPC and native-TUI contracts in disposable credential-free
   directories, and cover the managed model lifecycle with an isolated fake RPC
   provider.
+- [x] Probe OpenCode's history and real credential-empty loopback server in
+  disposable directories, and cover managed reconnect/control with an isolated
+  authenticated server fixture.
 - [ ] Complete an explicitly authorized authenticated Claude and Codex
   lifecycle in dedicated fresh environments.
 - [ ] Validate and record SSH, additional terminal/theme combinations, and any

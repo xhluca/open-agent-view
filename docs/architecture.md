@@ -78,6 +78,13 @@ The same adapter also reads Pi's documented JSONL store. Those external history
 records remain inspect/open-only and are never promoted based on timestamps or
 PIDs.
 
+Managed OpenCode on Linux owns one durable authenticated `opencode serve`
+process on an ephemeral loopback port. Its private record contains the random
+Basic-auth secret, exact Linux process/listener identity, and only the canonical
+session IDs created through that server. Later dashboards revalidate all of
+those facts before reconnecting. The ordinary CLI history/export path remains
+inspect/native-open only and is never promoted from a matching ID.
+
 Managed Cursor on Linux creates chats through the documented CLI and runs each
 turn as a detached stream-JSON process. A private registry stores the exact
 process identity and bounded log paths, allowing later dashboards to rediscover

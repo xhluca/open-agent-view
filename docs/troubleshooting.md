@@ -114,6 +114,31 @@ peek/reply controls, interrupt it, or wait for it to finish. On macOS, all Pi
 sessions use the history/native-open path because durable supervision currently
 depends on Linux `/proc` identity.
 
+## OpenCode supervisor cannot reconnect
+
+Managed Linux OpenCode state is under:
+
+```text
+$XDG_STATE_HOME/open-agent-view/opencode/
+```
+
+or `~/.local/state/open-agent-view/opencode/`. `server.json` contains the exact
+process identity, loopback port, authentication secret, and owned session IDs;
+`server.log` can contain private paths or provider messages. Do not share either
+without careful redaction.
+
+Reconnection requires the saved PID's Linux start token and command line, exact
+ownership of the recorded `127.0.0.1` listener, and an authenticated health
+response. Never kill the numeric PID, connect to the recorded port without the
+managed client, or hand-edit an external history ID into `server.json`. Preserve
+the whole private directory when reporting an identity or listener mismatch.
+
+Only sessions created through that authenticated server receive inspect,
+reply, and active-work interrupt controls. Existing CLI history remains
+inspect/native-open only. Managed rows refuse native open through a second
+server, and inline permission or structured-input handling is not implemented.
+On non-Linux platforms OpenCode stays on the history/native-open path.
+
 ## Cursor session is missing or refuses control
 
 Cursor does not expose a machine-readable global session list. On Linux, Open
