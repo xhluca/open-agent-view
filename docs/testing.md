@@ -42,6 +42,16 @@ test targets for lifecycle operations.
 
 ## Runtime checks
 
+- Both interactive dashboards were exercised through real allocated TTYs in
+  separate fresh `--rm --network none` containers from immutable image ID
+  `sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da44669d9392`:
+  `claude agents` 2.1.209 rendered its empty Needs input/Working/Completed
+  dashboard, opened and closed shortcut help with `?`, and restored terminal
+  modes on Escape; the mounted `coding-agents` release rendered its empty
+  dashboard, opened and closed contextual help, switched to directory view with
+  `ctrl+s`, and restored the alternate screen on Escape. The Open Agent View
+  probe additionally ran unprivileged with a read-only root, dropped
+  capabilities, `no-new-privileges`, a PID limit, and isolated tmpfs home/state.
 - Host Claude discovery was compared with `claude agents --json --all`.
 - The TUI was exercised in a 120-by-30 pseudo-terminal, including navigation,
   grouping, help, and clean shutdown.
@@ -62,6 +72,14 @@ test targets for lifecycle operations.
 - Claude and Codex discovery were exercised in disposable,
   network-disabled containers selected explicitly by immutable Docker ID.
   Each probe container was removed afterward.
+
+These fresh-container TTY checks validate empty-state rendering and basic
+interaction, not an authenticated provider lifecycle. The containers had no
+credentials and no network, so no real Claude or Codex task was dispatched
+inside them. Populated session parsing, request replay, lifecycle authority,
+approval/input handling, and destructive-action gates are covered by the
+deterministic fixtures and disposable mock App Server tests above. A full live
+task inside a fresh container remains a separate opt-in credentialed test.
 
 ## Safety assertions
 
