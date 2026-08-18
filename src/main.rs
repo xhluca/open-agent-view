@@ -9,10 +9,12 @@ use clap::{Parser, Subcommand, ValueEnum};
 use open_agent_view::adapters::{
     default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
     AntigravityController, AntigravitySource, ClaudeSource, CodexSource, CopilotController,
-    CopilotSource, CursorController, DiscoveryEngine, DiscoveryRequest, DockerTarget,
-    FixtureSource, ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
-    OpenCodeController, OpenCodeSource, PiController, PiSource,
+    CopilotSource, CopilotSupervisor, CursorController, DiscoveryEngine, DiscoveryRequest,
+    DockerTarget, FixtureSource, ManagedDockerCreateSpec, ManagedDockerService,
+    ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController, PiSource,
 };
+#[cfg(target_os = "linux")]
+use open_agent_view::adapters::{CursorSource, CursorSupervisor};
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
@@ -26,6 +28,8 @@ enum LaunchProvider {
     Claude,
     Codex,
     Pi,
+    Cursor,
+    Copilot,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -267,6 +271,8 @@ fn main() -> Result<()> {
         LaunchProvider::Claude => Provider::Claude,
         LaunchProvider::Codex => Provider::Codex,
         LaunchProvider::Pi => Provider::Pi,
+        LaunchProvider::Cursor => Provider::Cursor,
+        LaunchProvider::Copilot => Provider::GitHubCopilot,
     };
     let pi_session_dir = if !pi_enabled {
         None
@@ -291,6 +297,12 @@ fn main() -> Result<()> {
         .as_ref()
         .map(|_| PiSupervisor::host(cli.pi_bin.clone()).map(Arc::new))
         .transpose()?;
+    let copilot_supervisor =
+        copilot_enabled.then(|| Arc::new(CopilotSupervisor::host(cli.copilot_bin.clone())));
+    #[cfg(target_os = "linux")]
+    let cursor_supervisor = cursor_enabled
+        .then(|| CursorSupervisor::host(cli.cursor_bin.clone()).map(Arc::new))
+        .transpose()?;
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
             #[cfg(target_os = "linux")]
@@ -312,12 +324,24 @@ fn main() -> Result<()> {
             )))?;
         }
         if copilot_enabled {
-            control
-                .register_controller(Arc::new(CopilotController::host(cli.copilot_bin.clone())))?;
+            control.register_controller(Arc::new(CopilotController::managed(
+                copilot_supervisor
+                    .as_ref()
+                    .expect("Copilot supervisor exists when Copilot is enabled")
+                    .clone(),
+            )))?;
         }
         if cursor_enabled {
-            control
-                .register_controller(Arc::new(CursorController::host(cli.cursor_bin.clone())))?;
+            #[cfg(target_os = "linux")]
+            let controller = CursorController::managed(
+                cursor_supervisor
+                    .as_ref()
+                    .expect("Cursor supervisor exists when Cursor is enabled")
+                    .clone(),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let controller = CursorController::host(cli.cursor_bin.clone());
+            control.register_controller(Arc::new(controller))?;
         }
         if antigravity_open_enabled {
             control.register_controller(Arc::new(AntigravityController::host(
@@ -353,6 +377,10 @@ fn main() -> Result<()> {
         }
         if copilot_enabled {
             engine.add_source(CopilotSource::host(cli.copilot_bin));
+        }
+        #[cfg(target_os = "linux")]
+        if let Some(supervisor) = cursor_supervisor {
+            engine.add_source(CursorSource::managed(supervisor));
         }
         if antigravity_enabled {
             engine.add_source(AntigravitySource::default_host()?);
@@ -778,10 +806,18 @@ mod tests {
     }
 
     #[test]
-    fn pi_is_available_as_a_managed_launch_provider() {
-        let cli =
-            Cli::try_parse_from(["coding-agents", "--json", "--launch-provider", "pi"]).unwrap();
-        assert_eq!(cli.launch_provider, LaunchProvider::Pi);
+    fn every_managed_provider_is_available_to_the_composer() {
+        for (value, expected) in [
+            ("claude", LaunchProvider::Claude),
+            ("codex", LaunchProvider::Codex),
+            ("pi", LaunchProvider::Pi),
+            ("cursor", LaunchProvider::Cursor),
+            ("copilot", LaunchProvider::Copilot),
+        ] {
+            let cli = Cli::try_parse_from(["coding-agents", "--json", "--launch-provider", value])
+                .unwrap();
+            assert_eq!(cli.launch_provider, expected);
+        }
     }
 
     #[test]
