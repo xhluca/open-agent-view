@@ -30,6 +30,10 @@ struct PtyApp {
 
 impl PtyApp {
     fn spawn(columns: u16, rows: u16) -> Self {
+        Self::spawn_fixture(columns, rows, "populated-sessions.json")
+    }
+
+    fn spawn_fixture(columns: u16, rows: u16, fixture_name: &str) -> Self {
         let (master, slave) = open_pty(columns, rows).expect("create PTY");
         let master = unsafe { File::from_raw_fd(master) };
         set_nonblocking(&master).expect("make PTY master nonblocking");
@@ -38,8 +42,9 @@ impl PtyApp {
         let stdout = duplicate_file(slave).expect("duplicate slave for stdout");
         let stderr = unsafe { File::from_raw_fd(slave) };
         let home = tempfile::tempdir().expect("create isolated home");
-        let fixture =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/populated-sessions.json");
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(fixture_name);
         let mut command = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
         command
             .args([
@@ -47,6 +52,7 @@ impl PtyApp {
                 fixture.to_str().expect("UTF-8 fixture path"),
                 "--no-host-claude",
                 "--no-host-codex",
+                "--include-interactive",
                 "--refresh-ms",
                 "60000",
             ])
@@ -163,6 +169,39 @@ impl Drop for PtyApp {
             let _ = self.child.wait();
         }
     }
+}
+
+#[test]
+fn all_supported_providers_coexist_in_one_real_terminal() {
+    let mut app = PtyApp::spawn_fixture(150, 36, "all-providers-sessions.json");
+    let startup = app.wait_for("seven-provider dashboard", |screen| {
+        screen.contains(
+            "Antigravity + Claude + Codex + Cursor + GitHub Copilot + OpenCode + Pi",
+        ) && screen.contains("pi-refactor")
+            && screen.contains("opencode-api")
+            && screen.contains("cursor-owned-chat")
+            && screen.contains("copilot-acp-session")
+            && screen.contains("antigravity-last-conversa")
+    });
+    assert_lines_fit(&startup, 150);
+    for marker in ["C@", "X@", "P@H", "O@H", "R@H", "G@H", "A@H"] {
+        assert!(startup.contains(marker), "missing provider marker {marker}");
+    }
+
+    app.send(b"/");
+    app.send(b"copilot");
+    app.send(ENTER);
+    let filtered = app.wait_for("Copilot mixed-provider filter", |screen| {
+        screen.contains("copilot-acp-session") && !screen.contains("pi-refactor")
+    });
+    assert_lines_fit(&filtered, 150);
+
+    app.send(CTRL_S);
+    let directory = app.wait_for("Copilot directory view", |screen| {
+        screen.contains("directory view") && screen.contains("/workspace/copilot-project")
+    });
+    assert_lines_fit(&directory, 150);
+    app.exit_cleanly();
 }
 
 #[test]

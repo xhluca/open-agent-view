@@ -113,3 +113,44 @@ fn pi_opencode_claude_and_codex_coexist_without_collisions() {
     assert_eq!(ids.len(), snapshot.sessions.len());
 }
 
+#[test]
+fn canonical_visual_fixture_contains_every_supported_provider_without_id_collisions() {
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/all-providers-sessions.json");
+    let mut engine = DiscoveryEngine::new();
+    engine.add_source(FixtureSource::new(fixture));
+
+    let snapshot = engine.discover(&DiscoveryRequest {
+        include_completed: true,
+        include_interactive: true,
+        cwd: None,
+    });
+
+    assert!(snapshot.warnings.is_empty());
+    for provider in [
+        Provider::Claude,
+        Provider::Codex,
+        Provider::Pi,
+        Provider::OpenCode,
+        Provider::Cursor,
+        Provider::GitHubCopilot,
+        Provider::Antigravity,
+    ] {
+        assert!(
+            snapshot
+                .sessions
+                .iter()
+                .any(|session| session.provider == provider),
+            "missing {} fixture session",
+            provider.label()
+        );
+    }
+    let mut ids = snapshot
+        .sessions
+        .iter()
+        .map(|session| session.id.as_str())
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), snapshot.sessions.len());
+}
