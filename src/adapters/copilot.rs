@@ -11,6 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::{DiscoveryRequest, SessionSource};
+use crate::control::{ControlOutcome, ProviderController};
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionState};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
@@ -296,6 +297,64 @@ impl CopilotAcpConnection {
         self.receive_wire(timeout)
     }
 
+    pub fn try_receive(&mut self) -> Result<Option<CopilotAcpMessage>> {
+        if let Some(message) = self.queued.pop_front() {
+            return Ok(Some(message));
+        }
+        let value = match self.messages.try_recv() {
+            Ok(Ok(value)) => value,
+            Ok(Err(error)) => bail!("invalid Copilot ACP output: {error}"),
+            Err(mpsc::TryRecvError::Empty) => return Ok(None),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                let stderr = self.stderr_text();
+                if stderr.is_empty() {
+                    bail!("Copilot ACP process closed its protocol stream")
+                }
+                bail!("Copilot ACP process closed its protocol stream: {stderr}")
+            }
+        };
+        self.classify_message(value).map(Some)
+    }
+
+    pub fn wait_for_response(&mut self, request_id: u64, timeout: Duration) -> Result<Value> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                bail!(
+                    "Copilot ACP request {request_id} timed out after {} ms",
+                    timeout.as_millis()
+                );
+            }
+            match self.receive_wire(remaining)? {
+                CopilotAcpMessage::Response { id, result }
+                    if id.as_u64() == Some(request_id) =>
+                {
+                    return result.map_err(|error| {
+                        anyhow!(
+                            "Copilot ACP request {request_id} failed: {}",
+                            compact_json(&error)
+                        )
+                    });
+                }
+                message => self.queued.push_back(message),
+            }
+        }
+    }
+
+    pub fn reject_unsupported_request(
+        &mut self,
+        request_id: &Value,
+        message: &str,
+    ) -> Result<()> {
+        request_key(request_id)?;
+        self.write_message(&json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {"code": -32601, "message": message}
+        }))
+    }
+
     fn initialize(&mut self) -> Result<()> {
         let response = self.request_sync(
             "initialize",
@@ -466,6 +525,89 @@ impl CopilotAcpConnection {
             .lock()
             .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_owned())
             .unwrap_or_default()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CopilotCommandSpec {
+    pub program: String,
+    pub args: Vec<String>,
+    pub current_dir: PathBuf,
+}
+
+impl CopilotCommandSpec {
+    pub fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        command.args(&self.args).current_dir(&self.current_dir);
+        command
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CopilotInvocation {
+    executable: String,
+}
+
+impl CopilotInvocation {
+    pub fn host(executable: impl Into<String>) -> Self {
+        Self {
+            executable: executable.into(),
+        }
+    }
+
+    pub fn resume(&self, session_id: &str, cwd: &Path) -> Result<CopilotCommandSpec> {
+        require_session_id(session_id)?;
+        require_absolute_cwd(cwd)?;
+        Ok(CopilotCommandSpec {
+            program: self.executable.clone(),
+            args: vec![format!("--resume={session_id}"), "-C".into(), cwd.display().to_string()],
+            current_dir: cwd.to_owned(),
+        })
+    }
+}
+
+/// Native-open controller for external persisted Copilot sessions.
+///
+/// Inline authority is intentionally left to an exact `CopilotAcpConnection`;
+/// it is never inferred merely because ACP session/list returned a record.
+pub struct CopilotController {
+    invocation: CopilotInvocation,
+}
+
+impl CopilotController {
+    pub fn host(executable: impl Into<String>) -> Self {
+        Self {
+            invocation: CopilotInvocation::host(executable),
+        }
+    }
+}
+
+impl ProviderController for CopilotController {
+    fn provider(&self) -> Provider {
+        Provider::GitHubCopilot
+    }
+
+    fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if session.provider != Provider::GitHubCopilot || session.runtime != Runtime::Host {
+            bail!("the GitHub Copilot host controller cannot open this session");
+        }
+        let spec = self
+            .invocation
+            .resume(&session.provider_session_id, &session.cwd)?;
+        let status = spec
+            .command()
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("failed to open GitHub Copilot session")?;
+        if !status.success() {
+            bail!("GitHub Copilot session exited with status {status}");
+        }
+        Ok(ControlOutcome {
+            message: format!("returned from {}", session.name),
+            provider_session_hint: None,
+        })
     }
 }
 
@@ -837,6 +979,30 @@ mod tests {
             parse_rfc3339("1970-01-01T01:00:00+01:00"),
             Some(SystemTime::UNIX_EPOCH)
         );
+    }
+
+    #[test]
+    fn builds_shell_free_native_resume_without_permission_expansion() {
+        let invocation = CopilotInvocation::host("copilot");
+        let spec = invocation
+            .resume("session-id", Path::new("/work/project"))
+            .unwrap();
+        assert_eq!(
+            spec,
+            CopilotCommandSpec {
+                program: "copilot".into(),
+                args: vec![
+                    "--resume=session-id".into(),
+                    "-C".into(),
+                    "/work/project".into()
+                ],
+                current_dir: "/work/project".into(),
+            }
+        );
+        assert!(!spec.args.iter().any(|arg| matches!(
+            arg.as_str(),
+            "--allow-all" | "--allow-all-tools" | "--yolo"
+        )));
     }
 
     #[test]

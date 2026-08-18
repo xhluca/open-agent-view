@@ -1,6 +1,8 @@
+mod antigravity;
 mod claude;
 mod codex;
 mod copilot;
+mod cursor;
 mod docker;
 mod fixture;
 mod managed_docker;
@@ -12,12 +14,21 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 
+pub use antigravity::{
+    default_antigravity_last_conversations_path, parse_antigravity_last_conversations,
+    AntigravityCommandSpec, AntigravityController, AntigravityInvocation, AntigravitySource,
+};
 pub use claude::{parse_claude_sessions, ClaudeSource};
 pub use codex::{parse_codex_thread_list, CodexSource};
 pub use copilot::{
     normalize_copilot_sessions, parse_copilot_session_page, CopilotAcpCapabilities,
-    CopilotAcpConnection, CopilotAcpMessage, CopilotAcpMode, CopilotPermissionOption,
-    CopilotPermissionRequest, CopilotSessionInfo, CopilotSessionPage, CopilotSource,
+    CopilotAcpConnection, CopilotAcpMessage, CopilotAcpMode, CopilotCommandSpec, CopilotController,
+    CopilotInvocation, CopilotPermissionOption, CopilotPermissionRequest, CopilotSessionInfo,
+    CopilotSessionPage, CopilotSource,
+};
+pub use cursor::{
+    parse_cursor_chat_id, parse_cursor_stream_event, CursorCommandSpec, CursorController,
+    CursorInvocation, CursorStreamEvent,
 };
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
