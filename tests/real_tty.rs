@@ -5,6 +5,7 @@ use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,14 @@ const CTRL_J: &[u8] = b"\x0a";
 const CTRL_R: &[u8] = b"\x12";
 const CTRL_S: &[u8] = b"\x13";
 const CTRL_X: &[u8] = b"\x18";
+
+static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+fn serialize_real_tty_test() -> MutexGuard<'static, ()> {
+    PTY_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 struct PtyApp {
     child: Child,
@@ -173,6 +182,7 @@ impl Drop for PtyApp {
 
 #[test]
 fn all_supported_providers_coexist_in_one_real_terminal() {
+    let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_fixture(150, 36, "all-providers-sessions.json");
     let startup = app.wait_for("seven-provider dashboard", |screen| {
         screen.contains("Antigravity + Claude + Codex + Cursor + GitHub Copilot + OpenCode + Pi")
@@ -181,6 +191,9 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
             && screen.contains("cursor-owned-chat")
             && screen.contains("copilot-acp-session")
             && screen.contains("antigravity-last-conversa")
+            && ["C@", "X@", "P@H", "O@H", "R@H", "G@H", "A@H"]
+                .iter()
+                .all(|marker| screen.contains(marker))
     });
     assert_lines_fit(&startup, 150);
     for marker in ["C@", "X@", "P@H", "O@H", "R@H", "G@H", "A@H"] {
@@ -264,12 +277,15 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
 
 #[test]
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
+    let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
         screen.contains("Open Agent View v0.1.2")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
+            && screen.contains("release-reviewer")
+            && screen.contains("Unknown")
             && screen.contains("2 awaiting input · 4 working · 2 completed · status view")
     });
     assert_lines_fit(&startup, 120);
@@ -314,7 +330,9 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.wait_for("filter edit", |screen| screen.contains("❯ filter approval"));
     app.send(ESC);
     let filter_cancelled = app.wait_for("filter cancellation", |screen| {
-        screen.contains("approval-needed") && !screen.contains("❯ filter approval")
+        screen.contains("approval-needed")
+            && !screen.contains("❯ filter approval")
+            && !screen.contains("release-reviewer")
     });
     assert!(!filter_cancelled.contains("release-reviewer"));
 
@@ -375,6 +393,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(ENTER);
     let rename_refused = app.wait_for("unsupported rename submission", |screen| {
         screen.contains("rename is unavailable through the supported provider CLI")
+            && !screen.contains("reviewer-display-name")
     });
     assert!(!rename_refused.contains("reviewer-display-name"));
 
@@ -383,6 +402,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
 
 #[test]
 fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
+    let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(105, 30);
     app.wait_for("startup", |screen| screen.contains("owned-codex-worker"));
 
@@ -392,6 +412,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     let launch_refused = app.wait_for("fixture-fenced launch", |screen| {
         screen.contains("launch failed:")
             && screen.contains("provider actions are disabled while reading a fixture")
+            && !screen.contains("launch-should-stay-in-fixture")
     });
     assert!(!launch_refused.contains("launch-should-stay-in-fixture"));
 
@@ -431,6 +452,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     let reply_refused = app.wait_for("fixture-fenced reply", |screen| {
         screen.contains("reply refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
+            && !screen.contains("reply-should-stay-in-fixture")
     });
     assert!(!reply_refused.contains("reply-should-stay-in-fixture"));
     app.send(ESC);
@@ -478,6 +500,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
 
 #[test]
 fn real_tty_renders_actionable_request_and_confirmation_states() {
+    let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(100, 28);
     app.wait_for("startup", |screen| screen.contains("release-reviewer"));
 
@@ -498,6 +521,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     let approval_refused = app.wait_for("disabled-controller approval refusal", |screen| {
         screen.contains("approval response refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
+            && screen.contains("y allow once · n deny")
     });
     assert!(approval_refused.contains("y allow once · n deny"));
     let output_before_denial = app.raw.len();
@@ -569,6 +593,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     let input_refused = app.wait_for("disabled-controller input refusal", |screen| {
         screen.contains("input response refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
+            && !screen.contains("production-secret-value")
     });
     assert!(!input_refused.contains("production-secret-value"));
     app.send(ESC);
@@ -581,12 +606,14 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 
 #[test]
 fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
+    let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
         screen.contains("Open Agent View v0.1.2")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")
+            && !screen.contains("status view")
     });
     assert_lines_fit(&startup, 55);
     assert!(!startup.contains("status view"));
@@ -602,7 +629,9 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
 
     let mut tiny = PtyApp::spawn(31, 7);
     let fallback = tiny.wait_for("tiny terminal fallback", |screen| {
-        screen.contains("coding-agents needs") && screen.contains("at least 32×8")
+        screen.contains("coding-agents needs")
+            && screen.contains("at least 32×8")
+            && !screen.contains("release-reviewer")
     });
     assert_lines_fit(&fallback, 31);
     assert!(!fallback.contains("release-reviewer"));
@@ -611,6 +640,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
 
 #[test]
 fn arrow_navigation_and_group_collapse_are_real_terminal_events() {
+    let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(90, 24);
     app.wait_for("startup", |screen| screen.contains("release-reviewer"));
 
