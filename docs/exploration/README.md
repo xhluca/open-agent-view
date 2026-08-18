@@ -15,6 +15,12 @@ as stable contracts.
   boundaries.
 - [`opencode-integration.md`](opencode-integration.md) — OpenCode history and
   managed-server API boundaries.
+- [`cursor-integration.md`](cursor-integration.md) — Cursor's TTY-only history
+  picker, owned NDJSON runs, and native-resume boundary.
+- [`github-copilot-integration.md`](github-copilot-integration.md) — verified
+  Copilot ACP discovery and connection-owned control contract.
+- [`antigravity-integration.md`](antigravity-integration.md) — Antigravity's
+  documented workspace cache and native-only control boundary.
 
 Return to the [documentation index](../README.md), or use the
 [real-TTY validation guide](../tui-validation.md) to repeat the reference and

@@ -1,0 +1,95 @@
+# Cursor CLI integration exploration
+
+Observed on 2026-08-18 with `cursor-agent 2026.03.20-44cb435`. The probe used
+an empty temporary home and XDG directories; it did not read a real Cursor
+login, chat, workspace, or configuration.
+
+## Primary sources
+
+- [Cursor CLI overview](https://docs.cursor.com/en/cli/overview)
+- [CLI parameters](https://docs.cursor.com/en/cli/reference/parameters)
+- [Structured output](https://docs.cursor.com/en/cli/reference/output-format)
+- [CLI permissions](https://docs.cursor.com/cli/reference/permissions)
+- [Authentication](https://docs.cursor.com/en/cli/reference/authentication)
+
+Cursor's supported installer is:
+
+```console
+curl https://cursor.com/install -fsS | bash
+```
+
+The installed executable is `cursor-agent` (`agent` is an advertised alias).
+
+## Disposable observations
+
+The current executable advertises these session operations:
+
+```text
+cursor-agent create-chat       create an empty chat and print its ID
+cursor-agent ls                open the session/cloud-agent TTY picker
+cursor-agent resume            resume the latest chat
+cursor-agent --resume ID       resume one exact chat
+cursor-agent --continue        continue the previous chat
+```
+
+`cursor-agent ls` was run in a real 80x24 PTY with an empty isolated home. It
+rendered the full-screen “Sessions and Cloud Agents” picker, changed from
+“Loading…” to “No sessions or cloud agents found,” accepted Escape, and
+restored the alternate screen and cursor. The same command on non-TTY stdin
+failed in Ink's raw-mode check. There is no documented `--json` option for
+`ls`; it is not a stable discovery interface.
+
+`cursor-agent status` in the empty home printed “Starting login process” and
+“Not logged in,” then remained alive until the bounded probe stopped it. A
+dashboard must not use `status` as a frequent health probe because it can enter
+an authentication flow.
+
+Help/config probes created only isolated cache files and
+`.config/cursor/cli-config.json`. No credentials were supplied or inspected.
+
+## Structured managed runs
+
+Print mode supports `text`, `json`, and `stream-json`. The documented JSON and
+NDJSON events include a stable `session_id`; stream events include:
+
+- `system/init` with `cwd`, `session_id`, and model;
+- user and assistant message events;
+- correlated `tool_call` started/completed events;
+- a terminal `result` with `is_error`, result text, and `session_id`.
+
+This is suitable for a session that Open Agent View explicitly creates and
+whose child process/output it owns. It is not a way to attach to or steer an
+already-running Cursor process. `--force`/`--yolo` bypass ordinary approvals
+and are deliberately absent from the adapter's command builder.
+
+## Capability boundary
+
+| Operation | Verified surface | Open Agent View policy |
+| --- | --- | --- |
+| Install/version | Official script; `--version` | Supported by doctor/install docs |
+| List every chat | TTY-only `ls` picker | Not claimed |
+| Start | Interactive CLI; `create-chat` plus print mode | Command/parser building blocks only until a durable owner exists |
+| Resume/open | `--resume ID`, `--workspace PATH` | Native open, shell-free arguments |
+| Read transcript | No documented read-only export | Not claimed |
+| Reply/steer live work | No documented live-session protocol | Not claimed |
+| Interrupt live work | No documented session-scoped API | Not claimed; never signal an unowned PID |
+| Approve/decline | Native interactive prompt; permission config | Leave to native client |
+| Delete/archive | Picker UI only/no machine contract found | Not claimed |
+
+The current adapter therefore exposes exact native-resume command construction
+and parses documented owned-run NDJSON. It does not install a global
+`SessionSource`, because scraping an Ink picker or undocumented local data
+would turn a UI detail into a false compatibility promise.
+
+## Repeatable checks
+
+```console
+cursor-agent --version
+cursor-agent --help
+cursor-agent create-chat --help
+cursor-agent ls --help
+cargo test --locked --lib adapters::cursor
+```
+
+Use a new disposable home and a real PTY for `ls`; never point a compatibility
+probe at a user's logged-in Cursor state.
