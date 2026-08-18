@@ -54,11 +54,7 @@ impl ProviderController for PiController {
             bail!("the host Pi controller does not own this runtime");
         }
         let status = Command::new(&self.executable)
-            .args([
-                "--session",
-                &session.provider_session_id,
-                "--session-dir",
-            ])
+            .args(["--session", &session.provider_session_id, "--session-dir"])
             .arg(&self.source.session_dir)
             .current_dir(&session.cwd)
             .stdin(Stdio::inherit())
@@ -150,8 +146,12 @@ pub fn default_pi_session_dir() -> Result<PathBuf> {
 }
 
 fn collect_jsonl_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    let entries = fs::read_dir(directory)
-        .with_context(|| format!("failed to read Pi session directory {}", directory.display()))?;
+    let entries = fs::read_dir(directory).with_context(|| {
+        format!(
+            "failed to read Pi session directory {}",
+            directory.display()
+        )
+    })?;
     for entry in entries {
         let entry = entry?;
         let file_type = entry.file_type()?;
@@ -224,7 +224,8 @@ pub fn parse_pi_session(
 ) -> Result<AgentSession> {
     let mut lines = input.lines().filter(|line| !line.trim().is_empty());
     let first = lines.next().context("missing Pi session header")?;
-    let header_value: Value = serde_json::from_str(first).context("invalid Pi session header JSON")?;
+    let header_value: Value =
+        serde_json::from_str(first).context("invalid Pi session header JSON")?;
     if header_value.get("type").and_then(Value::as_str) != Some("session") {
         bail!("first Pi JSONL record is not a session header");
     }
@@ -256,7 +257,11 @@ pub fn parse_pi_session(
                 match role {
                     Some("user") if first_user_text.is_none() => first_user_text = text,
                     Some("assistant") => {
-                        if text.as_ref().map(|value| !value.is_empty()).unwrap_or(false) {
+                        if text
+                            .as_ref()
+                            .map(|value| !value.is_empty())
+                            .unwrap_or(false)
+                        {
                             latest_assistant_text = text;
                         }
                         last_assistant_stop = message
@@ -283,9 +288,7 @@ pub fn parse_pi_session(
         .unwrap_or_else(|| format!("pi-{}", &header.id[..header.id.len().min(8)]));
     let state = match (last_role.as_deref(), last_assistant_stop.as_deref()) {
         (Some("assistant"), Some("stop")) => SessionState::Completed,
-        (Some("assistant"), Some("length" | "error" | "aborted")) => {
-            SessionState::NeedsInput
-        }
+        (Some("assistant"), Some("length" | "error" | "aborted")) => SessionState::NeedsInput,
         _ => {
             // A JSONL file alone cannot prove that an interactive or RPC
             // process is still attached, nor can it safely accept input.
@@ -334,21 +337,21 @@ fn render_pi_transcript(input: &str) -> Result<String> {
         let Some(message) = value.get("message") else {
             continue;
         };
-        let role = message.get("role").and_then(Value::as_str).unwrap_or("event");
+        let role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or("event");
         let text = match role {
-            "bashExecution" => message
-                .get("output")
-                .and_then(Value::as_str)
-                .map(|output| {
-                    format!(
-                        "$ {}\n{}",
-                        message
-                            .get("command")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default(),
-                        output
-                    )
-                }),
+            "bashExecution" => message.get("output").and_then(Value::as_str).map(|output| {
+                format!(
+                    "$ {}\n{}",
+                    message
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                    output
+                )
+            }),
             _ => message.get("content").and_then(message_text),
         };
         if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
@@ -440,15 +443,15 @@ mod tests {
         .unwrap();
 
         assert_eq!(session.provider, Provider::Pi);
-        assert_eq!(session.provider_session_id, "123e4567-e89b-12d3-a456-426614174000");
+        assert_eq!(
+            session.provider_session_id,
+            "123e4567-e89b-12d3-a456-426614174000"
+        );
         assert_eq!(session.name, "provider-work");
         assert_eq!(session.state, SessionState::Completed);
         assert_eq!(session.summary, "The adapter is ready.");
         assert_eq!(session.cwd, PathBuf::from("/work/project"));
-        assert_eq!(
-            session.capabilities,
-            BTreeSet::from([Capability::Inspect])
-        );
+        assert_eq!(session.capabilities, BTreeSet::from([Capability::Inspect]));
     }
 
     #[test]

@@ -1933,7 +1933,9 @@ mod tests {
 
         let second =
             Arc::new(CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap());
-        let replayed = discover_owned(&second, &thread_id);
+        let replayed = discover_owned_until(&second, &thread_id, |session| {
+            session.capabilities.contains(&Capability::Approve)
+        });
         assert!(replayed.capabilities.contains(&Capability::Approve));
         second.respond_approval(&replayed, false).unwrap();
 
@@ -2006,6 +2008,21 @@ mod tests {
             .into_iter()
             .find(|session| session.provider_session_id == thread_id)
             .unwrap()
+    }
+
+    fn discover_owned_until(
+        supervisor: &Arc<CodexSupervisor>,
+        thread_id: &str,
+        predicate: impl Fn(&AgentSession) -> bool,
+    ) -> AgentSession {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let session = discover_owned(supervisor, thread_id);
+            if predicate(&session) || Instant::now() >= deadline {
+                return session;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Reaps the exact mock child created by this test, including on panic.

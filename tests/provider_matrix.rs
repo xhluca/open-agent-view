@@ -79,7 +79,8 @@ fn opencode_discovers_in_isolation() {
 fn pi_opencode_claude_and_codex_coexist_without_collisions() {
     let store = pi_store();
     let (_directory, executable) = open_code_script();
-    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/populated-sessions.json");
+    let fixture =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/populated-sessions.json");
     let mut engine = DiscoveryEngine::new();
     engine.add_source(PiSource::host(store.path()));
     engine.add_source(OpenCodeSource::host(executable.display().to_string()));

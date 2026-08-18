@@ -175,9 +175,8 @@ impl Drop for PtyApp {
 fn all_supported_providers_coexist_in_one_real_terminal() {
     let mut app = PtyApp::spawn_fixture(150, 36, "all-providers-sessions.json");
     let startup = app.wait_for("seven-provider dashboard", |screen| {
-        screen.contains(
-            "Antigravity + Claude + Codex + Cursor + GitHub Copilot + OpenCode + Pi",
-        ) && screen.contains("pi-refactor")
+        screen.contains("Antigravity + Claude + Codex + Cursor + GitHub Copilot + OpenCode + Pi")
+            && screen.contains("pi-refactor")
             && screen.contains("opencode-api")
             && screen.contains("cursor-owned-chat")
             && screen.contains("copilot-acp-session")

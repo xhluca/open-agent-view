@@ -207,7 +207,8 @@ impl SessionSource for OpenCodeSource {
             }
         }
 
-        let mut sessions = parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?;
+        let mut sessions =
+            parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?;
         sessions.retain(|session| {
             request.include_completed
                 && request
@@ -447,8 +448,7 @@ mod tests {
 
     #[test]
     fn inspect_uses_export_and_formats_text_messages() {
-        let mut expected =
-            CommandRequest::new("opencode", vec!["export".into(), "ses_1".into()]);
+        let mut expected = CommandRequest::new("opencode", vec!["export".into(), "ses_1".into()]);
         expected.timeout = Duration::from_secs(8);
         let runner = Arc::new(FakeRunner {
             expected,
@@ -471,7 +471,10 @@ mod tests {
         .unwrap()
         .remove(0);
 
-        assert_eq!(source.inspect(&session).unwrap(), "User: Build it\n\nAssistant: Done");
+        assert_eq!(
+            source.inspect(&session).unwrap(),
+            "User: Build it\n\nAssistant: Done"
+        );
     }
 
     #[cfg(unix)]

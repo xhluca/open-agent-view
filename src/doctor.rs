@@ -59,11 +59,7 @@ pub fn diagnose(
 ) -> DoctorReport {
     let mut checks = Vec::new();
     for (provider, executable) in provider_bins {
-        checks.push(version_check(
-            provider.label(),
-            executable,
-            &["--version"],
-        ));
+        checks.push(version_check(provider.label(), executable, &["--version"]));
     }
     checks.push(version_check(
         "Docker",

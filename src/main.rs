@@ -9,9 +9,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use open_agent_view::adapters::{
     default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
     AntigravityController, AntigravitySource, ClaudeSource, CodexSource, CopilotController,
-    CopilotSource, CursorController, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
-    ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus, OpenCodeController,
-    OpenCodeSource, PiController, PiSource,
+    CopilotSource, CursorController, DiscoveryEngine, DiscoveryRequest, DockerTarget,
+    FixtureSource, ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
+    OpenCodeController, OpenCodeSource, PiController, PiSource,
 };
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
@@ -150,7 +150,12 @@ struct Cli {
     no_host_copilot: bool,
 
     /// Cursor agent executable used to open known managed sessions.
-    #[arg(long, default_value = "cursor-agent", value_name = "PATH", global = true)]
+    #[arg(
+        long,
+        default_value = "cursor-agent",
+        value_name = "PATH",
+        global = true
+    )]
     cursor_bin: String,
 
     /// Disable Cursor session control on the host.
@@ -204,11 +209,7 @@ fn main() -> Result<()> {
                     (Provider::GitHubCopilot, cli.copilot_bin.clone()),
                     (Provider::Antigravity, cli.antigravity_bin.clone()),
                 ];
-                let report = diagnose(
-                    &provider_bins,
-                    &cli.docker_bin,
-                    &cli.docker_containers,
-                );
+                let report = diagnose(&provider_bins, &cli.docker_bin, &cli.docker_containers);
                 if cli.json {
                     serde_json::to_writer_pretty(io::stdout().lock(), &report)?;
                     println!();
@@ -230,22 +231,17 @@ fn main() -> Result<()> {
     }
     let provider_io_enabled = provider_io_enabled(&cli);
     let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
-    let claude_enabled = host_providers_enabled
-        && !cli.no_host_claude
-        && executable_available(&cli.claude_bin);
-    let codex_enabled = host_providers_enabled
-        && !cli.no_host_codex
-        && executable_available(&cli.codex_bin);
+    let claude_enabled =
+        host_providers_enabled && !cli.no_host_claude && executable_available(&cli.claude_bin);
+    let codex_enabled =
+        host_providers_enabled && !cli.no_host_codex && executable_available(&cli.codex_bin);
     let pi_enabled = host_providers_enabled && !cli.no_host_pi;
-    let opencode_enabled = host_providers_enabled
-        && !cli.no_host_opencode
-        && executable_available(&cli.opencode_bin);
-    let copilot_enabled = host_providers_enabled
-        && !cli.no_host_copilot
-        && executable_available(&cli.copilot_bin);
-    let cursor_enabled = host_providers_enabled
-        && !cli.no_host_cursor
-        && executable_available(&cli.cursor_bin);
+    let opencode_enabled =
+        host_providers_enabled && !cli.no_host_opencode && executable_available(&cli.opencode_bin);
+    let copilot_enabled =
+        host_providers_enabled && !cli.no_host_copilot && executable_available(&cli.copilot_bin);
+    let cursor_enabled =
+        host_providers_enabled && !cli.no_host_cursor && executable_available(&cli.cursor_bin);
     let antigravity_enabled = host_providers_enabled && !cli.no_host_antigravity;
     let antigravity_open_enabled =
         antigravity_enabled && executable_available(&cli.antigravity_bin);
@@ -288,14 +284,12 @@ fn main() -> Result<()> {
             )))?;
         }
         if copilot_enabled {
-            control.register_controller(Arc::new(CopilotController::host(
-                cli.copilot_bin.clone(),
-            )))?;
+            control
+                .register_controller(Arc::new(CopilotController::host(cli.copilot_bin.clone())))?;
         }
         if cursor_enabled {
-            control.register_controller(Arc::new(CursorController::host(
-                cli.cursor_bin.clone(),
-            )))?;
+            control
+                .register_controller(Arc::new(CursorController::host(cli.cursor_bin.clone())))?;
         }
         if antigravity_open_enabled {
             control.register_controller(Arc::new(AntigravityController::host(

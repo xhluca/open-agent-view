@@ -281,12 +281,7 @@ mod tests {
             (Provider::Claude, "\"claude\"", "Claude", "C"),
             (Provider::Codex, "\"codex\"", "Codex", "X"),
             (Provider::Pi, "\"pi\"", "Pi", "P"),
-            (
-                Provider::OpenCode,
-                "\"opencode\"",
-                "OpenCode",
-                "O",
-            ),
+            (Provider::OpenCode, "\"opencode\"", "OpenCode", "O"),
             (Provider::Cursor, "\"cursor\"", "Cursor", "R"),
             (
                 Provider::GitHubCopilot,
@@ -294,12 +289,7 @@ mod tests {
                 "GitHub Copilot",
                 "G",
             ),
-            (
-                Provider::Antigravity,
-                "\"antigravity\"",
-                "Antigravity",
-                "A",
-            ),
+            (Provider::Antigravity, "\"antigravity\"", "Antigravity", "A"),
         ];
 
         for (provider, wire, label, marker) in cases {

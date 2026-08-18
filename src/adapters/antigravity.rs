@@ -113,8 +113,8 @@ pub fn parse_antigravity_last_conversations(
     input: &str,
     runtime: Runtime,
 ) -> Result<Vec<AgentSession>> {
-    let records: BTreeMap<String, String> = serde_json::from_str(input)
-        .context("invalid Antigravity last_conversations.json cache")?;
+    let records: BTreeMap<String, String> =
+        serde_json::from_str(input).context("invalid Antigravity last_conversations.json cache")?;
     let mut sessions = Vec::with_capacity(records.len());
     for (workspace, conversation_id) in records {
         let cwd = PathBuf::from(workspace);
@@ -245,11 +245,7 @@ mod tests {
             .is_empty());
 
         let path = directory.path().join("last_conversations.json");
-        fs::write(
-            &path,
-            r#"{"/work/one":"one","/other/two":"two"}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"/work/one":"one","/other/two":"two"}"#).unwrap();
         let sessions = AntigravitySource::host(path)
             .discover(&DiscoveryRequest {
                 cwd: Some(PathBuf::from("/work")),
@@ -274,7 +270,9 @@ mod tests {
                 current_dir: "/work/repo".into(),
             }
         );
-        let launch = invocation.sandboxed_launch(Path::new("/work/repo")).unwrap();
+        let launch = invocation
+            .sandboxed_launch(Path::new("/work/repo"))
+            .unwrap();
         assert_eq!(launch.args, vec!["--sandbox"]);
         assert!(!launch
             .args
@@ -283,16 +281,13 @@ mod tests {
 
     #[test]
     fn rejects_undocumented_or_unsafe_cache_records() {
-        assert!(parse_antigravity_last_conversations(
-            r#"{"relative":"id"}"#,
-            Runtime::Host
-        )
-        .is_err());
-        assert!(parse_antigravity_last_conversations(
-            "{\"/work\":\"bad\\nid\"}",
-            Runtime::Host
-        )
-        .is_err());
+        assert!(
+            parse_antigravity_last_conversations(r#"{"relative":"id"}"#, Runtime::Host).is_err()
+        );
+        assert!(
+            parse_antigravity_last_conversations("{\"/work\":\"bad\\nid\"}", Runtime::Host)
+                .is_err()
+        );
         assert!(parse_antigravity_last_conversations("[]", Runtime::Host).is_err());
     }
 }

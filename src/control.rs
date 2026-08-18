@@ -66,16 +66,15 @@ pub trait ProviderController: Send + Sync {
         bail!("{} archive is unavailable", self.provider().label())
     }
 
-    fn resolve_approval(
-        &self,
-        _session: &AgentSession,
-        _accept: bool,
-    ) -> Result<ControlOutcome> {
+    fn resolve_approval(&self, _session: &AgentSession, _accept: bool) -> Result<ControlOutcome> {
         bail!("{} inline approval is unavailable", self.provider().label())
     }
 
     fn respond_input(&self, _session: &AgentSession, _answer: &str) -> Result<ControlOutcome> {
-        bail!("{} structured input is unavailable", self.provider().label())
+        bail!(
+            "{} structured input is unavailable",
+            self.provider().label()
+        )
     }
 
     fn delete(&self, _session: &AgentSession) -> Result<ControlOutcome> {
@@ -132,10 +131,7 @@ impl ControlHub {
         })
     }
 
-    pub fn register_controller(
-        &mut self,
-        controller: Arc<dyn ProviderController>,
-    ) -> Result<()> {
+    pub fn register_controller(&mut self, controller: Arc<dyn ProviderController>) -> Result<()> {
         let provider = controller.provider();
         if self.controllers.contains_key(&provider) {
             bail!("a {} controller is already registered", provider.label());
@@ -233,9 +229,9 @@ impl ControlHub {
     }
 
     fn controller(&self, provider: &Provider) -> Result<&Arc<dyn ProviderController>> {
-        self.controllers.get(provider).with_context(|| {
-            format!("no {} controller is configured", provider.label())
-        })
+        self.controllers
+            .get(provider)
+            .with_context(|| format!("no {} controller is configured", provider.label()))
     }
 
     fn ensure_provider_io(&self) -> Result<()> {

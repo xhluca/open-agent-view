@@ -120,7 +120,10 @@ impl CopilotAcpConnection {
         let mut child = command
             .spawn()
             .with_context(|| format!("failed to start Copilot ACP executable `{executable}`"))?;
-        let stdin = child.stdin.take().context("failed to open Copilot ACP stdin")?;
+        let stdin = child
+            .stdin
+            .take()
+            .context("failed to open Copilot ACP stdin")?;
         let stdout = child
             .stdout
             .take()
@@ -191,10 +194,7 @@ impl CopilotAcpConnection {
 
     pub fn begin_new_session(&mut self, cwd: &Path) -> Result<u64> {
         require_absolute_cwd(cwd)?;
-        self.send_request(
-            "session/new",
-            json!({"cwd": cwd, "mcpServers": []}),
-        )
+        self.send_request("session/new", json!({"cwd": cwd, "mcpServers": []}))
     }
 
     pub fn begin_load_session(&mut self, session_id: &str, cwd: &Path) -> Result<u64> {
@@ -327,9 +327,7 @@ impl CopilotAcpConnection {
                 );
             }
             match self.receive_wire(remaining)? {
-                CopilotAcpMessage::Response { id, result }
-                    if id.as_u64() == Some(request_id) =>
-                {
+                CopilotAcpMessage::Response { id, result } if id.as_u64() == Some(request_id) => {
                     return result.map_err(|error| {
                         anyhow!(
                             "Copilot ACP request {request_id} failed: {}",
@@ -342,11 +340,7 @@ impl CopilotAcpConnection {
         }
     }
 
-    pub fn reject_unsupported_request(
-        &mut self,
-        request_id: &Value,
-        message: &str,
-    ) -> Result<()> {
+    pub fn reject_unsupported_request(&mut self, request_id: &Value, message: &str) -> Result<()> {
         request_key(request_id)?;
         self.write_message(&json!({
             "jsonrpc": "2.0",
@@ -394,12 +388,13 @@ impl CopilotAcpConnection {
         loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                bail!("Copilot ACP `{method}` timed out after {} ms", timeout.as_millis());
+                bail!(
+                    "Copilot ACP `{method}` timed out after {} ms",
+                    timeout.as_millis()
+                );
             }
             match self.receive_wire(remaining)? {
-                CopilotAcpMessage::Response { id, result }
-                    if id.as_u64() == Some(request_id) =>
-                {
+                CopilotAcpMessage::Response { id, result } if id.as_u64() == Some(request_id) => {
                     return result.map_err(|error| {
                         anyhow!("Copilot ACP `{method}` failed: {}", compact_json(&error))
                     });
@@ -472,7 +467,11 @@ impl CopilotAcpConnection {
                     let pending = PendingPermission {
                         request_id: request.request_id.clone(),
                         session_id: request.session_id.clone(),
-                        option_ids: request.options.iter().map(|option| option.id.clone()).collect(),
+                        option_ids: request
+                            .options
+                            .iter()
+                            .map(|option| option.id.clone())
+                            .collect(),
                     };
                     if self.pending_permissions.insert(key, pending).is_some() {
                         bail!("Copilot ACP reused a pending permission request ID");
@@ -560,7 +559,11 @@ impl CopilotInvocation {
         require_absolute_cwd(cwd)?;
         Ok(CopilotCommandSpec {
             program: self.executable.clone(),
-            args: vec![format!("--resume={session_id}"), "-C".into(), cwd.display().to_string()],
+            args: vec![
+                format!("--resume={session_id}"),
+                "-C".into(),
+                cwd.display().to_string(),
+            ],
             current_dir: cwd.to_owned(),
         })
     }
@@ -733,7 +736,10 @@ fn normalize_copilot_session(session: CopilotSessionInfo, runtime: Runtime) -> A
         .filter(|name| !name.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| format!("copilot-{}", short_id(&session.session_id)));
-    let name = session.title.filter(|title| !title.is_empty()).unwrap_or(fallback_name);
+    let name = session
+        .title
+        .filter(|title| !title.is_empty())
+        .unwrap_or(fallback_name);
     AgentSession {
         id: format!("github_copilot:{runtime_id}:{}", session.session_id),
         provider_session_id: session.session_id,
@@ -798,10 +804,7 @@ fn parse_permission_request(id: Value, params: Value) -> Result<CopilotPermissio
     })
 }
 
-fn read_ndjson(
-    stdout: impl Read,
-    sender: mpsc::Sender<std::result::Result<Value, String>>,
-) {
+fn read_ndjson(stdout: impl Read, sender: mpsc::Sender<std::result::Result<Value, String>>) {
     let mut reader = BufReader::new(stdout);
     loop {
         let mut bytes = Vec::new();
@@ -894,7 +897,11 @@ fn parse_rfc3339(value: &str) -> Option<SystemTime> {
         (time, 0_i64)
     } else {
         let position = rest.rfind(['+', '-'])?;
-        let sign = if rest.as_bytes().get(position) == Some(&b'+') { 1 } else { -1 };
+        let sign = if rest.as_bytes().get(position) == Some(&b'+') {
+            1
+        } else {
+            -1
+        };
         let offset = &rest[position + 1..];
         let (hours, minutes) = offset.split_once(':')?;
         let hours: i64 = hours.parse().ok()?;
@@ -920,7 +927,11 @@ fn parse_rfc3339(value: &str) -> Option<SystemTime> {
     while nanos.len() < 9 {
         nanos.push('0');
     }
-    let nanos: u32 = if nanos.is_empty() { 0 } else { nanos.parse().ok()? };
+    let nanos: u32 = if nanos.is_empty() {
+        0
+    } else {
+        nanos.parse().ok()?
+    };
     let seconds = days_from_civil(year, month, day)
         .checked_mul(86_400)?
         .checked_add(hour * 3600 + minute * 60 + second)?
@@ -999,10 +1010,10 @@ mod tests {
                 current_dir: "/work/project".into(),
             }
         );
-        assert!(!spec.args.iter().any(|arg| matches!(
-            arg.as_str(),
-            "--allow-all" | "--allow-all-tools" | "--yolo"
-        )));
+        assert!(!spec
+            .args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "--allow-all" | "--allow-all-tools" | "--yolo")));
     }
 
     #[test]
