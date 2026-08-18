@@ -6,7 +6,7 @@ are doing; do not infer release readiness from the package version in
 
 ## Operate the dashboard
 
-- [Install and verify a checkout](install.md)
+- [Install, verify, upgrade, or uninstall](install.md)
 - [CLI and keyboard reference](cli.md)
 - [Troubleshooting and recovery](troubleshooting.md)
 - [Control and ownership boundaries](control-model.md)
@@ -32,7 +32,13 @@ are doing; do not infer release readiness from the package version in
 - [Exploration notebook](exploration/README.md)
 - [`claude agents` behavior](exploration/claude-agents.md)
 - [Codex App Server integration](exploration/codex-integration.md)
+- [Pi persistence and RPC integration](exploration/pi-integration.md)
+- [OpenCode history integration](exploration/opencode-integration.md)
+- [Cursor managed-run boundary](exploration/cursor-integration.md)
+- [GitHub Copilot ACP integration](exploration/github-copilot-integration.md)
+- [Antigravity workspace-cache integration](exploration/antigravity-integration.md)
 - [Docker runtime boundary](exploration/docker-runtime.md)
+- [Fresh-container provider validation](exploration/fresh-container-provider-validation.md)
 
 Exploration notes distinguish observations from inferences and retain version
 and probe context. Product and operator documentation describe only behavior

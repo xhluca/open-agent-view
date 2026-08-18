@@ -37,6 +37,11 @@ checks; the guide also contains release gates that are not yet complete.
   new/prompt/update/permission/completion/reply/cancel lifecycle; a separate
   load fixture proves external list results remain unowned. Antigravity tests
   read only a temporary documented cache and build shell-free native commands.
+- `tests/managed_cursor_copilot.rs` drives the public `ProviderController`
+  surface rather than private supervisor helpers. It covers managed launch,
+  enrich, inspect, reply, interrupt, exact one-shot approval, duplicate
+  permission cancellation, and controller-side refusal of injected unowned
+  records. Copilot runs on Unix CI; the Cursor process lifecycle is Linux-only.
 - Protocol tests interleave client responses with string- and numeric-ID server
   requests and assert the exact `{id,result}` response shape. Reconnect tests
   verify that `thread/resume` replays an unresolved approval with the same ID,
@@ -128,6 +133,9 @@ checks; the guide also contains release gates that are not yet complete.
 - The canonical seven-provider fixture passed
   `all_supported_providers_coexist_in_one_real_terminal`, including provider
   labels, contextual help, alternate-screen entry, and terminal restoration.
+  The same real-PTY test now opens a managed Pi reply composer, a managed
+  Cursor interrupt confirmation, and a managed Copilot approval card, then
+  proves every action is rejected by the fixture I/O fence.
 - The TUI was exercised in a 120-by-30 pseudo-terminal, including navigation,
   grouping, help, and clean shutdown.
 - Claude peek was checked against a real host session using read-only logs; the
@@ -261,12 +269,14 @@ examples.
   interface; owned Codex threads support inline idle reply and active steer.
 - Cursor has no documented global machine-readable inventory. Only sessions
   created through its OAV-owned Linux supervisor are shown and controlled;
-  macOS remains native-open-only until an equally race-safe process identity
-  primitive is implemented.
-- Copilot list results remain read-only until explicitly loaded onto the
-  controller's retained ACP connection. That authority is process-local and
-  does not survive a dashboard restart. Antigravity exposes only its documented
-  last-conversation-per-workspace cache; complete history and inline controls
-  are not claimed.
+  macOS has no managed Cursor discovery/control until an equally race-safe
+  process identity primitive is implemented. Cursor's native TTY picker remains
+  available outside Open Agent View.
+- Copilot persisted list results remain observe/native-open in the dashboard.
+  The adapter's explicit ACP load contract is tested, but dashboard-managed
+  authority currently applies only to sessions launched on its retained
+  process-local connection and does not survive a restart. Antigravity exposes
+  only its documented last-conversation-per-workspace cache; complete history
+  and inline controls are not claimed.
 - Durable Pi supervision currently requires Linux `/proc` identity. macOS
   retains documented history discovery, inspection, and native resume.

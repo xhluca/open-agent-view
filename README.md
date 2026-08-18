@@ -35,6 +35,9 @@ open, provider-neutral project.
 Once the first private release exists, collaborators can install with their
 existing GitHub authentication—no Rust, Cargo, or source checkout:
 
+`gh` is GitHub's official CLI and is required only to authenticate to this
+private repository.
+
 ```console
 gh auth login
 gh api -H "Accept: application/vnd.github.raw+json" \
@@ -75,8 +78,8 @@ coding-agents --docker-container my-agent-container
 # Check every configured CLI without starting the dashboard.
 coding-agents doctor
 
-# Make new tasks durable Pi RPC sessions on Linux.
-coding-agents --launch-provider pi
+# Choose a managed task backend (Claude is the default).
+coding-agents --launch-provider copilot
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
@@ -95,15 +98,15 @@ every CLI.
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; owned launch, reply/steer, request handling, and interrupt |
 | OpenCode | Persisted host history through the official CLI | Read-only export/inspect and native resume |
-| GitHub Copilot CLI | Persisted host sessions through official ACP `session/list` | Native resume; connection-owned ACP control is tested but not yet exposed as dashboard authority |
+| Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
+| GitHub Copilot CLI | Persisted host sessions from ACP `session/list`, plus process-local OAV-owned ACP sessions | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
 | Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |
-| Cursor | No automatic global listing—the provider exposes only a TTY picker | Exact native resume and managed-run protocol groundwork; a durable supervisor is not yet integrated |
 
-Claude, Codex, and Pi have managed lifecycle support today. The other adapters
-deliberately prefer honest read-only coverage where no durable ownership channel
-exists. See the [provider exploration notes](docs/exploration/README.md)
-for the tested versions, isolation setup, protocol observations, and remaining
-boundaries.
+Claude and Codex have managed paths, as do durable Pi and OAV-owned Cursor
+sessions on Linux. Copilot control lasts for the dashboard process's retained
+ACP connection. OpenCode, Antigravity, and unrelated provider records remain
+read-only/native-open. See the [provider exploration notes](docs/exploration/README.md)
+for tested versions, isolation setup, protocol observations, and boundaries.
 
 ## Safety model
 

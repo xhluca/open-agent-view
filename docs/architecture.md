@@ -52,9 +52,10 @@ version cannot perform an action safely.
 
 ## Process model
 
-Read-only discovery runs with strict timeouts. Managed sessions use a small
-local supervisor so work can continue when the TUI closes. The supervisor owns
-process identifiers and logs; provider sessions remain the source of truth for
+Read-only discovery runs with strict timeouts. Durable managed providers use a
+small local supervisor so work can continue when the TUI closes; providers
+whose protocol grants only connection-local authority retain control for the
+dashboard process instead. Provider sessions remain the source of truth for
 conversation state.
 
 The implemented Claude path uses Claude's own background service. The
@@ -76,6 +77,20 @@ supervisor endpoint; canonical Pi session UUIDs protect every child operation.
 The same adapter also reads Pi's documented JSONL store. Those external history
 records remain inspect/open-only and are never promoted based on timestamps or
 PIDs.
+
+Managed Cursor on Linux creates chats through the documented CLI and runs each
+turn as a detached stream-JSON process. A private registry stores the exact
+process identity and bounded log paths, allowing later dashboards to rediscover
+only OAV-owned runs. Cursor's external TTY-only picker is not scraped, so there
+is no global Cursor list. Reply begins a new process only after the prior turn
+is idle; interrupt revalidates the exact Linux process identity first.
+
+GitHub Copilot uses two ACP authority tiers. A discovery connection calls
+`session/list`; its persisted results remain observe/native-open only. A
+separate retained control connection owns only the sessions it creates during
+the current dashboard process, carries their live events, and enables prompt,
+inspect, cancel, and exact one-shot permission choices. That managed authority
+is process-local and is not reconstructed from persisted session metadata.
 
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.

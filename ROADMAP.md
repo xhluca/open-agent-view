@@ -8,12 +8,13 @@ authenticated fresh-container end-to-end run.
 ## Milestone 0 — Interface archaeology ✅
 
 - [x] Record the observed `claude agents` layout, keymap, and state transitions.
-- [x] Inventory Claude/Codex session and Docker discovery surfaces.
+- [x] Inventory the seven host-provider session surfaces and Docker boundaries.
 - [x] Write provider contracts and safety boundaries.
 
 ## Milestone 1 — Read-only dashboard (in progress)
 
-- [x] Normalize fixture, host Claude, host Codex, and Docker-discovered sessions.
+- [x] Normalize fixture, seven host providers, and Docker-discovered Claude and
+  Codex sessions.
 - [x] Render grouped status sections with responsive terminal layouts.
 - [x] Add navigation, details, help, filtering, and JSON output.
 - [x] Cover parsers and layout with deterministic tests.
@@ -24,13 +25,19 @@ authenticated fresh-container end-to-end run.
 
 - [x] Launch host Claude tasks from the composer.
 - [x] Persist Claude ownership metadata across dashboard restarts.
-- [x] Open provider-native Claude/Codex sessions from a selected row.
+- [x] Open provider-native sessions from selected rows where the provider
+  exposes an exact resume command.
 - [x] Stop only exact Claude sessions launched by `coding-agents`.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
   reconnectable App Server supervisor.
 - [x] Own Linux Pi launch, reconnect, reply/steer, exact dialog response, and
   interrupt through a durable stdio-RPC supervisor; retain history-only support
   elsewhere.
+- [x] Own Linux Cursor launch, rediscovery, bounded inspection, idle reply, and
+  exact verified-process interrupt without scraping its external TTY picker.
+- [x] Own process-local Copilot ACP launch, prompt/reply, inspection, cancel,
+  and exact one-shot permission response; keep persisted list rows
+  observe/native-open.
 - [x] Reply/steer, archive, and delete owned Codex threads with explicit
   capability checks and confirmations.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.
@@ -54,8 +61,9 @@ authenticated fresh-container end-to-end run.
 - [x] Build and install a single `coding-agents` binary from an authorized
   checkout with the locked Rust 1.75 dependency set.
 - [x] Run locked CI tests/release builds on Rust 1.75.0 and stable.
-- [x] Prepare a tag-gated Linux x86_64 archive/checksum workflow and document
-  its maintainer procedure.
+- [x] Prepare a tag-gated archive/checksum workflow for Linux x86_64/aarch64
+  and macOS x86_64/aarch64, plus a checksum-verifying binary installer, and
+  document the maintainer procedure.
 - [x] Verify both empty TUIs in separate fresh, network-disabled Docker PTYs and
   record the credential limitation.
 - [x] Provide exact fresh-container commands, a synthetic all-state fixture,

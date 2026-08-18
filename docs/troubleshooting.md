@@ -114,6 +114,39 @@ peek/reply controls, interrupt it, or wait for it to finish. On macOS, all Pi
 sessions use the history/native-open path because durable supervision currently
 depends on Linux `/proc` identity.
 
+## Cursor session is missing or refuses control
+
+Cursor does not expose a machine-readable global session list. On Linux, Open
+Agent View lists only runs it launched and recorded under:
+
+```text
+$XDG_STATE_HOME/open-agent-view/cursor/
+```
+
+or `~/.local/state/open-agent-view/cursor/`. A pre-existing Cursor chat is not
+missing discovery data: it is outside the supported dashboard surface. Use
+Cursor's native TTY picker for that chat.
+
+An owned active turn offers Interrupt after its PID, start token, and command
+line are verified. Reply becomes available only after that process exits. Do
+not edit `sessions.json`, signal its recorded numeric PID manually, or delete
+the bounded logs to force a state change; preserve the directory and report a
+redacted error if exact identity verification refuses control.
+
+## Copilot session is visible but read-only
+
+Persisted Copilot rows come from ACP `session/list` on a discovery connection.
+They are observe/native-open only and do not inherit control from a previous
+dashboard. Launching with `--launch-provider copilot` creates a session on the
+current process's retained ACP control connection; only that connection-owned
+row can be inspected, prompted, cancelled, or given an exact one-shot
+permission choice.
+
+This authority intentionally ends when the dashboard exits and has no OAV
+state file to repair. If a managed row loses its ACP connection, preserve the
+provider's persisted session and reopen it natively rather than attempting to
+reconstruct authority from its session ID.
+
 ## Runtime state permissions are refused
 
 The state root and registry directories must be real, current-user-owned

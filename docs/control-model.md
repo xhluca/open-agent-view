@@ -148,6 +148,57 @@ process's user permissions. Use a separate OS/container boundary when the task
 requires one. Durable Pi control currently requires Linux; macOS keeps
 history inspection and native resume only.
 
+## Cursor ownership boundary
+
+Cursor exposes a TTY-only history picker, not a machine-readable global session
+list. Open Agent View therefore shows only Cursor sessions it launched itself
+on Linux. Launch creates a Cursor chat, runs the turn in detached stream-JSON
+mode, and records the exact process identity and bounded output paths under:
+
+```text
+$XDG_STATE_HOME/open-agent-view/cursor/
+```
+
+or `~/.local/state/open-agent-view/cursor/`. Dashboard restarts rediscover those
+records. Before marking a turn active or sending `SIGINT`, the supervisor
+matches the saved PID, Linux `/proc` start token, and exact command line. It
+never signals a PID merely because it appears in the registry.
+
+| Operation | OAV-owned managed Cursor run | External Cursor session |
+| --- | --- | --- |
+| Discover | Private registry plus bounded stream-JSON logs | Unavailable; the global picker is TTY-only |
+| Inspect | Bounded assistant transcript from the owned log | Disabled |
+| Open | Refused while the owned process is active; native resume after idle | Not listed; use Cursor's own TTY picker |
+| Launch/reply | Create a chat and run a turn; reply only after the prior process exits | Disabled |
+| Interrupt | `SIGINT` only after exact live-process verification | Disabled |
+| Permission/archive/delete | Disabled | Disabled |
+
+Managed Cursor launch and rediscovery currently require Linux. Open Agent View
+does not scrape the provider's picker or infer ownership from a chat ID.
+
+## GitHub Copilot ownership boundary
+
+Copilot's official ACP exposes persisted sessions through `session/list`, but
+listing a session does not grant control. Those records are observe/native-open
+only. Managed authority belongs to the exact ACP control connection retained by
+the current dashboard process and is not written to an OAV ownership file.
+
+| Operation | Current connection-owned Copilot session | Persisted ACP list record |
+| --- | --- | --- |
+| Discover | In-memory managed state and ACP events | Official `session/list` on the discovery connection |
+| Inspect | Bounded transcript received on the owning connection | Disabled |
+| Open | Refused while connection-owned | `copilot --resume=ID -C PATH` |
+| Launch/reply | `session/new`, then `session/prompt`; reply only while idle | Disabled |
+| Interrupt | ACP cancel for the exact active session prompt | Disabled |
+| Permission | Exact offered `allow_once` or `reject_once` option only | Disabled |
+| Archive/delete | Disabled | Disabled |
+
+When the dashboard exits, the retained ACP process and its control authority
+end. A later `session/list` result remains visible and can be opened natively,
+but it is not silently adopted for inline control. Unknown ACP client requests
+are rejected explicitly, and pending permission requests are never answered
+automatically.
+
 ## Managed Docker ownership
 
 `coding-agents docker create` accepts only a digest-pinned image and creates a
@@ -186,6 +237,10 @@ state.
   detection relies on `/proc/<pid>/stat` and `/proc/<pid>/cmdline`.
 - Durable Pi supervision has the same Linux process-identity requirement;
   unrelated Pi sessions remain inspect/open-only on every platform.
+- Managed Cursor sessions require Linux and only OAV-owned runs are listed;
+  Cursor's external TTY picker is not scraped.
+- Managed Copilot control is process-local to one retained ACP connection;
+  persisted `session/list` records remain observe/native-open only.
 - Docker containers supplied with `--docker-container` are observe-only;
   managed lifecycle requires creation plus the separate owner record.
 - Group deletion is disabled whenever any member lacks Delete authority.

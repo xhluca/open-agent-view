@@ -25,12 +25,12 @@ coding-agents [OPTIONS]
 | `--pi-bin PATH` / `--pi-session-dir PATH` | Select Pi and optionally override its documented history store. |
 | `--no-host-pi` | Disable host Pi history and managed supervision. |
 | `--opencode-bin PATH` / `--no-host-opencode` | Select or disable host OpenCode discovery. |
-| `--copilot-bin PATH` / `--no-host-copilot` | Select or disable GitHub Copilot CLI discovery. |
-| `--cursor-bin PATH` / `--no-host-cursor` | Select or disable host Cursor support. |
+| `--copilot-bin PATH` / `--no-host-copilot` | Select or disable persisted Copilot discovery and process-local managed ACP control. |
+| `--cursor-bin PATH` / `--no-host-cursor` | Select or disable OAV-owned managed Cursor support on Linux. Cursor has no machine-readable global list. |
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
-| `--docker-container NAME_OR_ID` | Observe both providers in one explicitly selected running container; repeatable. |
+| `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--launch-provider claude\|codex\|pi` | Provider for new-session prompts; default Claude. Pi managed launch currently requires Linux. |
+| `--launch-provider claude\|codex\|pi\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 1500 ms. |
 
@@ -53,6 +53,13 @@ coding-agents doctor
 coding-agents doctor --json
 coding-agents doctor --docker-container exact-name-or-id
 ```
+
+The composer uses exactly one `--launch-provider`. Claude and Codex follow
+their documented ownership models; Pi and Cursor use durable Linux supervisors.
+Copilot retains one process-local ACP control connection for sessions launched
+by the current dashboard. A later dashboard may still list a persisted Copilot
+session, but that row is observe/native-open rather than silently inheriting
+control.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -186,6 +193,14 @@ unsupported target. Approval `y` is never offered for a file change lacking a
 correlated diff, expanded permissions, or unknown request form. See the
 [control model](control-model.md) for the exact boundary.
 
+Managed Cursor rows on Linux expose Inspect and either Interrupt while the
+verified owned process is active or Reply after it becomes idle. Managed
+Cursor native open is likewise refused until the active process exits. Managed
+Copilot rows expose Inspect, Reply while idle, Cancel while a prompt is active,
+and only the exact `allow_once`/`reject_once` choices offered by a pending ACP
+permission request. Persisted Copilot rows from `session/list` do not inherit
+those controls.
+
 ## Runtime state paths
 
 Under `$XDG_STATE_HOME/open-agent-view/`, or `~/.local/state/open-agent-view/`
@@ -196,9 +211,11 @@ when `XDG_STATE_HOME` is unset, the current implementation stores:
 | `ownership.json` | Exact host Claude session prefixes launched here. |
 | `codex-supervisor/` | Detached App Server record, socket, locks, log, and owned Codex thread/turn IDs. |
 | `pi/` | Detached Linux RPC supervisor record, socket, locks/logs, and OAV-owned Pi session history. |
+| `cursor/` | Linux ownership registry, process identities, locks, and bounded logs for OAV-owned Cursor runs. |
 | `managed-docker/owners.json` | Exact external proof for managed-container lifecycle. |
 
 These files contain authority metadata and should not be shared between users.
-They do not contain collected Codex structured answers. Removal or repair has
-safety consequences; follow [troubleshooting and recovery](troubleshooting.md)
-instead of deleting state speculatively.
+They do not contain collected Codex structured answers. Copilot ACP authority
+is held in memory and has no OAV state path. Removal or repair has safety
+consequences; follow [troubleshooting and recovery](troubleshooting.md) instead
+of deleting state speculatively.
