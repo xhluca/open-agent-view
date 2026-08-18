@@ -8,10 +8,17 @@ trap 'rm -rf -- "$temp_root"' EXIT HUP INT TERM
 
 version="0.1.0"
 tag="v${version}"
-target="x86_64-unknown-linux-gnu"
-stem="open-agent-view-${version}-${target}"
-archive="${stem}.tar.gz"
 release_dir="${temp_root}/releases/${tag}"
+
+case "$(uname -s)/$(uname -m)" in
+  Linux/x86_64 | Linux/amd64) host_target="x86_64-unknown-linux-gnu" ;;
+  Linux/aarch64 | Linux/arm64) host_target="aarch64-unknown-linux-gnu" ;;
+  Darwin/x86_64 | Darwin/amd64) host_target="x86_64-apple-darwin" ;;
+  Darwin/arm64 | Darwin/aarch64) host_target="aarch64-apple-darwin" ;;
+  *) printf 'installer tests require a supported release host\n' >&2; exit 1 ;;
+esac
+host_stem="open-agent-view-${version}-${host_target}"
+host_archive="${host_stem}.tar.gz"
 
 fail() {
   printf 'installer test failed: %s\n' "$*" >&2
@@ -20,6 +27,9 @@ fail() {
 
 make_release() {
   local root="$1"
+  local target="$2"
+  local stem="open-agent-view-${version}-${target}"
+  local archive="${stem}.tar.gz"
   install -d "${root}/${stem}"
   cat >"${root}/${stem}/coding-agents" <<EOF
 #!/usr/bin/env sh
@@ -42,7 +52,13 @@ EOF
 }
 
 install -d "$release_dir"
-make_release "$release_dir"
+for target in \
+  x86_64-unknown-linux-gnu \
+  aarch64-unknown-linux-gnu \
+  x86_64-apple-darwin \
+  aarch64-apple-darwin; do
+  make_release "$release_dir" "$target"
+done
 
 home="${temp_root}/home"
 output="$({
@@ -66,8 +82,8 @@ PATH="${custom_bin}:/usr/bin:/bin" \
 
 printf 'old binary\n' >"${custom_bin}/coding-agents"
 chmod 0755 "${custom_bin}/coding-agents"
-cp "${release_dir}/${archive}.sha256" "${release_dir}/${archive}.sha256.good"
-printf '%064d  %s\n' 0 "$archive" >"${release_dir}/${archive}.sha256"
+cp "${release_dir}/${host_archive}.sha256" "${release_dir}/${host_archive}.sha256.good"
+printf '%064d  %s\n' 0 "$host_archive" >"${release_dir}/${host_archive}.sha256"
 if OAV_VERSION="$version" \
   OAV_INSTALL_DIR="$custom_bin" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
@@ -78,7 +94,7 @@ grep -F "checksum verification failed" "${temp_root}/checksum.out" >/dev/null ||
   fail "checksum failure was not explained"
 grep -F "old binary" "${custom_bin}/coding-agents" >/dev/null ||
   fail "failed installation replaced the existing binary"
-mv "${release_dir}/${archive}.sha256.good" "${release_dir}/${archive}.sha256"
+mv "${release_dir}/${host_archive}.sha256.good" "${release_dir}/${host_archive}.sha256"
 
 if _OAV_TEST_UNAME_S=FreeBSD \
   OAV_VERSION="$version" \
@@ -88,6 +104,37 @@ if _OAV_TEST_UNAME_S=FreeBSD \
 fi
 grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.out" >/dev/null ||
   fail "unsupported platform failure was not explained"
+
+platforms=(
+  "Linux x86_64"
+  "Linux aarch64"
+  "Darwin x86_64"
+  "Darwin arm64"
+)
+for platform in "${platforms[@]}"; do
+  read -r test_os test_arch <<<"$platform"
+  platform_bin="${temp_root}/platform-${test_os}-${test_arch}/bin"
+  _OAV_TEST_UNAME_S="$test_os" \
+    _OAV_TEST_UNAME_M="$test_arch" \
+    OAV_VERSION="$version" \
+    OAV_INSTALL_DIR="$platform_bin" \
+    OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
+    bash "${repo_dir}/install.sh" >/dev/null
+  [[ -x "${platform_bin}/coding-agents" ]] ||
+    fail "supported platform mapping failed for ${test_os}/${test_arch}"
+done
+
+api_root="${temp_root}/api"
+install -d "${api_root}/repos/xhluca/open-agent-view/releases"
+printf '{"tag_name":"%s"}\n' "$tag" >"${api_root}/repos/xhluca/open-agent-view/releases/latest"
+latest_bin="${temp_root}/latest/bin"
+HOME="${temp_root}/latest-home" \
+  PATH="/usr/bin:/bin" \
+  OAV_INSTALL_DIR="$latest_bin" \
+  OAV_GITHUB_API_URL="file://${api_root}" \
+  OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
+  bash "${repo_dir}/install.sh" >/dev/null
+[[ -x "${latest_bin}/coding-agents" ]] || fail "public latest-release path did not install"
 
 fake_bin="${temp_root}/fake-bin"
 install -d "$fake_bin"
