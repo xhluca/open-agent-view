@@ -6,7 +6,9 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
-    ClaudeSource, CodexSource, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
+    default_managed_docker_registry_path, generate_managed_instance_id, ClaudeSource,
+    CodexSource, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
+    ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
 };
 use open_agent_view::control::ControlHub;
 use open_agent_view::domain::Provider;
@@ -23,6 +25,50 @@ enum LaunchProvider {
 enum Commands {
     /// Check provider, Docker, and target availability without changing them.
     Doctor,
+    /// Create and control only containers owned by Open Agent View.
+    Docker {
+        #[command(subcommand)]
+        command: DockerCommand,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
+enum DockerCommand {
+    /// List containers in the protected managed-container registry.
+    List,
+    /// Inspect one registered managed container by name or immutable ID.
+    Status { container: String },
+    /// Create a hardened, stopped container from a digest-pinned image.
+    Create {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        image: String,
+        #[arg(long)]
+        workspace: PathBuf,
+        #[arg(long = "state-home")]
+        state_home: PathBuf,
+        #[arg(long, default_value = "bridge")]
+        network: String,
+        #[arg(long)]
+        uid: Option<u32>,
+        #[arg(long)]
+        gid: Option<u32>,
+    },
+    /// Start one exact registered managed container.
+    Start { container: String },
+    /// Stop one exact registered managed container after confirmation.
+    Stop {
+        container: String,
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Remove one stopped managed container without removing its volumes.
+    Remove {
+        container: String,
+        #[arg(long)]
+        yes: bool,
+    },
 }
 
 /// Open terminal dashboard for Claude and Codex coding agents.
@@ -80,6 +126,10 @@ struct Cli {
     #[arg(long, default_value = "docker", value_name = "PATH", global = true)]
     docker_bin: String,
 
+    /// Override the protected managed-container ownership registry.
+    #[arg(long, value_name = "PATH", global = true)]
+    managed_docker_registry: Option<PathBuf>,
+
     /// Provider used by the new-session composer.
     #[arg(long, value_enum, default_value_t = LaunchProvider::Claude)]
     launch_provider: LaunchProvider,
@@ -95,21 +145,31 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    if cli.command == Some(Commands::Doctor) {
-        let report = diagnose(
-            &cli.claude_bin,
-            &cli.codex_bin,
-            &cli.docker_bin,
-            &cli.docker_containers,
-        );
-        if cli.json {
-            serde_json::to_writer_pretty(io::stdout().lock(), &report)?;
-            println!();
-        } else {
-            print!("{}", render_text(&report));
-        }
-        if report.has_errors() {
-            std::process::exit(1);
+    if let Some(command) = cli.command.as_ref() {
+        match command {
+            Commands::Doctor => {
+                let report = diagnose(
+                    &cli.claude_bin,
+                    &cli.codex_bin,
+                    &cli.docker_bin,
+                    &cli.docker_containers,
+                );
+                if cli.json {
+                    serde_json::to_writer_pretty(io::stdout().lock(), &report)?;
+                    println!();
+                } else {
+                    print!("{}", render_text(&report));
+                }
+                if report.has_errors() {
+                    std::process::exit(1);
+                }
+            }
+            Commands::Docker { command } => run_docker_command(
+                command,
+                &cli.docker_bin,
+                cli.managed_docker_registry.clone(),
+                cli.json,
+            )?,
         }
         return Ok(());
     }
@@ -184,4 +244,157 @@ fn main() -> Result<()> {
     )?;
 
     Ok(())
+}
+
+fn run_docker_command(
+    command: &DockerCommand,
+    docker_bin: &str,
+    registry_path: Option<PathBuf>,
+    json: bool,
+) -> Result<()> {
+    if matches!(command, DockerCommand::Stop { yes: false, .. }) {
+        bail!("refusing to stop without --yes after verifying the exact managed target");
+    }
+    if matches!(command, DockerCommand::Remove { yes: false, .. }) {
+        bail!("refusing to remove without --yes; stop and verify the target first");
+    }
+    let registry_path = match registry_path {
+        Some(path) => path,
+        None => default_managed_docker_registry_path()?,
+    };
+    let mut service = ManagedDockerService::open(docker_bin, registry_path)?;
+    match command {
+        DockerCommand::List => print_managed_statuses(&service.list(), json)?,
+        DockerCommand::Status { container } => {
+            let managed = service.enroll(container)?;
+            let status = service.status(&managed.container().id)?;
+            print_managed_statuses(&[status], json)?;
+        }
+        DockerCommand::Create {
+            name,
+            image,
+            workspace,
+            state_home,
+            network,
+            uid,
+            gid,
+        } => {
+            let (default_uid, default_gid) = current_user_ids()?;
+            let spec = ManagedDockerCreateSpec::new(
+                name,
+                generate_managed_instance_id()?,
+                image,
+                workspace,
+                state_home,
+                uid.unwrap_or(default_uid),
+                gid.unwrap_or(default_gid),
+                env!("CARGO_PKG_VERSION"),
+            )?
+            .with_network(network)?;
+            let status = service.create(&spec)?;
+            print_managed_statuses(&[status], json)?;
+            if !json {
+                println!("created stopped; run `coding-agents docker start {}` when ready", name);
+            }
+        }
+        DockerCommand::Start { container } => {
+            let status = service.start(container)?;
+            print_managed_statuses(&[status], json)?;
+        }
+        DockerCommand::Stop { container, yes } => {
+            debug_assert!(*yes);
+            let status = service.stop(container)?;
+            print_managed_statuses(&[status], json)?;
+        }
+        DockerCommand::Remove { container, yes } => {
+            debug_assert!(*yes);
+            let removed = service.remove(container)?;
+            if json {
+                serde_json::to_writer_pretty(io::stdout().lock(), &removed)?;
+                println!();
+            } else {
+                println!(
+                    "removed managed container {}; persistent workspace/state were retained",
+                    removed.container_id()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn print_managed_statuses(statuses: &[ManagedDockerStatus], json: bool) -> Result<()> {
+    if json {
+        serde_json::to_writer_pretty(io::stdout().lock(), statuses)?;
+        println!();
+        return Ok(());
+    }
+    if statuses.is_empty() {
+        println!("No managed Docker containers are registered.");
+        return Ok(());
+    }
+    for status in statuses {
+        println!(
+            "{:<12} {:<20} {}  {}",
+            format!("{:?}", status.state).to_ascii_lowercase(),
+            status.name.as_deref().unwrap_or("—"),
+            &status.container_id[..12],
+            status.detail.as_deref().unwrap_or("no detail")
+        );
+    }
+    Ok(())
+}
+
+fn current_user_ids() -> Result<(u32, u32)> {
+    #[cfg(unix)]
+    {
+        Ok((unsafe { libc::geteuid() }, unsafe { libc::getegid() }))
+    }
+    #[cfg(not(unix))]
+    {
+        bail!("managed Docker creation currently requires a Unix host or explicit UID/GID")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_digest_pinned_managed_create_command() {
+        let cli = Cli::try_parse_from([
+            "coding-agents",
+            "docker",
+            "create",
+            "--name",
+            "oav-agent",
+            "--image",
+            "example@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "--workspace",
+            "/work",
+            "--state-home",
+            "/state",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Docker {
+                command: DockerCommand::Create { .. }
+            })
+        ));
+    }
+
+    #[test]
+    fn destructive_managed_commands_do_not_imply_confirmation() {
+        let cli = Cli::try_parse_from(["coding-agents", "docker", "remove", "oav-agent"])
+            .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Some(Commands::Docker {
+                command: DockerCommand::Remove { yes: false, .. }
+            })
+        ));
+    }
 }

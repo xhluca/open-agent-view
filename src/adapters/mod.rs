@@ -3,6 +3,7 @@ mod codex;
 mod docker;
 mod fixture;
 mod managed_docker;
+mod managed_docker_registry;
 
 use std::path::PathBuf;
 
@@ -17,6 +18,10 @@ pub use managed_docker::{
     EnrolledDockerContainer, ManagedDockerContainer, ManagedDockerCreateSpec,
     ManagedDockerOwner, ManagedDockerRuntime, ENABLED_LABEL, INSTANCE_LABEL,
     MANAGED_LABEL, PROVIDERS_LABEL, VERSION_LABEL,
+};
+pub use managed_docker_registry::{
+    default_managed_docker_registry_path, generate_managed_instance_id, ManagedDockerRegistry,
+    ManagedDockerService, ManagedDockerState, ManagedDockerStatus,
 };
 
 use crate::domain::{AgentSession, SessionSnapshot};
