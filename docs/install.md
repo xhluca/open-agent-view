@@ -19,8 +19,9 @@ Prepared release targets cover:
 - macOS x86_64
 - macOS Apple silicon
 
-Each artifact is built and exercised on a native GitHub-hosted runner. The
-installer detects the host and stops with an explanation on unsupported systems.
+The release workflow builds and exercises each artifact on a native
+GitHub-hosted runner. The installer detects the host and stops with an
+explanation on unsupported systems.
 
 The dashboard needs an interactive terminal. `--json` works without a TTY.
 Claude Code, Codex, and Docker are optional; install only the providers you

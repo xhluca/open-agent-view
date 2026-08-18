@@ -1,207 +1,135 @@
-# open-agent-view
+# Open Agent View
 
-`open-agent-view` is an open terminal dashboard for supervising local and
-containerized coding agents. Its installed command is:
+**One terminal for all your coding agents.**
+
+Open Agent View turns agent sessions into a single live queue: see what needs
+input, follow work in progress, review completed tasks, and jump back into the
+provider's native interface. Run it as `coding-agents`.
+
+![Open Agent View showing Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity sessions](docs/assets/open-agent-view.gif)
+
+The interaction model is inspired by `claude agents`, rebuilt as an independent,
+open, provider-neutral project.
+
+> [!NOTE]
+> Open Agent View is a private pre-alpha. The no-Rust binary installer and
+> four-platform release pipeline are ready, but no GitHub release has been
+> published yet. A maintainer-approved first release is still required before
+> either installation command below can download a binary.
+
+## Why Open Agent View?
+
+- **All sessions, one queue.** Enabled providers refresh concurrently and one
+  unavailable provider does not hide the others.
+- **Attention first.** Sessions are grouped by ready for review, needs input,
+  working, completed, and unknown state.
+- **Native when it matters.** Open a selected session in its own CLI without
+  abandoning the dashboard workflow.
+- **Safe by default.** Finding a session never grants authority to change it.
+  Mutating controls require exact, locally recorded ownership.
+- **Host and container aware.** Supervise host agents and explicitly enrolled
+  Docker targets without silently scanning or restarting containers.
+
+## Install
+
+Once the first private release exists, collaborators can install with their
+existing GitHub authentication—no Rust, Cargo, or source checkout:
+
+```console
+gh auth login
+gh api -H "Accept: application/vnd.github.raw+json" \
+  repos/xhluca/open-agent-view/contents/install.sh | bash
+```
+
+After the repository and release are public, installation becomes:
+
+```console
+curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install.sh | bash
+```
+
+The installer selects a native Linux or macOS binary, verifies its SHA-256
+checksum, and installs `coding-agents` under `~/.local/bin`. See the
+[installation guide](docs/install.md) for supported platforms, version pinning,
+upgrades, the current pre-release boundary, and contributor source builds.
+
+## Quick start
+
+Open the dashboard from any project:
 
 ```console
 coding-agents
 ```
 
-The project is inspired by the interaction model of `claude agents`, while
-using its own implementation, identity, and provider-neutral data model. Its
-adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
-
-> [!IMPORTANT]
-> This repository is pre-alpha. Existing host sessions and explicitly enrolled
-> Docker containers are observe-only. Lifecycle controls are enabled only for
-> host Claude and Codex sessions launched and recorded by this installation.
-
-## What works
-
-- Host Claude discovery through `claude agents --json`, background launch, and
-  ownership-gated stop.
-- Host Codex discovery through the official App Server protocol, using a
-  user-private Unix WebSocket for durable managed sessions.
-- Owned host Codex transcript inspection, idle reply, exact active-turn steer,
-  interrupt, archive, and delete through the durable App Server.
-- Reconnectable Codex request handling: one-shot command allow/deny,
-  denial-only file/permission/MCP requests, and sequential non-secret
-  structured input, all scoped to exact owned thread/turn/request IDs.
-- Explicit, observe-only Docker targets with immutable container-ID pinning.
-- Hardened managed-Docker create/start/stop/remove commands backed by a private
-  external ownership registry and exact label/ID revalidation.
-- Status and directory grouping, cyclic navigation, collapsible groups,
-  peek/reply composition, details, filtering, help, and confirmation states.
-- Native session opening through `claude attach` and `codex resume`, with safe
-  terminal suspension/restoration.
-- Claude log reconstruction through a VT100 parser for a useful peek instead of
-  leaking raw terminal control sequences.
-- Deterministic JSON output and Ratatui test-backend coverage.
-
-The dashboard intentionally does not claim control over arbitrary Claude or Codex
-processes: live Codex ownership is local to the App Server process that started
-or resumed the thread, and existing Claude sessions were not launched by this
-tool. See [the control model](docs/control-model.md) and
-[Codex exploration](docs/exploration/codex-integration.md).
-
-## Installation
-
-There is no published release or `v0.1.0` tag yet. Install the current private
-pre-alpha from an authorized checkout:
+Useful examples:
 
 ```console
-git clone git@github.com:xhluca/open-agent-view.git
-cd open-agent-view
-cargo +1.75.0 test --locked
-cargo +1.75.0 install --path . --locked
-coding-agents --version
-```
+# Focus on the current project.
+coding-agents --cwd "$PWD"
 
-This requires access to the private repository and Rust 1.75.0 or newer. See
-[installation and release verification](docs/install.md) for prerequisites,
-user-local installation, non-destructive smoke tests, uninstall behavior, and
-the clearly separated future release procedure.
+# Include persisted interactive history in machine-readable output.
+coding-agents --json --all --include-interactive
 
-## Usage
-
-Launch the dashboard:
-
-```console
-coding-agents
-```
-
-If only Claude is installed on the host:
-
-```console
-coding-agents --no-host-codex
-```
-
-Emit normalized JSON, including completed sessions:
-
-```console
-coding-agents --json --all
-```
-
-Observe both providers in an explicitly selected, already-running container:
-
-```console
+# Add one explicitly selected running container.
 coding-agents --docker-container my-agent-container
-```
 
-The container remains observe-only. Refresh will never start, restart, or stop
-it as a side effect.
-
-New-session prompts launch host Claude by default. Choose a launch directory or
-the managed host Codex provider with:
-
-```console
-coding-agents --launch-cwd /path/to/project --launch-provider claude
-coding-agents --launch-cwd /path/to/project --launch-provider codex
-```
-
-Managed Codex tasks use a private Unix-socket App Server that survives dashboard
-restarts. Only exact threads and active turns launched through this supervisor
-can be interrupted; pre-existing host threads and Docker threads remain
-observe/open-only. When a managed turn pauses, press `space` to inspect the
-request. Safe command requests offer `y` (allow once) and `n` (deny); requests
-that cannot be accepted without broader or missing context offer denial only.
-
-Check the installed providers and any explicitly selected containers without
-starting the dashboard:
-
-```console
+# Check every configured CLI without starting the dashboard.
 coding-agents doctor
-coding-agents doctor --docker-container my-agent-container
 ```
 
-Create a stopped managed container only from a digest-pinned image, then start
-it explicitly:
+Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
+`/` to filter, and `?` for contextual shortcuts. Start typing to hand off a new
+task to the configured managed provider.
 
-```console
-coding-agents docker create \
-  --name oav-agent \
-  --image basic-claude-uv@sha256:FULL_64_HEX_DIGEST \
-  --workspace /absolute/project \
-  --state-home /absolute/dedicated-agent-home
-coding-agents docker start oav-agent
-coding-agents docker status oav-agent
-coding-agents docker list
-coding-agents docker stop oav-agent --yes
-coding-agents docker remove oav-agent --yes
-```
+## Provider support
 
-The two host directories must already exist. The state home is mounted as the
-managed container user's entire home; provision only the credentials/state you
-intend that container to use. Existing host Claude/Codex homes are never
-mounted automatically. Stop and removal require `--yes`, removal refuses a
-running container, and neither workspace nor state data is deleted.
+“Supported” means Open Agent View uses a documented provider surface and has an
+isolated compatibility test. It does not imply equal lifecycle authority for
+every CLI.
 
-See [the CLI reference](docs/cli.md) before using managed containers. It
-documents networking, UID/GID mapping, JSON output, the ownership-registry
-path, and recovery behavior.
+| Provider | Sessions shown today | Available actions |
+| --- | --- | --- |
+| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch and interrupt exact OAV-owned host sessions |
+| OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
+| Pi | Documented host JSONL history | Read-only inspect and native resume |
+| OpenCode | Persisted host history through the official CLI | Read-only export/inspect and native resume |
+| GitHub Copilot CLI | Persisted host sessions through official ACP `session/list` | Native resume; connection-owned ACP control is tested but not yet exposed as dashboard authority |
+| Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |
+| Cursor | No automatic global listing—the provider exposes only a TTY picker | Exact native resume and managed-run protocol groundwork; a durable supervisor is not yet integrated |
 
-### Keyboard map
-
-Compact row markers read `C@H`/`C@D` for Claude on host/Docker and
-`X@H`/`X@D` for Codex on host/Docker; Peek shows the full provider and runtime.
-
-| Key | Action |
-| --- | --- |
-| `↑`/`↓` | Move cyclically across section headers and sessions |
-| `enter` | Collapse/expand a section or open session details |
-| `space` | Open/close transcript peek; compose for an exact reply/input request |
-| `y` / `n` | Allow once / deny an exact actionable Codex request in peek |
-| `ctrl+s` | Switch between status and directory grouping |
-| `/` | Filter sessions |
-| `tab` or printable text | Focus the new-session composer |
-| `ctrl+r` | Enter rename composition |
-| `ctrl+a` | Confirm archive when the selected provider grants authority |
-| `ctrl+x` | Arm an exact-target stop/delete confirmation |
-| `?` | Show contextual shortcuts |
-| `esc` | Close the current mode, or quit directly from the session list |
-
-## Development
-
-The minimum supported Rust version is 1.75.
-
-```console
-cargo test --locked
-cargo run -- --help
-cargo install --path . --locked
-```
-
-See [the approved product specification](docs/product-spec.md),
-[architecture](docs/architecture.md), [validation record](docs/testing.md),
-[installation guide](docs/install.md), and
-[exploration notes](docs/exploration/README.md).
-
-The [documentation index](docs/README.md) routes operators, testers, and
-maintainers to the remaining guides. Contributions should follow
-[CONTRIBUTING.md](CONTRIBUTING.md); security-sensitive findings should follow
-[SECURITY.md](SECURITY.md).
+Claude and Codex have the broadest managed lifecycle today. The other adapters
+deliberately prefer honest read-only coverage over inferring live state or
+scraping undocumented stores. See the [provider exploration notes](docs/exploration/README.md)
+for the tested versions, isolation setup, protocol observations, and remaining
+boundaries.
 
 ## Safety model
 
-- Existing agent sessions and Docker containers are treated as read-only until
-  an explicit action is chosen in the UI.
-- Destructive actions require confirmation and identify the exact target.
-- Containers must opt in through a configured name, label, or explicit CLI
-  selection before they can be controlled.
-- Container start/stop/remove additionally require a matching private external
-  ownership record; labels alone never grant lifecycle authority.
-- Authentication material is never copied into project files or logs.
+Open Agent View separates **visibility** from **authority**. Existing sessions
+and explicitly selected containers are observe-only unless the installation can
+prove it created and still owns the exact target. Destructive actions are
+capability-gated and confirmed; credentials are never copied into the project.
 
-## Status
+The [control and ownership model](docs/control-model.md) documents the exact
+rules. Managed Docker additionally requires an immutable container ID,
+digest-pinned image, protected external owner record, and explicit lifecycle
+command.
 
-Private pre-alpha: source installation is available to repository
-collaborators, but no tag, GitHub release, public package, or stability promise
-exists. The dashboard supports ownership-gated host Claude launch/stop,
-durable managed host Codex lifecycle controls, and ownership-gated managed
-Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for verified status and
-remaining provider, terminal, and distribution work.
+## Documentation
 
-## Non-affiliation
+- [Install, upgrade, and uninstall](docs/install.md)
+- [CLI and keyboard reference](docs/cli.md)
+- [Troubleshooting and recovery](docs/troubleshooting.md)
+- [Control and ownership model](docs/control-model.md)
+- [Architecture](docs/architecture.md)
+- [Testing and real-TTY validation](docs/testing.md)
+- [Roadmap and current status](ROADMAP.md)
+- [Complete documentation index](docs/README.md)
 
-This is an independent project. It is not affiliated with or endorsed by
-Anthropic or OpenAI. Claude is a trademark of Anthropic; OpenAI and Codex are
-trademarks of OpenAI.
+Contributions are welcome through [CONTRIBUTING.md](CONTRIBUTING.md). Please
+report security-sensitive findings through [SECURITY.md](SECURITY.md).
+
+## License and non-affiliation
+
+Open Agent View is available under the [MIT License](LICENSE). It is independent
+and is not affiliated with or endorsed by Anthropic, OpenAI, GitHub, Cursor, the
+OpenCode project, the Pi project, or Google.
