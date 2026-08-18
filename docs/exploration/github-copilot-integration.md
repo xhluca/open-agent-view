@@ -100,6 +100,20 @@ reply, interrupt, or approval capability. A replacement ACP process must load
 the session and establish its own active prompt/request state. Open Agent View
 does not reconstruct approvals from disk.
 
+The managed controller retains one ACP process for the lifetime of the
+dashboard. Sessions created with `session/new`, or explicitly adopted with
+`session/load`, are tracked on that connection with streamed transcript,
+active prompt ID, pending permission request, and normalized state. It grants
+`approve` only when the current request offers `allow_once`, and `decline` only
+when it offers `reject_once`; it never maps an "always" option to a one-shot
+dashboard action. Requests for unknown sessions are cancelled.
+
+This retained connection is not a background daemon. If Open Agent View exits,
+active prompt and permission authority ends with that process. Persisted
+history remains discoverable, but is read-only again until a new controller
+explicitly loads the exact session. Native open is refused while the current
+controller owns a session, avoiding two simultaneous clients.
+
 ## Capability boundary
 
 | Operation | Verified surface | Open Agent View policy |
@@ -124,5 +138,9 @@ copilot --help
 The Rust tests use disposable mock ACP executables to cover initialization,
 multi-page listing, unknown-state normalization, exact permission option
 validation, cancellation response shape, message limits, and clean child
-shutdown. The live isolated probe covered the real 1.0.80 initialize/list/new
-authentication boundary. No credentialed model turn was dispatched.
+shutdown. A retained-connection lifecycle fixture covers
+new/prompt/update/permission/reject/completion/reply/cancel. A separate fixture
+proves that a listed external session remains unowned until an explicit
+`session/load` succeeds. The live isolated probe covered the real 1.0.80
+initialize/list/new authentication boundary. No credentialed model turn was
+dispatched.

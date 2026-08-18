@@ -23,6 +23,14 @@ checks; the guide also contains release gates that are not yet complete.
   exact active-turn steer, idle reply, archive, and delete. It also asserts
   mode `0700` for the state directory and `0600` for the ownership record. The
   mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
+- Disposable provider fixtures cover the additional host adapters without
+  touching user credentials or session stores. Cursor tests own a temporary
+  executable, workspace, registry, logs, and child process while exercising
+  launch/discovery/inspect/interrupt/reply and stale-identity refusal. Copilot
+  tests own an ACP subprocess and exercise list pagination plus the retained
+  new/prompt/update/permission/completion/reply/cancel lifecycle; a separate
+  load fixture proves external list results remain unowned. Antigravity tests
+  read only a temporary documented cache and build shell-free native commands.
 - Protocol tests interleave client responses with string- and numeric-ID server
   requests and assert the exact `{id,result}` response shape. Reconnect tests
   verify that `thread/resume` replays an unresolved approval with the same ID,
@@ -90,6 +98,14 @@ checks; the guide also contains release gates that are not yet complete.
   degradation/exit. The exhaustive action matrix ran against the actual binary
   in host `openpty`; it was not redundantly repeated inside Docker.
 - Host Claude discovery was compared with `claude agents --json --all`.
+- Cursor `2026.03.20-44cb435`, GitHub Copilot CLI `1.0.80`, and Antigravity
+  `1.1.14` were probed with disposable homes/configuration roots and no copied
+  credentials. Cursor and Antigravity empty-state interfaces were exercised in
+  real PTYs through clean exit and terminal restoration. Copilot's real ACP
+  server completed initialize/list without authentication and returned the
+  documented authentication error for session creation. No model task was
+  dispatched; provider-specific details and exact commands are recorded under
+  `docs/exploration/`.
 - The TUI was exercised in a 120-by-30 pseudo-terminal, including navigation,
   grouping, help, and clean shutdown.
 - Claude peek was checked against a real host session using read-only logs; the
@@ -128,6 +144,9 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Every current TUI action route and all normalized states in a real PTY | Five-test `real_tty` harness using the canonical fixture | Verified |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
+| Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
+| Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
+| Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
 | Managed-Docker command construction and authority failures | Injected command runner; no Docker daemon | Verified |
 | Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated credentials, network, and disposable tasks required | Not run |
 | SSH portability and broad terminal/theme matrix | Environment-specific real-TTY runs required | Not yet claimed |
@@ -213,3 +232,12 @@ examples.
 - Claude inline reply and rename, for which the explored CLI exposes no safe
   background-agent command. Enter hands the terminal to Claude's native attach
   interface; owned Codex threads support inline idle reply and active steer.
+- Cursor has no documented global machine-readable inventory. Only sessions
+  created through its OAV-owned Linux supervisor are shown and controlled;
+  macOS remains native-open-only until an equally race-safe process identity
+  primitive is implemented.
+- Copilot list results remain read-only until explicitly loaded onto the
+  controller's retained ACP connection. That authority is process-local and
+  does not survive a dashboard restart. Antigravity exposes only its documented
+  last-conversation-per-workspace cache; complete history and inline controls
+  are not claimed.

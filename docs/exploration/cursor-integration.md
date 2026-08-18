@@ -68,18 +68,27 @@ and are deliberately absent from the adapter's command builder.
 | --- | --- | --- |
 | Install/version | Official script; `--version` | Supported by doctor/install docs |
 | List every chat | TTY-only `ls` picker | Not claimed |
-| Start | Interactive CLI; `create-chat` plus print mode | Command/parser building blocks only until a durable owner exists |
+| Start | `create-chat` plus owned print mode | Supported for OAV-managed sessions on Linux |
 | Resume/open | `--resume ID`, `--workspace PATH` | Native open, shell-free arguments |
-| Read transcript | No documented read-only export | Not claimed |
-| Reply/steer live work | No documented live-session protocol | Not claimed |
-| Interrupt live work | No documented session-scoped API | Not claimed; never signal an unowned PID |
+| Read transcript | Owned `stream-json` output | Supported only for OAV-managed turns |
+| Reply/steer live work | New `--resume ID --print` turn; no live-steer API | Reply only after the owned turn exits |
+| Interrupt live work | Owned child process, not a provider session API | Linux pidfd signal only after exact PID/start/cmdline verification |
 | Approve/decline | Native interactive prompt; permission config | Leave to native client |
 | Delete/archive | Picker UI only/no machine contract found | Not claimed |
 
-The current adapter therefore exposes exact native-resume command construction
-and parses documented owned-run NDJSON. It does not install a global
-`SessionSource`, because scraping an Ink picker or undocumented local data
-would turn a UI detail into a false compatibility promise.
+The managed adapter allocates a chat, starts a detached safe print-mode turn,
+and stores its exact session ID, workspace, PID identity, and bounded log paths
+in a mode-`0600` registry below a mode-`0700` state directory. Discovery reads
+only that registry. A session gains inspect/reply/interrupt capabilities only
+when the persisted workspace and exact owned process identity still match.
+Before signalling, Linux opens a pidfd and revalidates the process; a stale or
+tampered identity is refused. It never sends a signal based on PID alone.
+
+The managed process contract is currently Linux-only. On macOS the adapter
+refuses before `create-chat`, because the same race-safe process-identity and
+signal contract has not been implemented there. Native resume remains
+available on macOS. The adapter still does not scrape the global Ink picker or
+undocumented storage, so external Cursor sessions do not appear automatically.
 
 ## Repeatable checks
 
@@ -92,4 +101,7 @@ cargo test --locked --lib adapters::cursor
 ```
 
 Use a new disposable home and a real PTY for `ls`; never point a compatibility
-probe at a user's logged-in Cursor state.
+probe at a user's logged-in Cursor state. Deterministic lifecycle tests use a
+disposable mock executable and private state directory. They exercise
+create/discover/inspect/interrupt/reply, registry modes, terminal result
+reduction, and a tampered process identity that must never receive a signal.
