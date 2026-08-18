@@ -21,6 +21,8 @@ as stable contracts.
   Copilot ACP discovery and connection-owned control contract.
 - [`antigravity-integration.md`](antigravity-integration.md) — Antigravity's
   documented workspace cache and native-only control boundary.
+- [`fresh-container-provider-validation.md`](fresh-container-provider-validation.md)
+  — no-mount official installer and protocol smoke tests.
 
 Return to the [documentation index](../README.md), or use the
 [real-TTY validation guide](../tui-validation.md) to repeat the reference and

@@ -144,3 +144,6 @@ proves that a listed external session remains unowned until an explicit
 `session/load` succeeds. The live isolated probe covered the real 1.0.80
 initialize/list/new authentication boundary. No credentialed model turn was
 dispatched.
+The same version and initialize/list exchange were reproduced after installing
+the npm package in a fresh Node container with no host mounts; see the
+[fresh-container provider validation](fresh-container-provider-validation.md).

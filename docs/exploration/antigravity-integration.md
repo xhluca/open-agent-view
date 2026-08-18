@@ -114,3 +114,6 @@ cargo test --locked --lib adapters::antigravity
 For installer validation, download the manifest and script into a disposable
 directory, compare the advertised SHA-512, install with `--dir`, and keep the
 probe home separate from the user's keyring and Antigravity configuration.
+The official install/version/help path was also repeated in a fresh Debian
+container with no host mounts; see the
+[fresh-container provider validation](fresh-container-provider-validation.md).

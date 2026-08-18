@@ -106,6 +106,16 @@ checks; the guide also contains release gates that are not yet complete.
   documented authentication error for session creation. No model task was
   dispatched; provider-specific details and exact commands are recorded under
   `docs/exploration/`.
+- The official Cursor, Copilot, and Antigravity install/version/help paths were
+  then repeated in three new `--rm` containers using pinned Debian/Node image
+  digests, tmpfs homes, and no host mounts. Cursor's current installer returned
+  `2026.08.11-e8db854`; Copilot's real ACP server again negotiated and listed
+  an empty store; Antigravity again returned `1.1.14`. Exact image digests,
+  commands, and outputs are in
+  `docs/exploration/fresh-container-provider-validation.md`.
+- The canonical seven-provider fixture passed
+  `all_supported_providers_coexist_in_one_real_terminal`, including provider
+  labels, contextual help, alternate-screen entry, and terminal restoration.
 - The TUI was exercised in a 120-by-30 pseudo-terminal, including navigation,
   grouping, help, and clean shutdown.
 - Claude peek was checked against a real host session using read-only logs; the

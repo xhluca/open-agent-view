@@ -1,8 +1,10 @@
 # Cursor CLI integration exploration
 
-Observed on 2026-08-18 with `cursor-agent 2026.03.20-44cb435`. The probe used
-an empty temporary home and XDG directories; it did not read a real Cursor
-login, chat, workspace, or configuration.
+Observed on 2026-08-18 with preinstalled `cursor-agent
+2026.03.20-44cb435`; a same-day fresh official install returned
+`2026.08.11-e8db854`. The probes used empty temporary homes and XDG
+directories; they did not read a real Cursor login, chat, workspace, or
+configuration.
 
 ## Primary sources
 
@@ -105,3 +107,5 @@ probe at a user's logged-in Cursor state. Deterministic lifecycle tests use a
 disposable mock executable and private state directory. They exercise
 create/discover/inspect/interrupt/reply, registry modes, terminal result
 reduction, and a tampered process identity that must never receive a signal.
+The clean-container installer/version/help smoke test is recorded in the
+[fresh-container provider validation](fresh-container-provider-validation.md).
