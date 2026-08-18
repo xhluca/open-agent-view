@@ -3,11 +3,11 @@ name = "open-agent-view"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-description = "Open terminal dashboard for supervising Claude and Codex coding agents"
+description = "Open terminal dashboard for supervising multiple coding-agent CLIs"
 license = "MIT"
 repository = "https://github.com/xhluca/open-agent-view"
 readme = "README.md"
-keywords = ["agents", "codex", "claude", "tui", "terminal"]
+keywords = ["agents", "coding-agents", "tui", "terminal", "dashboard"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]

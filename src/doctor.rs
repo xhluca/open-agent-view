@@ -3,6 +3,7 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::adapters::DockerTarget;
+use crate::domain::Provider;
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -52,14 +53,18 @@ impl DoctorReport {
 }
 
 pub fn diagnose(
-    claude_bin: &str,
-    codex_bin: &str,
+    provider_bins: &[(Provider, String)],
     docker_bin: &str,
     docker_targets: &[String],
 ) -> DoctorReport {
     let mut checks = Vec::new();
-    checks.push(version_check("Claude", claude_bin, &["--version"]));
-    checks.push(version_check("Codex", codex_bin, &["--version"]));
+    for (provider, executable) in provider_bins {
+        checks.push(version_check(
+            provider.label(),
+            executable,
+            &["--version"],
+        ));
+    }
     checks.push(version_check(
         "Docker",
         docker_bin,

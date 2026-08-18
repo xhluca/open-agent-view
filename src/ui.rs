@@ -771,7 +771,7 @@ fn provider_summary(app: &App) -> String {
     labels.sort_unstable();
     labels.dedup();
     if labels.is_empty() {
-        "Claude + Codex".into()
+        "Coding agents".into()
     } else {
         sanitize_inline(&labels.join(" + "))
     }

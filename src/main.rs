@@ -1,14 +1,17 @@
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
-    default_managed_docker_registry_path, generate_managed_instance_id, ClaudeSource, CodexSource,
-    DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec,
-    ManagedDockerService, ManagedDockerStatus,
+    default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
+    AntigravityController, AntigravitySource, ClaudeSource, CodexSource, CopilotController,
+    CopilotSource, CursorController, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
+    ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus, OpenCodeController,
+    OpenCodeSource, PiController, PiSource,
 };
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
@@ -71,7 +74,7 @@ enum DockerCommand {
     },
 }
 
-/// Open terminal dashboard for Claude and Codex coding agents.
+/// Open terminal dashboard for all your coding agents.
 #[derive(Debug, Parser)]
 #[command(name = "coding-agents", version, about)]
 struct Cli {
@@ -98,6 +101,10 @@ struct Cli {
     #[arg(long, value_name = "FILE")]
     fixture: Option<PathBuf>,
 
+    /// Disable every host provider while retaining explicit Docker targets.
+    #[arg(long)]
+    no_host_providers: bool,
+
     /// Claude executable used for host discovery.
     #[arg(long, default_value = "claude", value_name = "PATH", global = true)]
     claude_bin: String,
@@ -113,6 +120,50 @@ struct Cli {
     /// Disable Codex discovery on the host.
     #[arg(long)]
     no_host_codex: bool,
+
+    /// Pi executable used to open persisted host sessions.
+    #[arg(long, default_value = "pi", value_name = "PATH", global = true)]
+    pi_bin: String,
+
+    /// Override Pi's persisted session directory.
+    #[arg(long, value_name = "PATH", global = true)]
+    pi_session_dir: Option<PathBuf>,
+
+    /// Disable Pi discovery on the host.
+    #[arg(long)]
+    no_host_pi: bool,
+
+    /// OpenCode executable used for host discovery and native resume.
+    #[arg(long, default_value = "opencode", value_name = "PATH", global = true)]
+    opencode_bin: String,
+
+    /// Disable OpenCode discovery on the host.
+    #[arg(long)]
+    no_host_opencode: bool,
+
+    /// GitHub Copilot CLI executable used for ACP session discovery.
+    #[arg(long, default_value = "copilot", value_name = "PATH", global = true)]
+    copilot_bin: String,
+
+    /// Disable GitHub Copilot discovery on the host.
+    #[arg(long)]
+    no_host_copilot: bool,
+
+    /// Cursor agent executable used to open known managed sessions.
+    #[arg(long, default_value = "cursor-agent", value_name = "PATH", global = true)]
+    cursor_bin: String,
+
+    /// Disable Cursor session control on the host.
+    #[arg(long)]
+    no_host_cursor: bool,
+
+    /// Antigravity CLI executable used to open documented recent sessions.
+    #[arg(long, default_value = "agy", value_name = "PATH", global = true)]
+    antigravity_bin: String,
+
+    /// Disable Antigravity discovery on the host.
+    #[arg(long)]
+    no_host_antigravity: bool,
 
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
     #[arg(long = "docker-container", value_name = "NAME_OR_ID", global = true)]
@@ -144,9 +195,17 @@ fn main() -> Result<()> {
     if let Some(command) = cli.command.as_ref() {
         match command {
             Commands::Doctor => {
+                let provider_bins = vec![
+                    (Provider::Claude, cli.claude_bin.clone()),
+                    (Provider::Codex, cli.codex_bin.clone()),
+                    (Provider::Pi, cli.pi_bin.clone()),
+                    (Provider::OpenCode, cli.opencode_bin.clone()),
+                    (Provider::Cursor, cli.cursor_bin.clone()),
+                    (Provider::GitHubCopilot, cli.copilot_bin.clone()),
+                    (Provider::Antigravity, cli.antigravity_bin.clone()),
+                ];
                 let report = diagnose(
-                    &cli.claude_bin,
-                    &cli.codex_bin,
+                    &provider_bins,
                     &cli.docker_bin,
                     &cli.docker_containers,
                 );
@@ -170,6 +229,26 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let provider_io_enabled = provider_io_enabled(&cli);
+    let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
+    let claude_enabled = host_providers_enabled
+        && !cli.no_host_claude
+        && executable_available(&cli.claude_bin);
+    let codex_enabled = host_providers_enabled
+        && !cli.no_host_codex
+        && executable_available(&cli.codex_bin);
+    let pi_enabled = host_providers_enabled && !cli.no_host_pi;
+    let opencode_enabled = host_providers_enabled
+        && !cli.no_host_opencode
+        && executable_available(&cli.opencode_bin);
+    let copilot_enabled = host_providers_enabled
+        && !cli.no_host_copilot
+        && executable_available(&cli.copilot_bin);
+    let cursor_enabled = host_providers_enabled
+        && !cli.no_host_cursor
+        && executable_available(&cli.cursor_bin);
+    let antigravity_enabled = host_providers_enabled && !cli.no_host_antigravity;
+    let antigravity_open_enabled =
+        antigravity_enabled && executable_available(&cli.antigravity_bin);
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,
@@ -178,9 +257,17 @@ fn main() -> Result<()> {
         LaunchProvider::Claude => Provider::Claude,
         LaunchProvider::Codex => Provider::Codex,
     };
-    let control = ControlHub::new(ControlHubConfig {
-        claude_enabled: !cli.no_host_claude,
-        codex_enabled: !cli.no_host_codex,
+    let pi_session_dir = if !pi_enabled {
+        None
+    } else {
+        Some(match cli.pi_session_dir.clone() {
+            Some(path) => path,
+            None => default_pi_session_dir()?,
+        })
+    };
+    let mut control = ControlHub::new(ControlHubConfig {
+        claude_enabled,
+        codex_enabled,
         claude_bin: cli.claude_bin.clone(),
         codex_bin: cli.codex_bin.clone(),
         docker_bin: cli.docker_bin.clone(),
@@ -188,18 +275,58 @@ fn main() -> Result<()> {
         launch_cwd,
         provider_io_enabled,
     })?;
+    if provider_io_enabled {
+        if let Some(session_dir) = &pi_session_dir {
+            control.register_controller(Arc::new(PiController::host(
+                cli.pi_bin.clone(),
+                session_dir.clone(),
+            )))?;
+        }
+        if opencode_enabled {
+            control.register_controller(Arc::new(OpenCodeController::host(
+                cli.opencode_bin.clone(),
+            )))?;
+        }
+        if copilot_enabled {
+            control.register_controller(Arc::new(CopilotController::host(
+                cli.copilot_bin.clone(),
+            )))?;
+        }
+        if cursor_enabled {
+            control.register_controller(Arc::new(CursorController::host(
+                cli.cursor_bin.clone(),
+            )))?;
+        }
+        if antigravity_open_enabled {
+            control.register_controller(Arc::new(AntigravityController::host(
+                cli.antigravity_bin.clone(),
+            )))?;
+        }
+    }
 
     let mut engine = DiscoveryEngine::new();
     if let Some(fixture) = cli.fixture {
         engine.add_source(FixtureSource::new(fixture));
     } else {
-        if !cli.no_host_claude {
+        if claude_enabled {
             engine.add_source(ClaudeSource::host(cli.claude_bin));
         }
-        if !cli.no_host_codex {
+        if codex_enabled {
             if let Some(supervisor) = control.codex_supervisor() {
                 engine.add_source(CodexSource::managed(supervisor));
             }
+        }
+        if let Some(session_dir) = pi_session_dir {
+            engine.add_source(PiSource::host(session_dir));
+        }
+        if opencode_enabled {
+            engine.add_source(OpenCodeSource::host(cli.opencode_bin));
+        }
+        if copilot_enabled {
+            engine.add_source(CopilotSource::host(cli.copilot_bin));
+        }
+        if antigravity_enabled {
+            engine.add_source(AntigravitySource::default_host()?);
         }
         for container in cli.docker_containers {
             let target = DockerTarget::inspect(&container, &cli.docker_bin)?;
@@ -242,6 +369,38 @@ fn main() -> Result<()> {
 
 fn provider_io_enabled(cli: &Cli) -> bool {
     cli.fixture.is_none()
+}
+
+fn executable_available(program: &str) -> bool {
+    let candidate = std::path::Path::new(program);
+    if candidate.components().count() > 1 {
+        return executable_file(candidate);
+    }
+    std::env::var_os("PATH")
+        .map(|path| {
+            std::env::split_paths(&path)
+                .map(|directory| directory.join(program))
+                .any(|candidate| executable_file(&candidate))
+        })
+        .unwrap_or(false)
+}
+
+fn executable_file(path: &std::path::Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
 
 fn run_docker_command(
@@ -543,6 +702,12 @@ mod tests {
             "/tmp/snapshot.json",
             "--no-host-claude",
             "--no-host-codex",
+            "--no-host-providers",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
             "--all",
             "--include-interactive",
             "--cwd",
@@ -561,6 +726,12 @@ mod tests {
         assert_eq!(cli.fixture, Some(PathBuf::from("/tmp/snapshot.json")));
         assert!(cli.no_host_claude);
         assert!(cli.no_host_codex);
+        assert!(cli.no_host_providers);
+        assert!(cli.no_host_pi);
+        assert!(cli.no_host_opencode);
+        assert!(cli.no_host_copilot);
+        assert!(cli.no_host_cursor);
+        assert!(cli.no_host_antigravity);
         assert!(cli.all);
         assert!(cli.include_interactive);
         assert_eq!(cli.cwd, Some(PathBuf::from("/project")));
@@ -580,5 +751,25 @@ mod tests {
     #[test]
     fn refresh_interval_below_the_supported_floor_is_rejected() {
         assert!(Cli::try_parse_from(["coding-agents", "--refresh-ms", "249"]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_detection_requires_a_real_executable_file() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("agent-cli");
+        fs::write(&executable, b"#!/bin/sh\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(!executable_available(executable.to_str().unwrap()));
+
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(executable_available(executable.to_str().unwrap()));
+        assert!(!executable_available(
+            directory.path().join("missing").to_str().unwrap()
+        ));
+        assert!(!executable_available(directory.path().to_str().unwrap()));
     }
 }

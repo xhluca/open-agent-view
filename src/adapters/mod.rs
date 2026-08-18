@@ -11,6 +11,7 @@ mod opencode;
 mod pi;
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -59,6 +60,19 @@ pub struct DiscoveryRequest {
 pub trait SessionSource: Send + Sync {
     fn label(&self) -> &str;
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>>;
+}
+
+impl<T> SessionSource for Arc<T>
+where
+    T: SessionSource + ?Sized,
+{
+    fn label(&self) -> &str {
+        (**self).label()
+    }
+
+    fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        (**self).discover(request)
+    }
 }
 
 #[derive(Default)]
