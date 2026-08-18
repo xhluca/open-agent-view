@@ -44,7 +44,7 @@ impl AppServerInvocation {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     pub fn proxy(executable: impl Into<String>, socket_path: &std::path::Path) -> Self {
         Self::Process {
             program: executable.into(),

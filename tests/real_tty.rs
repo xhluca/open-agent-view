@@ -632,12 +632,14 @@ fn arrow_navigation_and_group_collapse_are_real_terminal_events() {
 fn open_pty(columns: u16, rows: u16) -> io::Result<(RawFd, RawFd)> {
     let mut master = -1;
     let mut slave = -1;
+    #[allow(unused_mut)] // macOS libc requires a mutable winsize pointer; Linux does not.
     let mut size = libc::winsize {
         ws_row: rows,
         ws_col: columns,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
+    #[cfg(target_os = "macos")]
     let result = unsafe {
         libc::openpty(
             &mut master,
@@ -645,6 +647,16 @@ fn open_pty(columns: u16, rows: u16) -> io::Result<(RawFd, RawFd)> {
             std::ptr::null_mut(),
             std::ptr::null_mut(),
             &mut size,
+        )
+    };
+    #[cfg(not(target_os = "macos"))]
+    let result = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            &size,
         )
     };
     if result == -1 {

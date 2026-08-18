@@ -112,7 +112,7 @@ pub struct CodexSupervisor {
 #[derive(Clone, Copy)]
 enum SupervisorClientTransport {
     UnixWebSocket,
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     ProcessProxy,
 }
 
@@ -138,7 +138,7 @@ impl CodexSupervisor {
         )
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, target_os = "linux"))]
     fn with_state_dir(codex_bin: impl Into<String>, state_dir: PathBuf) -> Result<Self> {
         Self::with_state_dir_and_transport(
             codex_bin,
@@ -684,7 +684,7 @@ impl CodexSupervisor {
             SupervisorClientTransport::UnixWebSocket => {
                 AppServerInvocation::unix_websocket(server.socket_path.clone())
             }
-            #[cfg(test)]
+            #[cfg(all(test, target_os = "linux"))]
             SupervisorClientTransport::ProcessProxy => {
                 AppServerInvocation::proxy(self.codex_bin.clone(), &server.socket_path)
             }
@@ -1612,16 +1612,21 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(target_os = "linux")]
     use std::sync::Arc;
 
+    #[cfg(target_os = "linux")]
     use tempfile::tempdir;
 
+    #[cfg(target_os = "linux")]
     use crate::adapters::{CodexSource, DiscoveryRequest, SessionSource};
     use crate::domain::{SessionKind, SessionState};
 
     use super::*;
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn stale_pid_identity_is_never_treated_as_live() {
         let record = SupervisorRecord {
@@ -1812,6 +1817,7 @@ mod tests {
         assert!(format_pending_request(&pending[0]).contains("deadline has passed"));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn only_one_process_instance_holds_inline_response_authority() {
         let directory = tempdir().unwrap();
@@ -1827,6 +1833,7 @@ mod tests {
         assert!(third.response_lease.is_some());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn durable_server_reconnects_and_preserves_exact_thread_ownership() {
         let directory = tempdir().unwrap();
@@ -1915,6 +1922,7 @@ mod tests {
         assert!(second.delete(&idle).is_err());
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn pending_approval_replays_after_reconnect_and_clears_only_when_resolved() {
         let directory = tempdir().unwrap();
@@ -1952,6 +1960,7 @@ mod tests {
         assert!(resumed.capabilities.contains(&Capability::Reply));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn structured_input_answers_questions_sequentially_without_persisting_values() {
         let directory = tempdir().unwrap();
@@ -1994,6 +2003,7 @@ mod tests {
         assert!(!record_text.contains("Thorough"));
     }
 
+    #[cfg(target_os = "linux")]
     fn discover_owned(supervisor: &Arc<CodexSupervisor>, thread_id: &str) -> AgentSession {
         let source = CodexSource::managed(supervisor.clone());
         let sessions = source
@@ -2015,6 +2025,7 @@ mod tests {
             .unwrap()
     }
 
+    #[cfg(target_os = "linux")]
     fn discover_owned_until(
         supervisor: &Arc<CodexSupervisor>,
         thread_id: &str,
@@ -2032,8 +2043,10 @@ mod tests {
 
     /// Reaps the exact mock child created by this test, including on panic.
     /// It never signals a PID after either identity token stops matching.
+    #[cfg(target_os = "linux")]
     struct VerifiedTestProcess(SupervisorRecord);
 
+    #[cfg(target_os = "linux")]
     impl Drop for VerifiedTestProcess {
         fn drop(&mut self) {
             if !verify_process(&self.0).unwrap_or(false) {
@@ -2050,6 +2063,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     fn reap_test_process(pid: u32, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
@@ -2093,6 +2107,7 @@ mod tests {
         assert!(!session.capabilities.contains(&Capability::Interrupt));
     }
 
+    #[cfg(target_os = "linux")]
     const MOCK_CODEX: &str = r#"#!/usr/bin/env python3
 import json, os, socket, sys, threading
 

@@ -829,11 +829,7 @@ mod tests {
     fn controller_opens_the_exact_native_session() {
         let directory = tempdir().unwrap();
         let executable = directory.path().join("pi-test");
-        fs::write(
-            &executable,
-            "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = 123e4567-e89b-12d3-a456-426614174000 ] && [ \"$3\" = --session-dir ] && [ \"$4\" = \"$PWD\" ]\n",
-        )
-        .unwrap();
+        fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > pi-args\n").unwrap();
         let mut permissions = fs::metadata(&executable).unwrap().permissions();
         permissions.set_mode(0o700);
         fs::set_permissions(&executable, permissions).unwrap();
@@ -847,6 +843,13 @@ mod tests {
         assert_eq!(
             outcome.provider_session_hint,
             Some("123e4567-e89b-12d3-a456-426614174000".into())
+        );
+        assert_eq!(
+            fs::read_to_string(directory.path().join("pi-args")).unwrap(),
+            format!(
+                "--session\n123e4567-e89b-12d3-a456-426614174000\n--session-dir\n{}\n",
+                directory.path().display()
+            )
         );
     }
 
