@@ -33,7 +33,11 @@ EOF
   tar -C "$root" -czf "${root}/${archive}" "$stem"
   (
     cd "$root"
-    sha256sum "$archive" >"${archive}.sha256"
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha256sum "$archive" >"${archive}.sha256"
+    else
+      shasum -a 256 "$archive" >"${archive}.sha256"
+    fi
   )
 }
 
@@ -76,13 +80,13 @@ grep -F "old binary" "${custom_bin}/coding-agents" >/dev/null ||
   fail "failed installation replaced the existing binary"
 mv "${release_dir}/${archive}.sha256.good" "${release_dir}/${archive}.sha256"
 
-if _OAV_TEST_UNAME_S=Darwin \
+if _OAV_TEST_UNAME_S=FreeBSD \
   OAV_VERSION="$version" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >"${temp_root}/platform.out" 2>&1; then
   fail "an unsupported platform was accepted"
 fi
-grep -F "no prebuilt release is available for Darwin" "${temp_root}/platform.out" >/dev/null ||
+grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.out" >/dev/null ||
   fail "unsupported platform failure was not explained"
 
 fake_bin="${temp_root}/fake-bin"

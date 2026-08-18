@@ -78,13 +78,11 @@ done
 os="${_OAV_TEST_UNAME_S:-$(uname -s)}"
 architecture="${_OAV_TEST_UNAME_M:-$(uname -m)}"
 
-case "$os" in
-  Linux) ;;
-  *) fail "no prebuilt release is available for ${os}; see docs/install.md for supported platforms" ;;
-esac
-
-case "$architecture" in
-  x86_64 | amd64) target="x86_64-unknown-linux-gnu" ;;
+case "${os}/${architecture}" in
+  Linux/x86_64 | Linux/amd64) target="x86_64-unknown-linux-gnu" ;;
+  Linux/aarch64 | Linux/arm64) target="aarch64-unknown-linux-gnu" ;;
+  Darwin/x86_64 | Darwin/amd64) target="x86_64-apple-darwin" ;;
+  Darwin/arm64 | Darwin/aarch64) target="aarch64-apple-darwin" ;;
   *) fail "no prebuilt release is available for ${os}/${architecture}; see docs/install.md for supported platforms" ;;
 esac
 

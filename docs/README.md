@@ -21,6 +21,8 @@ are doing; do not infer release readiness from the package version in
 
 - [Architecture](architecture.md)
 - [Roadmap and release status](../ROADMAP.md)
+- [Release guide](release.md)
+- [README design study](readme-inspiration.md)
 - [Contribution guide](../CONTRIBUTING.md)
 - [Security policy](../SECURITY.md)
 - [Changelog](../CHANGELOG.md)
