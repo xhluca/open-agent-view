@@ -6,13 +6,13 @@ use anyhow::{bail, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
-    default_managed_docker_registry_path, generate_managed_instance_id, ClaudeSource,
-    CodexSource, DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource,
-    ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
+    default_managed_docker_registry_path, generate_managed_instance_id, ClaudeSource, CodexSource,
+    DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec,
+    ManagedDockerService, ManagedDockerStatus,
 };
-use open_agent_view::control::ControlHub;
-use open_agent_view::domain::Provider;
+use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
+use open_agent_view::domain::Provider;
 use open_agent_view::terminal::run_dashboard;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -115,11 +115,7 @@ struct Cli {
     no_host_codex: bool,
 
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
-    #[arg(
-        long = "docker-container",
-        value_name = "NAME_OR_ID",
-        global = true
-    )]
+    #[arg(long = "docker-container", value_name = "NAME_OR_ID", global = true)]
     docker_containers: Vec<String>,
 
     /// Docker executable used for explicitly enrolled container targets.
@@ -182,16 +178,16 @@ fn main() -> Result<()> {
         LaunchProvider::Claude => Provider::Claude,
         LaunchProvider::Codex => Provider::Codex,
     };
-    let control = ControlHub::new(
-        !cli.no_host_claude,
-        !cli.no_host_codex,
-        cli.claude_bin.clone(),
-        cli.codex_bin.clone(),
-        cli.docker_bin.clone(),
+    let control = ControlHub::new(ControlHubConfig {
+        claude_enabled: !cli.no_host_claude,
+        codex_enabled: !cli.no_host_codex,
+        claude_bin: cli.claude_bin.clone(),
+        codex_bin: cli.codex_bin.clone(),
+        docker_bin: cli.docker_bin.clone(),
         launch_provider,
         launch_cwd,
         provider_io_enabled,
-    )?;
+    })?;
 
     let mut engine = DiscoveryEngine::new();
     if let Some(fixture) = cli.fixture {
@@ -213,11 +209,7 @@ fn main() -> Result<()> {
                 target.id.clone(),
                 display_image.clone(),
             ));
-            engine.add_source(CodexSource::docker(
-                target.name,
-                target.id,
-                display_image,
-            ));
+            engine.add_source(CodexSource::docker(target.name, target.id, display_image));
         }
     }
     let request = DiscoveryRequest {
@@ -295,7 +287,10 @@ fn run_docker_command(
             let status = service.create(&spec)?;
             print_managed_statuses(&[status], json)?;
             if !json {
-                println!("created stopped; run `coding-agents docker start {}` when ready", name);
+                println!(
+                    "created stopped; run `coding-agents docker start {}` when ready",
+                    name
+                );
             }
         }
         DockerCommand::Start { container } => {
@@ -408,8 +403,7 @@ mod tests {
 
     #[test]
     fn destructive_managed_commands_do_not_imply_confirmation() {
-        let cli = Cli::try_parse_from(["coding-agents", "docker", "remove", "oav-agent"])
-            .unwrap();
+        let cli = Cli::try_parse_from(["coding-agents", "docker", "remove", "oav-agent"]).unwrap();
 
         assert!(matches!(
             cli.command,

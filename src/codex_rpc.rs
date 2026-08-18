@@ -25,11 +25,7 @@ impl AppServerInvocation {
     pub fn direct(executable: impl Into<String>) -> Self {
         Self::Process {
             program: executable.into(),
-            args: vec![
-                "app-server".into(),
-                "--listen".into(),
-                "stdio://".into(),
-            ],
+            args: vec!["app-server".into(), "--listen".into(), "stdio://".into()],
         }
     }
 
@@ -88,7 +84,7 @@ struct ProcessTransport {
 enum ClientTransport {
     Process(ProcessTransport),
     #[cfg(unix)]
-    UnixWebSocket(WebSocket<UnixStream>),
+    UnixWebSocket(Box<WebSocket<UnixStream>>),
 }
 
 pub(crate) struct AppServerClient {
@@ -108,11 +104,14 @@ impl AppServerClient {
                 #[cfg(unix)]
                 {
                     let stream = UnixStream::connect(socket_path).with_context(|| {
-                        format!("failed to connect to App Server socket {}", socket_path.display())
+                        format!(
+                            "failed to connect to App Server socket {}",
+                            socket_path.display()
+                        )
                     })?;
                     let (socket, _) = client("ws://localhost/", stream)
                         .context("App Server Unix WebSocket handshake failed")?;
-                    ClientTransport::UnixWebSocket(socket)
+                    ClientTransport::UnixWebSocket(Box::new(socket))
                 }
                 #[cfg(not(unix))]
                 {
@@ -156,7 +155,10 @@ impl AppServerClient {
                     args.join(" ")
                 )
             })?;
-        let stdin = child.stdin.take().context("failed to capture App Server stdin")?;
+        let stdin = child
+            .stdin
+            .take()
+            .context("failed to capture App Server stdin")?;
         let stdout = child
             .stdout
             .take()
@@ -264,7 +266,9 @@ impl AppServerClient {
                         {
                             break
                         }
-                        Err(error) => return Err(error).context("App Server WebSocket read failed"),
+                        Err(error) => {
+                            return Err(error).context("App Server WebSocket read failed")
+                        }
                     }
                 }
                 socket.get_mut().set_nonblocking(false)?;
@@ -393,10 +397,8 @@ mod tests {
             let (stream, _) = listener.accept().unwrap();
             let mut socket = tungstenite::accept(stream).unwrap();
 
-            let initialize: Value = serde_json::from_str(
-                &socket.read().unwrap().into_text().unwrap(),
-            )
-            .unwrap();
+            let initialize: Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
             assert_eq!(initialize["method"], "initialize");
             let initialize_id = initialize["id"].as_u64().unwrap();
             socket
@@ -405,17 +407,13 @@ mod tests {
                 ))
                 .unwrap();
 
-            let initialized: Value = serde_json::from_str(
-                &socket.read().unwrap().into_text().unwrap(),
-            )
-            .unwrap();
+            let initialized: Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
             assert_eq!(initialized["method"], "initialized");
             assert!(initialized.get("id").is_none());
 
-            let request: Value = serde_json::from_str(
-                &socket.read().unwrap().into_text().unwrap(),
-            )
-            .unwrap();
+            let request: Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
             assert_eq!(request["method"], "thread/list");
             let request_id = request["id"].as_u64().unwrap();
             socket
@@ -455,28 +453,28 @@ mod tests {
                 ))
                 .unwrap();
 
-            let approval: Value = serde_json::from_str(
-                &socket.read().unwrap().into_text().unwrap(),
-            )
-            .unwrap();
-            assert_eq!(approval, json!({
-                "id": "approval-1",
-                "result": {"decision": "accept"}
-            }));
-            let denial: Value = serde_json::from_str(
-                &socket.read().unwrap().into_text().unwrap(),
-            )
-            .unwrap();
-            assert_eq!(denial, json!({
-                "id": -7,
-                "result": {"decision": "decline"}
-            }));
+            let approval: Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+            assert_eq!(
+                approval,
+                json!({
+                    "id": "approval-1",
+                    "result": {"decision": "accept"}
+                })
+            );
+            let denial: Value =
+                serde_json::from_str(&socket.read().unwrap().into_text().unwrap()).unwrap();
+            assert_eq!(
+                denial,
+                json!({
+                    "id": -7,
+                    "result": {"decision": "decline"}
+                })
+            );
         });
 
-        let mut client = AppServerClient::connect(&AppServerInvocation::unix_websocket(
-            socket_path,
-        ))
-        .unwrap();
+        let mut client =
+            AppServerClient::connect(&AppServerInvocation::unix_websocket(socket_path)).unwrap();
         assert_eq!(
             client.request("thread/list", json!({})).unwrap(),
             json!({"data": []})
@@ -486,10 +484,7 @@ mod tests {
         assert_eq!(events[0]["id"], "approval-1");
         assert_eq!(events[1]["id"], -7);
         client
-            .respond(
-                json!("approval-1"),
-                json!({"decision": "accept"}),
-            )
+            .respond(json!("approval-1"), json!({"decision": "accept"}))
             .unwrap();
         client
             .respond(json!(-7), json!({"decision": "decline"}))
@@ -512,8 +507,7 @@ mod tests {
     #[test]
     fn extracts_success_and_error_responses() {
         assert_eq!(
-            response_result("thread/list", json!({"id": 1, "result": {"data": []}}))
-                .unwrap(),
+            response_result("thread/list", json!({"id": 1, "result": {"data": []}})).unwrap(),
             json!({"data": []})
         );
         assert!(response_result(

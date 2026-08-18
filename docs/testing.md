@@ -46,7 +46,8 @@ checks; the guide also contains release gates that are not yet complete.
   bulk-delete confirmation path.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
-- GitHub Actions repeats tests and release builds on Rust 1.75.0 and stable.
+- GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
+  targets, then repeats tests and release builds on Rust 1.75.0 and stable.
 - `scripts/real-tui-tests.sh` runs five serialized tests against real Unix PTYs
   with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, filter

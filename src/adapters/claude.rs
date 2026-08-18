@@ -7,9 +7,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::domain::{
-    AgentSession, Capability, Provider, Runtime, SessionKind, SessionState,
-};
+use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -278,12 +276,8 @@ mod tests {
                 stderr: vec![],
             })),
         });
-        let source = ClaudeSource::with_runner(
-            "test",
-            Invocation::host("claude"),
-            Runtime::Host,
-            runner,
-        );
+        let source =
+            ClaudeSource::with_runner("test", Invocation::host("claude"), Runtime::Host, runner);
 
         let sessions = source
             .discover(&DiscoveryRequest {

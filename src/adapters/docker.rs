@@ -16,10 +16,8 @@ pub struct DockerTarget {
 
 impl DockerTarget {
     pub fn inspect(reference: &str, docker_executable: &str) -> Result<Self> {
-        let mut request = CommandRequest::new(
-            docker_executable,
-            vec!["inspect".into(), reference.into()],
-        );
+        let mut request =
+            CommandRequest::new(docker_executable, vec!["inspect".into(), reference.into()]);
         request.timeout = Duration::from_secs(5);
         let output = ProcessRunner.run(&request)?;
         if output.status != 0 {
@@ -51,7 +49,10 @@ impl DockerTarget {
     }
 
     pub fn display_image(&self) -> String {
-        let short_id = self.image_id.strip_prefix("sha256:").unwrap_or(&self.image_id);
+        let short_id = self
+            .image_id
+            .strip_prefix("sha256:")
+            .unwrap_or(&self.image_id);
         format!("{}@{}", self.image, &short_id[..short_id.len().min(12)])
     }
 }

@@ -15,8 +15,8 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    DockerAuthority, ManagedDockerContainer, ManagedDockerCreateSpec,
-    ManagedDockerOwner, ManagedDockerRuntime,
+    DockerAuthority, ManagedDockerContainer, ManagedDockerCreateSpec, ManagedDockerOwner,
+    ManagedDockerRuntime,
 };
 use crate::process::CommandRunner;
 
@@ -157,9 +157,7 @@ impl ManagedDockerRegistry {
             return Ok(false);
         };
         if existing != &requested {
-            bail!(
-                "refusing to forget container {container_id}: instance ID does not match"
-            );
+            bail!("refusing to forget container {container_id}: instance ID does not match");
         }
 
         let removed = self
@@ -176,11 +174,7 @@ impl ManagedDockerRegistry {
     fn save(&self) -> Result<()> {
         let document = RegistryDocument {
             version: REGISTRY_VERSION,
-            owners: self
-                .owners
-                .values()
-                .map(StoredOwner::from)
-                .collect(),
+            owners: self.owners.values().map(StoredOwner::from).collect(),
         };
         let bytes = serde_json::to_vec_pretty(&document)?;
         let parent = self
@@ -372,8 +366,7 @@ pub fn default_managed_docker_registry_path() -> Result<PathBuf> {
             .join("owners.json"));
     }
     let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".local/state/open-agent-view/managed-docker/owners.json"))
+    Ok(PathBuf::from(home).join(".local/state/open-agent-view/managed-docker/owners.json"))
 }
 
 pub fn generate_managed_instance_id() -> Result<String> {
@@ -455,13 +448,19 @@ fn ensure_private_directory(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("failed to inspect registry directory {}", path.display()))?;
     if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        bail!("registry directory {} must be a real directory", path.display());
+        bail!(
+            "registry directory {} must be a real directory",
+            path.display()
+        );
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if metadata.uid() != unsafe { libc::geteuid() } {
-            bail!("registry directory {} is not owned by the current user", path.display());
+            bail!(
+                "registry directory {} is not owned by the current user",
+                path.display()
+            );
         }
         if metadata.permissions().mode() & 0o777 != 0o700 {
             bail!("registry directory {} must have mode 0700", path.display());
@@ -474,16 +473,25 @@ fn ensure_private_regular_file(path: &Path) -> Result<()> {
     let metadata = fs::symlink_metadata(path)
         .with_context(|| format!("failed to inspect registry {}", path.display()))?;
     if metadata.file_type().is_symlink() || !metadata.is_file() {
-        bail!("managed Docker registry {} must be a regular file", path.display());
+        bail!(
+            "managed Docker registry {} must be a regular file",
+            path.display()
+        );
     }
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
         if metadata.uid() != unsafe { libc::geteuid() } {
-            bail!("managed Docker registry {} is not owned by the current user", path.display());
+            bail!(
+                "managed Docker registry {} is not owned by the current user",
+                path.display()
+            );
         }
         if metadata.permissions().mode() & 0o777 != 0o600 {
-            bail!("managed Docker registry {} must have mode 0600", path.display());
+            bail!(
+                "managed Docker registry {} must have mode 0600",
+                path.display()
+            );
         }
     }
     Ok(())
@@ -543,10 +551,7 @@ fn temporary_path(path: &Path) -> Result<PathBuf> {
         .context("managed Docker registry path has no file name")?
         .to_string_lossy();
     let sequence = TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    Ok(path.with_file_name(format!(
-        ".{name}.tmp-{}-{sequence}",
-        std::process::id()
-    )))
+    Ok(path.with_file_name(format!(".{name}.tmp-{}-{sequence}", std::process::id())))
 }
 
 #[cfg(test)]
@@ -584,9 +589,11 @@ mod tests {
             .unwrap());
 
         assert_eq!(file_mode(&path), 0o600);
-        assert!(fs::read_dir(&registry_dir)
+        assert!(fs::read_dir(&registry_dir).unwrap().all(|entry| !entry
             .unwrap()
-            .all(|entry| !entry.unwrap().file_name().to_string_lossy().contains(".tmp-")));
+            .file_name()
+            .to_string_lossy()
+            .contains(".tmp-")));
         drop(registry);
         let loaded = ManagedDockerRegistry::open(path).unwrap();
         assert_eq!(
@@ -666,12 +673,9 @@ mod tests {
             success(inspect_json(ID_A, false, true, INSTANCE_A)),
         ]);
         let registry_path = registry_dir.join("owners.json");
-        let mut service = ManagedDockerService::with_runner(
-            "docker-test",
-            registry_path.clone(),
-            runner.clone(),
-        )
-        .unwrap();
+        let mut service =
+            ManagedDockerService::with_runner("docker-test", registry_path.clone(), runner.clone())
+                .unwrap();
 
         let status = service.create(&spec).unwrap();
 
@@ -859,9 +863,7 @@ mod tests {
         }
     }
 
-    fn fake_runner(
-        outputs: impl IntoIterator<Item = CommandOutput>,
-    ) -> Arc<FakeCommandRunner> {
+    fn fake_runner(outputs: impl IntoIterator<Item = CommandOutput>) -> Arc<FakeCommandRunner> {
         Arc::new(FakeCommandRunner {
             requests: Mutex::new(Vec::new()),
             outputs: Mutex::new(outputs.into_iter().collect()),

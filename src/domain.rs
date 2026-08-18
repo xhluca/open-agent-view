@@ -62,9 +62,7 @@ impl Runtime {
 }
 
 /// Lifecycle grouping used by the dashboard.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
     ReadyForReview,
@@ -95,9 +93,7 @@ impl SessionState {
 }
 
 /// An operation the selected adapter can safely perform for a session.
-#[derive(
-    Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize,
-)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Capability {
     Inspect,
@@ -153,14 +149,14 @@ mod optional_system_time_millis {
         D: Deserializer<'de>,
     {
         let milliseconds = Option::<u64>::deserialize(deserializer)?;
-        Ok(milliseconds
-            .map(|value| SystemTime::UNIX_EPOCH + Duration::from_millis(value)))
+        Ok(milliseconds.map(|value| SystemTime::UNIX_EPOCH + Duration::from_millis(value)))
     }
 }
 
 impl AgentSession {
     pub fn age(&self, now: SystemTime) -> Option<Duration> {
-        now.duration_since(self.updated_at.or(self.started_at)?).ok()
+        now.duration_since(self.updated_at.or(self.started_at)?)
+            .ok()
     }
 }
 

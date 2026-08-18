@@ -10,9 +10,7 @@ use serde_json::{json, Value};
 use super::{DiscoveryRequest, SessionSource};
 use crate::codex_rpc::{AppServerClient, AppServerInvocation};
 use crate::codex_supervisor::CodexSupervisor;
-use crate::domain::{
-    AgentSession, Provider, Runtime, SessionKind, SessionState,
-};
+use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionState};
 
 const SOURCE_KINDS: [&str; 10] = [
     "cli",
@@ -77,7 +75,6 @@ impl CodexSource {
         }
     }
 }
-
 
 impl SessionSource for CodexSource {
     fn label(&self) -> &str {
@@ -189,8 +186,13 @@ fn normalize_thread(thread: CodexThread, runtime: Runtime) -> AgentSession {
         .unwrap_or("unknown");
     let kind = match source {
         "cli" | "vscode" => SessionKind::Interactive,
-        "appServer" | "exec" | "subAgent" | "subAgentReview" | "subAgentCompact"
-        | "subAgentThreadSpawn" | "subAgentOther" => SessionKind::Background,
+        "appServer"
+        | "exec"
+        | "subAgent"
+        | "subAgentReview"
+        | "subAgentCompact"
+        | "subAgentThreadSpawn"
+        | "subAgentOther" => SessionKind::Background,
         _ => SessionKind::Unknown,
     };
     let name = thread.name.unwrap_or_else(|| {
@@ -271,7 +273,10 @@ fn truncate_words(input: &str, max_chars: usize) -> String {
     if normalized.chars().count() <= max_chars {
         return normalized;
     }
-    let mut truncated: String = normalized.chars().take(max_chars.saturating_sub(1)).collect();
+    let mut truncated: String = normalized
+        .chars()
+        .take(max_chars.saturating_sub(1))
+        .collect();
     truncated.push('…');
     truncated
 }

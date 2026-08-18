@@ -376,7 +376,10 @@ impl ManagedDockerRuntime {
             validate_container_id(id).context("Docker returned a non-immutable container ID")?;
             let container = self.inspect(id)?;
             if !container.label_is_true(ENABLED_LABEL) {
-                bail!("container {} no longer has the opt-in label", container.name);
+                bail!(
+                    "container {} no longer has the opt-in label",
+                    container.name
+                );
             }
             enrolled.push(EnrolledDockerContainer {
                 container,
@@ -406,21 +409,15 @@ impl ManagedDockerRuntime {
 
     /// Create, but do not start, a managed container. The returned owner record
     /// must be persisted before lifecycle operations are exposed.
-    pub fn create_managed(
-        &self,
-        spec: &ManagedDockerCreateSpec,
-    ) -> Result<ManagedDockerContainer> {
+    pub fn create_managed(&self, spec: &ManagedDockerCreateSpec) -> Result<ManagedDockerContainer> {
         let request = spec.create_request(&self.docker_executable);
         let output = self.run_success(&request, "docker create")?;
         let id = output.stdout_text()?.trim();
-        validate_container_id(id).context(
-            "docker create succeeded but did not return a full immutable container ID",
-        )?;
+        validate_container_id(id)
+            .context("docker create succeeded but did not return a full immutable container ID")?;
         let owner = ManagedDockerOwner::new(id, spec.instance_id())?;
         let managed = self.enroll_managed(id, owner).with_context(|| {
-            format!(
-                "created container {id} but could not verify ownership; it was left stopped"
-            )
+            format!("created container {id} but could not verify ownership; it was left stopped")
         })?;
         if managed.container().running {
             bail!("newly created managed container unexpectedly reports running");
@@ -494,7 +491,10 @@ impl ManagedDockerRuntime {
     pub fn remove_managed(&self, target: &ManagedDockerContainer) -> Result<()> {
         let current = self.reinspect_managed(target)?;
         if current.running {
-            bail!("refusing to remove running managed container {}", current.name);
+            bail!(
+                "refusing to remove running managed container {}",
+                current.name
+            );
         }
         let request = CommandRequest::new(
             self.docker_executable.clone(),
@@ -551,7 +551,10 @@ fn parse_inspect(input: &str) -> Result<DockerContainer> {
     let mut records: Vec<InspectRecord> =
         serde_json::from_str(input).context("invalid docker inspect response")?;
     if records.len() != 1 {
-        bail!("docker inspect returned {} records; expected one", records.len());
+        bail!(
+            "docker inspect returned {} records; expected one",
+            records.len()
+        );
     }
     let record = records.pop().expect("length checked");
     validate_container_id(&record.id)?;
@@ -573,10 +576,7 @@ fn parse_inspect(input: &str) -> Result<DockerContainer> {
     })
 }
 
-fn verify_managed_identity(
-    container: &DockerContainer,
-    owner: &ManagedDockerOwner,
-) -> Result<()> {
+fn verify_managed_identity(container: &DockerContainer, owner: &ManagedDockerOwner) -> Result<()> {
     validate_container_id(&owner.container_id).context("invalid external owner record")?;
     validate_instance_id(&owner.instance_id).context("invalid external owner record")?;
     if container.id != owner.container_id {
@@ -633,7 +633,10 @@ fn validate_container_path(path: &Path, label: &str) -> Result<()> {
     if !path.is_absolute() || path == Path::new("/") {
         bail!("{label} must be an absolute non-root path");
     }
-    if path.components().any(|part| matches!(part, Component::ParentDir)) {
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
         bail!("{label} cannot contain parent traversal");
     }
     let text = path
@@ -664,9 +667,10 @@ fn validate_instance_id(id: &str) -> Result<()> {
     let bytes = id.as_bytes();
     if bytes.len() != 36
         || [8, 13, 18, 23].iter().any(|index| bytes[*index] != b'-')
-        || bytes.iter().enumerate().any(|(index, byte)| {
-            ![8, 13, 18, 23].contains(&index) && !byte.is_ascii_hexdigit()
-        })
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(index, byte)| ![8, 13, 18, 23].contains(&index) && !byte.is_ascii_hexdigit())
     {
         bail!("instance ID must be a hyphenated UUID");
     }
@@ -800,8 +804,14 @@ mod tests {
 
         assert_eq!(request.program, "docker-test");
         assert_eq!(request.args[0], "create");
-        assert!(request.args.windows(2).any(|pair| pair == ["--init", "--cap-drop"]));
-        assert!(request.args.windows(2).any(|pair| pair == ["--cap-drop", "ALL"]));
+        assert!(request
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--init", "--cap-drop"]));
+        assert!(request
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--cap-drop", "ALL"]));
         assert!(request
             .args
             .windows(2)
@@ -812,8 +822,14 @@ mod tests {
         assert!(request.args.iter().any(|argument| {
             argument.starts_with("type=bind,src=") && argument.contains("$(touch nope)")
         }));
-        assert!(!request.args.iter().any(|argument| argument == "sh" || argument == "-c"));
-        assert_eq!(&request.args[request.args.len() - 2..], ["sleep", "infinity"]);
+        assert!(!request
+            .args
+            .iter()
+            .any(|argument| argument == "sh" || argument == "-c"));
+        assert_eq!(
+            &request.args[request.args.len() - 2..],
+            ["sleep", "infinity"]
+        );
     }
 
     #[test]
@@ -895,8 +911,8 @@ mod tests {
 
     #[test]
     fn observe_api_exposes_only_the_supported_claude_inventory() {
-        let command = DockerProviderCommand::claude_agents(true)
-            .in_working_dir("/workspace/project");
+        let command =
+            DockerProviderCommand::claude_agents(true).in_working_dir("/workspace/project");
 
         assert_eq!(command.provider, DockerProvider::Claude);
         assert_eq!(command.args, vec!["agents", "--json", "--all"]);
@@ -937,7 +953,10 @@ mod tests {
                 "fix it; $(touch /tmp/nope)"
             ]
         );
-        assert!(!requests[2].args.iter().any(|argument| argument == "sh" || argument == "-c"));
+        assert!(!requests[2]
+            .args
+            .iter()
+            .any(|argument| argument == "sh" || argument == "-c"));
     }
 
     #[test]
@@ -985,7 +1004,10 @@ mod tests {
 
         assert!(error.to_string().contains("identity changed"));
         assert_eq!(runner.requests().len(), 2);
-        assert!(!runner.requests().iter().any(|request| request.args[0] == "start"));
+        assert!(!runner
+            .requests()
+            .iter()
+            .any(|request| request.args[0] == "start"));
     }
 
     #[test]
@@ -1018,7 +1040,10 @@ mod tests {
         let error = runtime.remove_managed(&managed).unwrap_err();
 
         assert!(error.to_string().contains("refusing to remove running"));
-        assert!(!runner.requests().iter().any(|request| request.args[0] == "rm"));
+        assert!(!runner
+            .requests()
+            .iter()
+            .any(|request| request.args[0] == "rm"));
     }
 
     #[test]
@@ -1050,7 +1075,10 @@ mod tests {
         assert_eq!(managed.owner().container_id(), ID_A);
         assert_eq!(runner.requests().len(), 2);
         assert_eq!(runner.requests()[0].args[0], "create");
-        assert!(!runner.requests().iter().any(|request| request.args[0] == "start"));
+        assert!(!runner
+            .requests()
+            .iter()
+            .any(|request| request.args[0] == "start"));
     }
 
     fn inspect_json(id: &str, running: bool, managed: bool, instance: &str) -> String {
@@ -1091,9 +1119,7 @@ mod tests {
         }
     }
 
-    fn fake_runner(
-        outputs: impl IntoIterator<Item = CommandOutput>,
-    ) -> Arc<FakeCommandRunner> {
+    fn fake_runner(outputs: impl IntoIterator<Item = CommandOutput>) -> Arc<FakeCommandRunner> {
         Arc::new(FakeCommandRunner {
             requests: Mutex::new(Vec::new()),
             outputs: Mutex::new(outputs.into_iter().collect()),

@@ -178,11 +178,8 @@ trait DashboardControl {
         session: &AgentSession,
         accept: bool,
     ) -> Result<ControlOutcome>;
-    fn respond_session_input(
-        &self,
-        session: &AgentSession,
-        answer: &str,
-    ) -> Result<ControlOutcome>;
+    fn respond_session_input(&self, session: &AgentSession, answer: &str)
+        -> Result<ControlOutcome>;
     fn interrupt_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
     fn archive_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
     fn delete_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
@@ -552,10 +549,7 @@ mod tests {
     #[test]
     fn printable_j_starts_a_task_instead_of_moving_the_list() {
         let mut app = app();
-        assert_eq!(
-            app.selection,
-            Some(SelectionKey::Session("worker".into()))
-        );
+        assert_eq!(app.selection, Some(SelectionKey::Session("worker".into())));
 
         assert_eq!(
             handle_key(&mut app, key(KeyCode::Char('j'))),
@@ -621,7 +615,10 @@ mod tests {
                 accept: false,
             }
         );
-        assert_eq!(handle_key(&mut app, key(KeyCode::Char('y'))), AppAction::None);
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('y'))),
+            AppAction::None
+        );
     }
 
     #[test]
@@ -796,19 +793,32 @@ mod tests {
             }
         );
         assert_eq!(app.overlay, Overlay::Peek);
-        assert_eq!(handle_key(&mut app, key(KeyCode::Char(' '))), AppAction::None);
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char(' '))),
+            AppAction::None
+        );
         assert_eq!(app.overlay, Overlay::None);
 
         app.snapshot.sessions[0].capabilities.clear();
-        assert_eq!(handle_key(&mut app, key(KeyCode::Char(' '))), AppAction::None);
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char(' '))),
+            AppAction::None
+        );
         assert_eq!(app.overlay, Overlay::None);
-        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("inspection was not granted"));
     }
 
     #[test]
     fn tab_slash_backspace_and_q_follow_overlay_context() {
         let mut empty = App::new(SessionSnapshot::default());
-        assert_eq!(handle_key(&mut empty, key(KeyCode::Char('q'))), AppAction::Quit);
+        assert_eq!(
+            handle_key(&mut empty, key(KeyCode::Char('q'))),
+            AppAction::Quit
+        );
 
         let mut app = app();
         handle_key(&mut app, key(KeyCode::Tab));
@@ -929,8 +939,18 @@ mod tests {
         let mut terminal = FakeTerminal::default();
         let control = FakeControl::default();
 
-        assert!(!handle_action(&mut terminal, &mut app, AppAction::None, &control));
-        assert!(!handle_action(&mut terminal, &mut app, AppAction::Quit, &control));
+        assert!(!handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::None,
+            &control
+        ));
+        assert!(!handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Quit,
+            &control
+        ));
         assert!(!handle_action(
             &mut terminal,
             &mut app,
@@ -940,7 +960,11 @@ mod tests {
             },
             &control
         ));
-        assert!(app.notice.as_deref().unwrap().contains("rename is unavailable"));
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("rename is unavailable"));
         assert!(control.calls.lock().unwrap().is_empty());
     }
 
@@ -1005,7 +1029,10 @@ mod tests {
                 "delete:worker",
             ]
         );
-        assert_eq!(app.notice.as_deref(), Some("deleted 1 managed Codex session(s)"));
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("deleted 1 managed Codex session(s)")
+        );
     }
 
     #[test]
@@ -1044,7 +1071,11 @@ mod tests {
             let mut terminal = FakeTerminal::default();
             let control = FakeControl::default();
             assert!(!handle_action(&mut terminal, &mut app, action, &control));
-            assert!(app.notice.as_deref().unwrap().contains("disappeared during refresh"));
+            assert!(app
+                .notice
+                .as_deref()
+                .unwrap()
+                .contains("disappeared during refresh"));
             assert!(terminal.calls.is_empty());
             assert!(control.calls.lock().unwrap().is_empty());
         }
@@ -1055,9 +1086,7 @@ mod tests {
         let cases = vec![
             (
                 "launch",
-                AppAction::Launch {
-                    prompt: "x".into(),
-                },
+                AppAction::Launch { prompt: "x".into() },
                 "launch failed",
             ),
             (

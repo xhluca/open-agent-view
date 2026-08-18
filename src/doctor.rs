@@ -30,8 +30,7 @@ impl DoctorReport {
         self.checks
             .iter()
             .filter(|check| {
-                matches!(check.name.as_str(), "Claude" | "Codex")
-                    && check.status == CheckStatus::Ok
+                matches!(check.name.as_str(), "Claude" | "Codex") && check.status == CheckStatus::Ok
             })
             .count()
     }
@@ -55,7 +54,11 @@ pub fn diagnose(
     checks.push(version_check(
         "Docker",
         docker_bin,
-        &["version", "--format", "{{.Client.Version}} / {{.Server.Version}}"],
+        &[
+            "version",
+            "--format",
+            "{{.Client.Version}} / {{.Server.Version}}",
+        ],
     ));
     for target in docker_targets {
         checks.push(match DockerTarget::inspect(target, docker_bin) {
@@ -86,10 +89,15 @@ pub fn render_text(report: &DoctorReport) -> String {
             CheckStatus::Warning => "warning",
             CheckStatus::Error => "error",
         };
-        output.push_str(&format!("[{marker:7}] {:<24} {}\n", check.name, check.detail));
+        output.push_str(&format!(
+            "[{marker:7}] {:<24} {}\n",
+            check.name, check.detail
+        ));
     }
     if report.healthy_provider_count() == 0 {
-        output.push_str("\nNo host provider is available; use --docker-container or install a provider CLI.\n");
+        output.push_str(
+            "\nNo host provider is available; use --docker-container or install a provider CLI.\n",
+        );
     }
     output
 }

@@ -26,6 +26,17 @@ pub struct ControlOutcome {
     pub provider_session_hint: Option<String>,
 }
 
+pub struct ControlHubConfig {
+    pub claude_enabled: bool,
+    pub codex_enabled: bool,
+    pub claude_bin: String,
+    pub codex_bin: String,
+    pub docker_bin: String,
+    pub launch_provider: Provider,
+    pub launch_cwd: PathBuf,
+    pub provider_io_enabled: bool,
+}
+
 pub struct ControlHub {
     claude: Option<ClaudeController>,
     codex: Option<Arc<CodexSupervisor>>,
@@ -38,37 +49,26 @@ pub struct ControlHub {
 }
 
 impl ControlHub {
-    pub fn new(
-        claude_enabled: bool,
-        codex_enabled: bool,
-        claude_bin: impl Into<String>,
-        codex_bin: impl Into<String>,
-        docker_bin: impl Into<String>,
-        launch_provider: Provider,
-        launch_cwd: PathBuf,
-        provider_io_enabled: bool,
-    ) -> Result<Self> {
-        let claude_bin = claude_bin.into();
-        let codex_bin = codex_bin.into();
-        let claude = if provider_io_enabled && claude_enabled {
+    pub fn new(config: ControlHubConfig) -> Result<Self> {
+        let claude = if config.provider_io_enabled && config.claude_enabled {
             let registry = OwnershipRegistry::load(default_registry_path()?)?;
-            Some(ClaudeController::host(claude_bin.clone(), registry))
+            Some(ClaudeController::host(config.claude_bin.clone(), registry))
         } else {
             None
         };
         Ok(Self {
             claude,
-            codex: if provider_io_enabled && codex_enabled {
-                Some(Arc::new(CodexSupervisor::host(codex_bin.clone())?))
+            codex: if config.provider_io_enabled && config.codex_enabled {
+                Some(Arc::new(CodexSupervisor::host(config.codex_bin.clone())?))
             } else {
                 None
             },
-            claude_bin,
-            codex_bin,
-            docker_bin: docker_bin.into(),
-            launch_provider,
-            launch_cwd,
-            provider_io_enabled,
+            claude_bin: config.claude_bin,
+            codex_bin: config.codex_bin,
+            docker_bin: config.docker_bin,
+            launch_provider: config.launch_provider,
+            launch_cwd: config.launch_cwd,
+            provider_io_enabled: config.provider_io_enabled,
         })
     }
 
@@ -200,7 +200,10 @@ impl ControlHub {
             CodexReplyMode::Steered => "steered the active turn for",
         };
         Ok(ControlOutcome {
-            message: format!("{verb} managed Codex thread {}", session.provider_session_id),
+            message: format!(
+                "{verb} managed Codex thread {}",
+                session.provider_session_id
+            ),
             provider_session_hint: Some(session.provider_session_id.clone()),
         })
     }
@@ -215,16 +218,15 @@ impl ControlHub {
             .context("host Codex control is disabled")?
             .archive(session)?;
         Ok(ControlOutcome {
-            message: format!("archived managed Codex thread {}", session.provider_session_id),
+            message: format!(
+                "archived managed Codex thread {}",
+                session.provider_session_id
+            ),
             provider_session_hint: Some(session.provider_session_id.clone()),
         })
     }
 
-    pub fn resolve_approval(
-        &self,
-        session: &AgentSession,
-        accept: bool,
-    ) -> Result<ControlOutcome> {
+    pub fn resolve_approval(&self, session: &AgentSession, accept: bool) -> Result<ControlOutcome> {
         self.ensure_provider_io()?;
         let required = if accept {
             Capability::Approve
@@ -244,18 +246,18 @@ impl ControlHub {
         Ok(ControlOutcome {
             message: format!(
                 "sent {} for managed Codex thread {}; awaiting provider resolution",
-                if accept { "one-time approval" } else { "denial" },
+                if accept {
+                    "one-time approval"
+                } else {
+                    "denial"
+                },
                 session.provider_session_id
             ),
             provider_session_hint: Some(session.provider_session_id.clone()),
         })
     }
 
-    pub fn respond_input(
-        &self,
-        session: &AgentSession,
-        answer: &str,
-    ) -> Result<ControlOutcome> {
+    pub fn respond_input(&self, session: &AgentSession, answer: &str) -> Result<ControlOutcome> {
         self.ensure_provider_io()?;
         if !session.capabilities.contains(&Capability::Respond) {
             bail!("structured-input authority was not granted for this session");
@@ -295,7 +297,10 @@ impl ControlHub {
             .context("host Codex control is disabled")?
             .delete(session)?;
         Ok(ControlOutcome {
-            message: format!("deleted managed Codex thread {}", session.provider_session_id),
+            message: format!(
+                "deleted managed Codex thread {}",
+                session.provider_session_id
+            ),
             provider_session_hint: Some(session.provider_session_id.clone()),
         })
     }
@@ -317,12 +322,7 @@ impl ControlHub {
             (Provider::Codex, Runtime::Host) => {
                 let mut command = Command::new(&self.codex_bin);
                 if let Some(remote) = managed_codex_remote.as_deref() {
-                    command.args([
-                        "--remote",
-                        remote,
-                        "resume",
-                        &session.provider_session_id,
-                    ]);
+                    command.args(["--remote", remote, "resume", &session.provider_session_id]);
                 } else {
                     command.args(["resume", &session.provider_session_id]);
                 }
@@ -403,10 +403,7 @@ impl ClaudeController {
             bail!("the launch prompt cannot be empty");
         }
         let mut args = self.invocation.prefix_args.clone();
-        args.extend([
-            "--background".into(),
-            request.prompt.trim().to_owned(),
-        ]);
+        args.extend(["--background".into(), request.prompt.trim().to_owned()]);
         let mut command = CommandRequest::new(self.invocation.program.clone(), args);
         command.current_dir = Some(request.cwd.clone());
         command.timeout = Duration::from_secs(15);
@@ -499,8 +496,9 @@ impl OwnershipRegistry {
                 .with_context(|| format!("invalid ownership registry {}", path.display()))?,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
             Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("failed to read ownership registry {}", path.display()))
+                return Err(error).with_context(|| {
+                    format!("failed to read ownership registry {}", path.display())
+                })
             }
         };
         Ok(Self { path, records })
@@ -529,7 +527,9 @@ impl OwnershipRegistry {
             .context("ownership registry path has no parent")?;
         fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
-        let temporary = self.path.with_extension(format!("tmp-{}", std::process::id()));
+        let temporary = self
+            .path
+            .with_extension(format!("tmp-{}", std::process::id()));
         let bytes = serde_json::to_vec_pretty(&self.records)?;
         let mut options = OpenOptions::new();
         options.create(true).truncate(true).write(true);
@@ -560,8 +560,7 @@ fn default_registry_path() -> Result<PathBuf> {
             .join("ownership.json"));
     }
     let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home)
-        .join(".local/state/open-agent-view/ownership.json"))
+    Ok(PathBuf::from(home).join(".local/state/open-agent-view/ownership.json"))
 }
 
 fn runtime_key(runtime: &Runtime) -> String {
@@ -591,10 +590,7 @@ fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
-fn read_command_output(
-    output: &crate::process::CommandOutput,
-    operation: &str,
-) -> Result<String> {
+fn read_command_output(output: &crate::process::CommandOutput, operation: &str) -> Result<String> {
     if output.status != 0 {
         bail!(
             "{operation} exited with status {}: {}",
@@ -695,7 +691,8 @@ mod tests {
 
     #[test]
     fn terminal_output_is_reduced_to_the_latest_assistant_message() {
-        let input = b"\x1b[2J\x1b[H\x1b[2;1H\xe2\x97\x8f final answer\r\ncontinued\r\nBrewed for 3m";
+        let input =
+            b"\x1b[2J\x1b[H\x1b[2;1H\xe2\x97\x8f final answer\r\ncontinued\r\nBrewed for 3m";
 
         let recent = recent_terminal_screen(input);
 
@@ -742,10 +739,11 @@ mod tests {
             requests[0].args,
             vec!["--background", "Implement the dashboard"]
         );
-        assert_eq!(requests[0].current_dir, Some(PathBuf::from("/work/project")));
-        assert!(controller.owns(&session(
-            "4b34abd1-91dc-4b50-a43f-6db2837576fe"
-        )));
+        assert_eq!(
+            requests[0].current_dir,
+            Some(PathBuf::from("/work/project"))
+        );
+        assert!(controller.owns(&session("4b34abd1-91dc-4b50-a43f-6db2837576fe")));
     }
 
     #[test]
@@ -776,7 +774,10 @@ mod tests {
 
         let assert_fenced = |result: Result<ControlOutcome>| {
             let error = result.unwrap_err().to_string();
-            assert_eq!(error, "provider actions are disabled while reading a fixture");
+            assert_eq!(
+                error,
+                "provider actions are disabled while reading a fixture"
+            );
         };
         assert_fenced(hub.launch("prompt".into()));
         assert_fenced(hub.interrupt(&item));
@@ -843,11 +844,9 @@ mod tests {
     fn inline_codex_controls_require_the_exact_host_provider_runtime() {
         let hub = uncontrolled_hub(Provider::Codex);
         let mut claude = session("claude");
-        claude.capabilities.extend([
-            Capability::Reply,
-            Capability::Approve,
-            Capability::Respond,
-        ]);
+        claude
+            .capabilities
+            .extend([Capability::Reply, Capability::Approve, Capability::Respond]);
         assert_eq!(
             hub.reply(&claude, "reply").unwrap_err().to_string(),
             "inline reply is supported only for owned host Codex threads"
@@ -857,7 +856,9 @@ mod tests {
             "inline approvals are supported only for owned host Codex threads"
         );
         assert_eq!(
-            hub.respond_input(&claude, "answer").unwrap_err().to_string(),
+            hub.respond_input(&claude, "answer")
+                .unwrap_err()
+                .to_string(),
             "structured input is supported only for owned host Codex threads"
         );
 

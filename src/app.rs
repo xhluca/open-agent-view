@@ -34,9 +34,17 @@ pub enum ComposerMode {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConfirmTarget {
-    Session { id: String, running: bool },
-    Archive { id: String },
-    Group { key: String, session_ids: Vec<String> },
+    Session {
+        id: String,
+        running: bool,
+    },
+    Archive {
+        id: String,
+    },
+    Group {
+        key: String,
+        session_ids: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -119,9 +127,11 @@ impl App {
         for group in self.groups() {
             keys.push(SelectionKey::Group(group.key.clone()));
             if !self.collapsed.contains(&group.key) {
-                keys.extend(group.sessions.into_iter().map(|index| {
-                    SelectionKey::Session(self.snapshot.sessions[index].id.clone())
-                }));
+                keys.extend(
+                    group.sessions.into_iter().map(|index| {
+                        SelectionKey::Session(self.snapshot.sessions[index].id.clone())
+                    }),
+                );
             }
         }
         keys
@@ -158,7 +168,10 @@ impl App {
         let SelectionKey::Session(id) = self.selection.as_ref()? else {
             return None;
         };
-        self.snapshot.sessions.iter().find(|session| &session.id == id)
+        self.snapshot
+            .sessions
+            .iter()
+            .find(|session| &session.id == id)
     }
 
     pub fn selected_group(&self) -> Option<Group> {
@@ -194,7 +207,9 @@ impl App {
                 }
                 if !session.capabilities.contains(&Capability::Reply) {
                     let name = session.name.clone();
-                    self.set_notice(format!("{name} is read-only; reply authority was not granted"));
+                    self.set_notice(format!(
+                        "{name} is read-only; reply authority was not granted"
+                    ));
                     self.input.clear();
                     return AppAction::None;
                 }
@@ -400,12 +415,10 @@ impl App {
 
     pub fn push_input(&mut self, character: char) {
         let peek_is_writable = self.overlay == Overlay::Peek
-            && self
-                .selected_session()
-                .is_some_and(|session| {
-                    session.capabilities.contains(&Capability::Reply)
-                        || session.capabilities.contains(&Capability::Respond)
-                });
+            && self.selected_session().is_some_and(|session| {
+                session.capabilities.contains(&Capability::Reply)
+                    || session.capabilities.contains(&Capability::Respond)
+            });
         if peek_is_writable || matches!(self.overlay, Overlay::Composer(_)) {
             self.input.push(character);
         }
@@ -435,7 +448,11 @@ impl App {
         let needle = self.filter.to_ascii_lowercase();
         session.name.to_ascii_lowercase().contains(&needle)
             || session.summary.to_ascii_lowercase().contains(&needle)
-            || session.cwd.to_string_lossy().to_ascii_lowercase().contains(&needle)
+            || session
+                .cwd
+                .to_string_lossy()
+                .to_ascii_lowercase()
+                .contains(&needle)
             || session
                 .provider
                 .label()
@@ -467,9 +484,7 @@ impl App {
     fn confirm(&mut self, target: ConfirmTarget) -> AppAction {
         self.overlay = Overlay::None;
         match target {
-            ConfirmTarget::Session { id, running: true } => {
-                AppAction::Interrupt { session_id: id }
-            }
+            ConfirmTarget::Session { id, running: true } => AppAction::Interrupt { session_id: id },
             ConfirmTarget::Session { id, running: false } => AppAction::Delete {
                 session_ids: vec![id],
             },
@@ -542,9 +557,9 @@ pub(crate) fn is_active_session_state(state: SessionState) -> bool {
 
 pub(crate) fn project_group_path(path: &std::path::Path) -> PathBuf {
     let components = path.components().collect::<Vec<_>>();
-    let worktree_marker = components.windows(2).position(|pair| {
-        pair[0].as_os_str() == ".claude" && pair[1].as_os_str() == "worktrees"
-    });
+    let worktree_marker = components
+        .windows(2)
+        .position(|pair| pair[0].as_os_str() == ".claude" && pair[1].as_os_str() == "worktrees");
     worktree_marker
         .map(|index| components[..index].iter().collect())
         .unwrap_or_else(|| path.to_path_buf())
@@ -987,9 +1002,16 @@ mod tests {
 
         app.toggle_peek();
         assert_eq!(app.overlay, Overlay::None);
-        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("inspection was not granted"));
 
-        grant(&mut app.snapshot.sessions[0], &[Capability::Inspect, Capability::Reply]);
+        grant(
+            &mut app.snapshot.sessions[0],
+            &[Capability::Inspect, Capability::Reply],
+        );
         app.toggle_peek();
         app.input = "draft".into();
         app.toggle_peek();
@@ -1131,7 +1153,10 @@ mod tests {
 
         app.start_confirm();
         assert_eq!(app.overlay, Overlay::None);
-        assert_eq!(app.notice.as_deref(), Some("this group includes observe-only sessions"));
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("this group includes observe-only sessions")
+        );
 
         grant(&mut app.snapshot.sessions[1], &[Capability::Delete]);
         app.start_confirm();
@@ -1270,6 +1295,10 @@ mod tests {
 
         assert_eq!(app.overlay, Overlay::None);
         assert_ne!(app.notice.as_deref(), Some("stale"));
-        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("inspection was not granted"));
     }
 }

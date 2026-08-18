@@ -15,9 +15,9 @@ pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
 pub use managed_docker::{
     DockerAuthority, DockerContainer, DockerProvider, DockerProviderCommand,
-    EnrolledDockerContainer, ManagedDockerContainer, ManagedDockerCreateSpec,
-    ManagedDockerOwner, ManagedDockerRuntime, ENABLED_LABEL, INSTANCE_LABEL,
-    MANAGED_LABEL, PROVIDERS_LABEL, VERSION_LABEL,
+    EnrolledDockerContainer, ManagedDockerContainer, ManagedDockerCreateSpec, ManagedDockerOwner,
+    ManagedDockerRuntime, ENABLED_LABEL, INSTANCE_LABEL, MANAGED_LABEL, PROVIDERS_LABEL,
+    VERSION_LABEL,
 };
 pub use managed_docker_registry::{
     default_managed_docker_registry_path, generate_managed_instance_id, ManagedDockerRegistry,

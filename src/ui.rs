@@ -24,7 +24,10 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(Block::default().style(Style::default().bg(BG).fg(FG)), area);
     if area.width < 32 || area.height < 8 {
         let message = if area.width >= 18 && area.height >= 2 {
-            vec![Line::from("coding-agents needs"), Line::from("at least 32×8")]
+            vec![
+                Line::from("coding-agents needs"),
+                Line::from("at least 32×8"),
+            ]
         } else {
             vec![Line::from("needs 32×8")]
         };
@@ -42,11 +45,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .min(10)
             .min(area.height.saturating_sub(5)),
         Overlay::Help => {
-            let help_lines = pack_help_actions(
-                help_actions(app),
-                area.width.saturating_sub(2) as usize,
-            )
-            .len() as u16;
+            let help_lines =
+                pack_help_actions(help_actions(app), area.width.saturating_sub(2) as usize).len()
+                    as u16;
             (3 + help_lines).min(area.height.saturating_sub(5))
         }
         Overlay::Composer(_) => (3 + input_line_count(&app.input).saturating_sub(1))
@@ -70,9 +71,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     render_bottom_panel(frame, app, chunks[2]);
     render_footer(frame, app, chunks[3]);
 
-    match &app.overlay {
-        Overlay::Confirm(target) => render_confirmation(frame, app, target, area),
-        _ => {}
+    if let Overlay::Confirm(target) = &app.overlay {
+        render_confirmation(frame, app, target, area);
     }
 }
 
@@ -95,7 +95,9 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 Span::styled("◇ ", Style::default().fg(ACCENT)),
                 Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
             ]),
-            Line::from(format!("{awaiting} awaiting · {working} working · {completed} completed")),
+            Line::from(format!(
+                "{awaiting} awaiting · {working} working · {completed} completed"
+            )),
         ]
     } else if area.width >= 70 {
         vec![
@@ -133,7 +135,10 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
             )),
         ]
     };
-    frame.render_widget(Paragraph::new(lines).style(Style::default().bg(BG).fg(FG)), area);
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::default().bg(BG).fg(FG)),
+        area,
+    );
 }
 
 fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -145,8 +150,8 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         if group_position > 0 {
             lines.push(Line::default());
         }
-        let is_selected = selection_visible
-            && app.selection == Some(SelectionKey::Group(group.key.clone()));
+        let is_selected =
+            selection_visible && app.selection == Some(SelectionKey::Group(group.key.clone()));
         if is_selected {
             selected_line = Some(lines.len());
         }
@@ -174,7 +179,12 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
             if is_selected {
                 selected_line = Some(lines.len());
             }
-            lines.push(render_session_row(session, app.view_mode, area.width, is_selected));
+            lines.push(render_session_row(
+                session,
+                app.view_mode,
+                area.width,
+                is_selected,
+            ));
         }
     }
 
@@ -265,18 +275,12 @@ fn render_session_row(
     };
     let fixed = 4 + name_width + metadata.len() + right.len();
     let summary_width = (width as usize).saturating_sub(fixed).max(1);
-    let summary = truncate(
-        &format!("{state_prefix}{}", session.summary),
-        summary_width,
-    );
+    let summary = truncate(&format!("{state_prefix}{}", session.summary), summary_width);
     let name = pad_to_width(truncate(&session.name, name_width), name_width);
     let summary = pad_to_width(summary, summary_width);
     let spans = vec![
         Span::styled(format!(" {symbol} "), symbol_style),
-        Span::styled(
-            name,
-            Style::default().add_modifier(Modifier::BOLD),
-        ),
+        Span::styled(name, Style::default().add_modifier(Modifier::BOLD)),
         Span::styled(format!("{metadata} "), Style::default().fg(DIM)),
         Span::styled(summary, Style::default().fg(DIM)),
         Span::styled(right, Style::default().fg(DIM)),
@@ -349,7 +353,9 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         let line_index = input_line_count(&app.input)
             .saturating_sub(1)
             .min(area.height.saturating_sub(3));
-        let prefix_width = (line_index == 0).then(|| prefix.chars().count()).unwrap_or(0);
+        let prefix_width = (line_index == 0)
+            .then(|| prefix.chars().count())
+            .unwrap_or(0);
         let cursor_x = area.x + 1 + prefix_width as u16 + display_width(last_line) as u16;
         frame.set_cursor(
             cursor_x.min(area.right().saturating_sub(1)),
@@ -405,10 +411,7 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
             Style::default().fg(DIM),
         ))]
     };
-    let summary_capacity = area
-        .height
-        .saturating_sub(3 + response.len() as u16)
-        .max(1) as usize;
+    let summary_capacity = area.height.saturating_sub(3 + response.len() as u16).max(1) as usize;
     let summary = sanitize_multiline(summary);
     let summary_lines: Vec<_> = summary.lines().collect();
     let summary_start = summary_lines.len().saturating_sub(summary_capacity);
@@ -419,9 +422,7 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
     lines.push(Line::default());
     lines.extend(response);
     frame.render_widget(
-        Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: true }),
+        Paragraph::new(lines).block(block).wrap(Wrap { trim: true }),
         area,
     );
     if can_respond || can_reply {
@@ -458,11 +459,11 @@ fn editable_response_lines(label: &str, input: &str) -> Vec<Line<'static>> {
         .enumerate()
         .map(|(index, line)| {
             Line::from(Span::styled(
-            format!(
-                "{}{}",
-                if index == 0 { "❯ " } else { "" },
-                sanitize_inline(&line)
-            ),
+                format!(
+                    "{}{}",
+                    if index == 0 { "❯ " } else { "" },
+                    sanitize_inline(&line)
+                ),
                 Style::default().fg(FG),
             ))
         })
@@ -489,8 +490,7 @@ fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|line| Line::from(format!("  {}", sanitize_inline(&line))))
         .collect::<Vec<_>>();
     frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::default().bg(BG).fg(DIM)),
+        Paragraph::new(lines).style(Style::default().bg(BG).fg(DIM)),
         area,
     );
 }
@@ -593,9 +593,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::None if app.selected_session().is_some() => {
             "enter to open · ? for shortcuts".into()
         }
-        _ if width >= 70 => {
-            "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into()
-        }
+        _ if width >= 70 => "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into(),
         _ => "↑/↓ to select · ? for shortcuts".into(),
     }
 }
@@ -724,7 +722,9 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
     frame.render_widget(Clear, popup);
     let message = match target {
         ConfirmTarget::Session { id, running: true } => {
-            format!("Interrupt the exact running session?\n\n{id}\n\nEnter confirms; escape keeps it.")
+            format!(
+                "Interrupt the exact running session?\n\n{id}\n\nEnter confirms; escape keeps it."
+            )
         }
         ConfirmTarget::Session { id, running: false } => {
             format!("Delete the exact session record?\n\n{id}\n\nEnter confirms; escape keeps it.")
@@ -1101,10 +1101,7 @@ mod tests {
             warnings: vec![],
         });
         app.toggle_peek();
-        app.set_detail(
-            "worker".into(),
-            "old line\nnew provider detail".into(),
-        );
+        app.set_detail("worker".into(), "old line\nnew provider detail".into());
         for character in "first reply line\nsecond reply line".chars() {
             app.push_input(character);
         }

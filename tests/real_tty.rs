@@ -38,8 +38,8 @@ impl PtyApp {
         let stdout = duplicate_file(slave).expect("duplicate slave for stdout");
         let stderr = unsafe { File::from_raw_fd(slave) };
         let home = tempfile::tempdir().expect("create isolated home");
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures/populated-sessions.json");
+        let fixture =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/populated-sessions.json");
         let mut command = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
         command
             .args([
@@ -116,7 +116,10 @@ impl PtyApp {
             if let Some(status) = self.child.try_wait().expect("poll child exit") {
                 break status;
             }
-            assert!(Instant::now() < deadline, "dashboard did not exit after escape");
+            assert!(
+                Instant::now() < deadline,
+                "dashboard did not exit after escape"
+            );
             thread::sleep(Duration::from_millis(20));
         };
         self.drain();
@@ -130,8 +133,7 @@ impl PtyApp {
             "dashboard did not leave the alternate screen"
         );
         assert!(
-            contains_bytes(&self.raw, b"\x1b[?25l")
-                && contains_bytes(&self.raw, b"\x1b[?25h"),
+            contains_bytes(&self.raw, b"\x1b[?25l") && contains_bytes(&self.raw, b"\x1b[?25h"),
             "dashboard did not restore cursor visibility"
         );
     }
@@ -220,11 +222,13 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(b"/");
     app.send(&[0x7f; 8]);
     app.send(ENTER);
-    app.wait_for("cleared filter", |screen| screen.contains("release-reviewer"));
+    app.wait_for("cleared filter", |screen| {
+        screen.contains("release-reviewer")
+    });
 
     app.send(b"\t");
     app.wait_for("new task composer", |screen| {
-        screen.contains("❯") && screen.contains("enter to create · ctrl+j for newline")
+        screen.contains('❯') && screen.contains("enter to create · ctrl+j for newline")
     });
     app.send(b"draft a release");
     app.send(CTRL_J);
@@ -254,7 +258,9 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     });
     assert_lines_fit(&peek, 120);
     app.send(ESC);
-    app.wait_for("peek close", |screen| !screen.contains("release-reviewer · Claude"));
+    app.wait_for("peek close", |screen| {
+        !screen.contains("release-reviewer · Claude")
+    });
 
     app.send(CTRL_R);
     app.wait_for("rename composer", |screen| {
@@ -411,7 +417,9 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     app.send(&[0x7f; 15]);
     app.send(b"schema-migration");
     app.send(ENTER);
-    app.wait_for("completed row", |screen| screen.contains("schema-migration"));
+    app.wait_for("completed row", |screen| {
+        screen.contains("schema-migration")
+    });
 
     app.send(CTRL_X);
     let delete_confirm = app.wait_for("delete confirmation", |screen| {
@@ -447,7 +455,9 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     app.send(&[0x7f; 16]);
     app.send(b"needs-environment");
     app.send(ENTER);
-    app.wait_for("structured-input row", |screen| screen.contains("needs-environment"));
+    app.wait_for("structured-input row", |screen| {
+        screen.contains("needs-environment")
+    });
     app.send(b" ");
     app.wait_for("structured-input peek", |screen| {
         screen.contains("needs-environment · Codex") && screen.contains("❯ answer")
@@ -568,10 +578,7 @@ fn set_nonblocking(file: &File) -> io::Result<()> {
 }
 
 fn normalize_screen(screen: &str) -> String {
-    let mut lines = screen
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>();
+    let mut lines = screen.lines().map(str::trim_end).collect::<Vec<_>>();
     while lines.last().is_some_and(|line| line.is_empty()) {
         lines.pop();
     }
@@ -589,7 +596,9 @@ fn assert_lines_fit(screen: &str, width: usize) {
 }
 
 fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 fn count_bytes(haystack: &[u8], needle: &[u8]) -> usize {

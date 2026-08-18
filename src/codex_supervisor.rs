@@ -242,7 +242,9 @@ impl CodexSupervisor {
             .threads
             .get(&session.provider_session_id)
             .and_then(|thread| thread.active_turn_id.clone())
-            .context("refusing to interrupt a Codex thread not actively owned by this supervisor")?;
+            .context(
+                "refusing to interrupt a Codex thread not actively owned by this supervisor",
+            )?;
         let mut control = self
             .control
             .lock()
@@ -530,9 +532,9 @@ impl CodexSupervisor {
             Ok(mut control) => {
                 if self.response_lease.is_some()
                     && record
-                    .threads
-                    .values()
-                    .any(|thread| thread.active_turn_id.is_some())
+                        .threads
+                        .values()
+                        .any(|thread| thread.active_turn_id.is_some())
                 {
                     if let Err(error) = self.refresh_pending_locked(&mut control, &record) {
                         control.client = None;
@@ -587,17 +589,19 @@ impl CodexSupervisor {
                                 .expires_at
                                 .is_some_and(|deadline| Instant::now() >= deadline)
                             && questions
-                            .iter()
-                            .find(|question| !answers.contains_key(&question.id))
-                            .is_some_and(|question| !question.secret) =>
+                                .iter()
+                                .find(|question| !answers.contains_key(&question.id))
+                                .is_some_and(|question| !question.secret) =>
                     {
                         session.capabilities.insert(Capability::Respond);
                     }
                     _ => {}
                 }
             }
-            if matches!(session.state, SessionState::Working | SessionState::NeedsInput)
-                && owned.active_turn_id.is_some()
+            if matches!(
+                session.state,
+                SessionState::Working | SessionState::NeedsInput
+            ) && owned.active_turn_id.is_some()
             {
                 session.capabilities.insert(Capability::Interrupt);
                 if session.state == SessionState::Working {
@@ -737,7 +741,10 @@ impl CodexSupervisor {
             now_millis()
         ));
         if fs::symlink_metadata(&socket_path).is_ok() {
-            bail!("refusing to replace existing socket {}", socket_path.display());
+            bail!(
+                "refusing to replace existing socket {}",
+                socket_path.display()
+            );
         }
         let log_path = self.state_dir.join("app-server.log");
         let log = private_append_file(&log_path)?;
@@ -753,13 +760,19 @@ impl CodexSupervisor {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        let mut child = command
-            .spawn()
-            .with_context(|| format!("failed to start durable Codex App Server via {}", self.codex_bin))?;
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to start durable Codex App Server via {}",
+                self.codex_bin
+            )
+        })?;
         let pid = child.id();
         let deadline = Instant::now() + STARTUP_TIMEOUT;
         loop {
-            if let Some(status) = child.try_wait().context("failed to poll Codex App Server")? {
+            if let Some(status) = child
+                .try_wait()
+                .context("failed to poll Codex App Server")?
+            {
                 bail!("Codex App Server exited during startup with {status}");
             }
             if process_start_token(pid).is_ok() {
@@ -859,9 +872,7 @@ fn reconcile_pending_event(
             event.pointer("/params/threadId").and_then(Value::as_str),
             event.pointer("/params/requestId"),
         ) {
-            pending.retain(|request| {
-                request.thread_id != thread_id || request.id != *request_id
-            });
+            pending.retain(|request| request.thread_id != thread_id || request.id != *request_id);
         }
         return Ok(());
     }
@@ -1060,7 +1071,10 @@ fn parse_pending_questions(params: &Value) -> Option<Vec<PendingQuestion>> {
 }
 
 fn push_optional_line(lines: &mut Vec<String>, label: &str, value: Option<&Value>) {
-    if let Some(value) = value.and_then(Value::as_str).filter(|value| !value.is_empty()) {
+    if let Some(value) = value
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
         lines.push(format!("{label}: {value}"));
     }
 }
@@ -1155,7 +1169,11 @@ fn format_pending_request(request: &PendingRequest) -> String {
     ))
 }
 
-fn require_idle_mutation(session: &AgentSession, owned: &OwnedThread, operation: &str) -> Result<()> {
+fn require_idle_mutation(
+    session: &AgentSession,
+    owned: &OwnedThread,
+    operation: &str,
+) -> Result<()> {
     if owned.active_turn_id.is_some() || session.state != SessionState::Completed {
         bail!("refusing to {operation} a Codex thread that is not known idle");
     }
@@ -1177,7 +1195,10 @@ fn format_thread_transcript(response: &Value) -> Result<String> {
             continue;
         };
         for item in items {
-            let kind = item.get("type").and_then(Value::as_str).unwrap_or("unknown");
+            let kind = item
+                .get("type")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown");
             match kind {
                 "userMessage" => {
                     let text = item
@@ -1185,7 +1206,9 @@ fn format_thread_transcript(response: &Value) -> Result<String> {
                         .and_then(Value::as_array)
                         .into_iter()
                         .flatten()
-                        .filter(|content| content.get("type").and_then(Value::as_str) == Some("text"))
+                        .filter(|content| {
+                            content.get("type").and_then(Value::as_str) == Some("text")
+                        })
                         .filter_map(|content| content.get("text").and_then(Value::as_str))
                         .collect::<Vec<_>>()
                         .join("\n");
@@ -1204,8 +1227,14 @@ fn format_thread_transcript(response: &Value) -> Result<String> {
                     }
                 }
                 "commandExecution" => {
-                    let command = item.get("command").and_then(Value::as_str).unwrap_or("command");
-                    let status = item.get("status").and_then(Value::as_str).unwrap_or("unknown");
+                    let command = item
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .unwrap_or("command");
+                    let status = item
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown");
                     let output = item
                         .get("aggregatedOutput")
                         .and_then(Value::as_str)
@@ -1230,7 +1259,9 @@ fn format_thread_transcript(response: &Value) -> Result<String> {
     if sections.is_empty() {
         Ok("No persisted Codex transcript items are available.".into())
     } else {
-        Ok(limit_transcript(sanitize_terminal_text(&sections.join("\n\n"))))
+        Ok(limit_transcript(sanitize_terminal_text(
+            &sections.join("\n\n"),
+        )))
     }
 }
 
@@ -1374,8 +1405,7 @@ fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(record)?;
     file.write_all(&bytes)?;
     file.sync_all()?;
-    fs::rename(&temporary, path)
-        .with_context(|| format!("failed to replace {}", path.display()))
+    fs::rename(&temporary, path).with_context(|| format!("failed to replace {}", path.display()))
 }
 
 fn verify_process(record: &SupervisorRecord) -> Result<bool> {
@@ -1481,14 +1511,13 @@ impl ResponseLease {
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd;
-            let result = unsafe {
-                libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB)
-            };
+            let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
             if result != 0 {
                 let error = std::io::Error::last_os_error();
-                if error.raw_os_error().is_some_and(|code| {
-                    code == libc::EAGAIN || code == libc::EWOULDBLOCK
-                }) {
+                if error
+                    .raw_os_error()
+                    .is_some_and(|code| code == libc::EAGAIN || code == libc::EWOULDBLOCK)
+                {
                     return Ok(None);
                 }
                 return Err(error).context("failed to acquire Codex controller lease");
@@ -1517,7 +1546,8 @@ impl StateLock {
             use std::os::fd::AsRawFd;
             let result = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) };
             if result != 0 {
-                return Err(std::io::Error::last_os_error()).context("failed to lock supervisor state");
+                return Err(std::io::Error::last_os_error())
+                    .context("failed to lock supervisor state");
             }
         }
         Ok(Self { file })
@@ -1768,7 +1798,10 @@ mod tests {
             }),
         )
         .unwrap();
-        assert!(matches!(pending[0].kind, PendingRequestKind::Unsupported { .. }));
+        assert!(matches!(
+            pending[0].kind,
+            PendingRequestKind::Unsupported { .. }
+        ));
 
         pending[0].expires_at = Some(Instant::now() - Duration::from_millis(1));
         assert!(format_pending_request(&pending[0]).contains("deadline has passed"));
@@ -1819,9 +1852,8 @@ mod tests {
         );
         drop(first);
 
-        let second = Arc::new(
-            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap(),
-        );
+        let second =
+            Arc::new(CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap());
         let second_record = second.live_record().unwrap();
         assert!(first_record.same_process(&second_record));
 
@@ -1899,9 +1931,8 @@ mod tests {
         assert!(first.inspect(&pending).unwrap().contains("cargo test"));
         drop(first);
 
-        let second = Arc::new(
-            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap(),
-        );
+        let second =
+            Arc::new(CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap());
         let replayed = discover_owned(&second, &thread_id);
         assert!(replayed.capabilities.contains(&Capability::Approve));
         second.respond_approval(&replayed, false).unwrap();
@@ -1921,9 +1952,8 @@ mod tests {
         let mock = directory.path().join("mock-codex.py");
         fs::write(&mock, MOCK_CODEX).unwrap();
         fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
-        let supervisor = Arc::new(
-            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap(),
-        );
+        let supervisor =
+            Arc::new(CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap());
         let thread_id = supervisor
             .launch("Request input", Path::new("/tmp"))
             .unwrap();
@@ -1931,16 +1961,20 @@ mod tests {
         let _process_guard = VerifiedTestProcess(record);
         let pending = discover_owned(&supervisor, &thread_id);
         assert!(pending.capabilities.contains(&Capability::Respond));
-        assert!(supervisor.inspect(&pending).unwrap().contains("Environment"));
+        assert!(supervisor
+            .inspect(&pending)
+            .unwrap()
+            .contains("Environment"));
 
-        let first = supervisor
-            .respond_user_input(&pending, "staging")
-            .unwrap();
+        let first = supervisor.respond_user_input(&pending, "staging").unwrap();
         assert_eq!(first.answered, 1);
         assert_eq!(first.total, 2);
         assert!(!first.submitted);
         let still_pending = discover_owned(&supervisor, &thread_id);
-        assert!(supervisor.inspect(&still_pending).unwrap().contains("Checks"));
+        assert!(supervisor
+            .inspect(&still_pending)
+            .unwrap()
+            .contains("Checks"));
         let second = supervisor.respond_user_input(&still_pending, "2").unwrap();
         assert_eq!(second.answered, 2);
         assert!(second.submitted);
@@ -1999,8 +2033,7 @@ mod tests {
         loop {
             let mut status = 0;
             let waited = unsafe { libc::waitpid(pid as i32, &mut status, libc::WNOHANG) };
-            if waited == pid as i32
-                || (waited < 0 && !Path::new(&format!("/proc/{pid}")).exists())
+            if waited == pid as i32 || (waited < 0 && !Path::new(&format!("/proc/{pid}")).exists())
             {
                 return true;
             }
