@@ -291,6 +291,13 @@ fn normalize_record(record: OpenCodeRecord, runtime: Runtime) -> AgentSession {
         Runtime::Host => "host",
         Runtime::Docker { container_id, .. } => container_id,
     };
+    let capabilities = if runtime == Runtime::Host {
+        BTreeSet::from([Capability::Inspect])
+    } else {
+        // A host controller cannot safely route inspection into an arbitrary
+        // container. Explicit Docker control needs its own enrolled controller.
+        BTreeSet::new()
+    };
     AgentSession {
         id: format!("opencode:{runtime_id}:{}", record.id),
         provider_session_id: record.id,
@@ -307,7 +314,7 @@ fn normalize_record(record: OpenCodeRecord, runtime: Runtime) -> AgentSession {
         started_at: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(record.created)),
         updated_at: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(record.updated)),
         pull_requests: None,
-        capabilities: BTreeSet::from([Capability::Inspect]),
+        capabilities,
     }
 }
 
@@ -361,6 +368,23 @@ mod tests {
         assert!(parse_opencode_session_list("\n", Runtime::Host)
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn docker_history_does_not_claim_host_inspection_authority() {
+        let runtime = Runtime::Docker {
+            container_id: "sha256:exact".into(),
+            container_name: "isolated".into(),
+            image: "opencode@test".into(),
+        };
+        let session = parse_opencode_session_list(
+            r#"[{"id":"ses_1","title":"one","updated":2,"created":1,"projectId":"global","directory":"/work"}]"#,
+            runtime,
+        )
+        .unwrap()
+        .remove(0);
+
+        assert!(session.capabilities.is_empty());
     }
 
     #[test]
