@@ -203,6 +203,8 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         screen.contains("reply refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
     });
+    // The first Escape leaves the refused reply composer; the second closes
+    // Peek. The following wait and Cursor interaction prove neither quits.
     app.send(ESC);
     app.send(ESC);
     app.wait_for("managed Pi peek close", |screen| {
@@ -245,6 +247,8 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         screen.contains("approval response refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
     });
+    // Approval refusal remains in Peek: dismiss the refusal layer, then Peek.
+    // The directory-view assertion below proves the dashboard remains alive.
     app.send(ESC);
     app.send(ESC);
     app.wait_for("managed Copilot peek close", |screen| {

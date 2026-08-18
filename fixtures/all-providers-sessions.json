@@ -143,7 +143,7 @@
       "name": "pi-refactor",
       "cwd": "/workspace/pi-project",
       "state": "completed",
-      "summary": "Refactor and verification preserved in Pi JSONL history",
+      "summary": "OAV-owned Pi RPC turn completed and is ready for another prompt",
       "raw_state": "idle",
       "pid": 4401,
       "started_at": null,
