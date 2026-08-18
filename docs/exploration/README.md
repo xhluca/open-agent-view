@@ -11,6 +11,10 @@ as stable contracts.
   options.
 - [`docker-runtime.md`](docker-runtime.md) — local image inventory and safe
   runtime boundary.
+- [`pi-integration.md`](pi-integration.md) — Pi persistence, RPC, and ownership
+  boundaries.
+- [`opencode-integration.md`](opencode-integration.md) — OpenCode history and
+  managed-server API boundaries.
 
 Return to the [documentation index](../README.md), or use the
 [real-TTY validation guide](../tui-validation.md) to repeat the reference and
