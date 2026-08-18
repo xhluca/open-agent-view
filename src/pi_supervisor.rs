@@ -247,7 +247,16 @@ impl PiSupervisor {
             return Ok(());
         };
         self.request::<Value>(&record, &DaemonRequest::Shutdown)?;
-        Ok(())
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            if !verify_process(&record)? {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!("timed out waiting for the exact Pi supervisor process to exit");
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn ensure_endpoint(&self) -> Result<SupervisorRecord> {
@@ -1084,11 +1093,14 @@ fn verify_private_mode(metadata: &fs::Metadata, description: &str) -> Result<()>
 }
 
 fn verify_process(record: &SupervisorRecord) -> Result<bool> {
-    let start = match process_start_token(record.pid) {
+    let (start, state) = match process_stat(record.pid) {
         Ok(value) => value,
         Err(error) if is_missing_process(&error) => return Ok(false),
         Err(error) => return Err(error),
     };
+    if state == "Z" {
+        return Ok(false);
+    }
     let cmdline = match process_cmdline(record.pid) {
         Ok(value) => value,
         Err(error) if is_missing_process(&error) => return Ok(false),
@@ -1105,22 +1117,27 @@ fn is_missing_process(error: &anyhow::Error) -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn process_start_token(pid: u32) -> Result<String> {
+fn process_stat(pid: u32) -> Result<(String, String)> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let suffix = stat
         .rsplit_once(')')
         .map(|(_, suffix)| suffix)
         .context("invalid /proc process stat")?;
-    suffix
-        .split_whitespace()
-        .nth(19)
-        .map(ToOwned::to_owned)
-        .context("/proc process stat omitted starttime")
+    let fields = suffix.split_whitespace().collect::<Vec<_>>();
+    let state = fields.first().context("/proc process stat omitted state")?;
+    let start = fields
+        .get(19)
+        .context("/proc process stat omitted starttime")?;
+    Ok(((*start).into(), (*state).into()))
 }
 
 #[cfg(not(target_os = "linux"))]
-fn process_start_token(_: u32) -> Result<String> {
+fn process_stat(_: u32) -> Result<(String, String)> {
     bail!("process start-token verification is unavailable on this platform")
+}
+
+fn process_start_token(pid: u32) -> Result<String> {
+    process_stat(pid).map(|(token, _)| token)
 }
 
 #[cfg(target_os = "linux")]
