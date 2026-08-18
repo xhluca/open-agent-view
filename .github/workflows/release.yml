@@ -1,0 +1,132 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*.[0-9]*.[0-9]*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-x86_64:
+    name: Linux x86_64 release
+    # Keep the GNU libc floor compatible with Debian 12 and Ubuntu 22.04.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Check out the tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned Rust toolchain
+        uses: dtolnay/rust-toolchain@1.75.0
+        with:
+          targets: ${{ env.TARGET }}
+
+      - name: Validate tag and package version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tags must have the form vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          package_version="$(
+            cargo metadata --locked --no-deps --format-version 1 |
+              jq -er '.packages[] | select(.name == "open-agent-view") | .version'
+          )"
+          if [[ "${package_version}" != "${version}" ]]; then
+            echo "tag ${tag} does not match Cargo package version ${package_version}" >&2
+            exit 1
+          fi
+
+          stem="open-agent-view-${version}-${TARGET}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "stem=${stem}" >> "${GITHUB_OUTPUT}"
+          echo "archive=${stem}.tar.gz" >> "${GITHUB_OUTPUT}"
+
+      - name: Test and build the locked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked
+          cargo build --release --locked --target "${TARGET}"
+
+      - name: Create deterministic archive and checksum
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+          STEM: ${{ steps.release.outputs.stem }}
+        run: |
+          set -euo pipefail
+          source_date_epoch="$(git show -s --format=%ct HEAD)"
+          install -d "dist/${STEM}"
+          install -m 0755 "target/${TARGET}/release/coding-agents" "dist/${STEM}/coding-agents"
+          install -m 0644 LICENSE README.md "dist/${STEM}/"
+
+          tar \
+            --sort=name \
+            --mtime="@${source_date_epoch}" \
+            --owner=0 \
+            --group=0 \
+            --numeric-owner \
+            -C dist \
+            -czf "dist/${ARCHIVE}" \
+            "${STEM}"
+          (
+            cd dist
+            sha256sum "${ARCHIVE}" > "${ARCHIVE}.sha256"
+            sha256sum --check "${ARCHIVE}.sha256"
+          )
+
+      - name: Smoke-test the packaged binary
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+          STEM: ${{ steps.release.outputs.stem }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          install -d smoke
+          tar -xzf "dist/${ARCHIVE}" -C smoke
+          binary="smoke/${STEM}/coding-agents"
+          test "$("${binary}" --version)" = "coding-agents ${VERSION}"
+          "${binary}" --help | grep -F "Open terminal dashboard" >/dev/null
+          "${binary}" --json --no-host-claude --no-host-codex |
+            jq -e '.sessions == [] and .warnings == []' >/dev/null
+
+      - name: Retain the packaged assets with the workflow run
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.release.outputs.stem }}
+          path: |
+            dist/${{ steps.release.outputs.archive }}
+            dist/${{ steps.release.outputs.archive }}.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish the GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.release.outputs.archive }}
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            "dist/${ARCHIVE}" \
+            "dist/${ARCHIVE}.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "open-agent-view ${GITHUB_REF_NAME}"

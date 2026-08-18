@@ -14,9 +14,10 @@ test targets for lifecycle operations.
 - A disposable mock App Server test launches an owned Codex thread, drops the
   first supervisor, reconnects from a second supervisor through the same Unix
   socket, discovers the still-active thread, interrupts its exact turn, and
-  rejects an external thread ID. It also asserts mode `0700` for the state
-  directory and `0600` for the ownership record. The mock PID is re-verified,
-  terminated, and reaped by a panic-safe test guard.
+  rejects an external thread ID. The same test covers bounded transcript read,
+  exact active-turn steer, idle reply, archive, and delete. It also asserts
+  mode `0700` for the state directory and `0600` for the ownership record. The
+  mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
   context-sensitive `?`, selection reconciliation after filtering, Claude
@@ -58,6 +59,10 @@ test targets for lifecycle operations.
   PID, and stale sockets are not unlinked automatically.
 - Managed Codex launches use `on-request` approvals and `workspace-write`, with
   no danger-full-access or approval-bypass fallback.
+- Managed-Docker tests use an injected command runner: no test contacts the
+  Docker daemon. They cover locked/atomic private ownership persistence,
+  random instance IDs, stopped-only creation, exact start/remove argv,
+  immutable-ID revalidation, and record removal ordering.
 - User-supplied Docker targets remain observe-only. The separately tested
   managed-container API requires immutable identity, matching labels, and an
   external owner record before lifecycle operations.
@@ -66,9 +71,10 @@ test targets for lifecycle operations.
 
 ## Known unimplemented paths
 
-- Codex steering, inline approval/input responses, archive/delete, supervisor
-  status/stop, and log rotation.
-- User-facing managed Docker creation and lifecycle commands plus persisted
-  external ownership records; the hardened internal API is implemented.
+- Codex inline approval/input responses, supervisor status/stop, and log
+  rotation.
+- Managed-container session launch/control remains separate from container
+  lifecycle; enter the started container through ordinary Docker tooling or
+  observe it with `--docker-container`.
 - Provider-native inline reply; Enter hands the terminal to the provider's
   native attach/resume interface instead.

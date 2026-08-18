@@ -23,14 +23,15 @@
 - [x] Stop only exact Claude sessions launched by `coding-agents`.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
   reconnectable App Server supervisor.
-- [ ] Reply/steer, archive, and delete with explicit confirmations where the
-  provider exposes a safe supported operation.
+- [x] Reply/steer, archive, and delete owned Codex threads with explicit
+  capability checks and confirmations.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.
 - [x] Surface supported Claude logs and provider errors without leaking
   credentials.
 - [x] Implement immutable-ID and authority-gated managed-Docker primitives.
-- [ ] Expose managed-Docker create/start/stop/remove through confirmed CLI/UI
+- [x] Expose managed-Docker create/start/stop/remove through confirmed CLI
   workflows and persist external ownership records.
+- [ ] Render and answer Codex approval and structured user-input requests.
 
 ## Milestone 3 — Distribution
 
