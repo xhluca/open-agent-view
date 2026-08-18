@@ -54,7 +54,12 @@ impl ProviderController for PiController {
             bail!("the host Pi controller does not own this runtime");
         }
         let status = Command::new(&self.executable)
-            .args(["--session", &session.provider_session_id])
+            .args([
+                "--session",
+                &session.provider_session_id,
+                "--session-dir",
+            ])
+            .arg(&self.source.session_dir)
             .current_dir(&session.cwd)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -500,7 +505,7 @@ mod tests {
         let executable = directory.path().join("pi-test");
         fs::write(
             &executable,
-            "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = 123e4567-e89b-12d3-a456-426614174000 ]\n",
+            "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = 123e4567-e89b-12d3-a456-426614174000 ] && [ \"$3\" = --session-dir ] && [ \"$4\" = \"$PWD\" ]\n",
         )
         .unwrap();
         let mut permissions = fs::metadata(&executable).unwrap().permissions();
