@@ -4,6 +4,8 @@ mod docker;
 mod fixture;
 mod managed_docker;
 mod managed_docker_registry;
+mod opencode;
+mod pi;
 
 use std::path::PathBuf;
 
@@ -23,6 +25,8 @@ pub use managed_docker_registry::{
     default_managed_docker_registry_path, generate_managed_instance_id, ManagedDockerRegistry,
     ManagedDockerService, ManagedDockerState, ManagedDockerStatus,
 };
+pub use opencode::{parse_opencode_session_list, OpenCodeInvocation, OpenCodeSource};
+pub use pi::{default_pi_session_dir, parse_pi_session, PiSource};
 
 use crate::domain::{AgentSession, SessionSnapshot};
 
