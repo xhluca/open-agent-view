@@ -18,6 +18,8 @@ use open_agent_view::adapters::{CursorSource, CursorSupervisor};
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
+#[cfg(target_os = "linux")]
+use open_agent_view::opencode_supervisor::OpenCodeSupervisor;
 use open_agent_view::pi_supervisor::run_pi_supervisor_daemon;
 #[cfg(target_os = "linux")]
 use open_agent_view::pi_supervisor::PiSupervisor;
@@ -28,6 +30,8 @@ enum LaunchProvider {
     Claude,
     Codex,
     Pi,
+    #[value(name = "opencode")]
+    OpenCode,
     Cursor,
     Copilot,
 }
@@ -271,6 +275,7 @@ fn main() -> Result<()> {
         LaunchProvider::Claude => Provider::Claude,
         LaunchProvider::Codex => Provider::Codex,
         LaunchProvider::Pi => Provider::Pi,
+        LaunchProvider::OpenCode => Provider::OpenCode,
         LaunchProvider::Cursor => Provider::Cursor,
         LaunchProvider::Copilot => Provider::GitHubCopilot,
     };
@@ -300,6 +305,10 @@ fn main() -> Result<()> {
     let copilot_supervisor =
         copilot_enabled.then(|| Arc::new(CopilotSupervisor::host(cli.copilot_bin.clone())));
     #[cfg(target_os = "linux")]
+    let opencode_supervisor = opencode_enabled
+        .then(|| OpenCodeSupervisor::host(cli.opencode_bin.clone()).map(Arc::new))
+        .transpose()?;
+    #[cfg(target_os = "linux")]
     let cursor_supervisor = cursor_enabled
         .then(|| CursorSupervisor::host(cli.cursor_bin.clone()).map(Arc::new))
         .transpose()?;
@@ -319,9 +328,17 @@ fn main() -> Result<()> {
             control.register_controller(Arc::new(controller))?;
         }
         if opencode_enabled {
-            control.register_controller(Arc::new(OpenCodeController::host(
+            #[cfg(target_os = "linux")]
+            let controller = OpenCodeController::managed(
                 cli.opencode_bin.clone(),
-            )))?;
+                opencode_supervisor
+                    .as_ref()
+                    .expect("OpenCode supervisor exists when OpenCode is enabled")
+                    .clone(),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let controller = OpenCodeController::host(cli.opencode_bin.clone());
+            control.register_controller(Arc::new(controller))?;
         }
         if copilot_enabled {
             control.register_controller(Arc::new(CopilotController::managed(
@@ -373,7 +390,14 @@ fn main() -> Result<()> {
             engine.add_source(source);
         }
         if opencode_enabled {
-            engine.add_source(OpenCodeSource::host(cli.opencode_bin));
+            #[cfg(target_os = "linux")]
+            let source = OpenCodeSource::managed(
+                cli.opencode_bin,
+                opencode_supervisor.expect("OpenCode supervisor exists when OpenCode is enabled"),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let source = OpenCodeSource::host(cli.opencode_bin);
+            engine.add_source(source);
         }
         if copilot_enabled {
             engine.add_source(CopilotSource::host(cli.copilot_bin));
@@ -811,6 +835,7 @@ mod tests {
             ("claude", LaunchProvider::Claude),
             ("codex", LaunchProvider::Codex),
             ("pi", LaunchProvider::Pi),
+            ("opencode", LaunchProvider::OpenCode),
             ("cursor", LaunchProvider::Cursor),
             ("copilot", LaunchProvider::Copilot),
         ] {
