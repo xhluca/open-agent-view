@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -52,6 +52,44 @@ impl SupervisorRecord {
 struct ControlConnection {
     server: Option<SupervisorRecord>,
     client: Option<AppServerClient>,
+    pending_requests: Vec<PendingRequest>,
+}
+
+#[derive(Clone, Debug)]
+struct PendingRequest {
+    id: Value,
+    thread_id: String,
+    turn_id: String,
+    item_id: String,
+    kind: PendingRequestKind,
+    resolving: bool,
+    expires_at: Option<Instant>,
+}
+
+#[derive(Clone, Debug)]
+enum PendingRequestKind {
+    Approval {
+        summary: String,
+        accept_result: Option<Value>,
+        decline_result: Option<Value>,
+    },
+    UserInput {
+        questions: Vec<PendingQuestion>,
+        answers: BTreeMap<String, Vec<String>>,
+    },
+    Unsupported {
+        summary: String,
+    },
+}
+
+#[derive(Clone, Debug)]
+struct PendingQuestion {
+    id: String,
+    header: String,
+    question: String,
+    options: Vec<String>,
+    allow_other: bool,
+    secret: bool,
 }
 
 /// Owns a durable, reconnectable host Codex App Server.
@@ -67,6 +105,7 @@ pub struct CodexSupervisor {
     record_path: PathBuf,
     lock_path: PathBuf,
     client_transport: SupervisorClientTransport,
+    response_lease: Option<ResponseLease>,
     control: Mutex<ControlConnection>,
 }
 
@@ -81,6 +120,13 @@ enum SupervisorClientTransport {
 pub enum CodexReplyMode {
     Started,
     Steered,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CodexInputProgress {
+    pub answered: usize,
+    pub total: usize,
+    pub submitted: bool,
 }
 
 impl CodexSupervisor {
@@ -107,12 +153,14 @@ impl CodexSupervisor {
         client_transport: SupervisorClientTransport,
     ) -> Result<Self> {
         ensure_private_directory(&state_dir)?;
+        let response_lease = ResponseLease::try_acquire(&state_dir.join("controller.lock"))?;
         Ok(Self {
             codex_bin: codex_bin.into(),
             record_path: state_dir.join("supervisor.json"),
             lock_path: state_dir.join("supervisor.lock"),
             state_dir,
             client_transport,
+            response_lease,
             control: Mutex::new(ControlConnection::default()),
         })
     }
@@ -228,7 +276,17 @@ impl CodexSupervisor {
                 "includeTurns": true
             }),
         )?;
-        format_thread_transcript(&response)
+        self.refresh_pending_locked(&mut control, &server)?;
+        let mut transcript = format_thread_transcript(&response)?;
+        if let Some(request) = control
+            .pending_requests
+            .iter()
+            .find(|request| request.thread_id == session.provider_session_id)
+        {
+            transcript.push_str("\n\n");
+            transcript.push_str(&format_pending_request(request));
+        }
+        Ok(limit_transcript(transcript))
     }
 
     pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<CodexReplyMode> {
@@ -289,6 +347,149 @@ impl CodexSupervisor {
         Ok(CodexReplyMode::Started)
     }
 
+    pub fn respond_approval(&self, session: &AgentSession, accept: bool) -> Result<()> {
+        if self.response_lease.is_none() {
+            bail!(
+                "another Open Agent View process holds inline Codex response authority; use that dashboard or the native session"
+            );
+        }
+        let (server, owned) = self.owned_thread(session)?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        self.refresh_pending_locked(&mut control, &server)?;
+        let position = control
+            .pending_requests
+            .iter()
+            .position(|request| {
+                request.thread_id == session.provider_session_id
+                    && !request.resolving
+                    && matches!(request.kind, PendingRequestKind::Approval { .. })
+            })
+            .context("no actionable approval request is pending for this Codex thread")?;
+        let request = &control.pending_requests[position];
+        if owned.active_turn_id.as_deref() != Some(request.turn_id.as_str()) {
+            bail!("the pending approval no longer belongs to the exact active turn");
+        }
+        let response = match &request.kind {
+            PendingRequestKind::Approval {
+                accept_result,
+                decline_result,
+                ..
+            } => {
+                if accept {
+                    accept_result.clone()
+                } else {
+                    decline_result.clone()
+                }
+            }
+            _ => unreachable!("position selected an approval"),
+        }
+        .context(if accept {
+            "this request cannot be safely accepted inline; open the native session"
+        } else {
+            "this request does not offer a safe inline decline"
+        })?;
+        let id = request.id.clone();
+        control
+            .client
+            .as_mut()
+            .context("Codex control connection disappeared")?
+            .respond(id, response)?;
+        control.pending_requests[position].resolving = true;
+        Ok(())
+    }
+
+    pub fn respond_user_input(
+        &self,
+        session: &AgentSession,
+        answer: &str,
+    ) -> Result<CodexInputProgress> {
+        if self.response_lease.is_none() {
+            bail!(
+                "another Open Agent View process holds inline Codex response authority; use that dashboard or the native session"
+            );
+        }
+        let answer = answer.trim();
+        if answer.is_empty() {
+            bail!("the Codex user-input answer cannot be empty");
+        }
+        let (server, owned) = self.owned_thread(session)?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        self.refresh_pending_locked(&mut control, &server)?;
+        let position = control
+            .pending_requests
+            .iter()
+            .position(|request| {
+                request.thread_id == session.provider_session_id
+                    && !request.resolving
+                    && matches!(request.kind, PendingRequestKind::UserInput { .. })
+            })
+            .context("no actionable structured-input request is pending for this Codex thread")?;
+        if owned.active_turn_id.as_deref()
+            != Some(control.pending_requests[position].turn_id.as_str())
+        {
+            bail!("the pending input request no longer belongs to the exact active turn");
+        }
+        if control.pending_requests[position]
+            .expires_at
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            bail!("the Codex structured-input request has reached its auto-resolution deadline");
+        }
+
+        let (answered, total, completed_response) = {
+            let request = &mut control.pending_requests[position];
+            let PendingRequestKind::UserInput { questions, answers } = &mut request.kind else {
+                unreachable!("position selected a user-input request")
+            };
+            if let Some(question) = questions
+                .iter()
+                .find(|question| !answers.contains_key(&question.id))
+            {
+                if question.secret {
+                    bail!(
+                        "secret Codex input is unavailable in the visible dashboard composer; open the native session"
+                    );
+                }
+                let answer = normalize_question_answer(question, answer)?;
+                answers.insert(question.id.clone(), vec![answer]);
+            }
+            let answered = answers.len();
+            let total = questions.len();
+            let completed = (answered == total).then(|| {
+                let id = request.id.clone();
+                let values = answers
+                    .iter()
+                    .map(|(id, answers)| (id.clone(), json!({"answers": answers})))
+                    .collect::<serde_json::Map<_, _>>();
+                (id, json!({"answers": values}))
+            });
+            (answered, total, completed)
+        };
+
+        let submitted = if let Some((id, response)) = completed_response {
+            control
+                .client
+                .as_mut()
+                .context("Codex control connection disappeared")?
+                .respond(id, response)?;
+            control.pending_requests[position].resolving = true;
+            true
+        } else {
+            false
+        };
+        Ok(CodexInputProgress {
+            answered,
+            total,
+            submitted,
+        })
+    }
+
     pub fn archive(&self, session: &AgentSession) -> Result<()> {
         let (server, owned) = self.owned_thread(session)?;
         require_idle_mutation(session, &owned, "archive")?;
@@ -322,19 +523,34 @@ impl CodexSupervisor {
     }
 
     pub fn enrich(&self, snapshot: &mut SessionSnapshot) {
-        if let Ok(mut control) = self.control.lock() {
-            let disconnected = control
-                .client
-                .as_mut()
-                .map(|client| client.drain_events().is_err())
-                .unwrap_or(false);
-            if disconnected {
-                control.client = None;
-                control.server = None;
-            }
-        }
         let Ok(mut record) = self.live_record() else {
             return;
+        };
+        let pending_requests = match self.control.lock() {
+            Ok(mut control) => {
+                if self.response_lease.is_some()
+                    && record
+                    .threads
+                    .values()
+                    .any(|thread| thread.active_turn_id.is_some())
+                {
+                    if let Err(error) = self.refresh_pending_locked(&mut control, &record) {
+                        control.client = None;
+                        control.server = None;
+                        control.pending_requests.clear();
+                        snapshot.warnings.push(format!(
+                            "Codex control request synchronization failed: {error:#}"
+                        ));
+                    }
+                }
+                control.pending_requests.clone()
+            }
+            Err(_) => {
+                snapshot
+                    .warnings
+                    .push("Codex supervisor connection lock was poisoned".into());
+                Vec::new()
+            }
         };
         let mut changed = false;
         for session in &mut snapshot.sessions {
@@ -345,6 +561,41 @@ impl CodexSupervisor {
                 continue;
             };
             session.capabilities.insert(Capability::Inspect);
+            let pending = pending_requests.iter().find(|request| {
+                request.thread_id == session.provider_session_id
+                    && owned.active_turn_id.as_deref() == Some(request.turn_id.as_str())
+            });
+            if let Some(request) = pending {
+                session.state = SessionState::NeedsInput;
+                match &request.kind {
+                    PendingRequestKind::Approval {
+                        accept_result,
+                        decline_result,
+                        ..
+                    } if self.response_lease.is_some() && !request.resolving => {
+                        if accept_result.is_some() {
+                            session.capabilities.insert(Capability::Approve);
+                        }
+                        if decline_result.is_some() {
+                            session.capabilities.insert(Capability::Decline);
+                        }
+                    }
+                    PendingRequestKind::UserInput { questions, answers }
+                        if self.response_lease.is_some()
+                            && !request.resolving
+                            && !request
+                                .expires_at
+                                .is_some_and(|deadline| Instant::now() >= deadline)
+                            && questions
+                            .iter()
+                            .find(|question| !answers.contains_key(&question.id))
+                            .is_some_and(|question| !question.secret) =>
+                    {
+                        session.capabilities.insert(Capability::Respond);
+                    }
+                    _ => {}
+                }
+            }
             if matches!(session.state, SessionState::Working | SessionState::NeedsInput)
                 && owned.active_turn_id.is_some()
             {
@@ -352,7 +603,9 @@ impl CodexSupervisor {
                 if session.state == SessionState::Working {
                     session.capabilities.insert(Capability::Reply);
                 }
-            } else if owned.active_turn_id.take().is_some() {
+            } else if session.state == SessionState::Completed
+                && owned.active_turn_id.take().is_some()
+            {
                 changed = true;
             }
             if session.state == SessionState::Completed && owned.active_turn_id.is_none() {
@@ -388,10 +641,38 @@ impl CodexSupervisor {
             .map(|current| current.same_process(server))
             .unwrap_or(false);
         if !current_matches || control.client.is_none() {
-            control.client = Some(AppServerClient::connect(&self.client_invocation(server))?);
+            let mut client = AppServerClient::connect(&self.client_invocation(server))?;
+            for (thread_id, thread) in &server.threads {
+                if thread.active_turn_id.is_none() {
+                    continue;
+                }
+                client.request(
+                    "thread/resume",
+                    json!({
+                        "threadId": thread_id,
+                        "cwd": thread.cwd,
+                        "approvalPolicy": "on-request",
+                        "sandbox": "workspace-write"
+                    }),
+                )?;
+            }
+            control.pending_requests.clear();
+            control.client = Some(client);
             control.server = Some(server.clone());
         }
         Ok(control.client.as_mut().expect("Codex client initialized"))
+    }
+
+    fn refresh_pending_locked(
+        &self,
+        control: &mut ControlConnection,
+        server: &SupervisorRecord,
+    ) -> Result<()> {
+        let events = self.control_client(control, server)?.drain_events()?;
+        for event in events {
+            reconcile_pending_event(&mut control.pending_requests, server, event)?;
+        }
+        Ok(())
     }
 
     fn client_invocation(&self, server: &SupervisorRecord) -> AppServerInvocation {
@@ -565,6 +846,315 @@ impl CodexSupervisor {
     }
 }
 
+fn reconcile_pending_event(
+    pending: &mut Vec<PendingRequest>,
+    server: &SupervisorRecord,
+    event: Value,
+) -> Result<()> {
+    let Some(method) = event.get("method").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    if method == "serverRequest/resolved" {
+        if let (Some(thread_id), Some(request_id)) = (
+            event.pointer("/params/threadId").and_then(Value::as_str),
+            event.pointer("/params/requestId"),
+        ) {
+            pending.retain(|request| {
+                request.thread_id != thread_id || request.id != *request_id
+            });
+        }
+        return Ok(());
+    }
+    if !matches!(
+        method,
+        "item/commandExecution/requestApproval"
+            | "item/fileChange/requestApproval"
+            | "item/tool/requestUserInput"
+            | "item/permissions/requestApproval"
+            | "mcpServer/elicitation/request"
+    ) {
+        return Ok(());
+    }
+
+    let Some(id) = event.get("id").cloned() else {
+        return Ok(());
+    };
+    if !id.is_string() && id.as_i64().is_none() {
+        return Ok(());
+    }
+    let Some(params) = event.get("params") else {
+        return Ok(());
+    };
+    let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let Some(turn_id) = params.get("turnId").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    let Some(owned) = server.threads.get(thread_id) else {
+        return Ok(());
+    };
+    if owned.active_turn_id.as_deref() != Some(turn_id) {
+        return Ok(());
+    }
+    let item_id = params
+        .get("itemId")
+        .and_then(Value::as_str)
+        .unwrap_or(method)
+        .to_owned();
+    let kind = match method {
+        "item/commandExecution/requestApproval" => {
+            let available = params.get("availableDecisions").and_then(Value::as_array);
+            let accept_supported = available
+                .map(|decisions| decisions.iter().any(|value| value.as_str() == Some("accept")))
+                .unwrap_or(true);
+            let decline_supported = available
+                .map(|decisions| decisions.iter().any(|value| value.as_str() == Some("decline")))
+                .unwrap_or(true);
+            let command = params
+                .get("command")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty());
+            let cwd = params
+                .get("cwd")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty());
+            let mut lines = vec!["Codex requests permission to run a command.".to_owned()];
+            push_optional_line(&mut lines, "Command", params.get("command"));
+            push_optional_line(&mut lines, "Directory", params.get("cwd"));
+            push_optional_line(&mut lines, "Reason", params.get("reason"));
+            let network_visible = params
+                .get("networkApprovalContext")
+                .and_then(Value::as_object)
+                .and_then(|network| {
+                    let host = network
+                        .get("host")
+                        .and_then(Value::as_str)
+                        .filter(|value| !value.is_empty())?;
+                    let protocol = network.get("protocol").and_then(Value::as_str)?;
+                    matches!(protocol, "http" | "https" | "socks5Tcp" | "socks5Udp")
+                        .then(|| (host, protocol))
+                });
+            if let Some((host, protocol)) = network_visible {
+                lines.push(format!("Network: {protocol}://{host}"));
+            }
+            let has_additional_permissions = params
+                .get("additionalPermissions")
+                .is_some_and(|value| !value.is_null());
+            if has_additional_permissions {
+                lines.push("Additional filesystem or network permissions are requested.".into());
+            }
+            PendingRequestKind::Approval {
+                summary: lines.join("\n"),
+                accept_result: (accept_supported
+                    && !has_additional_permissions
+                    && ((command.is_some() && cwd.is_some()) || network_visible.is_some()))
+                .then(|| json!({"decision": "accept"})),
+                decline_result: decline_supported.then(|| json!({"decision": "decline"})),
+            }
+        }
+        "item/fileChange/requestApproval" => {
+            let mut lines = vec!["Codex requests permission to apply file changes.".to_owned()];
+            push_optional_line(&mut lines, "Reason", params.get("reason"));
+            push_optional_line(&mut lines, "Requested write root", params.get("grantRoot"));
+            PendingRequestKind::Approval {
+                summary: lines.join("\n"),
+                // The approval request has no diff. Decline is safe; accepting
+                // requires a complete correlated item/started fileChange.
+                accept_result: None,
+                decline_result: Some(json!({"decision": "decline"})),
+            }
+        }
+        "item/tool/requestUserInput" => {
+            if let Some(questions) = parse_pending_questions(params) {
+                PendingRequestKind::UserInput {
+                    questions,
+                    answers: BTreeMap::new(),
+                }
+            } else {
+                PendingRequestKind::Unsupported {
+                    summary: "Codex sent an empty or malformed structured-input request; open the native session to resolve it.".into(),
+                }
+            }
+        }
+        "item/permissions/requestApproval" => PendingRequestKind::Approval {
+            summary: "Codex requests additional filesystem or network permissions. Open Agent View can deny the request inline, but will not synthesize or broaden a grant.".into(),
+            accept_result: None,
+            decline_result: Some(json!({"permissions": {}, "scope": "turn"})),
+        },
+        "mcpServer/elicitation/request" => PendingRequestKind::Approval {
+            summary: "An MCP server requests structured input. Open Agent View can decline inline; open the native Codex session to review or accept the server-specific form or URL.".into(),
+            accept_result: None,
+            decline_result: Some(json!({"action": "decline", "content": null, "_meta": null})),
+        },
+        _ => unreachable!("method allowlist checked above"),
+    };
+
+    pending.retain(|request| request.thread_id != thread_id || request.id != id);
+    let expires_at = (method == "item/tool/requestUserInput")
+        .then(|| params.get("autoResolutionMs").and_then(Value::as_u64))
+        .flatten()
+        .and_then(|milliseconds| Instant::now().checked_add(Duration::from_millis(milliseconds)));
+    pending.push(PendingRequest {
+        id,
+        thread_id: thread_id.to_owned(),
+        turn_id: turn_id.to_owned(),
+        item_id,
+        kind,
+        resolving: false,
+        expires_at,
+    });
+    Ok(())
+}
+
+fn parse_pending_questions(params: &Value) -> Option<Vec<PendingQuestion>> {
+    let values = params.get("questions")?.as_array()?;
+    if values.is_empty() {
+        return None;
+    }
+    let mut ids = BTreeSet::new();
+    let mut questions = Vec::with_capacity(values.len());
+    for value in values {
+        let id = value
+            .get("id")?
+            .as_str()
+            .filter(|value| !value.is_empty())?
+            .to_owned();
+        if !ids.insert(id.clone()) {
+            return None;
+        }
+        let header = value
+            .get("header")?
+            .as_str()
+            .filter(|value| !value.is_empty())?
+            .to_owned();
+        let question = value
+            .get("question")?
+            .as_str()
+            .filter(|value| !value.is_empty())?
+            .to_owned();
+        let options = match value.get("options") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(options)) => options
+                .iter()
+                .map(|option| {
+                    option
+                        .get("label")?
+                        .as_str()
+                        .filter(|value| !value.is_empty())
+                        .map(ToOwned::to_owned)
+                })
+                .collect::<Option<Vec<_>>>()?,
+            Some(_) => return None,
+        };
+        questions.push(PendingQuestion {
+            id,
+            header,
+            question,
+            options,
+            allow_other: value.get("isOther")?.as_bool()?,
+            secret: value.get("isSecret")?.as_bool()?,
+        });
+    }
+    Some(questions)
+}
+
+fn push_optional_line(lines: &mut Vec<String>, label: &str, value: Option<&Value>) {
+    if let Some(value) = value.and_then(Value::as_str).filter(|value| !value.is_empty()) {
+        lines.push(format!("{label}: {value}"));
+    }
+}
+
+fn normalize_question_answer(question: &PendingQuestion, answer: &str) -> Result<String> {
+    if question.options.is_empty() {
+        return Ok(answer.to_owned());
+    }
+    if let Ok(index) = answer.parse::<usize>() {
+        if let Some(option) = index
+            .checked_sub(1)
+            .and_then(|index| question.options.get(index))
+        {
+            return Ok(option.clone());
+        }
+    }
+    if question.options.iter().any(|option| option == answer) || question.allow_other {
+        return Ok(answer.to_owned());
+    }
+    bail!(
+        "answer must be an offered option (type its number or exact label): {}",
+        question.options.join(", ")
+    )
+}
+
+fn format_pending_request(request: &PendingRequest) -> String {
+    let body = match &request.kind {
+        PendingRequestKind::Approval {
+            summary,
+            accept_result,
+            decline_result,
+        } => {
+            let decisions = match (accept_result.is_some(), decline_result.is_some()) {
+                (true, true) => "y allow once · n deny",
+                (true, false) => "y allow once",
+                (false, true) => "n deny",
+                (false, false) => "no supported inline decision; open the native session",
+            };
+            format!("{summary}\n\n{decisions}")
+        }
+        PendingRequestKind::UserInput { questions, answers } => {
+            if let Some(question) = questions
+                .iter()
+                .find(|question| !answers.contains_key(&question.id))
+            {
+                let mut lines = vec![
+                    format!(
+                        "Codex asks for input ({}/{}): {}",
+                        answers.len() + 1,
+                        questions.len(),
+                        question.header
+                    ),
+                    question.question.clone(),
+                ];
+                if question.secret {
+                    lines.push(
+                        "This answer is secret; open the native session so it is not echoed here."
+                            .into(),
+                    );
+                } else if !question.options.is_empty() {
+                    lines.extend(
+                        question
+                            .options
+                            .iter()
+                            .enumerate()
+                            .map(|(index, option)| format!("{}. {option}", index + 1)),
+                    );
+                    if question.allow_other {
+                        lines.push("Or type a custom answer.".into());
+                    }
+                }
+                lines.join("\n")
+            } else {
+                "Codex structured input is ready to submit.".into()
+            }
+        }
+        PendingRequestKind::Unsupported { summary } => summary.clone(),
+    };
+    let status = if request.resolving {
+        "\n\nResponse sent; waiting for Codex to resolve the request."
+    } else if request
+        .expires_at
+        .is_some_and(|deadline| Instant::now() >= deadline)
+    {
+        "\n\nThe provider's auto-resolution deadline has passed; this request is no longer actionable here."
+    } else {
+        ""
+    };
+    sanitize_terminal_text(&format!(
+        "Pending request {}\n{body}{status}",
+        request.item_id
+    ))
+}
+
 fn require_idle_mutation(session: &AgentSession, owned: &OwnedThread, operation: &str) -> Result<()> {
     if owned.active_turn_id.is_some() || session.state != SessionState::Completed {
         bail!("refusing to {operation} a Codex thread that is not known idle");
@@ -640,8 +1230,19 @@ fn format_thread_transcript(response: &Value) -> Result<String> {
     if sections.is_empty() {
         Ok("No persisted Codex transcript items are available.".into())
     } else {
-        Ok(limit_transcript(sections.join("\n\n")))
+        Ok(limit_transcript(sanitize_terminal_text(&sections.join("\n\n"))))
     }
+}
+
+fn sanitize_terminal_text(input: &str) -> String {
+    input
+        .chars()
+        .map(|character| match character {
+            '\n' | '\t' => character,
+            character if character.is_control() => '�',
+            character => character,
+        })
+        .collect()
 }
 
 fn limit_transcript(transcript: String) -> String {
@@ -724,7 +1325,7 @@ fn private_append_file(path: &Path) -> Result<File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
     }
     let file = options
         .open(path)
@@ -859,6 +1460,44 @@ struct StateLock {
     file: File,
 }
 
+struct ResponseLease {
+    file: File,
+}
+
+impl ResponseLease {
+    fn try_acquire(path: &Path) -> Result<Option<Self>> {
+        reject_unsafe_existing_file(path, "Codex controller lease")?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options
+            .open(path)
+            .with_context(|| format!("failed to open controller lease {}", path.display()))?;
+        verify_private_file(&file, "Codex controller lease")?;
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let result = unsafe {
+                libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB)
+            };
+            if result != 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error().is_some_and(|code| {
+                    code == libc::EAGAIN || code == libc::EWOULDBLOCK
+                }) {
+                    return Ok(None);
+                }
+                return Err(error).context("failed to acquire Codex controller lease");
+            }
+        }
+        Ok(Some(Self { file }))
+    }
+}
+
 impl StateLock {
     fn acquire(path: &Path) -> Result<Self> {
         reject_unsafe_existing_file(path, "Codex supervisor lock")?;
@@ -867,7 +1506,7 @@ impl StateLock {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
         }
         let file = options
             .open(path)
@@ -909,6 +1548,16 @@ fn verify_private_file(file: &File, label: &str) -> Result<()> {
 }
 
 impl Drop for StateLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+}
+
+impl Drop for ResponseLease {
     fn drop(&mut self) {
         #[cfg(unix)]
         {
@@ -973,6 +1622,171 @@ mod tests {
         assert!(rendered.starts_with("[earlier transcript truncated]"));
         assert!(rendered.ends_with("recent 🦀"));
         assert!(rendered.chars().count() <= MAX_TRANSCRIPT_CHARS + 32);
+    }
+
+    #[test]
+    fn pending_reducer_requires_exact_ownership_and_preserves_request_ids() {
+        let mut threads = BTreeMap::new();
+        threads.insert(
+            "owned-thread".into(),
+            OwnedThread {
+                cwd: PathBuf::from("/tmp"),
+                created_at_ms: 1,
+                active_turn_id: Some("owned-turn".into()),
+            },
+        );
+        let server = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid: std::process::id(),
+            process_start_token: "test".into(),
+            process_cmdline: vec![1],
+            codex_bin: "codex".into(),
+            socket_path: PathBuf::from("/tmp/test.sock"),
+            created_at_ms: 1,
+            threads,
+        };
+        let mut pending = Vec::new();
+
+        reconcile_pending_event(
+            &mut pending,
+            &server,
+            json!({
+                "id": -7,
+                "method": "item/commandExecution/requestApproval",
+                "params": {
+                    "threadId": "owned-thread",
+                    "turnId": "owned-turn",
+                    "itemId": "command-1",
+                    "startedAtMs": 1,
+                    "command": "printf '\u{1b}[2J'"
+                }
+            }),
+        )
+        .unwrap();
+        reconcile_pending_event(
+            &mut pending,
+            &server,
+            json!({
+                "id": "file-1",
+                "method": "item/fileChange/requestApproval",
+                "params": {
+                    "threadId": "owned-thread",
+                    "turnId": "owned-turn",
+                    "itemId": "file-1",
+                    "startedAtMs": 1
+                }
+            }),
+        )
+        .unwrap();
+        reconcile_pending_event(
+            &mut pending,
+            &server,
+            json!({
+                "id": "wrong-turn",
+                "method": "item/fileChange/requestApproval",
+                "params": {
+                    "threadId": "owned-thread",
+                    "turnId": "other-turn",
+                    "itemId": "file-2",
+                    "startedAtMs": 1
+                }
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(pending.len(), 2);
+        assert_eq!(pending[0].id, json!(-7));
+        assert!(!format_pending_request(&pending[0]).contains('\u{1b}'));
+        let PendingRequestKind::Approval { accept_result, .. } = &pending[0].kind else {
+            panic!("command request should be an approval")
+        };
+        assert!(
+            accept_result.is_none(),
+            "command acceptance requires both the exact command and working directory"
+        );
+        let PendingRequestKind::Approval {
+            accept_result,
+            decline_result,
+            ..
+        } = &pending[1].kind
+        else {
+            panic!("file request should be an approval")
+        };
+        assert!(accept_result.is_none());
+        assert_eq!(decline_result, &Some(json!({"decision": "decline"})));
+
+        reconcile_pending_event(
+            &mut pending,
+            &server,
+            json!({
+                "method": "serverRequest/resolved",
+                "params": {"threadId": "owned-thread", "requestId": -7}
+            }),
+        )
+        .unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].id, json!("file-1"));
+    }
+
+    #[test]
+    fn malformed_or_expired_structured_input_never_becomes_actionable() {
+        let mut threads = BTreeMap::new();
+        threads.insert(
+            "owned-thread".into(),
+            OwnedThread {
+                cwd: PathBuf::from("/tmp"),
+                created_at_ms: 1,
+                active_turn_id: Some("owned-turn".into()),
+            },
+        );
+        let server = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid: std::process::id(),
+            process_start_token: "test".into(),
+            process_cmdline: vec![1],
+            codex_bin: "codex".into(),
+            socket_path: PathBuf::from("/tmp/test.sock"),
+            created_at_ms: 1,
+            threads,
+        };
+        let mut pending = Vec::new();
+        reconcile_pending_event(
+            &mut pending,
+            &server,
+            json!({
+                "id": "input-1",
+                "method": "item/tool/requestUserInput",
+                "params": {
+                    "threadId": "owned-thread",
+                    "turnId": "owned-turn",
+                    "itemId": "input-1",
+                    "questions": [
+                        {"id": "duplicate", "header": "One", "question": "First?", "isOther": false, "isSecret": false, "options": null},
+                        {"id": "duplicate", "header": "Two", "question": "Second?", "isOther": false, "isSecret": false, "options": null}
+                    ]
+                }
+            }),
+        )
+        .unwrap();
+        assert!(matches!(pending[0].kind, PendingRequestKind::Unsupported { .. }));
+
+        pending[0].expires_at = Some(Instant::now() - Duration::from_millis(1));
+        assert!(format_pending_request(&pending[0]).contains("deadline has passed"));
+    }
+
+    #[test]
+    fn only_one_process_instance_holds_inline_response_authority() {
+        let directory = tempdir().unwrap();
+        let state = directory.path().join("state");
+        let first = CodexSupervisor::with_state_dir("codex", state.clone()).unwrap();
+        let second = CodexSupervisor::with_state_dir("codex", state.clone()).unwrap();
+
+        assert!(first.response_lease.is_some());
+        assert!(second.response_lease.is_none());
+        drop(first);
+
+        let third = CodexSupervisor::with_state_dir("codex", state).unwrap();
+        assert!(third.response_lease.is_some());
     }
 
     #[test]
@@ -1062,6 +1876,81 @@ mod tests {
         second.archive(&idle).unwrap();
         second.delete(&idle).unwrap();
         assert!(second.delete(&idle).is_err());
+    }
+
+    #[test]
+    fn pending_approval_replays_after_reconnect_and_clears_only_when_resolved() {
+        let directory = tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let mock = directory.path().join("mock-codex.py");
+        fs::write(&mock, MOCK_CODEX).unwrap();
+        fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let first = Arc::new(
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir.clone()).unwrap(),
+        );
+        let thread_id = first.launch("Request approval", Path::new("/tmp")).unwrap();
+        let record = first.live_record().unwrap();
+        let _process_guard = VerifiedTestProcess(record);
+        let pending = discover_owned(&first, &thread_id);
+        assert_eq!(pending.state, SessionState::NeedsInput);
+        assert!(pending.capabilities.contains(&Capability::Approve));
+        assert!(pending.capabilities.contains(&Capability::Decline));
+        assert!(first.inspect(&pending).unwrap().contains("cargo test"));
+        drop(first);
+
+        let second = Arc::new(
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap(),
+        );
+        let replayed = discover_owned(&second, &thread_id);
+        assert!(replayed.capabilities.contains(&Capability::Approve));
+        second.respond_approval(&replayed, false).unwrap();
+
+        let resolving = discover_owned(&second, &thread_id);
+        assert!(!resolving.capabilities.contains(&Capability::Approve));
+        assert!(!resolving.capabilities.contains(&Capability::Decline));
+        let resumed = discover_owned(&second, &thread_id);
+        assert_eq!(resumed.state, SessionState::Working);
+        assert!(resumed.capabilities.contains(&Capability::Reply));
+    }
+
+    #[test]
+    fn structured_input_answers_questions_sequentially_without_persisting_values() {
+        let directory = tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let mock = directory.path().join("mock-codex.py");
+        fs::write(&mock, MOCK_CODEX).unwrap();
+        fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
+        let supervisor = Arc::new(
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap(),
+        );
+        let thread_id = supervisor
+            .launch("Request input", Path::new("/tmp"))
+            .unwrap();
+        let record = supervisor.live_record().unwrap();
+        let _process_guard = VerifiedTestProcess(record);
+        let pending = discover_owned(&supervisor, &thread_id);
+        assert!(pending.capabilities.contains(&Capability::Respond));
+        assert!(supervisor.inspect(&pending).unwrap().contains("Environment"));
+
+        let first = supervisor
+            .respond_user_input(&pending, "staging")
+            .unwrap();
+        assert_eq!(first.answered, 1);
+        assert_eq!(first.total, 2);
+        assert!(!first.submitted);
+        let still_pending = discover_owned(&supervisor, &thread_id);
+        assert!(supervisor.inspect(&still_pending).unwrap().contains("Checks"));
+        let second = supervisor.respond_user_input(&still_pending, "2").unwrap();
+        assert_eq!(second.answered, 2);
+        assert!(second.submitted);
+
+        let resumed = discover_owned(&supervisor, &thread_id);
+        assert_eq!(resumed.state, SessionState::Working);
+        assert!(!resumed.capabilities.contains(&Capability::Respond));
+        let record_text = fs::read_to_string(supervisor.record_path.clone()).unwrap();
+        assert!(!record_text.contains("staging"));
+        assert!(!record_text.contains("Thorough"));
     }
 
     fn discover_owned(supervisor: &Arc<CodexSupervisor>, thread_id: &str) -> AgentSession {
@@ -1159,21 +2048,45 @@ if args[:2] == ["app-server", "--listen"]:
     server.bind(path)
     os.chmod(path, 0o600)
     server.listen()
-    state = {"thread": None, "turn": None, "turn_seq": 0, "active": False, "archived": False}
+    state = {"thread": None, "turn": None, "turn_seq": 0, "active": False, "archived": False, "pending": False, "pending_kind": None, "pending_id": "approval-1"}
+    def pending_event():
+        if state["pending_kind"] == "approval":
+            return {"id": state["pending_id"], "method": "item/commandExecution/requestApproval", "params": {"threadId": state["thread"], "turnId": state["turn"], "itemId": "command-1", "startedAtMs": 1, "command": "cargo test", "cwd": "/tmp", "reason": "verify the change"}}
+        if state["pending_kind"] == "input":
+            return {"id": state["pending_id"], "method": "item/tool/requestUserInput", "params": {"threadId": state["thread"], "turnId": state["turn"], "itemId": "input-1", "autoResolutionMs": None, "questions": [
+                {"id": "environment", "header": "Environment", "question": "Which environment?", "isOther": True, "isSecret": False, "options": [{"label": "production", "description": "Live"}]},
+                {"id": "checks", "header": "Checks", "question": "How much validation?", "isOther": False, "isSecret": False, "options": [{"label": "Quick", "description": "Focused"}, {"label": "Thorough", "description": "Full"}]}
+            ]}}
+        return None
     def handle(conn):
         stream = conn.makefile("rwb")
         for raw in stream:
             message = json.loads(raw)
             method = message.get("method")
             ident = message.get("id")
+            event = None
+            if method is None:
+                if ident == state["pending_id"] and "result" in message:
+                    state["pending"] = False
+                    state["pending_kind"] = None
+                    stream.write((json.dumps({"method": "serverRequest/resolved", "params": {"threadId": state["thread"], "requestId": ident}})+"\n").encode()); stream.flush()
+                continue
             if method == "initialize": result = {"userAgent": "mock/1"}
             elif method == "thread/start":
                 state.update(thread="owned-thread", active=False, archived=False)
                 result = {"thread": {"id": state["thread"]}}
             elif method == "turn/start":
                 state["turn_seq"] += 1
-                state.update(turn="owned-turn-"+str(state["turn_seq"]), active=True)
+                prompt = message["params"]["input"][0]["text"]
+                pending_kind = "approval" if prompt == "Request approval" else ("input" if prompt == "Request input" else None)
+                state.update(turn="owned-turn-"+str(state["turn_seq"]), active=True, pending=pending_kind is not None, pending_kind=pending_kind)
                 result = {"turn": {"id": state["turn"], "status": "inProgress", "items": []}}
+                if state["pending"]:
+                    event = pending_event()
+            elif method == "thread/resume":
+                result = {"thread": {"id": state["thread"], "turns": []}}
+                if state["pending"]:
+                    event = pending_event()
             elif method == "turn/steer":
                 if message["params"]["threadId"] != state["thread"] or message["params"]["expectedTurnId"] != state["turn"] or not state["active"]:
                     stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "stale turn"}})+"\n").encode()); stream.flush(); continue
@@ -1199,13 +2112,15 @@ if args[:2] == ["app-server", "--listen"]:
                 data = [] if state["thread"] is None or state["archived"] else [{
                     "id": state["thread"], "cwd": "/tmp", "createdAt": 1,
                     "updatedAt": 2, "preview": "Implement the test", "name": None,
-                    "status": {"type": "active" if state["active"] else "idle", "activeFlags": []},
+                    "status": {"type": "active" if state["active"] else "idle", "activeFlags": (["waitingOnUserInput"] if state["pending_kind"] == "input" else ["waitingOnApproval"]) if state["pending"] else []},
                     "source": "appServer"
                 }]
                 result = {"data": data, "nextCursor": None}
             else: result = {}
             if ident is not None:
                 stream.write((json.dumps({"id": ident, "result": result})+"\n").encode()); stream.flush()
+            if event is not None:
+                stream.write((json.dumps(event)+"\n").encode()); stream.flush()
     while True:
         conn, _ = server.accept()
         threading.Thread(target=handle, args=(conn,), daemon=True).start()

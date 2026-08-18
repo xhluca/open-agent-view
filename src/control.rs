@@ -214,6 +214,69 @@ impl ControlHub {
         })
     }
 
+    pub fn resolve_approval(
+        &self,
+        session: &AgentSession,
+        accept: bool,
+    ) -> Result<ControlOutcome> {
+        let required = if accept {
+            Capability::Approve
+        } else {
+            Capability::Decline
+        };
+        if !session.capabilities.contains(&required) {
+            bail!("inline approval authority was not granted for this session");
+        }
+        if session.provider != Provider::Codex || session.runtime != Runtime::Host {
+            bail!("inline approvals are supported only for owned host Codex threads");
+        }
+        self.codex
+            .as_ref()
+            .context("host Codex control is disabled")?
+            .respond_approval(session, accept)?;
+        Ok(ControlOutcome {
+            message: format!(
+                "sent {} for managed Codex thread {}; awaiting provider resolution",
+                if accept { "one-time approval" } else { "denial" },
+                session.provider_session_id
+            ),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
+    }
+
+    pub fn respond_input(
+        &self,
+        session: &AgentSession,
+        answer: &str,
+    ) -> Result<ControlOutcome> {
+        if !session.capabilities.contains(&Capability::Respond) {
+            bail!("structured-input authority was not granted for this session");
+        }
+        if session.provider != Provider::Codex || session.runtime != Runtime::Host {
+            bail!("structured input is supported only for owned host Codex threads");
+        }
+        let progress = self
+            .codex
+            .as_ref()
+            .context("host Codex control is disabled")?
+            .respond_user_input(session, answer)?;
+        let message = if progress.submitted {
+            format!(
+                "submitted {}/{} Codex answers; awaiting provider resolution",
+                progress.answered, progress.total
+            )
+        } else {
+            format!(
+                "recorded Codex answer {}/{}; answer the next question",
+                progress.answered, progress.total
+            )
+        };
+        Ok(ControlOutcome {
+            message,
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
+    }
+
     pub fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if !session.capabilities.contains(&Capability::Delete) {
             bail!("delete authority was not granted for this session");

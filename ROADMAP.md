@@ -31,7 +31,11 @@
 - [x] Implement immutable-ID and authority-gated managed-Docker primitives.
 - [x] Expose managed-Docker create/start/stop/remove through confirmed CLI
   workflows and persist external ownership records.
-- [ ] Render and answer Codex approval and structured user-input requests.
+- [x] Render exact owned Codex requests, answer one-shot command approvals,
+  deny file/permission/MCP requests safely, and collect non-secret structured
+  input without persistence.
+- [ ] Add diff-correlated file acceptance, explicit permission grants, typed MCP
+  form acceptance, and masked secret-input entry.
 
 ## Milestone 3 — Distribution
 

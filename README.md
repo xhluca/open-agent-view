@@ -24,6 +24,9 @@ adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
   user-private Unix WebSocket for durable managed sessions.
 - Owned host Codex transcript inspection, idle reply, exact active-turn steer,
   interrupt, archive, and delete through the durable App Server.
+- Reconnectable Codex request handling: one-shot command allow/deny,
+  denial-only file/permission/MCP requests, and sequential non-secret
+  structured input, all scoped to exact owned thread/turn/request IDs.
 - Explicit, observe-only Docker targets with immutable container-ID pinning.
 - Hardened managed-Docker create/start/stop/remove commands backed by a private
   external ownership registry and exact label/ID revalidation.
@@ -100,7 +103,9 @@ coding-agents --launch-cwd /path/to/project --launch-provider codex
 Managed Codex tasks use a private Unix-socket App Server that survives dashboard
 restarts. Only exact threads and active turns launched through this supervisor
 can be interrupted; pre-existing host threads and Docker threads remain
-observe/open-only.
+observe/open-only. When a managed turn pauses, press `space` to inspect the
+request. Safe command requests offer `y` (allow once) and `n` (deny); requests
+that cannot be accepted without broader or missing context offer denial only.
 
 Check the installed providers and any explicitly selected containers without
 starting the dashboard:
@@ -135,7 +140,8 @@ running container, and neither workspace nor state data is deleted.
 | --- | --- |
 | `↑`/`↓` | Move cyclically across section headers and sessions |
 | `enter` | Collapse/expand a section or open session details |
-| `space` | Open/close transcript peek; compose when Reply is granted |
+| `space` | Open/close transcript peek; compose for an exact reply/input request |
+| `y` / `n` | Allow once / deny an exact actionable Codex request in peek |
 | `ctrl+s` | Switch between status and directory grouping |
 | `/` | Filter sessions |
 | `tab` or printable text | Focus the new-session composer |
@@ -175,8 +181,8 @@ See [the approved product specification](docs/product-spec.md),
 
 Pre-alpha. The dashboard supports ownership-gated host Claude launch/stop,
 durable managed host Codex lifecycle controls, and ownership-gated managed
-Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for the remaining
-approval UI and distribution work.
+Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for remaining provider
+request types and distribution work.
 
 ## Non-affiliation
 

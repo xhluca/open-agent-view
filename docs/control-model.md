@@ -12,7 +12,7 @@ not permission to interrupt or delete it.
 | Open | `claude attach` | `codex --remote … resume` against the owning server | `codex resume` | Interactive `docker exec` to the provider CLI |
 | Launch | `claude --background` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
 | Interrupt | `claude stop`, owned sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
-| Inline reply or approval | Not exposed by the supported non-TTY CLI | Idle `turn/start`; working `turn/steer`; approvals stay native | Native TUI only | Disabled |
+| Inline reply or provider request | Not exposed by the supported non-TTY CLI | Idle `turn/start`; working `turn/steer`; exact one-shot command decisions, safe denials, and non-secret structured input | Native TUI only | Disabled |
 | Archive or delete | No supported Claude command | Idle owned threads only | Disabled | Disabled |
 
 Opening a session temporarily suspends the dashboard's alternate screen and
@@ -78,8 +78,42 @@ Owned working threads may be steered only with the exact recorded active turn
 ID. Idle reply, archive, and delete require the provider to report the thread
 as completed and the ownership record to contain no active turn. Normalized
 Needs-input state never receives generic Reply authority because it may
-represent an approval or structured input request; those requests remain in
-the native Codex TUI. Transcript rendering keeps only a bounded recent tail.
+represent an approval or structured input request. Instead, the controller
+tracks each server request by its opaque string/integer ID plus exact owned
+thread and active-turn ID. Transcript rendering keeps only a bounded recent
+tail.
+
+Codex keeps pending server callbacks inside the owning App Server, not in a
+dashboard connection. On reconnect, `thread/resume` first restores the exact
+owned active thread and then replays unresolved requests with their original
+IDs. `thread/list`, `thread/read`, and initialization alone do not replay them.
+Open Agent View therefore never reconstructs a request from rollout history.
+It keeps prompts and partially collected answers only in memory, clears a
+request on `serverRequest/resolved`, and leaves a sent response in a resolving
+state until that notification arrives.
+
+A nonblocking, user-private `controller.lock` lease gives one dashboard process
+inline response authority. Other dashboards remain able to observe/open but do
+not advertise approval/input capabilities. This matters because the App Server
+accepts the first response carrying a pending ID even if it arrives from a
+different subscribed connection.
+
+The initial decision set is intentionally narrow:
+
+- a command can be allowed once only when the exact command and directory, or
+  an exact network host/protocol request, can be rendered; additional
+  permissions disable acceptance;
+- command/file requests can be denied with their provider-defined one-shot
+  result; permission denial sends an empty turn-scoped grant; MCP elicitation
+  sends an explicit decline;
+- file acceptance stays native because the request itself omits the diff;
+  permission grants and MCP form acceptance stay native because they expand
+  authority or require additional schema handling;
+- structured questions are accepted only when the complete question set is
+  valid and has unique IDs. Answers are held in memory and sent together;
+  secret questions and expired auto-resolution requests remain native-only.
+
+No request is answered automatically on receipt, disconnect, or restart.
 
 ## Managed Docker ownership
 
@@ -102,9 +136,8 @@ targets never enter this authority tier.
 
 - Inline Claude replies are not implemented by scraping private IPC or editing
   transcript files. Press Enter to attach and reply through Claude itself.
-- Server requests for command approval or structured user input are not
-  answered in the dashboard yet. Open the owned session in the native TUI to
-  respond.
+- File-change acceptance, permission grants, MCP form/URL acceptance, secret
+  structured input, and unknown request types remain native-only.
 - There is not yet a `coding-agents` status/stop command for the detached Codex
   server. Logs append without rotation. Stale sockets and unverified PIDs are
   intentionally left untouched.

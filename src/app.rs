@@ -50,6 +50,8 @@ pub enum AppAction {
     Inspect { session_id: String },
     Launch { prompt: String },
     Reply { session_id: String, prompt: String },
+    ResolveApproval { session_id: String, accept: bool },
+    RespondInput { session_id: String, answer: String },
     Rename { session_id: String, name: String },
     Interrupt { session_id: String },
     Archive { session_id: String },
@@ -186,6 +188,14 @@ impl App {
                 let Some(session) = self.selected_session() else {
                     return AppAction::None;
                 };
+                if session.capabilities.contains(&Capability::Respond) {
+                    let action = AppAction::RespondInput {
+                        session_id: session.id.clone(),
+                        answer: self.input.trim().to_owned(),
+                    };
+                    self.input.clear();
+                    return action;
+                }
                 if !session.capabilities.contains(&Capability::Reply) {
                     let name = session.name.clone();
                     self.set_notice(format!("{name} is read-only; reply authority was not granted"));
@@ -361,11 +371,35 @@ impl App {
         });
     }
 
+    pub fn resolve_approval(&mut self, accept: bool) -> AppAction {
+        if self.overlay != Overlay::Peek {
+            return AppAction::None;
+        }
+        let Some(session) = self.selected_session() else {
+            return AppAction::None;
+        };
+        let required = if accept {
+            Capability::Approve
+        } else {
+            Capability::Decline
+        };
+        if !session.capabilities.contains(&required) {
+            return AppAction::None;
+        }
+        AppAction::ResolveApproval {
+            session_id: session.id.clone(),
+            accept,
+        }
+    }
+
     pub fn push_input(&mut self, character: char) {
         let peek_is_writable = self.overlay == Overlay::Peek
             && self
                 .selected_session()
-                .is_some_and(|session| session.capabilities.contains(&Capability::Reply));
+                .is_some_and(|session| {
+                    session.capabilities.contains(&Capability::Reply)
+                        || session.capabilities.contains(&Capability::Respond)
+                });
         if peek_is_writable || matches!(self.overlay, Overlay::Composer(_)) {
             self.input.push(character);
         }
@@ -712,5 +746,47 @@ mod tests {
 
         assert_eq!(app.overlay, Overlay::Peek);
         assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn pending_approval_keys_require_the_exact_granted_decision() {
+        let mut item = session("one", SessionState::NeedsInput);
+        item.capabilities.insert(Capability::Decline);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_peek();
+
+        assert_eq!(app.resolve_approval(true), AppAction::None);
+        assert_eq!(
+            app.resolve_approval(false),
+            AppAction::ResolveApproval {
+                session_id: "one".into(),
+                accept: false,
+            }
+        );
+    }
+
+    #[test]
+    fn structured_input_uses_a_distinct_action_from_turn_reply() {
+        let mut item = session("one", SessionState::NeedsInput);
+        item.capabilities.insert(Capability::Respond);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_peek();
+        for character in "staging".chars() {
+            app.push_input(character);
+        }
+
+        assert_eq!(
+            app.activate(),
+            AppAction::RespondInput {
+                session_id: "one".into(),
+                answer: "staging".into(),
+            }
+        );
     }
 }

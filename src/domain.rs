@@ -102,6 +102,9 @@ impl SessionState {
 pub enum Capability {
     Inspect,
     Reply,
+    Approve,
+    Decline,
+    Respond,
     Resume,
     Interrupt,
     Archive,

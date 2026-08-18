@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 #[cfg(unix)]
 use tungstenite::{client, Message, WebSocket};
 
+const MAX_RPC_MESSAGE_BYTES: usize = 1024 * 1024;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AppServerInvocation {
     Process { program: String, args: Vec<String> },
@@ -224,6 +226,14 @@ impl AppServerClient {
         self.send(json!({"method": method, "params": params}))
     }
 
+    /// Answer a server-initiated request while preserving its opaque ID.
+    pub fn respond(&mut self, id: Value, result: Value) -> Result<()> {
+        if !id.is_string() && id.as_i64().is_none() {
+            bail!("App Server request ID must be a string or signed integer");
+        }
+        self.send(json!({"id": id, "result": result}))
+    }
+
     pub fn drain_events(&mut self) -> Result<Vec<Value>> {
         let mut received = Vec::new();
         match &mut self.transport {
@@ -301,6 +311,12 @@ impl AppServerClient {
             OutputLine::Line(line) => line,
             OutputLine::Error(error) => bail!("App Server stdout error: {error}"),
         };
+        if line.len() > MAX_RPC_MESSAGE_BYTES {
+            bail!(
+                "App Server message exceeded the {}-byte safety limit",
+                MAX_RPC_MESSAGE_BYTES
+            );
+        }
         let message: Value = serde_json::from_str(&line)
             .with_context(|| format!("invalid App Server JSONL: {line}"))?;
         let is_server_message = message.get("method").is_some();
@@ -404,9 +420,57 @@ mod tests {
             let request_id = request["id"].as_u64().unwrap();
             socket
                 .send(Message::Text(
+                    json!({
+                        "id": "approval-1",
+                        "method": "item/commandExecution/requestApproval",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "itemId": "item-1",
+                            "startedAtMs": 1,
+                            "command": "cargo test"
+                        }
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            socket
+                .send(Message::Text(
+                    json!({
+                        "id": -7,
+                        "method": "item/fileChange/requestApproval",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "itemId": "item-2",
+                            "startedAtMs": 2
+                        }
+                    })
+                    .to_string(),
+                ))
+                .unwrap();
+            socket
+                .send(Message::Text(
                     json!({"id": request_id, "result": {"data": []}}).to_string(),
                 ))
                 .unwrap();
+
+            let approval: Value = serde_json::from_str(
+                &socket.read().unwrap().into_text().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(approval, json!({
+                "id": "approval-1",
+                "result": {"decision": "accept"}
+            }));
+            let denial: Value = serde_json::from_str(
+                &socket.read().unwrap().into_text().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(denial, json!({
+                "id": -7,
+                "result": {"decision": "decline"}
+            }));
         });
 
         let mut client = AppServerClient::connect(&AppServerInvocation::unix_websocket(
@@ -417,6 +481,19 @@ mod tests {
             client.request("thread/list", json!({})).unwrap(),
             json!({"data": []})
         );
+        let events = client.drain_events().unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0]["id"], "approval-1");
+        assert_eq!(events[1]["id"], -7);
+        client
+            .respond(
+                json!("approval-1"),
+                json!({"decision": "accept"}),
+            )
+            .unwrap();
+        client
+            .respond(json!(-7), json!({"decision": "decline"}))
+            .unwrap();
         drop(client);
         server.join().unwrap();
     }

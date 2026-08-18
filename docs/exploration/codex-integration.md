@@ -204,16 +204,44 @@ probe confirmed success while active and `no active turn to steer` afterward.
 Interactive approvals are server-initiated requests, not notifications. The
 client must preserve their request IDs and return a response. Relevant requests
 include command approval, file-change approval, permission approval,
-`tool/requestUserInput`, MCP elicitation, and dynamic tool calls. Pending
+`item/tool/requestUserInput`, MCP elicitation, and dynamic tool calls. Pending
 requests are reflected in thread status flags and should populate the
 dashboard's Needs input section. `serverRequest/resolved` clears UI state.
 
-Do not paper over unimplemented approval handling with permissive policy. For
-an MVP, either fully render and answer the documented approval requests or
-start a thread with an explicit policy chosen by the user. Never silently
-upgrade to danger-full-access. Also do not expose `thread/shellCommand` as a
-generic adapter operation: the official documentation says it runs outside the
-thread sandbox with full access.
+Do not paper over incomplete approval handling with permissive policy. Expose
+only a decision whose exact request context and result payload are understood;
+otherwise send the user to the native client. Never silently upgrade to
+danger-full-access. Also do not expose `thread/shellCommand` as a generic
+adapter operation: the official documentation says it runs outside the thread
+sandbox with full access.
+
+Exact-tag schema generation, disposable 0.144.4 probes, and review of the
+[outgoing-message implementation](https://github.com/openai/codex/blob/rust-v0.144.4/codex-rs/app-server/src/outgoing_message.rs)
+established the following request contract:
+
+- request and notification envelopes omit `jsonrpc`; a server request is
+  `{method,id,params}` and its answer is exactly `{id,result}`. IDs may be
+  signed integers or strings and must be returned unchanged;
+- command decisions include one-shot `accept` and `decline`; persistent
+  `acceptForSession` and policy amendments expand authority and require a
+  separate UI;
+- file-change approval parameters omit the diff, so acceptance requires a
+  complete correlated `item/started` file-change item;
+- safe permission denial is `{permissions:{},scope:"turn"}` rather than a
+  decline enum; MCP elicitation has its own `decline` action payload;
+- structured-input answers are a map keyed by the provider's question IDs.
+  Secret answers must never be echoed or persisted.
+
+Pending callbacks belong to the App Server, not the client connection. Closing
+a connection does not clear them. A newly initialized connection receives no
+replay from `thread/list` or `thread/read`; an exact
+[`thread/resume`](https://github.com/openai/codex/blob/rust-v0.144.4/codex-rs/app-server/src/request_processors/thread_lifecycle.rs)
+on the still-owning process returns the active turn/items and then replays its
+pending requests with the original IDs. Any subscribed connection that knows a
+pending ID can answer it, and the first response wins. This requires a
+single-controller lease in addition to thread/turn ownership checks. Never
+auto-answer on receipt, shutdown, or reconnect; wait for
+`serverRequest/resolved` after sending a result.
 
 ## Authentication and session storage
 
@@ -350,10 +378,12 @@ WebSocket handshake.
    the composite runtime/provider/thread ID.
 5. Correlate response promises by JSON-RPC `id`; independently feed
    notifications and server requests into an event reducer.
-6. `thread/read` on selection. Resume only on an explicit action and only when
-   the ownership registry says no external process owns the session.
-7. After `thread/start` or `thread/resume`, keep the connection subscribed and
-   apply status/item events to the normalized store.
+6. `thread/read` on selection. On a dashboard connection, resume only exact
+   active threads recorded as owned by this supervisor; this restores the
+   subscription and replays unresolved provider requests.
+7. After `thread/start` or the ownership-checked `thread/resume`, keep the
+   connection subscribed and apply status/item/request events to the normalized
+   store.
 8. Route idle input to `turn/start`, active input to `turn/steer`, and interrupt
    only with the currently recorded turn ID.
 

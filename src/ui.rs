@@ -309,10 +309,32 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
             &session.summary
         }
     });
-    let reply = if app.input.is_empty() {
-        Span::styled("❯ reply", Style::default().fg(DIM))
+    let can_approve = session.capabilities.contains(&Capability::Approve);
+    let can_decline = session.capabilities.contains(&Capability::Decline);
+    let can_respond = session.capabilities.contains(&Capability::Respond);
+    let can_reply = session.capabilities.contains(&Capability::Reply);
+    let response = if can_approve || can_decline {
+        let choices = match (can_approve, can_decline) {
+            (true, true) => "y allow once · n deny",
+            (true, false) => "y allow once",
+            (false, true) => "n deny",
+            (false, false) => unreachable!(),
+        };
+        Span::styled(choices, Style::default().fg(ATTENTION))
+    } else if can_respond {
+        if app.input.is_empty() {
+            Span::styled("❯ answer", Style::default().fg(DIM))
+        } else {
+            Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
+        }
+    } else if can_reply {
+        if app.input.is_empty() {
+            Span::styled("❯ reply", Style::default().fg(DIM))
+        } else {
+            Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
+        }
     } else {
-        Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
+        Span::styled("enter to open native session", Style::default().fg(DIM))
     };
     let summary_capacity = area.height.saturating_sub(4).max(1) as usize;
     let summary_lines: Vec<_> = summary.lines().collect();
@@ -322,14 +344,14 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|line| Line::from((*line).to_owned()))
         .collect();
     lines.push(Line::default());
-    lines.push(Line::from(reply));
+    lines.push(Line::from(response));
     frame.render_widget(
         Paragraph::new(lines)
         .block(block)
         .wrap(Wrap { trim: true }),
         area,
     );
-    if !app.input.is_empty() {
+    if can_respond || can_reply {
         frame.set_cursor(
             (area.x + 3 + app.input.chars().count() as u16).min(area.right().saturating_sub(2)),
             area.bottom().saturating_sub(2),
@@ -373,6 +395,30 @@ fn contextual_footer(app: &App, width: u16) -> String {
             "enter to create · ctrl+j for newline · esc to clear".into()
         }
         Overlay::Composer(_) => "enter to create · esc to clear".into(),
+        Overlay::Peek
+            if app.selected_session().is_some_and(|session| {
+                session.capabilities.contains(&Capability::Approve)
+                    || session.capabilities.contains(&Capability::Decline)
+            }) =>
+        {
+            let session = app.selected_session().expect("selection checked");
+            match (
+                session.capabilities.contains(&Capability::Approve),
+                session.capabilities.contains(&Capability::Decline),
+            ) {
+                (true, true) => "y to allow once · n to deny · esc to close".into(),
+                (true, false) => "y to allow once · esc to close".into(),
+                (false, true) => "n to deny · esc to close".into(),
+                (false, false) => unreachable!(),
+            }
+        }
+        Overlay::Peek
+            if app
+                .selected_session()
+                .is_some_and(|session| session.capabilities.contains(&Capability::Respond)) =>
+        {
+            "enter to submit answer · esc to close".into()
+        }
         Overlay::Peek if app.input.is_empty() && width >= 80 => format!(
             "enter to open · space to close{}",
             app.selected_session()
@@ -459,7 +505,13 @@ fn session_control_suffix(session: &AgentSession) -> &'static str {
 }
 
 fn session_peek_suffix(session: &AgentSession) -> &'static str {
-    if session.capabilities.contains(&Capability::Reply) {
+    if session.capabilities.contains(&Capability::Approve)
+        || session.capabilities.contains(&Capability::Decline)
+    {
+        " · space to review request"
+    } else if session.capabilities.contains(&Capability::Respond) {
+        " · space to answer"
+    } else if session.capabilities.contains(&Capability::Reply) {
         " · space to reply"
     } else if session.capabilities.contains(&Capability::Inspect) {
         " · space to inspect"
@@ -478,7 +530,19 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("/ to filter".into());
     actions.push("tab for new task".into());
     if let Some(session) = app.selected_session() {
-        if session.capabilities.contains(&Capability::Reply) {
+        if session.capabilities.contains(&Capability::Approve)
+            || session.capabilities.contains(&Capability::Decline)
+        {
+            actions.push("space to review request".into());
+            if session.capabilities.contains(&Capability::Approve) {
+                actions.push("y to allow once".into());
+            }
+            if session.capabilities.contains(&Capability::Decline) {
+                actions.push("n to deny".into());
+            }
+        } else if session.capabilities.contains(&Capability::Respond) {
+            actions.push("space to answer request".into());
+        } else if session.capabilities.contains(&Capability::Reply) {
             actions.push("space to inspect/reply".into());
         } else if session.capabilities.contains(&Capability::Inspect) {
             actions.push("space to inspect".into());
@@ -867,6 +931,29 @@ mod tests {
         assert!(rendered.contains("Claude · /different/project"));
         assert!(rendered.contains("/different/project"));
         assert!(!rendered.contains(".claude/worktrees"));
+    }
+
+    #[test]
+    fn denial_only_request_never_advertises_acceptance() {
+        let mut item = session("blocked", SessionState::NeedsInput);
+        item.capabilities.insert(Capability::Decline);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_peek();
+        app.set_detail(
+            "blocked".into(),
+            "Codex requests file-change approval without a diff.".into(),
+        );
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("n deny"));
+        assert!(!rendered.contains("y allow once"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

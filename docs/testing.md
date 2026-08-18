@@ -18,6 +18,15 @@ test targets for lifecycle operations.
   exact active-turn steer, idle reply, archive, and delete. It also asserts
   mode `0700` for the state directory and `0600` for the ownership record. The
   mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
+- Protocol tests interleave client responses with string- and numeric-ID server
+  requests and assert the exact `{id,result}` response shape. Reconnect tests
+  verify that `thread/resume` replays an unresolved approval with the same ID,
+  a decision remains resolving until `serverRequest/resolved`, and a second
+  dashboard cannot acquire the process-held controller lease.
+- Request-reducer/UI tests reject unowned or wrong-turn requests, incomplete
+  command context, duplicate/malformed structured questions, stale deadlines,
+  and blind file acceptance. Sequential input tests verify exact option
+  normalization and confirm that answers never enter the supervisor record.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
   context-sensitive `?`, selection reconciliation after filtering, Claude
@@ -77,8 +86,8 @@ test targets for lifecycle operations.
 
 ## Known unimplemented paths
 
-- Codex inline approval/input responses, supervisor status/stop, and log
-  rotation.
+- Codex file-change acceptance, permission grants, MCP form/URL acceptance,
+  secret structured input, supervisor status/stop, and log rotation.
 - Managed-container session launch/control remains separate from container
   lifecycle; enter the started container through ordinary Docker tooling or
   observe it with `--docker-container`.

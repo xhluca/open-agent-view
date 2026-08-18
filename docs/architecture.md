@@ -39,6 +39,8 @@ Adapters implement discovery first. Control methods are enabled independently:
 - `inspect`
 - `launch`
 - `reply`
+- `approve` / `decline`
+- `respond` (structured input, distinct from conversational reply)
 - `resume`
 - `interrupt`
 - `archive`
@@ -60,6 +62,10 @@ the supported `attach`, `logs`, and `stop` commands. Managed host Codex uses one
 detached App Server listening with WebSocket framing on a private Unix socket.
 The dashboard reconnects to that endpoint and grants control only for exact
 thread and active-turn IDs stored with its verified Linux process identity.
+Server-initiated requests are reduced into a volatile per-connection queue;
+they are never reconstructed from transcript files. A separate process-held
+controller lease ensures that only one dashboard instance advertises response
+authority for a supervisor.
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.
 

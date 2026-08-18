@@ -12,6 +12,7 @@ use ratatui::Terminal;
 
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay};
+use crate::domain::Capability;
 use crate::control::ControlHub;
 use crate::ui;
 
@@ -89,6 +90,22 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
 
     match key.code {
         KeyCode::Esc => app.escape(),
+        KeyCode::Char('y')
+            if app.overlay == Overlay::Peek
+                && app
+                    .selected_session()
+                    .is_some_and(|session| session.capabilities.contains(&Capability::Approve)) =>
+        {
+            app.resolve_approval(true)
+        }
+        KeyCode::Char('n')
+            if app.overlay == Overlay::Peek
+                && app
+                    .selected_session()
+                    .is_some_and(|session| session.capabilities.contains(&Capability::Decline)) =>
+        {
+            app.resolve_approval(false)
+        }
         KeyCode::Char('?') if app.overlay == Overlay::None || app.overlay == Overlay::Help => {
             app.toggle_help();
             AppAction::None
@@ -217,6 +234,50 @@ fn handle_action(
             match control.reply(&session, &prompt) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("reply refused: {error:#}")),
+            }
+            true
+        }
+        AppAction::ResolveApproval { session_id, accept } => {
+            let Some(session) = app
+                .snapshot
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .cloned()
+            else {
+                app.set_notice("the selected session disappeared during refresh");
+                return false;
+            };
+            match control.resolve_approval(&session, accept) {
+                Ok(outcome) => {
+                    app.set_notice(outcome.message);
+                    if let Ok(detail) = control.inspect(&session) {
+                        app.set_detail(session_id, detail);
+                    }
+                }
+                Err(error) => app.set_notice(format!("approval response refused: {error:#}")),
+            }
+            true
+        }
+        AppAction::RespondInput { session_id, answer } => {
+            let Some(session) = app
+                .snapshot
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .cloned()
+            else {
+                app.set_notice("the selected session disappeared during refresh");
+                return false;
+            };
+            match control.respond_input(&session, &answer) {
+                Ok(outcome) => {
+                    app.set_notice(outcome.message);
+                    if let Ok(detail) = control.inspect(&session) {
+                        app.set_detail(session_id, detail);
+                    }
+                }
+                Err(error) => app.set_notice(format!("input response refused: {error:#}")),
             }
             true
         }
@@ -457,5 +518,24 @@ mod tests {
                 id: "worker".into()
             })
         );
+    }
+
+    #[test]
+    fn denial_key_is_active_only_for_an_exact_pending_request() {
+        let mut app = app();
+        app.snapshot.sessions[0].state = SessionState::NeedsInput;
+        app.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Decline);
+        app.toggle_peek();
+
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('n'))),
+            AppAction::ResolveApproval {
+                session_id: "worker".into(),
+                accept: false,
+            }
+        );
+        assert_eq!(handle_key(&mut app, key(KeyCode::Char('y'))), AppAction::None);
     }
 }
