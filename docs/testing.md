@@ -8,9 +8,9 @@ test targets for lifecycle operations.
 ## Automated checks
 
 - `cargo test --locked`: domain normalization, provider parsing, App Server
-  transport behavior, navigation, responsive rendering, process timeouts,
-  ownership persistence, Claude launch parsing, VT100 log reconstruction, and
-  doctor output.
+  JSONL and Unix-WebSocket transport behavior, navigation, responsive
+  rendering, process timeouts, ownership persistence, Claude launch parsing,
+  VT100 log reconstruction, and doctor output.
 - A disposable mock App Server test launches an owned Codex thread, drops the
   first supervisor, reconnects from a second supervisor through the same Unix
   socket, discovers the still-active thread, interrupts its exact turn, and
@@ -40,10 +40,16 @@ test targets for lifecycle operations.
   VT100 reconstruction surfaced the final assistant screen without escape-code
   leakage.
 - Codex App Server discovery was refreshed repeatedly inside a disposable,
-  network-disabled container. One wrapper and one native server process stayed
-  alive during refreshes, and both exited with the dashboard. Separate protocol
-  probes established that two servers sharing `CODEX_HOME` cannot control one
-  another's live turns, motivating the shared durable endpoint.
+  network-disabled container. Separate protocol probes established that two
+  servers sharing `CODEX_HOME` cannot control one another's live turns,
+  motivating the shared durable endpoint.
+- The release binary was mounted read-only into a disposable container from
+  immutable image ID
+  `sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da44669d9392`
+  (Codex 0.144.4). It ran as an unprivileged user with no network, credentials,
+  or workspace mount; started the durable Unix listener, completed its
+  WebSocket handshake, listed an empty store, and exited with no warnings. The
+  container and isolated state were then removed.
 - Claude and Codex discovery were exercised in disposable,
   network-disabled containers selected explicitly by immutable Docker ID.
   Each probe container was removed afterward.
@@ -76,5 +82,6 @@ test targets for lifecycle operations.
 - Managed-container session launch/control remains separate from container
   lifecycle; enter the started container through ordinary Docker tooling or
   observe it with `--docker-container`.
-- Provider-native inline reply; Enter hands the terminal to the provider's
-  native attach/resume interface instead.
+- Claude inline reply and rename, for which the explored CLI exposes no safe
+  background-agent command. Enter hands the terminal to Claude's native attach
+  interface; owned Codex threads support inline idle reply and active steer.

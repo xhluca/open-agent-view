@@ -48,8 +48,8 @@ to stop or remove a Docker container.
 Host Codex discovery and launch share one reconnectable App Server listening on
 a Unix socket. The server is detached from the dashboard and remains running
 after `coding-agents` exits. A later dashboard connects through
-`codex app-server proxy` and reloads the exact thread and active-turn IDs it
-created. State lives in:
+the App Server's WebSocket protocol over its private Unix socket and reloads
+the exact thread and active-turn IDs it created. State lives in:
 
 ```text
 $XDG_STATE_HOME/open-agent-view/codex-supervisor/

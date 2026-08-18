@@ -23,6 +23,10 @@ libc = "=0.2.189"
 ratatui = "=0.26.3"
 serde = { version = "=1.0.203", features = ["derive"] }
 serde_json = "=1.0.117"
+tungstenite = { version = "=0.21.0", default-features = false, features = ["handshake"] }
+# Keep the transitive URL parser compatible with the project's Rust 1.75 MSRV.
+# Newer url 2.5.x releases pull in edition-2024 IDNA crates.
+url = "=2.4.1"
 # Ratatui's compatible range otherwise resolves to a release requiring Rust 1.85.
 unicode-segmentation = "=1.12.0"
 vt100 = "=0.15.2"

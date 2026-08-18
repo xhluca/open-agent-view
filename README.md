@@ -20,7 +20,8 @@ adapters cover Claude Code, OpenAI Codex, and Docker runtimes.
 
 - Host Claude discovery through `claude agents --json`, background launch, and
   ownership-gated stop.
-- Host Codex discovery through the official App Server JSONL protocol.
+- Host Codex discovery through the official App Server protocol, using a
+  user-private Unix WebSocket for durable managed sessions.
 - Owned host Codex transcript inspection, idle reply, exact active-turn steer,
   interrupt, archive, and delete through the durable App Server.
 - Explicit, observe-only Docker targets with immutable container-ID pinning.
@@ -172,9 +173,10 @@ See [the approved product specification](docs/product-spec.md),
 
 ## Status
 
-Pre-alpha. The dashboard supports ownership-gated host Claude launch/stop and
-durable managed host Codex launch/interrupt. See [ROADMAP.md](ROADMAP.md) for
-the remaining control and distribution work.
+Pre-alpha. The dashboard supports ownership-gated host Claude launch/stop,
+durable managed host Codex lifecycle controls, and ownership-gated managed
+Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for the remaining
+approval UI and distribution work.
 
 ## Non-affiliation
 

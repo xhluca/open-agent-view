@@ -49,16 +49,19 @@ version cannot perform an action safely.
 
 ## Process model
 
-Read-only discovery runs in the foreground with strict timeouts. Managed
-sessions will use a small local supervisor so work can continue when the TUI
-closes. The supervisor owns process identifiers and logs; provider sessions
-remain the source of truth for conversation state.
+Read-only discovery runs with strict timeouts. Managed sessions use a small
+local supervisor so work can continue when the TUI closes. The supervisor owns
+process identifiers and logs; provider sessions remain the source of truth for
+conversation state.
 
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes
-the supported `attach`, `logs`, and `stop` commands. Codex discovery retains
-one App Server subprocess per target for the dashboard lifetime; launch remains
-disabled until that subprocess moves behind the durable supervisor.
+the supported `attach`, `logs`, and `stop` commands. Managed host Codex uses one
+detached App Server listening with WebSocket framing on a private Unix socket.
+The dashboard reconnects to that endpoint and grants control only for exact
+thread and active-turn IDs stored with its verified Linux process identity.
+Direct Docker Codex discovery uses a bounded stdio App Server and remains
+observe/open-only.
 
 ## Docker boundary
 

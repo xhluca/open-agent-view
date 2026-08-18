@@ -322,7 +322,8 @@ following details matter:
 Create one supervised App Server endpoint per enrolled execution target:
 
 ```text
-host target:    codex app-server --listen stdio://
+host target:    codex app-server --listen unix:///private/state/app-server.sock
+host framing:   WebSocket handshake and one JSON object per text frame
 Docker target:  Docker exec, argv ["codex", "app-server", "--listen", "stdio://"]
 ```
 
@@ -331,10 +332,13 @@ TTY disabled, a bounded stderr buffer, and no shell interpolation. The Docker
 runtime qualifies provider IDs with the immutable full container ID as already
 specified in `docker-runtime.md`.
 
-The supervisor owns the endpoint for all sessions launched through it. A later
-milestone can supervise an explicit Unix-socket App Server process so the TUI
-can reconnect, but must record PID/socket ownership and clean up only processes
-it created. Do not use `app-server daemon` on the current npm-based image.
+The implemented host supervisor owns the explicit Unix-socket endpoint for all
+sessions launched through it. It records the PID, Linux process start token,
+exact command-line bytes, socket path, and exact thread/turn IDs. A reconnect
+must revalidate that identity and must never signal a PID loaded from disk. Do
+not use `app-server daemon` or treat `app-server proxy --sock` as a bridge to
+this listener on the current npm-based image: the listener itself expects a
+WebSocket handshake.
 
 ### Connection and store
 
@@ -353,12 +357,13 @@ it created. Do not use `app-server daemon` on the current npm-based image.
 8. Route idle input to `turn/start`, active input to `turn/steer`, and interrupt
    only with the currently recorded turn ID.
 
-Use one writer task for newline-delimited requests and one reader task for
-stdout. Maintain maps for pending client requests, pending server requests,
-loaded threads, active turns, and per-item streaming buffers. On EOF, mark the
-target disconnected without marking its stored sessions deleted. Reconcile
-with `thread/list` after reconnect, but do not claim live control until the
-owning endpoint is restored.
+Use one serialized writer and correlate responses by ID. Stdio transports send
+newline-delimited JSON; the Unix transport sends one JSON object per WebSocket
+text frame. Maintain maps for pending client requests, pending server requests,
+loaded threads, active turns, and per-item streaming buffers. On disconnect,
+mark the target unavailable without marking its stored sessions deleted.
+Reconcile with `thread/list` after reconnect, but do not claim live control
+until the owning endpoint is restored.
 
 ### Compatibility strategy
 

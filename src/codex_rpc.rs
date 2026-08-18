@@ -5,18 +5,23 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+
 use anyhow::{anyhow, bail, Context, Result};
 use serde_json::{json, Value};
+#[cfg(unix)]
+use tungstenite::{client, Message, WebSocket};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct AppServerInvocation {
-    pub program: String,
-    pub args: Vec<String>,
+pub(crate) enum AppServerInvocation {
+    Process { program: String, args: Vec<String> },
+    UnixWebSocket { socket_path: std::path::PathBuf },
 }
 
 impl AppServerInvocation {
     pub fn direct(executable: impl Into<String>) -> Self {
-        Self {
+        Self::Process {
             program: executable.into(),
             args: vec![
                 "app-server".into(),
@@ -27,7 +32,7 @@ impl AppServerInvocation {
     }
 
     pub fn docker(container_id: impl Into<String>) -> Self {
-        Self {
+        Self::Process {
             program: "docker".into(),
             args: vec![
                 "exec".into(),
@@ -41,8 +46,9 @@ impl AppServerInvocation {
         }
     }
 
+    #[cfg(test)]
     pub fn proxy(executable: impl Into<String>, socket_path: &std::path::Path) -> Self {
-        Self {
+        Self::Process {
             program: executable.into(),
             args: vec![
                 "app-server".into(),
@@ -50,6 +56,12 @@ impl AppServerInvocation {
                 "--sock".into(),
                 socket_path.to_string_lossy().into_owned(),
             ],
+        }
+    }
+
+    pub fn unix_websocket(socket_path: impl Into<std::path::PathBuf>) -> Self {
+        Self::UnixWebSocket {
+            socket_path: socket_path.into(),
         }
     }
 }
@@ -63,12 +75,22 @@ enum OutputLine {
 ///
 /// Requests are serialized by the caller, but responses are still correlated
 /// by id because App Server may interleave notifications and server requests.
-pub(crate) struct AppServerClient {
+struct ProcessTransport {
     child: Child,
     stdin: ChildStdin,
     lines: Receiver<OutputLine>,
     stdout_reader: Option<JoinHandle<()>>,
     stderr_reader: Option<JoinHandle<Vec<u8>>>,
+}
+
+enum ClientTransport {
+    Process(ProcessTransport),
+    #[cfg(unix)]
+    UnixWebSocket(WebSocket<UnixStream>),
+}
+
+pub(crate) struct AppServerClient {
+    transport: ClientTransport,
     pending_responses: BTreeMap<u64, Value>,
     events: VecDeque<Value>,
     next_id: u64,
@@ -76,8 +98,51 @@ pub(crate) struct AppServerClient {
 
 impl AppServerClient {
     pub fn connect(invocation: &AppServerInvocation) -> Result<Self> {
-        let mut child = Command::new(&invocation.program)
-            .args(&invocation.args)
+        let transport = match invocation {
+            AppServerInvocation::Process { program, args } => {
+                ClientTransport::Process(Self::connect_process(program, args)?)
+            }
+            AppServerInvocation::UnixWebSocket { socket_path } => {
+                #[cfg(unix)]
+                {
+                    let stream = UnixStream::connect(socket_path).with_context(|| {
+                        format!("failed to connect to App Server socket {}", socket_path.display())
+                    })?;
+                    let (socket, _) = client("ws://localhost/", stream)
+                        .context("App Server Unix WebSocket handshake failed")?;
+                    ClientTransport::UnixWebSocket(socket)
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = socket_path;
+                    bail!("App Server Unix sockets are unavailable on this platform")
+                }
+            }
+        };
+
+        let mut client = Self {
+            transport,
+            pending_responses: BTreeMap::new(),
+            events: VecDeque::new(),
+            next_id: 1,
+        };
+        client.request(
+            "initialize",
+            json!({
+                "clientInfo": {
+                    "name": "open_agent_view",
+                    "title": "Open Agent View",
+                    "version": env!("CARGO_PKG_VERSION")
+                }
+            }),
+        )?;
+        client.notify("initialized", json!({}))?;
+        Ok(client)
+    }
+
+    fn connect_process(program: &str, args: &[String]) -> Result<ProcessTransport> {
+        let mut child = Command::new(program)
+            .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -85,8 +150,8 @@ impl AppServerClient {
             .with_context(|| {
                 format!(
                     "failed to start App Server transport {} {}",
-                    invocation.program,
-                    invocation.args.join(" ")
+                    program,
+                    args.join(" ")
                 )
             })?;
         let stdin = child.stdin.take().context("failed to capture App Server stdin")?;
@@ -117,28 +182,13 @@ impl AppServerClient {
             bytes
         });
 
-        let mut client = Self {
+        Ok(ProcessTransport {
             child,
             stdin,
             lines,
             stdout_reader: Some(stdout_reader),
             stderr_reader: Some(stderr_reader),
-            pending_responses: BTreeMap::new(),
-            events: VecDeque::new(),
-            next_id: 1,
-        };
-        client.request(
-            "initialize",
-            json!({
-                "clientInfo": {
-                    "name": "open_agent_view",
-                    "title": "Open Agent View",
-                    "version": env!("CARGO_PKG_VERSION")
-                }
-            }),
-        )?;
-        client.notify("initialized", json!({}))?;
-        Ok(client)
+        })
     }
 
     pub fn request(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -163,10 +213,9 @@ impl AppServerClient {
             if remaining.is_zero() {
                 bail!("timed out waiting for App Server {method}");
             }
-            let line = self
-                .lines
-                .recv_timeout(remaining)
-                .map_err(|error| anyhow!("App Server closed while waiting for {method}: {error}"))?;
+            let line = self.receive(remaining).with_context(|| {
+                format!("App Server closed or timed out while waiting for {method}")
+            })?;
             self.accept_line(line)?;
         }
     }
@@ -176,16 +225,75 @@ impl AppServerClient {
     }
 
     pub fn drain_events(&mut self) -> Result<Vec<Value>> {
-        loop {
-            match self.lines.try_recv() {
-                Ok(line) => self.accept_line(line)?,
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    bail!("App Server transport closed")
+        let mut received = Vec::new();
+        match &mut self.transport {
+            ClientTransport::Process(process) => loop {
+                match process.lines.try_recv() {
+                    Ok(line) => received.push(line),
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        bail!("App Server transport closed")
+                    }
+                }
+            },
+            #[cfg(unix)]
+            ClientTransport::UnixWebSocket(socket) => {
+                socket.get_mut().set_nonblocking(true)?;
+                loop {
+                    match socket.read() {
+                        Ok(Message::Text(text)) => received.push(OutputLine::Line(text)),
+                        Ok(Message::Binary(bytes)) => received.push(OutputLine::Line(
+                            String::from_utf8(bytes)
+                                .context("App Server sent non-UTF-8 WebSocket data")?,
+                        )),
+                        Ok(Message::Ping(bytes)) => socket.send(Message::Pong(bytes))?,
+                        Ok(Message::Pong(_)) | Ok(Message::Frame(_)) => {}
+                        Ok(Message::Close(_)) => bail!("App Server WebSocket closed"),
+                        Err(tungstenite::Error::Io(error))
+                            if error.kind() == std::io::ErrorKind::WouldBlock =>
+                        {
+                            break
+                        }
+                        Err(error) => return Err(error).context("App Server WebSocket read failed"),
+                    }
+                }
+                socket.get_mut().set_nonblocking(false)?;
+            }
+        }
+        for line in received {
+            self.accept_line(line)?;
+        }
+        Ok(self.events.drain(..).collect())
+    }
+
+    fn receive(&mut self, timeout: Duration) -> Result<OutputLine> {
+        match &mut self.transport {
+            ClientTransport::Process(process) => process
+                .lines
+                .recv_timeout(timeout)
+                .map_err(|error| anyhow!("App Server process transport failed: {error}")),
+            #[cfg(unix)]
+            ClientTransport::UnixWebSocket(socket) => {
+                socket.get_mut().set_read_timeout(Some(timeout))?;
+                loop {
+                    match socket.read() {
+                        Ok(Message::Text(text)) => return Ok(OutputLine::Line(text)),
+                        Ok(Message::Binary(bytes)) => {
+                            return Ok(OutputLine::Line(
+                                String::from_utf8(bytes)
+                                    .context("App Server sent non-UTF-8 WebSocket data")?,
+                            ))
+                        }
+                        Ok(Message::Ping(bytes)) => socket.send(Message::Pong(bytes))?,
+                        Ok(Message::Pong(_)) | Ok(Message::Frame(_)) => {}
+                        Ok(Message::Close(_)) => bail!("App Server WebSocket closed"),
+                        Err(error) => {
+                            return Err(error).context("App Server WebSocket read failed")
+                        }
+                    }
                 }
             }
         }
-        Ok(self.events.drain(..).collect())
     }
 
     fn accept_line(&mut self, line: OutputLine) -> Result<()> {
@@ -207,9 +315,17 @@ impl AppServerClient {
     }
 
     fn send(&mut self, message: Value) -> Result<()> {
-        serde_json::to_writer(&mut self.stdin, &message)?;
-        self.stdin.write_all(b"\n")?;
-        self.stdin.flush()?;
+        match &mut self.transport {
+            ClientTransport::Process(process) => {
+                serde_json::to_writer(&mut process.stdin, &message)?;
+                process.stdin.write_all(b"\n")?;
+                process.stdin.flush()?;
+            }
+            #[cfg(unix)]
+            ClientTransport::UnixWebSocket(socket) => {
+                socket.send(Message::Text(serde_json::to_string(&message)?))?;
+            }
+        }
         Ok(())
     }
 }
@@ -226,16 +342,21 @@ fn response_result(method: &str, message: Value) -> Result<Value> {
 
 impl Drop for AppServerClient {
     fn drop(&mut self) {
-        // This child is either a stdio App Server or a proxy connection. A
-        // durable socket-listening server is a separate, identity-recorded
-        // process and is deliberately never signalled here.
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-        if let Some(reader) = self.stdout_reader.take() {
-            let _ = reader.join();
-        }
-        if let Some(reader) = self.stderr_reader.take() {
-            let _ = reader.join();
+        match &mut self.transport {
+            ClientTransport::Process(process) => {
+                let _ = process.child.kill();
+                let _ = process.child.wait();
+                if let Some(reader) = process.stdout_reader.take() {
+                    let _ = reader.join();
+                }
+                if let Some(reader) = process.stderr_reader.take() {
+                    let _ = reader.join();
+                }
+            }
+            #[cfg(unix)]
+            ClientTransport::UnixWebSocket(socket) => {
+                let _ = socket.close(None);
+            }
         }
     }
 }
@@ -243,6 +364,62 @@ impl Drop for AppServerClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn exchanges_json_rpc_over_a_unix_websocket() {
+        use std::os::unix::net::UnixListener;
+
+        let directory = tempfile::tempdir().unwrap();
+        let socket_path = directory.path().join("app-server.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+
+            let initialize: Value = serde_json::from_str(
+                &socket.read().unwrap().into_text().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(initialize["method"], "initialize");
+            let initialize_id = initialize["id"].as_u64().unwrap();
+            socket
+                .send(Message::Text(
+                    json!({"id": initialize_id, "result": {}}).to_string(),
+                ))
+                .unwrap();
+
+            let initialized: Value = serde_json::from_str(
+                &socket.read().unwrap().into_text().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(initialized["method"], "initialized");
+            assert!(initialized.get("id").is_none());
+
+            let request: Value = serde_json::from_str(
+                &socket.read().unwrap().into_text().unwrap(),
+            )
+            .unwrap();
+            assert_eq!(request["method"], "thread/list");
+            let request_id = request["id"].as_u64().unwrap();
+            socket
+                .send(Message::Text(
+                    json!({"id": request_id, "result": {"data": []}}).to_string(),
+                ))
+                .unwrap();
+        });
+
+        let mut client = AppServerClient::connect(&AppServerInvocation::unix_websocket(
+            socket_path,
+        ))
+        .unwrap();
+        assert_eq!(
+            client.request("thread/list", json!({})).unwrap(),
+            json!({"data": []})
+        );
+        drop(client);
+        server.join().unwrap();
+    }
 
     #[test]
     fn classifies_server_requests_as_events_even_when_the_id_is_numeric() {

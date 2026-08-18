@@ -57,7 +57,8 @@ struct ControlConnection {
 /// Owns a durable, reconnectable host Codex App Server.
 ///
 /// The server listens on a user-private Unix socket and intentionally outlives
-/// the dashboard process. Each dashboard connection uses app-server proxy.
+/// the dashboard process. Each dashboard connection speaks the App Server's
+/// WebSocket protocol directly over that socket.
 /// Persisted PID identity is verified before reuse; this type never signals a
 /// PID loaded from disk.
 pub struct CodexSupervisor {
@@ -65,7 +66,15 @@ pub struct CodexSupervisor {
     state_dir: PathBuf,
     record_path: PathBuf,
     lock_path: PathBuf,
+    client_transport: SupervisorClientTransport,
     control: Mutex<ControlConnection>,
+}
+
+#[derive(Clone, Copy)]
+enum SupervisorClientTransport {
+    UnixWebSocket,
+    #[cfg(test)]
+    ProcessProxy,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,26 +85,41 @@ pub enum CodexReplyMode {
 
 impl CodexSupervisor {
     pub fn host(codex_bin: impl Into<String>) -> Result<Self> {
-        Self::with_state_dir(codex_bin, default_state_dir()?)
+        Self::with_state_dir_and_transport(
+            codex_bin,
+            default_state_dir()?,
+            SupervisorClientTransport::UnixWebSocket,
+        )
     }
 
+    #[cfg(test)]
     fn with_state_dir(codex_bin: impl Into<String>, state_dir: PathBuf) -> Result<Self> {
+        Self::with_state_dir_and_transport(
+            codex_bin,
+            state_dir,
+            SupervisorClientTransport::ProcessProxy,
+        )
+    }
+
+    fn with_state_dir_and_transport(
+        codex_bin: impl Into<String>,
+        state_dir: PathBuf,
+        client_transport: SupervisorClientTransport,
+    ) -> Result<Self> {
         ensure_private_directory(&state_dir)?;
         Ok(Self {
             codex_bin: codex_bin.into(),
             record_path: state_dir.join("supervisor.json"),
             lock_path: state_dir.join("supervisor.lock"),
             state_dir,
+            client_transport,
             control: Mutex::new(ControlConnection::default()),
         })
     }
 
     pub(crate) fn connect_client(&self) -> Result<AppServerClient> {
         let record = self.ensure_endpoint()?;
-        AppServerClient::connect(&AppServerInvocation::proxy(
-            self.codex_bin.clone(),
-            &record.socket_path,
-        ))
+        AppServerClient::connect(&self.client_invocation(&record))
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
@@ -364,13 +388,22 @@ impl CodexSupervisor {
             .map(|current| current.same_process(server))
             .unwrap_or(false);
         if !current_matches || control.client.is_none() {
-            control.client = Some(AppServerClient::connect(&AppServerInvocation::proxy(
-                self.codex_bin.clone(),
-                &server.socket_path,
-            ))?);
+            control.client = Some(AppServerClient::connect(&self.client_invocation(server))?);
             control.server = Some(server.clone());
         }
         Ok(control.client.as_mut().expect("Codex client initialized"))
+    }
+
+    fn client_invocation(&self, server: &SupervisorRecord) -> AppServerInvocation {
+        match self.client_transport {
+            SupervisorClientTransport::UnixWebSocket => {
+                AppServerInvocation::unix_websocket(server.socket_path.clone())
+            }
+            #[cfg(test)]
+            SupervisorClientTransport::ProcessProxy => {
+                AppServerInvocation::proxy(self.codex_bin.clone(), &server.socket_path)
+            }
+        }
     }
 
     fn owned_thread(&self, session: &AgentSession) -> Result<(SupervisorRecord, OwnedThread)> {
