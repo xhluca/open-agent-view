@@ -1,0 +1,1293 @@
+//! Durable ownership and control for Pi's stdio-only RPC protocol.
+//!
+//! A small `coding-agents` daemon owns the actual Pi stdin/stdout pipes and
+//! exposes a user-private Unix socket. Dashboard processes can reconnect to the
+//! daemon, while unrelated Pi processes remain read-only history.
+
+use std::collections::{BTreeMap, HashMap};
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::{ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime};
+
+use anyhow::{anyhow, bail, Context, Result};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use crate::domain::SessionState;
+
+const RECORD_VERSION: u32 = 1;
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
+const RPC_TIMEOUT: Duration = Duration::from_secs(8);
+const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SupervisorRecord {
+    version: u32,
+    pid: u32,
+    process_start_token: String,
+    process_cmdline: Vec<u8>,
+    pi_bin: String,
+    socket_path: PathBuf,
+    created_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PiPendingKind {
+    Confirm,
+    Select,
+    Input,
+    Editor,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PiPendingRequest {
+    pub id: String,
+    pub kind: PiPendingKind,
+    pub title: String,
+    pub message: String,
+    #[serde(default)]
+    pub options: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedPiSession {
+    pub id: String,
+    pub cwd: PathBuf,
+    pub name: String,
+    pub pid: u32,
+    pub process_start_token: String,
+    pub state: SessionState,
+    pub summary: String,
+    pub session_file: Option<PathBuf>,
+    pub pending: Option<PiPendingRequest>,
+    pub alive: bool,
+    pub created_at_ms: u64,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+enum DaemonRequest {
+    Ping,
+    List,
+    Launch { prompt: String, cwd: PathBuf },
+    Inspect { session_id: String },
+    Reply { session_id: String, prompt: String },
+    Interrupt { session_id: String },
+    ResolveConfirm { session_id: String, accept: bool },
+    RespondInput { session_id: String, answer: String },
+    Shutdown,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DaemonResponse {
+    ok: bool,
+    #[serde(default)]
+    data: Value,
+    error: Option<String>,
+}
+
+impl DaemonResponse {
+    fn success(data: impl Serialize) -> Result<Self> {
+        Ok(Self {
+            ok: true,
+            data: serde_json::to_value(data)?,
+            error: None,
+        })
+    }
+
+    fn failure(error: anyhow::Error) -> Self {
+        Self {
+            ok: false,
+            data: Value::Null,
+            error: Some(format!("{error:#}")),
+        }
+    }
+}
+
+/// Reconnectable client for the OAV-owned Pi RPC daemon.
+pub struct PiSupervisor {
+    pi_bin: String,
+    state_dir: PathBuf,
+    record_path: PathBuf,
+    lock_path: PathBuf,
+    daemon_exe: PathBuf,
+}
+
+impl PiSupervisor {
+    pub fn host(pi_bin: impl Into<String>) -> Result<Self> {
+        Self::with_state_dir_and_exe(pi_bin, default_state_dir()?, std::env::current_exe()?)
+    }
+
+    pub fn with_state_dir_and_exe(
+        pi_bin: impl Into<String>,
+        state_dir: PathBuf,
+        daemon_exe: PathBuf,
+    ) -> Result<Self> {
+        ensure_private_directory(&state_dir)?;
+        Ok(Self {
+            pi_bin: pi_bin.into(),
+            record_path: state_dir.join("supervisor.json"),
+            lock_path: state_dir.join("supervisor.lock"),
+            state_dir,
+            daemon_exe,
+        })
+    }
+
+    /// Persisted history written by Pi processes owned by this supervisor.
+    pub fn session_dir(&self) -> PathBuf {
+        self.state_dir.join("sessions")
+    }
+
+    pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedPiSession> {
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            bail!("the Pi launch prompt cannot be empty");
+        }
+        if !cwd.is_absolute() {
+            bail!("the Pi launch directory must be absolute");
+        }
+        let record = self.ensure_endpoint()?;
+        self.request(
+            &record,
+            &DaemonRequest::Launch {
+                prompt: prompt.into(),
+                cwd: cwd.into(),
+            },
+        )
+    }
+
+    /// List only sessions owned by an already-running daemon. Discovery never
+    /// starts a daemon as a side effect.
+    pub fn list(&self) -> Result<Vec<ManagedPiSession>> {
+        let Some(record) = self.live_record()? else {
+            return Ok(Vec::new());
+        };
+        self.request(&record, &DaemonRequest::List)
+    }
+
+    pub fn inspect(&self, session_id: &str) -> Result<String> {
+        let record = self.required_live_record()?;
+        self.request(
+            &record,
+            &DaemonRequest::Inspect {
+                session_id: session_id.into(),
+            },
+        )
+    }
+
+    pub fn reply(&self, session_id: &str, prompt: &str) -> Result<()> {
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            bail!("the Pi reply cannot be empty");
+        }
+        let record = self.required_live_record()?;
+        self.request::<Value>(
+            &record,
+            &DaemonRequest::Reply {
+                session_id: session_id.into(),
+                prompt: prompt.into(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn interrupt(&self, session_id: &str) -> Result<()> {
+        let record = self.required_live_record()?;
+        self.request::<Value>(
+            &record,
+            &DaemonRequest::Interrupt {
+                session_id: session_id.into(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn resolve_confirm(&self, session_id: &str, accept: bool) -> Result<()> {
+        let record = self.required_live_record()?;
+        self.request::<Value>(
+            &record,
+            &DaemonRequest::ResolveConfirm {
+                session_id: session_id.into(),
+                accept,
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn respond_input(&self, session_id: &str, answer: &str) -> Result<()> {
+        let answer = answer.trim();
+        if answer.is_empty() {
+            bail!("the Pi input response cannot be empty");
+        }
+        let record = self.required_live_record()?;
+        self.request::<Value>(
+            &record,
+            &DaemonRequest::RespondInput {
+                session_id: session_id.into(),
+                answer: answer.into(),
+            },
+        )?;
+        Ok(())
+    }
+
+    /// Stop the exact verified daemon. Intended for isolated tests and explicit
+    /// operator cleanup, never dashboard shutdown.
+    pub fn shutdown_daemon(&self) -> Result<()> {
+        let Some(record) = self.live_record()? else {
+            return Ok(());
+        };
+        self.request::<Value>(&record, &DaemonRequest::Shutdown)?;
+        Ok(())
+    }
+
+    fn ensure_endpoint(&self) -> Result<SupervisorRecord> {
+        let _lock = StateLock::acquire(&self.lock_path)?;
+        if let Some(record) = load_record(&self.record_path, &self.state_dir)? {
+            if record.version != RECORD_VERSION {
+                bail!(
+                    "unsupported Pi supervisor record version {}",
+                    record.version
+                );
+            }
+            let live = verify_process(&record)?;
+            if live && record.pi_bin != self.pi_bin {
+                bail!(
+                    "a verified Pi supervisor is already running with executable {}; configured executable is {}",
+                    record.pi_bin,
+                    self.pi_bin
+                );
+            }
+            if live {
+                wait_for_socket(&record.socket_path, Duration::from_secs(2))?;
+                return Ok(record);
+            }
+        }
+        self.start_endpoint()
+    }
+
+    fn start_endpoint(&self) -> Result<SupervisorRecord> {
+        #[cfg(not(target_os = "linux"))]
+        bail!("durable Pi supervision currently requires Linux process identity verification");
+
+        #[cfg(target_os = "linux")]
+        {
+            let socket_path =
+                self.state_dir
+                    .join(format!("rpc-{}-{}.sock", std::process::id(), now_millis()));
+            let log = private_append_file(&self.state_dir.join("supervisor.log"))?;
+            let mut command = Command::new(&self.daemon_exe);
+            command
+                .arg("__pi-supervisor")
+                .arg("--state-dir")
+                .arg(&self.state_dir)
+                .arg("--socket")
+                .arg(&socket_path)
+                .arg("--pi-bin")
+                .arg(&self.pi_bin)
+                .stdin(Stdio::null())
+                .stdout(Stdio::from(log.try_clone()?))
+                .stderr(Stdio::from(log));
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+            let mut child = command.spawn().with_context(|| {
+                format!(
+                    "failed to start Pi supervisor via {}",
+                    self.daemon_exe.display()
+                )
+            })?;
+            let pid = child.id();
+            let deadline = Instant::now() + STARTUP_TIMEOUT;
+            if let Err(error) = wait_for_socket(
+                &socket_path,
+                deadline.saturating_duration_since(Instant::now()),
+            ) {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error).context("Pi supervisor never opened its socket");
+            }
+            let process_start_token = process_start_token(pid)?;
+            let process_cmdline = process_cmdline(pid)?;
+            if process_cmdline.is_empty() {
+                let _ = child.kill();
+                let _ = child.wait();
+                bail!("new Pi supervisor exposed an empty process command line");
+            }
+            let record = SupervisorRecord {
+                version: RECORD_VERSION,
+                pid,
+                process_start_token,
+                process_cmdline,
+                pi_bin: self.pi_bin.clone(),
+                socket_path,
+                created_at_ms: now_millis(),
+            };
+            save_record(&self.record_path, &record)?;
+            drop(child);
+            Ok(record)
+        }
+    }
+
+    fn live_record(&self) -> Result<Option<SupervisorRecord>> {
+        let _lock = StateLock::acquire(&self.lock_path)?;
+        let Some(record) = load_record(&self.record_path, &self.state_dir)? else {
+            return Ok(None);
+        };
+        if !verify_process(&record)? {
+            return Ok(None);
+        }
+        wait_for_socket(&record.socket_path, Duration::from_millis(500))?;
+        Ok(Some(record))
+    }
+
+    fn required_live_record(&self) -> Result<SupervisorRecord> {
+        self.live_record()?
+            .context("Pi supervisor has no live owned session transport")
+    }
+
+    fn request<T: for<'de> Deserialize<'de>>(
+        &self,
+        record: &SupervisorRecord,
+        request: &DaemonRequest,
+    ) -> Result<T> {
+        if !verify_process(record)? {
+            bail!("persisted Pi supervisor process identity is no longer live");
+        }
+        let response = request_daemon(&record.socket_path, request)?;
+        if !response.ok {
+            bail!(
+                "Pi supervisor request failed: {}",
+                response.error.as_deref().unwrap_or("unknown error")
+            );
+        }
+        serde_json::from_value(response.data).context("invalid Pi supervisor response")
+    }
+}
+
+#[derive(Clone, Debug)]
+struct LiveState {
+    name: String,
+    state: SessionState,
+    summary: String,
+    pending: Option<PiPendingRequest>,
+    alive: bool,
+    updated_at_ms: u64,
+}
+
+struct RpcProcess {
+    id: String,
+    cwd: PathBuf,
+    pid: u32,
+    process_start_token: String,
+    session_file: Option<PathBuf>,
+    created_at_ms: u64,
+    stdin: Arc<Mutex<ChildStdin>>,
+    pending_responses: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
+    state: Arc<Mutex<LiveState>>,
+    next_request_id: AtomicU64,
+}
+
+impl RpcProcess {
+    fn spawn(
+        pi_bin: &str,
+        session_dir: &Path,
+        prompt: &str,
+        cwd: &Path,
+        log: File,
+    ) -> Result<Self> {
+        let name = prompt
+            .split_whitespace()
+            .take(8)
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut child = Command::new(pi_bin)
+            .args(["--mode", "rpc", "--no-approve", "--session-dir"])
+            .arg(session_dir)
+            .args(["--name", &name])
+            .current_dir(cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::from(log))
+            .spawn()
+            .with_context(|| format!("failed to start managed Pi via {pi_bin}"))?;
+        let pid = child.id();
+        let process_start_token = process_start_token(pid)?;
+        let stdin = Arc::new(Mutex::new(
+            child.stdin.take().context("Pi stdin unavailable")?,
+        ));
+        let stdout = child.stdout.take().context("Pi stdout unavailable")?;
+        let pending_responses = Arc::new(Mutex::new(HashMap::new()));
+        let state = Arc::new(Mutex::new(LiveState {
+            name: name.clone(),
+            state: SessionState::Unknown,
+            summary: String::new(),
+            pending: None,
+            alive: true,
+            updated_at_ms: now_millis(),
+        }));
+        spawn_rpc_reader(stdout, pending_responses.clone(), state.clone());
+        thread::spawn(move || {
+            let _ = child.wait();
+        });
+
+        let mut process = Self {
+            id: String::new(),
+            cwd: cwd.into(),
+            pid,
+            process_start_token,
+            session_file: None,
+            created_at_ms: now_millis(),
+            stdin,
+            pending_responses,
+            state,
+            next_request_id: AtomicU64::new(1),
+        };
+        let response = process.send(json!({"type": "get_state"}))?;
+        let data = response.get("data").context("Pi get_state omitted data")?;
+        process.id = data
+            .get("sessionId")
+            .and_then(Value::as_str)
+            .context("Pi get_state omitted sessionId")?
+            .to_owned();
+        process.session_file = data
+            .get("sessionFile")
+            .and_then(Value::as_str)
+            .map(PathBuf::from);
+        mark_working(&process.state)?;
+        process.send(json!({"type": "prompt", "message": prompt}))?;
+        Ok(process)
+    }
+
+    fn send(&self, mut command: Value) -> Result<Value> {
+        let id = format!(
+            "oav-{}-{}",
+            std::process::id(),
+            self.next_request_id.fetch_add(1, Ordering::Relaxed)
+        );
+        command
+            .as_object_mut()
+            .context("Pi RPC command must be an object")?
+            .insert("id".into(), Value::String(id.clone()));
+        let (sender, receiver) = mpsc::channel();
+        self.pending_responses
+            .lock()
+            .map_err(|_| anyhow!("Pi pending-response lock was poisoned"))?
+            .insert(id.clone(), sender);
+        let bytes = serde_json::to_vec(&command)?;
+        let write_result = (|| -> Result<()> {
+            let mut stdin = self
+                .stdin
+                .lock()
+                .map_err(|_| anyhow!("Pi stdin lock was poisoned"))?;
+            stdin.write_all(&bytes)?;
+            stdin.write_all(b"\n")?;
+            stdin.flush()?;
+            Ok(())
+        })();
+        if let Err(error) = write_result {
+            let _ = self.pending_responses.lock().map(|mut map| map.remove(&id));
+            return Err(error).context("failed to write Pi RPC command");
+        }
+        let response = receiver
+            .recv_timeout(RPC_TIMEOUT)
+            .with_context(|| format!("timed out waiting for Pi RPC response {id}"))?;
+        if response.get("success").and_then(Value::as_bool) == Some(false) {
+            bail!(
+                "Pi RPC command failed: {}",
+                response
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown provider error")
+            );
+        }
+        Ok(response)
+    }
+
+    fn send_extension_response(&self, response: Value) -> Result<()> {
+        let bytes = serde_json::to_vec(&response)?;
+        let mut stdin = self
+            .stdin
+            .lock()
+            .map_err(|_| anyhow!("Pi stdin lock was poisoned"))?;
+        stdin.write_all(&bytes)?;
+        stdin.write_all(b"\n")?;
+        stdin.flush()?;
+        Ok(())
+    }
+
+    fn snapshot(&self) -> Result<ManagedPiSession> {
+        let live = self
+            .state
+            .lock()
+            .map_err(|_| anyhow!("Pi live-state lock was poisoned"))?
+            .clone();
+        Ok(ManagedPiSession {
+            id: self.id.clone(),
+            cwd: self.cwd.clone(),
+            name: live.name,
+            pid: self.pid,
+            process_start_token: self.process_start_token.clone(),
+            state: live.state,
+            summary: live.summary,
+            session_file: self.session_file.clone(),
+            pending: live.pending,
+            alive: live.alive,
+            created_at_ms: self.created_at_ms,
+            updated_at_ms: live.updated_at_ms,
+        })
+    }
+}
+
+struct DaemonState {
+    pi_bin: String,
+    session_dir: PathBuf,
+    log_path: PathBuf,
+    sessions: Mutex<BTreeMap<String, Arc<RpcProcess>>>,
+}
+
+impl DaemonState {
+    fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedPiSession> {
+        if !cwd.is_absolute() {
+            bail!("managed Pi cwd must be absolute");
+        }
+        let log = private_append_file(&self.log_path)?;
+        let process = Arc::new(RpcProcess::spawn(
+            &self.pi_bin,
+            &self.session_dir,
+            prompt,
+            cwd,
+            log,
+        )?);
+        let snapshot = process.snapshot()?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("Pi daemon session lock was poisoned"))?;
+        if sessions.insert(snapshot.id.clone(), process).is_some() {
+            bail!("Pi returned a duplicate managed session ID");
+        }
+        Ok(snapshot)
+    }
+
+    fn session(&self, id: &str) -> Result<Arc<RpcProcess>> {
+        self.sessions
+            .lock()
+            .map_err(|_| anyhow!("Pi daemon session lock was poisoned"))?
+            .get(id)
+            .cloned()
+            .context("refusing to control a Pi session not owned by this daemon")
+    }
+
+    fn list(&self) -> Result<Vec<ManagedPiSession>> {
+        self.sessions
+            .lock()
+            .map_err(|_| anyhow!("Pi daemon session lock was poisoned"))?
+            .values()
+            .map(|process| process.snapshot())
+            .collect()
+    }
+
+    fn dispatch(&self, request: DaemonRequest) -> Result<(Value, bool)> {
+        match request {
+            DaemonRequest::Ping => Ok((json!({"version": RECORD_VERSION}), false)),
+            DaemonRequest::List => Ok((serde_json::to_value(self.list()?)?, false)),
+            DaemonRequest::Launch { prompt, cwd } => {
+                Ok((serde_json::to_value(self.launch(&prompt, &cwd)?)?, false))
+            }
+            DaemonRequest::Inspect { session_id } => {
+                let response = self
+                    .session(&session_id)?
+                    .send(json!({"type": "get_messages"}))?;
+                Ok((Value::String(format_rpc_messages(&response)?), false))
+            }
+            DaemonRequest::Reply { session_id, prompt } => {
+                let process = self.session(&session_id)?;
+                let streaming = process.snapshot()?.state == SessionState::Working;
+                let command = if streaming {
+                    json!({"type": "prompt", "message": prompt, "streamingBehavior": "steer"})
+                } else {
+                    json!({"type": "prompt", "message": prompt})
+                };
+                // Mark the new turn before sending. Pi may emit its correlated
+                // response and a terminal/dialog event back-to-back; updating
+                // after `send` would overwrite that newer event state.
+                mark_working(&process.state)?;
+                process.send(command)?;
+                Ok((Value::Null, false))
+            }
+            DaemonRequest::Interrupt { session_id } => {
+                self.session(&session_id)?.send(json!({"type": "abort"}))?;
+                Ok((Value::Null, false))
+            }
+            DaemonRequest::ResolveConfirm { session_id, accept } => {
+                let process = self.session(&session_id)?;
+                let pending = process
+                    .snapshot()?
+                    .pending
+                    .filter(|pending| pending.kind == PiPendingKind::Confirm)
+                    .context("no Pi confirmation request is pending")?;
+                clear_pending(&process.state)?;
+                process.send_extension_response(json!({
+                    "type": "extension_ui_response",
+                    "id": pending.id,
+                    "confirmed": accept
+                }))?;
+                Ok((Value::Null, false))
+            }
+            DaemonRequest::RespondInput { session_id, answer } => {
+                let process = self.session(&session_id)?;
+                let pending = process
+                    .snapshot()?
+                    .pending
+                    .filter(|pending| pending.kind != PiPendingKind::Confirm)
+                    .context("no Pi text or selection request is pending")?;
+                if pending.kind == PiPendingKind::Select
+                    && !pending.options.iter().any(|option| option == &answer)
+                {
+                    bail!("the Pi response must exactly match a presented option");
+                }
+                clear_pending(&process.state)?;
+                process.send_extension_response(json!({
+                    "type": "extension_ui_response",
+                    "id": pending.id,
+                    "value": answer
+                }))?;
+                Ok((Value::Null, false))
+            }
+            DaemonRequest::Shutdown => Ok((Value::Null, true)),
+        }
+    }
+}
+
+/// Run the hidden durable Pi daemon. The caller must have already resolved an
+/// exact private state directory and unique socket path.
+pub fn run_pi_supervisor_daemon(
+    state_dir: PathBuf,
+    socket_path: PathBuf,
+    pi_bin: String,
+) -> Result<()> {
+    #[cfg(not(unix))]
+    {
+        let _ = (state_dir, socket_path, pi_bin);
+        bail!("Pi supervisor daemon requires Unix sockets")
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        use std::os::unix::net::UnixListener;
+
+        ensure_private_directory(&state_dir)?;
+        if socket_path.parent() != Some(state_dir.as_path()) {
+            bail!("Pi supervisor socket escaped the private state directory");
+        }
+        if fs::symlink_metadata(&socket_path).is_ok() {
+            bail!("refusing to replace existing Pi supervisor socket");
+        }
+        fs::create_dir_all(state_dir.join("sessions"))?;
+        let listener = UnixListener::bind(&socket_path)
+            .with_context(|| format!("failed to bind {}", socket_path.display()))?;
+        fs::set_permissions(&socket_path, fs::Permissions::from_mode(0o600))?;
+        let state = DaemonState {
+            pi_bin,
+            session_dir: state_dir.join("sessions"),
+            log_path: state_dir.join("pi-rpc.log"),
+            sessions: Mutex::new(BTreeMap::new()),
+        };
+        for stream in listener.incoming() {
+            let mut stream = stream?;
+            let mut bytes = Vec::new();
+            std::io::Read::by_ref(&mut stream)
+                .take((MAX_MESSAGE_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)?;
+            // Readiness probes connect without a request. They must not be
+            // treated as protocol errors or terminate the durable daemon.
+            if bytes.is_empty() {
+                continue;
+            }
+            let (response, shutdown) = if bytes.len() > MAX_MESSAGE_BYTES {
+                (
+                    DaemonResponse::failure(anyhow!("Pi daemon request exceeded size limit")),
+                    false,
+                )
+            } else {
+                match serde_json::from_slice::<DaemonRequest>(&bytes)
+                    .context("invalid Pi daemon request")
+                    .and_then(|request| state.dispatch(request))
+                {
+                    Ok((data, shutdown)) => (DaemonResponse::success(data)?, shutdown),
+                    Err(error) => (DaemonResponse::failure(error), false),
+                }
+            };
+            serde_json::to_writer(&mut stream, &response)?;
+            stream.flush()?;
+            if shutdown {
+                break;
+            }
+        }
+        let _ = fs::remove_file(&socket_path);
+        Ok(())
+    }
+}
+
+fn spawn_rpc_reader(
+    stdout: impl Read + Send + 'static,
+    pending_responses: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
+    state: Arc<Mutex<LiveState>>,
+) {
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            let Ok(event) = serde_json::from_str::<Value>(&line) else {
+                if let Ok(mut live) = state.lock() {
+                    live.state = SessionState::NeedsInput;
+                    live.summary = "Pi emitted invalid RPC JSON".into();
+                    live.updated_at_ms = now_millis();
+                }
+                continue;
+            };
+            if event.get("type").and_then(Value::as_str) == Some("response") {
+                if let Some(id) = event.get("id").and_then(Value::as_str) {
+                    if let Ok(mut pending) = pending_responses.lock() {
+                        if let Some(sender) = pending.remove(id) {
+                            let _ = sender.send(event);
+                            continue;
+                        }
+                    }
+                }
+            }
+            reconcile_rpc_event(&state, &event);
+        }
+        if let Ok(mut live) = state.lock() {
+            live.alive = false;
+            if live.state == SessionState::Working {
+                live.state = SessionState::NeedsInput;
+                live.summary = "Managed Pi RPC process exited".into();
+            }
+            live.updated_at_ms = now_millis();
+        }
+        if let Ok(mut pending) = pending_responses.lock() {
+            pending.clear();
+        }
+    });
+}
+
+fn reconcile_rpc_event(state: &Arc<Mutex<LiveState>>, event: &Value) {
+    let Ok(mut live) = state.lock() else {
+        return;
+    };
+    live.updated_at_ms = now_millis();
+    match event.get("type").and_then(Value::as_str) {
+        Some("agent_start" | "turn_start") => {
+            live.state = SessionState::Working;
+            live.pending = None;
+        }
+        Some("agent_end" | "agent_settled") => {
+            live.state = SessionState::Completed;
+            live.pending = None;
+        }
+        Some("message_update") => {
+            if let Some(delta) = event
+                .pointer("/assistantMessageEvent/delta")
+                .and_then(Value::as_str)
+            {
+                live.summary.push_str(delta);
+                if live.summary.chars().count() > 512 {
+                    live.summary = live.summary.chars().rev().take(512).collect::<String>();
+                    live.summary = live.summary.chars().rev().collect();
+                }
+            }
+        }
+        Some("extension_ui_request") => {
+            let method = event.get("method").and_then(Value::as_str).unwrap_or("");
+            let kind = match method {
+                "confirm" => Some(PiPendingKind::Confirm),
+                "select" => Some(PiPendingKind::Select),
+                "input" => Some(PiPendingKind::Input),
+                "editor" => Some(PiPendingKind::Editor),
+                _ => None,
+            };
+            if let (Some(kind), Some(id)) = (kind, event.get("id").and_then(Value::as_str)) {
+                live.state = SessionState::NeedsInput;
+                live.pending = Some(PiPendingRequest {
+                    id: id.into(),
+                    kind,
+                    title: event
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Pi request")
+                        .into(),
+                    message: event
+                        .get("message")
+                        .or_else(|| event.get("placeholder"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .into(),
+                    options: event
+                        .get("options")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .collect(),
+                });
+            }
+        }
+        Some("session_info_changed") => {
+            if let Some(name) = event.get("name").and_then(Value::as_str) {
+                live.name = name.into();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn clear_pending(state: &Arc<Mutex<LiveState>>) -> Result<()> {
+    let mut live = state
+        .lock()
+        .map_err(|_| anyhow!("Pi live-state lock was poisoned"))?;
+    live.pending = None;
+    live.state = SessionState::Working;
+    live.updated_at_ms = now_millis();
+    Ok(())
+}
+
+fn mark_working(state: &Arc<Mutex<LiveState>>) -> Result<()> {
+    let mut live = state
+        .lock()
+        .map_err(|_| anyhow!("Pi live-state lock was poisoned"))?;
+    live.pending = None;
+    live.state = SessionState::Working;
+    live.updated_at_ms = now_millis();
+    Ok(())
+}
+
+fn format_rpc_messages(response: &Value) -> Result<String> {
+    let messages = response
+        .pointer("/data/messages")
+        .or_else(|| response.get("data").filter(|value| value.is_array()))
+        .and_then(Value::as_array)
+        .context("Pi get_messages response omitted messages")?;
+    let mut output = Vec::new();
+    for message in messages {
+        let role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or("event");
+        let text = message
+            .get("content")
+            .and_then(|content| {
+                content.as_str().map(ToOwned::to_owned).or_else(|| {
+                    Some(
+                        content
+                            .as_array()?
+                            .iter()
+                            .filter_map(|block| block.get("text").and_then(Value::as_str))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                    )
+                })
+            })
+            .unwrap_or_default();
+        if !text.trim().is_empty() {
+            output.push(format!("{}: {}", capitalize(role), text.trim()));
+        }
+    }
+    Ok(if output.is_empty() {
+        "No text messages are available in this managed Pi session.".into()
+    } else {
+        output.join("\n\n")
+    })
+}
+
+fn capitalize(value: &str) -> String {
+    let mut chars = value.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+fn request_daemon(path: &Path, request: &DaemonRequest) -> Result<DaemonResponse> {
+    #[cfg(not(unix))]
+    {
+        let _ = (path, request);
+        bail!("Pi supervisor client requires Unix sockets")
+    }
+    #[cfg(unix)]
+    {
+        use std::net::Shutdown;
+        use std::os::unix::net::UnixStream;
+
+        let mut stream = UnixStream::connect(path)
+            .with_context(|| format!("failed to connect to {}", path.display()))?;
+        stream.set_read_timeout(Some(RPC_TIMEOUT))?;
+        stream.set_write_timeout(Some(RPC_TIMEOUT))?;
+        serde_json::to_writer(&mut stream, request)?;
+        stream.shutdown(Shutdown::Write)?;
+        let mut bytes = Vec::new();
+        stream
+            .take((MAX_MESSAGE_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > MAX_MESSAGE_BYTES {
+            bail!("Pi supervisor response exceeded size limit");
+        }
+        serde_json::from_slice(&bytes).context("invalid Pi supervisor response JSON")
+    }
+}
+
+fn default_state_dir() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("XDG_STATE_HOME") {
+        return Ok(PathBuf::from(path).join("open-agent-view/pi"));
+    }
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".local/state/open-agent-view/pi"))
+}
+
+fn ensure_private_directory(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+                bail!("Pi supervisor state path is not a real directory");
+            }
+            verify_current_owner(&metadata, "Pi supervisor state directory")?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            fs::create_dir_all(path)?;
+        }
+        Err(error) => return Err(error).context("failed to inspect Pi supervisor state directory"),
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+    }
+    let metadata = fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_dir() || metadata.file_type().is_symlink() {
+        bail!("Pi supervisor state path changed while securing it");
+    }
+    verify_current_owner(&metadata, "Pi supervisor state directory")?;
+    Ok(())
+}
+
+fn private_append_file(path: &Path) -> Result<File> {
+    let mut options = OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options
+        .open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?;
+    let metadata = file.metadata()?;
+    if !metadata.file_type().is_file() {
+        bail!("refusing to use a non-regular Pi supervisor log");
+    }
+    verify_current_owner(&metadata, "Pi supervisor log")?;
+    verify_private_mode(&metadata, "Pi supervisor log")?;
+    Ok(file)
+}
+
+fn load_record(path: &Path, state_dir: &Path) -> Result<Option<SupervisorRecord>> {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = match options.open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("failed to read Pi supervisor record"),
+    };
+    let metadata = file.metadata()?;
+    if !metadata.file_type().is_file() {
+        bail!("refusing to use a non-regular Pi supervisor record");
+    }
+    verify_current_owner(&metadata, "Pi supervisor record")?;
+    verify_private_mode(&metadata, "Pi supervisor record")?;
+    let mut input = Vec::new();
+    file.take((MAX_MESSAGE_BYTES + 1) as u64)
+        .read_to_end(&mut input)?;
+    if input.len() > MAX_MESSAGE_BYTES {
+        bail!("Pi supervisor record exceeded size limit");
+    }
+    let record: SupervisorRecord =
+        serde_json::from_slice(&input).context("invalid Pi supervisor record")?;
+    if record.socket_path.parent() != Some(state_dir) {
+        bail!("Pi supervisor socket escaped its private state directory");
+    }
+    Ok(Some(record))
+}
+
+fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
+    let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), now_millis()));
+    let mut options = OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let result = (|| -> Result<()> {
+        let mut file = options.open(&temporary)?;
+        serde_json::to_writer_pretty(&mut file, record)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn verify_current_owner(metadata: &fs::Metadata, description: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.uid() != unsafe { libc::geteuid() } {
+            bail!("{description} is not owned by the current user");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (metadata, description);
+    Ok(())
+}
+
+fn verify_private_mode(metadata: &fs::Metadata, description: &str) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.mode() & 0o077 != 0 {
+            bail!("{description} is accessible by another user");
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = (metadata, description);
+    Ok(())
+}
+
+fn verify_process(record: &SupervisorRecord) -> Result<bool> {
+    let start = match process_start_token(record.pid) {
+        Ok(value) => value,
+        Err(error) if is_missing_process(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let cmdline = match process_cmdline(record.pid) {
+        Ok(value) => value,
+        Err(error) if is_missing_process(&error) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    Ok(start == record.process_start_token && cmdline == record.process_cmdline)
+}
+
+fn is_missing_process(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .map(|error| error.kind() == std::io::ErrorKind::NotFound)
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn process_start_token(pid: u32) -> Result<String> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    let suffix = stat
+        .rsplit_once(')')
+        .map(|(_, suffix)| suffix)
+        .context("invalid /proc process stat")?;
+    suffix
+        .split_whitespace()
+        .nth(19)
+        .map(ToOwned::to_owned)
+        .context("/proc process stat omitted starttime")
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_start_token(_: u32) -> Result<String> {
+    bail!("process start-token verification is unavailable on this platform")
+}
+
+#[cfg(target_os = "linux")]
+fn process_cmdline(pid: u32) -> Result<Vec<u8>> {
+    fs::read(format!("/proc/{pid}/cmdline")).map_err(Into::into)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn process_cmdline(_: u32) -> Result<Vec<u8>> {
+    bail!("process command-line verification is unavailable on this platform")
+}
+
+fn wait_for_socket(path: &Path, timeout: Duration) -> Result<()> {
+    #[cfg(not(unix))]
+    {
+        let _ = (path, timeout);
+        bail!("Pi supervisor socket is unavailable on this platform")
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::FileTypeExt;
+        use std::os::unix::net::UnixStream;
+
+        let deadline = Instant::now() + timeout;
+        loop {
+            let ready = fs::symlink_metadata(path)
+                .map(|metadata| metadata.file_type().is_socket())
+                .unwrap_or(false)
+                && UnixStream::connect(path).is_ok();
+            if ready {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!("timed out waiting for Pi supervisor socket");
+            }
+            thread::sleep(Duration::from_millis(25));
+        }
+    }
+}
+
+struct StateLock {
+    file: File,
+}
+
+impl StateLock {
+    fn acquire(path: &Path) -> Result<Self> {
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options.open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.file_type().is_file() {
+            bail!("refusing to use a non-regular Pi supervisor lock");
+        }
+        verify_current_owner(&metadata, "Pi supervisor lock")?;
+        verify_private_mode(&metadata, "Pi supervisor lock")?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+                return Err(std::io::Error::last_os_error()).context("failed to lock Pi state");
+            }
+        }
+        Ok(Self { file })
+    }
+}
+
+impl Drop for StateLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn formats_rpc_message_content() {
+        let response = json!({
+            "data": {"messages": [
+                {"role": "user", "content": "Build it"},
+                {"role": "assistant", "content": [{"type": "text", "text": "Done"}]}
+            ]}
+        });
+        assert_eq!(
+            format_rpc_messages(&response).unwrap(),
+            "User: Build it\n\nAssistant: Done"
+        );
+    }
+
+    #[test]
+    fn reconciles_confirmation_without_granting_it_implicitly() {
+        let state = Arc::new(Mutex::new(LiveState {
+            name: "task".into(),
+            state: SessionState::Working,
+            summary: String::new(),
+            pending: None,
+            alive: true,
+            updated_at_ms: 0,
+        }));
+        reconcile_rpc_event(
+            &state,
+            &json!({
+                "type": "extension_ui_request",
+                "id": "exact-id",
+                "method": "confirm",
+                "title": "Dangerous command",
+                "message": "Allow?"
+            }),
+        );
+        let state = state.lock().unwrap();
+        assert_eq!(state.state, SessionState::NeedsInput);
+        assert_eq!(state.pending.as_ref().unwrap().id, "exact-id");
+        assert_eq!(state.pending.as_ref().unwrap().kind, PiPendingKind::Confirm);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlinked_state_directories() {
+        let directory = tempfile::tempdir().unwrap();
+        let real = directory.path().join("real");
+        fs::create_dir(&real).unwrap();
+        let link = directory.path().join("state");
+        std::os::unix::fs::symlink(real, &link).unwrap();
+
+        assert!(ensure_private_directory(&link).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_a_permissive_or_replaced_ownership_record() {
+        let directory = tempfile::tempdir().unwrap();
+        ensure_private_directory(directory.path()).unwrap();
+        let record_path = directory.path().join("supervisor.json");
+        let record = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid: std::process::id(),
+            process_start_token: "token".into(),
+            process_cmdline: b"command".to_vec(),
+            pi_bin: "pi".into(),
+            socket_path: directory.path().join("rpc.sock"),
+            created_at_ms: 1,
+        };
+        save_record(&record_path, &record).unwrap();
+        fs::set_permissions(&record_path, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(load_record(&record_path, directory.path()).is_err());
+
+        fs::remove_file(&record_path).unwrap();
+        std::os::unix::fs::symlink("missing", &record_path).unwrap();
+        assert!(load_record(&record_path, directory.path()).is_err());
+    }
+}

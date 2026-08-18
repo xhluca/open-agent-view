@@ -16,12 +16,16 @@ use open_agent_view::adapters::{
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
+use open_agent_view::pi_supervisor::run_pi_supervisor_daemon;
+#[cfg(target_os = "linux")]
+use open_agent_view::pi_supervisor::PiSupervisor;
 use open_agent_view::terminal::run_dashboard;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum LaunchProvider {
     Claude,
     Codex,
+    Pi,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -32,6 +36,13 @@ enum Commands {
     Docker {
         #[command(subcommand)]
         command: DockerCommand,
+    },
+    #[command(name = "__pi-supervisor", hide = true)]
+    PiSupervisor {
+        #[arg(long)]
+        state_dir: PathBuf,
+        #[arg(long)]
+        socket: PathBuf,
     },
 }
 
@@ -226,6 +237,9 @@ fn main() -> Result<()> {
                 cli.managed_docker_registry.clone(),
                 cli.json,
             )?,
+            Commands::PiSupervisor { state_dir, socket } => {
+                run_pi_supervisor_daemon(state_dir.clone(), socket.clone(), cli.pi_bin.clone())?
+            }
         }
         return Ok(());
     }
@@ -252,6 +266,7 @@ fn main() -> Result<()> {
     let launch_provider = match cli.launch_provider {
         LaunchProvider::Claude => Provider::Claude,
         LaunchProvider::Codex => Provider::Codex,
+        LaunchProvider::Pi => Provider::Pi,
     };
     let pi_session_dir = if !pi_enabled {
         None
@@ -271,12 +286,25 @@ fn main() -> Result<()> {
         launch_cwd,
         provider_io_enabled,
     })?;
+    #[cfg(target_os = "linux")]
+    let pi_supervisor = pi_session_dir
+        .as_ref()
+        .map(|_| PiSupervisor::host(cli.pi_bin.clone()).map(Arc::new))
+        .transpose()?;
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
-            control.register_controller(Arc::new(PiController::host(
+            #[cfg(target_os = "linux")]
+            let controller = PiController::managed(
                 cli.pi_bin.clone(),
                 session_dir.clone(),
-            )))?;
+                pi_supervisor
+                    .as_ref()
+                    .expect("Pi supervisor exists when the Pi source is enabled")
+                    .clone(),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let controller = PiController::host(cli.pi_bin.clone(), session_dir.clone());
+            control.register_controller(Arc::new(controller))?;
         }
         if opencode_enabled {
             control.register_controller(Arc::new(OpenCodeController::host(
@@ -311,7 +339,14 @@ fn main() -> Result<()> {
             }
         }
         if let Some(session_dir) = pi_session_dir {
-            engine.add_source(PiSource::host(session_dir));
+            #[cfg(target_os = "linux")]
+            let source = PiSource::managed(
+                session_dir,
+                pi_supervisor.expect("Pi supervisor exists when the Pi source is enabled"),
+            );
+            #[cfg(not(target_os = "linux"))]
+            let source = PiSource::host(session_dir);
+            engine.add_source(source);
         }
         if opencode_enabled {
             engine.add_source(OpenCodeSource::host(cli.opencode_bin));
@@ -740,6 +775,13 @@ mod tests {
     fn live_discovery_mode_keeps_provider_io_enabled() {
         let cli = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
         assert!(provider_io_enabled(&cli));
+    }
+
+    #[test]
+    fn pi_is_available_as_a_managed_launch_provider() {
+        let cli =
+            Cli::try_parse_from(["coding-agents", "--json", "--launch-provider", "pi"]).unwrap();
+        assert_eq!(cli.launch_provider, LaunchProvider::Pi);
     }
 
     #[test]

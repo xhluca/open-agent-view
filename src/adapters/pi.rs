@@ -1,21 +1,26 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::SystemTime;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, ProviderController};
-use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
+use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::domain::{
+    AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
+};
+use crate::pi_supervisor::{ManagedPiSession, PiPendingKind, PiSupervisor};
 
 /// Read-only discovery of Pi's documented JSONL session store.
 pub struct PiSource {
-    session_dir: PathBuf,
+    session_dirs: Vec<PathBuf>,
+    supervisor: Option<Arc<PiSupervisor>>,
 }
 
 /// Read-only history control plus native TUI resume for Pi.
@@ -25,6 +30,7 @@ pub struct PiSource {
 pub struct PiController {
     executable: String,
     source: PiSource,
+    supervisor: Option<Arc<PiSupervisor>>,
 }
 
 impl PiController {
@@ -32,6 +38,19 @@ impl PiController {
         Self {
             executable: executable.into(),
             source: PiSource::host(session_dir),
+            supervisor: None,
+        }
+    }
+
+    pub fn managed(
+        executable: impl Into<String>,
+        session_dir: impl Into<PathBuf>,
+        supervisor: Arc<PiSupervisor>,
+    ) -> Self {
+        Self {
+            executable: executable.into(),
+            source: PiSource::managed(session_dir, supervisor.clone()),
+            supervisor: Some(supervisor),
         }
     }
 
@@ -45,17 +64,151 @@ impl ProviderController for PiController {
         Provider::Pi
     }
 
+    fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        let Some(supervisor) = &self.supervisor else {
+            return;
+        };
+        let managed = match supervisor.list() {
+            Ok(managed) => managed,
+            Err(error) => {
+                snapshot
+                    .warnings
+                    .push(format!("Pi managed control: {error:#}"));
+                return;
+            }
+        };
+        let managed: BTreeMap<_, _> = managed
+            .into_iter()
+            .map(|session| (session.id.clone(), session))
+            .collect();
+        for session in snapshot
+            .sessions
+            .iter_mut()
+            .filter(|session| session.provider == Provider::Pi && session.runtime == Runtime::Host)
+        {
+            let Some(owned) = managed.get(&session.provider_session_id) else {
+                continue;
+            };
+            overlay_managed_session(session, owned);
+            grant_managed_capabilities(session, owned);
+        }
+    }
+
+    fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::Pi {
+            bail!("the Pi controller cannot launch another provider");
+        }
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .context("managed Pi launch is not configured")?;
+        let session = supervisor.launch(&request.prompt, &request.cwd)?;
+        Ok(ControlOutcome {
+            message: format!("started managed Pi session {}", session.name),
+            provider_session_hint: Some(session.id),
+        })
+    }
+
     fn inspect(&self, session: &AgentSession) -> Result<String> {
+        if let Some(owned) = self.owned_session(session)? {
+            if owned.alive {
+                return self
+                    .supervisor
+                    .as_ref()
+                    .context("managed Pi control is not configured")?
+                    .inspect(&owned.id);
+            }
+        }
         self.source.inspect(session)
+    }
+
+    fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        let owned = self.require_live_owned(session)?;
+        if owned.state == SessionState::NeedsInput {
+            bail!("the managed Pi session is waiting for a structured response");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed Pi control is not configured")?
+            .reply(&owned.id, prompt)?;
+        Ok(ControlOutcome {
+            message: format!("sent a reply to Pi session {}", session.name),
+            provider_session_hint: Some(owned.id),
+        })
+    }
+
+    fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        let owned = self.require_live_owned(session)?;
+        if owned.state != SessionState::Working {
+            bail!("the managed Pi session is not currently working");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed Pi control is not configured")?
+            .interrupt(&owned.id)?;
+        Ok(ControlOutcome {
+            message: format!("interrupted Pi session {}", session.name),
+            provider_session_hint: Some(owned.id),
+        })
+    }
+
+    fn resolve_approval(&self, session: &AgentSession, accept: bool) -> Result<ControlOutcome> {
+        let owned = self.require_live_owned(session)?;
+        if owned.pending.as_ref().map(|pending| &pending.kind) != Some(&PiPendingKind::Confirm) {
+            bail!("the managed Pi session has no pending confirmation");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed Pi control is not configured")?
+            .resolve_confirm(&owned.id, accept)?;
+        Ok(ControlOutcome {
+            message: format!(
+                "{} Pi request for {}",
+                if accept { "approved" } else { "declined" },
+                session.name
+            ),
+            provider_session_hint: Some(owned.id),
+        })
+    }
+
+    fn respond_input(&self, session: &AgentSession, answer: &str) -> Result<ControlOutcome> {
+        let owned = self.require_live_owned(session)?;
+        if owned
+            .pending
+            .as_ref()
+            .map(|pending| pending.kind == PiPendingKind::Confirm)
+            .unwrap_or(true)
+        {
+            bail!("the managed Pi session has no pending text or selection request");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed Pi control is not configured")?
+            .respond_input(&owned.id, answer)?;
+        Ok(ControlOutcome {
+            message: format!("responded to Pi session {}", session.name),
+            provider_session_hint: Some(owned.id),
+        })
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.provider != Provider::Pi || session.runtime != Runtime::Host {
             bail!("the host Pi controller does not own this runtime");
         }
+        if self
+            .owned_session(session)?
+            .map(|owned| owned.alive)
+            .unwrap_or(false)
+        {
+            bail!("a managed Pi session cannot be opened concurrently; use inline controls");
+        }
+        let session_dir = self
+            .source
+            .session_directory_for(&session.provider_session_id)?
+            .context("the Pi session file is no longer present")?;
         let status = Command::new(&self.executable)
             .args(["--session", &session.provider_session_id, "--session-dir"])
-            .arg(&self.source.session_dir)
+            .arg(session_dir)
             .current_dir(&session.cwd)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -72,10 +225,46 @@ impl ProviderController for PiController {
     }
 }
 
+impl PiController {
+    fn owned_session(&self, session: &AgentSession) -> Result<Option<ManagedPiSession>> {
+        if session.provider != Provider::Pi || session.runtime != Runtime::Host {
+            bail!("the host Pi controller does not own this runtime");
+        }
+        let Some(supervisor) = &self.supervisor else {
+            return Ok(None);
+        };
+        Ok(supervisor
+            .list()?
+            .into_iter()
+            .find(|owned| owned.id == session.provider_session_id))
+    }
+
+    fn require_live_owned(&self, session: &AgentSession) -> Result<ManagedPiSession> {
+        let owned = self
+            .owned_session(session)?
+            .context("refusing to control a Pi session not owned by this supervisor")?;
+        if !owned.alive {
+            bail!("the owned Pi RPC process is no longer alive");
+        }
+        Ok(owned)
+    }
+}
+
 impl PiSource {
     pub fn host(session_dir: impl Into<PathBuf>) -> Self {
         Self {
-            session_dir: session_dir.into(),
+            session_dirs: vec![session_dir.into()],
+            supervisor: None,
+        }
+    }
+
+    pub fn managed(session_dir: impl Into<PathBuf>, supervisor: Arc<PiSupervisor>) -> Self {
+        let mut session_dirs = vec![session_dir.into(), supervisor.session_dir()];
+        session_dirs.sort();
+        session_dirs.dedup();
+        Self {
+            session_dirs,
+            supervisor: Some(supervisor),
         }
     }
 
@@ -88,12 +277,20 @@ impl PiSource {
         if session.provider != Provider::Pi || session.runtime != Runtime::Host {
             bail!("the Pi source does not own this provider runtime");
         }
-        let path = find_pi_session_file(&self.session_dir, &session.provider_session_id)?
-            .context("the Pi session file is no longer present")?;
+        let (_, path) =
+            find_pi_session_file_in_roots(&self.session_dirs, &session.provider_session_id)?
+                .context("the Pi session file is no longer present")?;
         let input = fs::read_to_string(&path)
             .with_context(|| format!("failed to read Pi session {}", path.display()))?;
         render_pi_transcript(&input)
             .with_context(|| format!("invalid Pi session {}", path.display()))
+    }
+
+    fn session_directory_for(&self, session_id: &str) -> Result<Option<PathBuf>> {
+        Ok(
+            find_pi_session_file_in_roots(&self.session_dirs, session_id)?
+                .map(|(directory, _)| directory),
+        )
     }
 }
 
@@ -103,17 +300,19 @@ impl SessionSource for PiSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        if !self.session_dir.exists() {
-            return Ok(Vec::new());
-        }
-
         let mut files = Vec::new();
-        collect_jsonl_files(&self.session_dir, &mut files)?;
+        for directory in &self.session_dirs {
+            if directory.exists() {
+                collect_jsonl_files(directory, &mut files)?;
+            }
+        }
+        files.sort();
+        files.dedup();
         if files.len() > 10_000 {
             bail!("Pi session store exceeded the 10,000-file safety cap");
         }
 
-        let mut sessions = Vec::new();
+        let mut sessions = BTreeMap::new();
         for file in files {
             let metadata = fs::metadata(&file)
                 .with_context(|| format!("failed to inspect Pi session {}", file.display()))?;
@@ -127,10 +326,24 @@ impl SessionSource for PiSource {
                     .map(|cwd| session.cwd.starts_with(cwd))
                     .unwrap_or(true)
             {
-                sessions.push(session);
+                sessions.insert(session.provider_session_id.clone(), session);
             }
         }
-        Ok(sessions)
+        if let Some(supervisor) = &self.supervisor {
+            for managed in supervisor.list()? {
+                let session = agent_session_from_managed(&managed);
+                if (request.include_completed || session.state != SessionState::Completed)
+                    && request
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| session.cwd.starts_with(cwd))
+                        .unwrap_or(true)
+                {
+                    sessions.insert(session.provider_session_id.clone(), session);
+                }
+            }
+        }
+        Ok(sessions.into_values().collect())
     }
 }
 
@@ -192,6 +405,89 @@ fn find_pi_session_file(directory: &Path, session_id: &str) -> Result<Option<Pat
         }
     }
     Ok(None)
+}
+
+fn find_pi_session_file_in_roots(
+    directories: &[PathBuf],
+    session_id: &str,
+) -> Result<Option<(PathBuf, PathBuf)>> {
+    for directory in directories {
+        if let Some(path) = find_pi_session_file(directory, session_id)? {
+            return Ok(Some((directory.clone(), path)));
+        }
+    }
+    Ok(None)
+}
+
+fn agent_session_from_managed(managed: &ManagedPiSession) -> AgentSession {
+    AgentSession {
+        id: format!("pi:host:{}", managed.id),
+        provider_session_id: managed.id.clone(),
+        provider: Provider::Pi,
+        runtime: Runtime::Host,
+        kind: SessionKind::Managed,
+        name: managed.name.clone(),
+        cwd: managed.cwd.clone(),
+        state: managed.state,
+        summary: managed.summary.clone(),
+        raw_state: Some(if managed.alive {
+            "managed_rpc".into()
+        } else {
+            "managed_rpc_exited".into()
+        }),
+        pid: Some(managed.pid),
+        started_at: Some(millis_to_system_time(managed.created_at_ms)),
+        updated_at: Some(millis_to_system_time(managed.updated_at_ms)),
+        pull_requests: None,
+        capabilities: BTreeSet::from([Capability::Inspect]),
+    }
+}
+
+fn overlay_managed_session(session: &mut AgentSession, managed: &ManagedPiSession) {
+    session.kind = SessionKind::Managed;
+    session.name = managed.name.clone();
+    session.cwd = managed.cwd.clone();
+    session.state = managed.state;
+    session.summary = managed.summary.clone();
+    session.raw_state = Some(if managed.alive {
+        "managed_rpc".into()
+    } else {
+        "managed_rpc_exited".into()
+    });
+    session.pid = Some(managed.pid);
+    session.started_at = Some(millis_to_system_time(managed.created_at_ms));
+    session.updated_at = Some(millis_to_system_time(managed.updated_at_ms));
+}
+
+fn grant_managed_capabilities(session: &mut AgentSession, managed: &ManagedPiSession) {
+    session.capabilities.clear();
+    session.capabilities.insert(Capability::Inspect);
+    if !managed.alive {
+        return;
+    }
+    match managed.state {
+        SessionState::Working => {
+            session.capabilities.insert(Capability::Reply);
+            session.capabilities.insert(Capability::Interrupt);
+        }
+        SessionState::Completed | SessionState::ReadyForReview | SessionState::Unknown => {
+            session.capabilities.insert(Capability::Reply);
+        }
+        SessionState::NeedsInput => match managed.pending.as_ref().map(|request| &request.kind) {
+            Some(PiPendingKind::Confirm) => {
+                session.capabilities.insert(Capability::Approve);
+                session.capabilities.insert(Capability::Decline);
+            }
+            Some(PiPendingKind::Select | PiPendingKind::Input | PiPendingKind::Editor) => {
+                session.capabilities.insert(Capability::Respond);
+            }
+            None => {}
+        },
+    }
+}
+
+fn millis_to_system_time(milliseconds: u64) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::from_millis(milliseconds)
 }
 
 fn parse_pi_session_file(
@@ -542,6 +838,7 @@ mod tests {
         permissions.set_mode(0o700);
         fs::set_permissions(&executable, permissions).unwrap();
         let input = SESSION.replace("/work/project", &directory.path().display().to_string());
+        fs::write(directory.path().join("one.jsonl"), &input).unwrap();
         let session = parse_pi_session(&input, Path::new("one.jsonl"), None, None).unwrap();
         let controller = PiController::host(executable.display().to_string(), directory.path());
 
