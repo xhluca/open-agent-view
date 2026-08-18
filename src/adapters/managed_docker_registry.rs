@@ -569,7 +569,7 @@ mod tests {
 
     #[test]
     fn registry_round_trip_is_atomic_and_private() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let registry_dir = directory.path().join("managed-docker");
         fs::create_dir(&registry_dir).unwrap();
         set_mode(&registry_dir, 0o700);
@@ -597,7 +597,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_group_readable_file() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         fs::write(&path, r#"{"version":1,"owners":[]}"#).unwrap();
         set_mode(&path, 0o640);
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn registry_rejects_invalid_or_duplicate_records() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         fs::write(
             &path,
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn exact_forget_refuses_instance_mismatch_and_preserves_record() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let mut registry = ManagedDockerRegistry::open(path).unwrap();
         registry
@@ -642,7 +642,7 @@ mod tests {
 
     #[test]
     fn service_create_persists_owner_but_never_starts_container() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let workspace = directory.path().join("workspace");
         let state = directory.path().join("state");
         let registry_dir = directory.path().join("registry");
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn service_enroll_resolves_name_then_revalidates_exact_id() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let mut registry = ManagedDockerRegistry::open(path.clone()).unwrap();
         registry
@@ -710,7 +710,7 @@ mod tests {
 
     #[test]
     fn list_reports_one_unavailable_container_without_hiding_healthy_records() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let mut registry = ManagedDockerRegistry::open(path.clone()).unwrap();
         registry
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn status_requires_an_exact_registered_id_without_calling_docker() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let runner = fake_runner([]);
         let service =
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn service_start_revalidates_before_and_after_the_exact_operation() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let mut registry = ManagedDockerRegistry::open(path.clone()).unwrap();
         registry
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn service_remove_forgets_only_after_stopped_exact_removal() {
-        let directory = tempdir().unwrap();
+        let directory = private_tempdir();
         let path = directory.path().join("owners.json");
         let mut registry = ManagedDockerRegistry::open(path.clone()).unwrap();
         registry
@@ -866,6 +866,12 @@ mod tests {
             requests: Mutex::new(Vec::new()),
             outputs: Mutex::new(outputs.into_iter().collect()),
         })
+    }
+
+    fn private_tempdir() -> tempfile::TempDir {
+        let directory = tempdir().unwrap();
+        set_mode(directory.path(), 0o700);
+        directory
     }
 
     struct FakeCommandRunner {
