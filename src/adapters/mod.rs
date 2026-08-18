@@ -3,6 +3,7 @@ mod claude;
 mod codex;
 mod copilot;
 mod cursor;
+mod cursor_managed;
 mod docker;
 mod fixture;
 mod managed_docker;
@@ -31,6 +32,7 @@ pub use cursor::{
     parse_cursor_chat_id, parse_cursor_stream_event, CursorCommandSpec, CursorController,
     CursorInvocation, CursorStreamEvent,
 };
+pub use cursor_managed::{default_cursor_state_dir, CursorSource, CursorSupervisor};
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
 pub use managed_docker::{

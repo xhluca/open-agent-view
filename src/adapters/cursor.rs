@@ -1,12 +1,14 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::control::{ControlOutcome, ProviderController};
-use crate::domain::{AgentSession, Provider, Runtime};
+use super::cursor_managed::CursorSupervisor;
+use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::domain::{AgentSession, Provider, Runtime, SessionSnapshot};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CursorCommandSpec {
@@ -126,7 +128,10 @@ pub fn parse_cursor_stream_event(line: &str) -> Result<CursorStreamEvent> {
         ("system", "init") => Ok(CursorStreamEvent::Initialized {
             session_id: required_string(&value, "session_id")?,
             cwd: PathBuf::from(required_string(&value, "cwd")?),
-            model: value.get("model").and_then(Value::as_str).map(str::to_owned),
+            model: value
+                .get("model")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
         }),
         ("assistant", _) => Ok(CursorStreamEvent::AssistantText {
             session_id: required_string(&value, "session_id")?,
@@ -171,12 +176,23 @@ pub fn parse_cursor_chat_id(output: &str) -> Result<String> {
 /// so this controller intentionally offers native resume only.
 pub struct CursorController {
     invocation: CursorInvocation,
+    supervisor: Option<Arc<CursorSupervisor>>,
 }
 
 impl CursorController {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
             invocation: CursorInvocation::host(executable),
+            supervisor: None,
+        }
+    }
+
+    /// Control both native external sessions and the exact processes launched
+    /// through this supervisor. Only the latter gain inline capabilities.
+    pub fn managed(supervisor: Arc<CursorSupervisor>) -> Self {
+        Self {
+            invocation: CursorInvocation::host(supervisor.executable()),
+            supervisor: Some(supervisor),
         }
     }
 }
@@ -186,9 +202,55 @@ impl ProviderController for CursorController {
         Provider::Cursor
     }
 
+    fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        if let Some(supervisor) = &self.supervisor {
+            supervisor.enrich(snapshot);
+        }
+    }
+
+    fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::Cursor {
+            bail!("the Cursor controller cannot launch another provider");
+        }
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .context("managed Cursor launch is not configured")?;
+        let session_id = supervisor.launch(&request.prompt, &request.cwd)?;
+        Ok(ControlOutcome {
+            message: format!("launched managed Cursor session {session_id}"),
+            provider_session_hint: Some(session_id),
+        })
+    }
+
+    fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.managed_supervisor()?.interrupt(session)?;
+        Ok(ControlOutcome {
+            message: format!("interrupted {}", session.name),
+            provider_session_hint: None,
+        })
+    }
+
+    fn inspect(&self, session: &AgentSession) -> Result<String> {
+        self.managed_supervisor()?.inspect(session)
+    }
+
+    fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        self.managed_supervisor()?.reply(session, prompt)?;
+        Ok(ControlOutcome {
+            message: format!("sent a new turn to {}", session.name),
+            provider_session_hint: None,
+        })
+    }
+
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.provider != Provider::Cursor || session.runtime != Runtime::Host {
             bail!("the Cursor host controller cannot open this session");
+        }
+        if let Some(supervisor) = &self.supervisor {
+            if supervisor.owns(session) && supervisor.is_running(session)? {
+                bail!("interrupt the active managed Cursor turn before opening it natively");
+            }
         }
         let spec = self
             .invocation
@@ -207,6 +269,14 @@ impl ProviderController for CursorController {
             message: format!("returned from {}", session.name),
             provider_session_hint: None,
         })
+    }
+}
+
+impl CursorController {
+    fn managed_supervisor(&self) -> Result<&CursorSupervisor> {
+        self.supervisor
+            .as_deref()
+            .context("managed Cursor control is not configured")
     }
 }
 
@@ -269,7 +339,9 @@ mod tests {
     fn builds_shell_free_resume_and_safe_print_invocations() {
         let invocation = CursorInvocation::host("cursor-agent");
         assert_eq!(
-            invocation.resume("chat-id", Path::new("/work/repo")).unwrap(),
+            invocation
+                .resume("chat-id", Path::new("/work/repo"))
+                .unwrap(),
             CursorCommandSpec {
                 program: "cursor-agent".into(),
                 args: vec![
@@ -285,7 +357,10 @@ mod tests {
             .print_turn("chat-id", Path::new("/work/repo"), "check tests")
             .unwrap();
         assert!(print.args.contains(&"stream-json".into()));
-        assert!(!print.args.iter().any(|arg| arg == "--force" || arg == "--yolo"));
+        assert!(!print
+            .args
+            .iter()
+            .any(|arg| arg == "--force" || arg == "--yolo"));
     }
 
     #[test]
