@@ -21,7 +21,6 @@ pub enum Overlay {
     None,
     Help,
     Peek,
-    Details,
     Composer(ComposerMode),
     Confirm(ConfirmTarget),
 }
@@ -29,7 +28,6 @@ pub enum Overlay {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComposerMode {
     NewSession,
-    Reply { session_id: String },
     Rename { session_id: String },
     Filter,
 }
@@ -44,7 +42,6 @@ pub enum ConfirmTarget {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AppAction {
     None,
-    Refresh,
     Quit,
     Open { session_id: String },
     Inspect { session_id: String },
@@ -177,13 +174,12 @@ impl App {
                 self.overlay = Overlay::None;
                 AppAction::None
             }
-            Overlay::Details => AppAction::None,
-            Overlay::Peek if self.input.trim().is_empty() => AppAction::Open {
-                session_id: self
-                    .selected_session()
-                    .map(|session| session.id.clone())
-                    .unwrap_or_default(),
-            },
+            Overlay::Peek if self.input.trim().is_empty() => self
+                .selected_session()
+                .map(|session| AppAction::Open {
+                    session_id: session.id.clone(),
+                })
+                .unwrap_or(AppAction::None),
             Overlay::Peek => {
                 let Some(session) = self.selected_session() else {
                     return AppAction::None;
@@ -245,6 +241,7 @@ impl App {
     }
 
     pub fn toggle_help(&mut self) {
+        self.notice = None;
         self.overlay = if self.overlay == Overlay::Help {
             Overlay::None
         } else {
@@ -253,6 +250,7 @@ impl App {
     }
 
     pub fn toggle_view(&mut self) {
+        self.notice = None;
         self.view_mode = match self.view_mode {
             ViewMode::Status => ViewMode::Directory,
             ViewMode::Directory => ViewMode::Status,
@@ -278,9 +276,11 @@ impl App {
         } else {
             Overlay::Peek
         };
+        self.notice = None;
     }
 
     pub fn start_new_session(&mut self, first_character: Option<char>) {
+        self.notice = None;
         self.input.clear();
         if let Some(character) = first_character {
             self.input.push(character);
@@ -289,6 +289,7 @@ impl App {
     }
 
     pub fn start_filter(&mut self) {
+        self.notice = None;
         self.input = self.filter.clone();
         self.overlay = Overlay::Composer(ComposerMode::Filter);
     }
@@ -298,7 +299,9 @@ impl App {
             return;
         };
         let session_id = session.id.clone();
-        self.input = session.name.clone();
+        let name = session.name.clone();
+        self.notice = None;
+        self.input = name;
         self.overlay = Overlay::Composer(ComposerMode::Rename { session_id });
     }
 
@@ -321,6 +324,7 @@ impl App {
                 id: session.id.clone(),
                 running,
             });
+            self.notice = None;
         } else if let Some(group) = self.selected_group() {
             if group
                 .sessions
@@ -347,6 +351,7 @@ impl App {
                     .map(|index| self.snapshot.sessions[*index].id.clone())
                     .collect(),
             });
+            self.notice = None;
         }
     }
 
@@ -369,6 +374,7 @@ impl App {
         self.overlay = Overlay::Confirm(ConfirmTarget::Archive {
             id: session.id.clone(),
         });
+        self.notice = None;
     }
 
     pub fn resolve_approval(&mut self, accept: bool) -> AppAction {
@@ -446,10 +452,6 @@ impl App {
         self.overlay = Overlay::None;
         match mode {
             ComposerMode::NewSession => AppAction::Launch { prompt: input },
-            ComposerMode::Reply { session_id } => AppAction::Reply {
-                session_id,
-                prompt: input,
-            },
             ComposerMode::Rename { session_id } => AppAction::Rename {
                 session_id,
                 name: input,
@@ -788,5 +790,486 @@ mod tests {
                 answer: "staging".into(),
             }
         );
+    }
+
+    fn app_with(items: Vec<AgentSession>) -> App {
+        App::new(SessionSnapshot {
+            sessions: items,
+            warnings: vec![],
+        })
+    }
+
+    fn grant(item: &mut AgentSession, capabilities: &[Capability]) {
+        item.capabilities.extend(capabilities.iter().cloned());
+    }
+
+    #[test]
+    fn empty_snapshots_have_no_selection_and_navigation_is_a_noop() {
+        let mut app = app_with(vec![]);
+
+        app.select_next();
+        app.select_previous();
+
+        assert_eq!(app.selection, None);
+        assert_eq!(app.activate(), AppAction::None);
+    }
+
+    #[test]
+    fn reverse_navigation_from_no_selection_wraps_to_the_last_row() {
+        let mut app = app_with(vec![
+            session("one", SessionState::Working),
+            session("two", SessionState::Completed),
+        ]);
+        app.selection = None;
+        app.notice = Some("old notice".into());
+
+        app.select_previous();
+
+        assert_eq!(app.selection, Some(SelectionKey::Session("two".into())));
+        assert_eq!(app.notice, None);
+    }
+
+    #[test]
+    fn status_groups_follow_display_order_and_exclude_filtered_rows() {
+        let mut app = app_with(vec![
+            session("done", SessionState::Completed),
+            session("working", SessionState::Working),
+            session("input", SessionState::NeedsInput),
+            session("review", SessionState::ReadyForReview),
+        ]);
+
+        assert_eq!(
+            app.groups()
+                .iter()
+                .map(|group| group.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["Ready for review", "Needs input", "Working", "Completed"]
+        );
+
+        app.filter = "summary working".into();
+        assert_eq!(app.groups().len(), 1);
+        assert_eq!(app.groups()[0].sessions, vec![1]);
+    }
+
+    #[test]
+    fn filter_matches_name_cwd_and_provider_and_rejects_unmatched_rows() {
+        let mut item = session("agent-name", SessionState::Working);
+        item.cwd = PathBuf::from("/projects/special-root");
+        let mut app = app_with(vec![item]);
+
+        for needle in ["AGENT-NAME", "SPECIAL-ROOT", "CLAUDE"] {
+            app.filter = needle.into();
+            assert_eq!(app.groups().len(), 1, "filter {needle}");
+        }
+        app.filter = "missing".into();
+        assert!(app.groups().is_empty());
+    }
+
+    #[test]
+    fn directory_view_groups_and_sorts_project_paths() {
+        let mut z = session("z", SessionState::Working);
+        z.cwd = PathBuf::from("/zeta");
+        let mut a = session("a", SessionState::Completed);
+        a.cwd = PathBuf::from("/alpha");
+        let mut a_worktree = session("a-worktree", SessionState::NeedsInput);
+        a_worktree.cwd = PathBuf::from("/alpha/.claude/worktrees/topic/src");
+        let mut app = app_with(vec![z, a, a_worktree]);
+
+        app.toggle_view();
+
+        assert_eq!(
+            app.groups()
+                .iter()
+                .map(|group| (group.key.as_str(), group.sessions.clone()))
+                .collect::<Vec<_>>(),
+            vec![("cwd:/alpha", vec![1, 2]), ("cwd:/zeta", vec![0])]
+        );
+    }
+
+    #[test]
+    fn activating_a_group_toggles_collapse_both_directions() {
+        let mut app = app_with(vec![session("one", SessionState::Working)]);
+        app.selection = Some(SelectionKey::Group("state:Working".into()));
+
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(app.collapsed.contains("state:Working"));
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(!app.collapsed.contains("state:Working"));
+    }
+
+    #[test]
+    fn replacing_snapshot_preserves_valid_selection_but_closes_stale_overlay() {
+        let mut app = app_with(vec![
+            session("one", SessionState::Working),
+            session("two", SessionState::Completed),
+        ]);
+        app.selection = Some(SelectionKey::Session("two".into()));
+        app.overlay = Overlay::Peek;
+        app.input = "draft".into();
+        app.replace_snapshot(SessionSnapshot {
+            sessions: vec![session("two", SessionState::Completed)],
+            warnings: vec![],
+        });
+        assert_eq!(app.selection, Some(SelectionKey::Session("two".into())));
+        assert_eq!(app.overlay, Overlay::Peek);
+        assert_eq!(app.input, "draft");
+
+        app.replace_snapshot(SessionSnapshot {
+            sessions: vec![session("three", SessionState::Working)],
+            warnings: vec![],
+        });
+        assert_eq!(app.selection, Some(SelectionKey::Session("three".into())));
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn activate_covers_help_session_and_peek_without_selection() {
+        let mut app = app_with(vec![session("one", SessionState::Working)]);
+        app.overlay = Overlay::Help;
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+
+        app.overlay = Overlay::None;
+        assert_eq!(
+            app.activate(),
+            AppAction::Open {
+                session_id: "one".into()
+            }
+        );
+
+        app.overlay = Overlay::Peek;
+        app.selection = None;
+        assert_eq!(app.activate(), AppAction::None);
+    }
+
+    #[test]
+    fn escape_closes_every_overlay_before_it_quits() {
+        let overlays = vec![
+            Overlay::Help,
+            Overlay::Peek,
+            Overlay::Composer(ComposerMode::NewSession),
+            Overlay::Confirm(ConfirmTarget::Archive { id: "one".into() }),
+        ];
+        for overlay in overlays {
+            let mut app = app_with(vec![session("one", SessionState::Completed)]);
+            app.overlay = overlay;
+            app.input = "draft".into();
+            assert_eq!(app.escape(), AppAction::None);
+            assert_eq!(app.overlay, Overlay::None);
+            assert!(app.input.is_empty());
+            assert!(!app.should_quit);
+            assert_eq!(app.escape(), AppAction::Quit);
+            assert!(app.should_quit);
+        }
+    }
+
+    #[test]
+    fn toggling_view_clears_collapsed_groups_and_reconciles_selection() {
+        let mut app = app_with(vec![session("one", SessionState::Working)]);
+        app.selection = Some(SelectionKey::Group("state:Working".into()));
+        app.collapsed.insert("state:Working".into());
+
+        app.toggle_view();
+
+        assert_eq!(app.view_mode, ViewMode::Directory);
+        assert!(app.collapsed.is_empty());
+        assert_eq!(app.selection, Some(SelectionKey::Session("one".into())));
+        app.toggle_view();
+        assert_eq!(app.view_mode, ViewMode::Status);
+    }
+
+    #[test]
+    fn peek_requires_inspection_and_toggle_close_discards_input() {
+        let mut item = session("one", SessionState::Working);
+        item.capabilities.clear();
+        let mut app = app_with(vec![item]);
+
+        app.toggle_peek();
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
+
+        grant(&mut app.snapshot.sessions[0], &[Capability::Inspect, Capability::Reply]);
+        app.toggle_peek();
+        app.input = "draft".into();
+        app.toggle_peek();
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn composer_entry_points_seed_the_expected_input() {
+        let mut app = app_with(vec![session("one", SessionState::Completed)]);
+        app.start_new_session(Some('x'));
+        assert_eq!(app.input, "x");
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+
+        app.filter = "saved".into();
+        app.start_filter();
+        assert_eq!(app.input, "saved");
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::Filter));
+
+        app.start_rename();
+        assert_eq!(app.input, "one");
+        assert_eq!(
+            app.overlay,
+            Overlay::Composer(ComposerMode::Rename {
+                session_id: "one".into()
+            })
+        );
+
+        app.selection = None;
+        app.overlay = Overlay::None;
+        app.start_rename();
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn every_composer_submission_maps_to_its_exact_action() {
+        let mut app = app_with(vec![session("one", SessionState::Completed)]);
+
+        app.start_new_session(None);
+        app.input = "  build it  ".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Launch {
+                prompt: "build it".into()
+            }
+        );
+
+        app.overlay = Overlay::Composer(ComposerMode::Rename {
+            session_id: "one".into(),
+        });
+        app.input = "  new name  ".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Rename {
+                session_id: "one".into(),
+                name: "new name".into()
+            }
+        );
+
+        app.filter = "old".into();
+        app.start_filter();
+        app.input = "   ".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(app.filter.is_empty());
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn empty_non_filter_composer_does_not_submit_or_close() {
+        let mut app = app_with(vec![]);
+        app.start_new_session(None);
+        app.input = "   ".into();
+
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "   ");
+    }
+
+    #[test]
+    fn peek_reply_requires_capability_and_clears_rejected_or_sent_text() {
+        let mut app = app_with(vec![session("one", SessionState::Working)]);
+        app.toggle_peek();
+        app.input = "cannot send".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(app.input.is_empty());
+        assert!(app.notice.as_deref().unwrap().contains("read-only"));
+
+        grant(&mut app.snapshot.sessions[0], &[Capability::Reply]);
+        app.input = "  proceed  ".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Reply {
+                session_id: "one".into(),
+                prompt: "proceed".into()
+            }
+        );
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn active_and_idle_session_confirmations_require_exact_authority() {
+        let mut active = session("active", SessionState::ReadyForReview);
+        active.capabilities.clear();
+        let mut app = app_with(vec![active]);
+        app.start_confirm();
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.notice.as_deref().unwrap().contains("Interrupt"));
+
+        grant(&mut app.snapshot.sessions[0], &[Capability::Interrupt]);
+        app.start_confirm();
+        assert_eq!(
+            app.activate(),
+            AppAction::Interrupt {
+                session_id: "active".into()
+            }
+        );
+
+        app.snapshot.sessions[0].state = SessionState::Completed;
+        app.snapshot.sessions[0].capabilities.clear();
+        app.start_confirm();
+        assert!(app.notice.as_deref().unwrap().contains("Delete"));
+        grant(&mut app.snapshot.sessions[0], &[Capability::Delete]);
+        app.start_confirm();
+        assert_eq!(
+            app.activate(),
+            AppAction::Delete {
+                session_ids: vec!["active".into()]
+            }
+        );
+    }
+
+    #[test]
+    fn completed_group_delete_is_all_or_nothing_and_preserves_order() {
+        let mut one = session("one", SessionState::Completed);
+        let two = session("two", SessionState::Completed);
+        grant(&mut one, &[Capability::Delete]);
+        let mut app = app_with(vec![one, two]);
+        app.selection = Some(SelectionKey::Group("state:Completed".into()));
+
+        app.start_confirm();
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(app.notice.as_deref(), Some("this group includes observe-only sessions"));
+
+        grant(&mut app.snapshot.sessions[1], &[Capability::Delete]);
+        app.start_confirm();
+        assert_eq!(
+            app.activate(),
+            AppAction::Delete {
+                session_ids: vec!["one".into(), "two".into()]
+            }
+        );
+    }
+
+    #[test]
+    fn archive_refuses_active_or_unowned_sessions() {
+        let mut item = session("one", SessionState::Working);
+        grant(&mut item, &[Capability::Archive]);
+        let mut app = app_with(vec![item]);
+        app.start_archive_confirm();
+        assert!(app.notice.as_deref().unwrap().contains("must be idle"));
+        assert_eq!(app.overlay, Overlay::None);
+
+        app.snapshot.sessions[0].state = SessionState::Completed;
+        app.snapshot.sessions[0].capabilities.clear();
+        app.start_archive_confirm();
+        assert!(app.notice.as_deref().unwrap().contains("Archive authority"));
+    }
+
+    #[test]
+    fn approval_resolution_requires_peek_selection_and_exact_capability() {
+        let mut item = session("one", SessionState::NeedsInput);
+        grant(&mut item, &[Capability::Approve, Capability::Decline]);
+        let mut app = app_with(vec![item]);
+
+        assert_eq!(app.resolve_approval(true), AppAction::None);
+        app.toggle_peek();
+        assert_eq!(
+            app.resolve_approval(true),
+            AppAction::ResolveApproval {
+                session_id: "one".into(),
+                accept: true
+            }
+        );
+        app.selection = None;
+        assert_eq!(app.resolve_approval(false), AppAction::None);
+    }
+
+    #[test]
+    fn input_editing_is_limited_to_composers_and_writable_peek() {
+        let mut app = app_with(vec![session("one", SessionState::Working)]);
+        app.push_input('x');
+        assert!(app.input.is_empty());
+
+        app.start_new_session(None);
+        app.push_input('a');
+        app.push_input('b');
+        app.pop_input();
+        assert_eq!(app.input, "a");
+
+        app.overlay = Overlay::Peek;
+        app.input.clear();
+        grant(&mut app.snapshot.sessions[0], &[Capability::Respond]);
+        app.push_input('z');
+        assert_eq!(app.input, "z");
+    }
+
+    #[test]
+    fn details_are_selected_by_exact_session_id() {
+        let mut app = app_with(vec![
+            session("one", SessionState::Working),
+            session("two", SessionState::Completed),
+        ]);
+        app.set_detail("one".into(), "first transcript".into());
+        app.set_detail("two".into(), "second transcript".into());
+        assert_eq!(app.selected_detail(), Some("first transcript"));
+        app.selection = Some(SelectionKey::Session("two".into()));
+        assert_eq!(app.selected_detail(), Some("second transcript"));
+        app.selection = Some(SelectionKey::Group("state:Completed".into()));
+        assert_eq!(app.selected_detail(), None);
+    }
+
+    #[test]
+    fn successful_overlay_and_view_transitions_clear_stale_notices() {
+        let mut item = session("one", SessionState::Completed);
+        grant(
+            &mut item,
+            &[Capability::Inspect, Capability::Delete, Capability::Archive],
+        );
+        let mut app = app_with(vec![item]);
+
+        app.notice = Some("stale".into());
+        app.toggle_help();
+        assert_eq!(app.notice, None);
+        app.toggle_help();
+
+        app.notice = Some("stale".into());
+        app.toggle_view();
+        assert_eq!(app.notice, None);
+
+        app.notice = Some("stale".into());
+        app.toggle_peek();
+        assert_eq!(app.notice, None);
+        app.escape();
+
+        app.notice = Some("stale".into());
+        app.start_new_session(None);
+        assert_eq!(app.notice, None);
+        app.escape();
+
+        app.notice = Some("stale".into());
+        app.start_filter();
+        assert_eq!(app.notice, None);
+        app.escape();
+
+        app.notice = Some("stale".into());
+        app.start_rename();
+        assert_eq!(app.notice, None);
+        app.escape();
+
+        app.notice = Some("stale".into());
+        app.start_confirm();
+        assert_eq!(app.notice, None);
+        app.escape();
+
+        app.notice = Some("stale".into());
+        app.start_archive_confirm();
+        assert_eq!(app.notice, None);
+    }
+
+    #[test]
+    fn refused_transition_replaces_stale_notice_with_the_refusal() {
+        let mut item = session("one", SessionState::Completed);
+        item.capabilities.clear();
+        let mut app = app_with(vec![item]);
+        app.notice = Some("stale".into());
+
+        app.toggle_peek();
+
+        assert_eq!(app.overlay, Overlay::None);
+        assert_ne!(app.notice.as_deref(), Some("stale"));
+        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
     }
 }

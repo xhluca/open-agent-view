@@ -2,7 +2,7 @@ use std::io::{self, Stdout};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -12,8 +12,8 @@ use ratatui::Terminal;
 
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay};
-use crate::domain::Capability;
-use crate::control::ControlHub;
+use crate::control::{ControlHub, ControlOutcome};
+use crate::domain::{AgentSession, Capability};
 use crate::ui;
 
 pub fn run_dashboard(
@@ -59,22 +59,26 @@ pub fn run_dashboard(
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
+    if key.kind != KeyEventKind::Press {
+        return AppAction::None;
+    }
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
-            KeyCode::Char('s') => {
+            KeyCode::Char('s') if app.overlay == Overlay::None => {
                 app.toggle_view();
                 AppAction::None
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('r') if app.overlay == Overlay::None => {
                 app.start_rename();
                 AppAction::None
             }
             KeyCode::Char('x') => match app.overlay.clone() {
                 Overlay::Confirm(_) => app.activate(),
-                _ => {
+                Overlay::None => {
                     app.start_confirm();
                     AppAction::None
                 }
+                _ => AppAction::None,
             },
             KeyCode::Char('a') if app.overlay == Overlay::None => {
                 app.start_archive_confirm();
@@ -159,15 +163,85 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
     }
 }
 
-fn handle_action(
-    terminal: &mut TerminalSession,
+trait DashboardTerminal {
+    fn suspend_dashboard(&mut self) -> Result<()>;
+    fn resume_dashboard(&mut self) -> Result<()>;
+}
+
+trait DashboardControl {
+    fn inspect_session(&self, session: &AgentSession) -> Result<String>;
+    fn open_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
+    fn launch_session(&self, prompt: String) -> Result<ControlOutcome>;
+    fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome>;
+    fn resolve_session_approval(
+        &self,
+        session: &AgentSession,
+        accept: bool,
+    ) -> Result<ControlOutcome>;
+    fn respond_session_input(
+        &self,
+        session: &AgentSession,
+        answer: &str,
+    ) -> Result<ControlOutcome>;
+    fn interrupt_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
+    fn archive_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
+    fn delete_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
+}
+
+impl DashboardControl for ControlHub {
+    fn inspect_session(&self, session: &AgentSession) -> Result<String> {
+        self.inspect(session)
+    }
+
+    fn open_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.open(session)
+    }
+
+    fn launch_session(&self, prompt: String) -> Result<ControlOutcome> {
+        self.launch(prompt)
+    }
+
+    fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        self.reply(session, prompt)
+    }
+
+    fn resolve_session_approval(
+        &self,
+        session: &AgentSession,
+        accept: bool,
+    ) -> Result<ControlOutcome> {
+        self.resolve_approval(session, accept)
+    }
+
+    fn respond_session_input(
+        &self,
+        session: &AgentSession,
+        answer: &str,
+    ) -> Result<ControlOutcome> {
+        self.respond_input(session, answer)
+    }
+
+    fn interrupt_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.interrupt(session)
+    }
+
+    fn archive_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.archive(session)
+    }
+
+    fn delete_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.delete(session)
+    }
+}
+
+fn handle_action<T: DashboardTerminal, C: DashboardControl>(
+    terminal: &mut T,
     app: &mut App,
     action: AppAction,
-    control: &ControlHub,
+    control: &C,
 ) -> bool {
     match action {
         AppAction::None | AppAction::Quit => false,
-        AppAction::Refresh => true,
         AppAction::Inspect { session_id } => {
             let Some(session) = app
                 .snapshot
@@ -179,7 +253,7 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.inspect(&session) {
+            match control.inspect_session(&session) {
                 Ok(detail) => app.set_detail(session_id, detail),
                 Err(error) => app.set_notice(format!("inspect failed: {error:#}")),
             }
@@ -196,12 +270,12 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            if let Err(error) = terminal.suspend() {
+            if let Err(error) = terminal.suspend_dashboard() {
                 app.set_notice(format!("failed to suspend dashboard: {error:#}"));
                 return false;
             }
-            let result = control.open(&session);
-            let resume_result = terminal.resume();
+            let result = control.open_session(&session);
+            let resume_result = terminal.resume_dashboard();
             match (result, resume_result) {
                 (Ok(outcome), Ok(())) => app.set_notice(outcome.message),
                 (Err(error), Ok(())) => {
@@ -214,7 +288,7 @@ fn handle_action(
             true
         }
         AppAction::Launch { prompt } => {
-            match control.launch(prompt) {
+            match control.launch_session(prompt) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("launch failed: {error:#}")),
             }
@@ -231,7 +305,7 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.reply(&session, &prompt) {
+            match control.reply_session(&session, &prompt) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("reply refused: {error:#}")),
             }
@@ -248,10 +322,10 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.resolve_approval(&session, accept) {
+            match control.resolve_session_approval(&session, accept) {
                 Ok(outcome) => {
                     app.set_notice(outcome.message);
-                    if let Ok(detail) = control.inspect(&session) {
+                    if let Ok(detail) = control.inspect_session(&session) {
                         app.set_detail(session_id, detail);
                     }
                 }
@@ -270,10 +344,10 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.respond_input(&session, &answer) {
+            match control.respond_session_input(&session, &answer) {
                 Ok(outcome) => {
                     app.set_notice(outcome.message);
-                    if let Ok(detail) = control.inspect(&session) {
+                    if let Ok(detail) = control.inspect_session(&session) {
                         app.set_detail(session_id, detail);
                     }
                 }
@@ -296,7 +370,7 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.interrupt(&session) {
+            match control.interrupt_session(&session) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("stop refused: {error:#}")),
             }
@@ -313,7 +387,7 @@ fn handle_action(
                 app.set_notice("the selected session disappeared during refresh");
                 return false;
             };
-            match control.archive(&session) {
+            match control.archive_session(&session) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("archive refused: {error:#}")),
             }
@@ -336,7 +410,7 @@ fn handle_action(
             };
             let count = sessions.len();
             for session in sessions {
-                if let Err(error) = control.delete(&session) {
+                if let Err(error) = control.delete_session(&session) {
                     app.set_notice(format!("delete refused for {}: {error:#}", session.name));
                     return true;
                 }
@@ -394,6 +468,16 @@ impl TerminalSession {
     }
 }
 
+impl DashboardTerminal for TerminalSession {
+    fn suspend_dashboard(&mut self) -> Result<()> {
+        self.suspend()
+    }
+
+    fn resume_dashboard(&mut self) -> Result<()> {
+        self.resume()
+    }
+}
+
 impl Drop for TerminalSession {
     fn drop(&mut self) {
         if !self.active {
@@ -413,6 +497,7 @@ impl Drop for TerminalSession {
 mod tests {
     use std::collections::BTreeSet;
     use std::path::PathBuf;
+    use std::sync::Mutex;
 
     use crossterm::event::KeyEventKind;
 
@@ -537,5 +622,614 @@ mod tests {
             }
         );
         assert_eq!(handle_key(&mut app, key(KeyCode::Char('y'))), AppAction::None);
+    }
+
+    #[test]
+    fn non_press_key_events_are_ignored() {
+        let mut app = app();
+        let mut released = key(KeyCode::Esc);
+        released.kind = KeyEventKind::Release;
+
+        assert_eq!(handle_key(&mut app, released), AppAction::None);
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn navigation_keys_wrap_only_from_the_list() {
+        let mut app = app();
+        let initial = app.selection.clone();
+        handle_key(&mut app, key(KeyCode::Up));
+        assert_ne!(app.selection, initial);
+        handle_key(&mut app, key(KeyCode::Down));
+        assert_eq!(app.selection, initial);
+
+        app.start_new_session(None);
+        let selected = app.selection.clone();
+        handle_key(&mut app, key(KeyCode::Up));
+        handle_key(&mut app, key(KeyCode::Down));
+        assert_eq!(app.selection, selected);
+    }
+
+    #[test]
+    fn control_s_toggles_views_only_from_the_list() {
+        let mut app = app();
+        handle_key(&mut app, control_key('s'));
+        assert_eq!(app.view_mode, crate::app::ViewMode::Directory);
+        app.start_new_session(None);
+        handle_key(&mut app, control_key('s'));
+        assert_eq!(app.view_mode, crate::app::ViewMode::Directory);
+    }
+
+    #[test]
+    fn control_r_starts_rename_only_from_the_list() {
+        let mut app = app();
+        handle_key(&mut app, control_key('r'));
+        assert_eq!(
+            app.overlay,
+            Overlay::Composer(ComposerMode::Rename {
+                session_id: "worker".into()
+            })
+        );
+        assert_eq!(app.input, "worker");
+
+        app.overlay = Overlay::Help;
+        app.input.clear();
+        handle_key(&mut app, control_key('r'));
+        assert_eq!(app.overlay, Overlay::Help);
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn control_x_is_a_two_step_exact_confirmation_and_is_inert_in_other_overlays() {
+        let mut app = app();
+        app.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Interrupt);
+
+        assert_eq!(handle_key(&mut app, control_key('x')), AppAction::None);
+        assert!(matches!(app.overlay, Overlay::Confirm(_)));
+        assert_eq!(
+            handle_key(&mut app, control_key('x')),
+            AppAction::Interrupt {
+                session_id: "worker".into()
+            }
+        );
+        assert_eq!(app.overlay, Overlay::None);
+
+        app.start_new_session(None);
+        handle_key(&mut app, control_key('x'));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+    }
+
+    #[test]
+    fn control_a_refuses_active_and_unowned_completed_sessions() {
+        let mut app = app();
+        handle_key(&mut app, control_key('a'));
+        assert!(app.notice.as_deref().unwrap().contains("must be idle"));
+
+        app.snapshot.sessions[0].state = SessionState::Completed;
+        app.notice = None;
+        handle_key(&mut app, control_key('a'));
+        assert!(app.notice.as_deref().unwrap().contains("Archive authority"));
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn control_j_inserts_newline_only_into_a_writable_input() {
+        let mut app = app();
+        handle_key(&mut app, control_key('j'));
+        assert!(app.input.is_empty());
+        app.start_new_session(Some('a'));
+        handle_key(&mut app, control_key('j'));
+        handle_key(&mut app, key(KeyCode::Char('b')));
+        assert_eq!(app.input, "a\nb");
+    }
+
+    #[test]
+    fn escape_closes_overlay_then_quits_the_dashboard() {
+        let mut app = app();
+        app.start_new_session(Some('a'));
+        assert_eq!(handle_key(&mut app, key(KeyCode::Esc)), AppAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(handle_key(&mut app, key(KeyCode::Esc)), AppAction::Quit);
+        assert!(app.should_quit);
+    }
+
+    #[test]
+    fn approval_keys_preempt_text_only_for_their_exact_capabilities() {
+        let mut app = app();
+        app.snapshot.sessions[0].state = SessionState::NeedsInput;
+        app.snapshot.sessions[0]
+            .capabilities
+            .extend([Capability::Approve, Capability::Decline]);
+        app.toggle_peek();
+
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('y'))),
+            AppAction::ResolveApproval {
+                session_id: "worker".into(),
+                accept: true
+            }
+        );
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('n'))),
+            AppAction::ResolveApproval {
+                session_id: "worker".into(),
+                accept: false
+            }
+        );
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn enter_activates_composer_group_and_session_paths() {
+        let mut app = app();
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Enter)),
+            AppAction::Open {
+                session_id: "worker".into()
+            }
+        );
+
+        app.selection = Some(SelectionKey::Group("state:Working".into()));
+        assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), AppAction::None);
+        assert!(app.collapsed.contains("state:Working"));
+
+        app.selection = Some(SelectionKey::Session("worker".into()));
+        app.start_new_session(None);
+        app.input = "ship".into();
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Enter)),
+            AppAction::Launch {
+                prompt: "ship".into()
+            }
+        );
+    }
+
+    #[test]
+    fn space_opens_and_closes_peek_with_one_inspection_action() {
+        let mut app = app();
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char(' '))),
+            AppAction::Inspect {
+                session_id: "worker".into()
+            }
+        );
+        assert_eq!(app.overlay, Overlay::Peek);
+        assert_eq!(handle_key(&mut app, key(KeyCode::Char(' '))), AppAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+
+        app.snapshot.sessions[0].capabilities.clear();
+        assert_eq!(handle_key(&mut app, key(KeyCode::Char(' '))), AppAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+        assert!(app.notice.as_deref().unwrap().contains("inspection was not granted"));
+    }
+
+    #[test]
+    fn tab_slash_backspace_and_q_follow_overlay_context() {
+        let mut empty = App::new(SessionSnapshot::default());
+        assert_eq!(handle_key(&mut empty, key(KeyCode::Char('q'))), AppAction::Quit);
+
+        let mut app = app();
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        handle_key(&mut app, key(KeyCode::Char('/')));
+        assert_eq!(app.input, "/");
+        handle_key(&mut app, key(KeyCode::Backspace));
+        assert!(app.input.is_empty());
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+
+        app.escape();
+        handle_key(&mut app, key(KeyCode::Char('/')));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::Filter));
+        app.escape();
+        handle_key(&mut app, key(KeyCode::Char('q')));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "q");
+    }
+
+    #[derive(Default)]
+    struct FakeTerminal {
+        calls: Vec<&'static str>,
+        suspend_error: bool,
+        resume_error: bool,
+    }
+
+    impl DashboardTerminal for FakeTerminal {
+        fn suspend_dashboard(&mut self) -> Result<()> {
+            self.calls.push("suspend");
+            if self.suspend_error {
+                anyhow::bail!("synthetic suspend failure");
+            }
+            Ok(())
+        }
+
+        fn resume_dashboard(&mut self) -> Result<()> {
+            self.calls.push("resume");
+            if self.resume_error {
+                anyhow::bail!("synthetic resume failure");
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct FakeControl {
+        calls: Mutex<Vec<String>>,
+        fail_on: Option<&'static str>,
+    }
+
+    impl FakeControl {
+        fn invoke(&self, operation: &'static str, detail: String) -> Result<ControlOutcome> {
+            self.calls
+                .lock()
+                .unwrap()
+                .push(format!("{operation}:{detail}"));
+            if self.fail_on == Some(operation) {
+                anyhow::bail!("synthetic {operation} failure");
+            }
+            Ok(ControlOutcome {
+                message: format!("{operation} ok"),
+                provider_session_hint: None,
+            })
+        }
+    }
+
+    impl DashboardControl for FakeControl {
+        fn inspect_session(&self, session: &AgentSession) -> Result<String> {
+            self.invoke("inspect", session.id.clone())?;
+            Ok(format!("detail for {}", session.id))
+        }
+
+        fn open_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            self.invoke("open", session.id.clone())
+        }
+
+        fn launch_session(&self, prompt: String) -> Result<ControlOutcome> {
+            self.invoke("launch", prompt)
+        }
+
+        fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+            self.invoke("reply", format!("{}:{prompt}", session.id))
+        }
+
+        fn resolve_session_approval(
+            &self,
+            session: &AgentSession,
+            accept: bool,
+        ) -> Result<ControlOutcome> {
+            self.invoke("approval", format!("{}:{accept}", session.id))
+        }
+
+        fn respond_session_input(
+            &self,
+            session: &AgentSession,
+            answer: &str,
+        ) -> Result<ControlOutcome> {
+            self.invoke("input", format!("{}:{answer}", session.id))
+        }
+
+        fn interrupt_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            self.invoke("interrupt", session.id.clone())
+        }
+
+        fn archive_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            self.invoke("archive", session.id.clone())
+        }
+
+        fn delete_session(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            self.invoke("delete", session.id.clone())
+        }
+    }
+
+    #[test]
+    fn action_dispatch_handles_noop_quit_and_rename_without_provider_calls() {
+        let mut app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl::default();
+
+        assert!(!handle_action(&mut terminal, &mut app, AppAction::None, &control));
+        assert!(!handle_action(&mut terminal, &mut app, AppAction::Quit, &control));
+        assert!(!handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Rename {
+                session_id: "worker".into(),
+                name: "new".into()
+            },
+            &control
+        ));
+        assert!(app.notice.as_deref().unwrap().contains("rename is unavailable"));
+        assert!(control.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn action_dispatch_routes_every_non_open_operation_and_refreshes_mutations() {
+        let mut app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl::default();
+
+        assert!(!handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Inspect {
+                session_id: "worker".into()
+            },
+            &control
+        ));
+        assert_eq!(app.selected_detail(), Some("detail for worker"));
+
+        let actions = vec![
+            AppAction::Launch {
+                prompt: "build".into(),
+            },
+            AppAction::Reply {
+                session_id: "worker".into(),
+                prompt: "continue".into(),
+            },
+            AppAction::ResolveApproval {
+                session_id: "worker".into(),
+                accept: true,
+            },
+            AppAction::RespondInput {
+                session_id: "worker".into(),
+                answer: "choice".into(),
+            },
+            AppAction::Interrupt {
+                session_id: "worker".into(),
+            },
+            AppAction::Archive {
+                session_id: "worker".into(),
+            },
+            AppAction::Delete {
+                session_ids: vec!["worker".into()],
+            },
+        ];
+        for action in actions {
+            assert!(handle_action(&mut terminal, &mut app, action, &control));
+        }
+
+        assert_eq!(
+            *control.calls.lock().unwrap(),
+            vec![
+                "inspect:worker",
+                "launch:build",
+                "reply:worker:continue",
+                "approval:worker:true",
+                "inspect:worker",
+                "input:worker:choice",
+                "inspect:worker",
+                "interrupt:worker",
+                "archive:worker",
+                "delete:worker",
+            ]
+        );
+        assert_eq!(app.notice.as_deref(), Some("deleted 1 managed Codex session(s)"));
+    }
+
+    #[test]
+    fn action_dispatch_rejects_every_stale_session_id_without_side_effects() {
+        let actions = vec![
+            AppAction::Inspect {
+                session_id: "gone".into(),
+            },
+            AppAction::Open {
+                session_id: "gone".into(),
+            },
+            AppAction::Reply {
+                session_id: "gone".into(),
+                prompt: "x".into(),
+            },
+            AppAction::ResolveApproval {
+                session_id: "gone".into(),
+                accept: false,
+            },
+            AppAction::RespondInput {
+                session_id: "gone".into(),
+                answer: "x".into(),
+            },
+            AppAction::Interrupt {
+                session_id: "gone".into(),
+            },
+            AppAction::Archive {
+                session_id: "gone".into(),
+            },
+            AppAction::Delete {
+                session_ids: vec!["worker".into(), "gone".into()],
+            },
+        ];
+        for action in actions {
+            let mut app = app();
+            let mut terminal = FakeTerminal::default();
+            let control = FakeControl::default();
+            assert!(!handle_action(&mut terminal, &mut app, action, &control));
+            assert!(app.notice.as_deref().unwrap().contains("disappeared during refresh"));
+            assert!(terminal.calls.is_empty());
+            assert!(control.calls.lock().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn provider_refusals_are_reported_for_every_mutating_action() {
+        let cases = vec![
+            (
+                "launch",
+                AppAction::Launch {
+                    prompt: "x".into(),
+                },
+                "launch failed",
+            ),
+            (
+                "reply",
+                AppAction::Reply {
+                    session_id: "worker".into(),
+                    prompt: "x".into(),
+                },
+                "reply refused",
+            ),
+            (
+                "approval",
+                AppAction::ResolveApproval {
+                    session_id: "worker".into(),
+                    accept: false,
+                },
+                "approval response refused",
+            ),
+            (
+                "input",
+                AppAction::RespondInput {
+                    session_id: "worker".into(),
+                    answer: "x".into(),
+                },
+                "input response refused",
+            ),
+            (
+                "interrupt",
+                AppAction::Interrupt {
+                    session_id: "worker".into(),
+                },
+                "stop refused",
+            ),
+            (
+                "archive",
+                AppAction::Archive {
+                    session_id: "worker".into(),
+                },
+                "archive refused",
+            ),
+        ];
+        for (operation, action, expected) in cases {
+            let mut app = app();
+            let mut terminal = FakeTerminal::default();
+            let control = FakeControl {
+                calls: Mutex::default(),
+                fail_on: Some(operation),
+            };
+            assert!(handle_action(&mut terminal, &mut app, action, &control));
+            assert!(app.notice.as_deref().unwrap().contains(expected));
+        }
+    }
+
+    #[test]
+    fn inspect_failure_is_non_refreshing_and_does_not_replace_detail() {
+        let mut app = app();
+        app.set_detail("worker".into(), "old detail".into());
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl {
+            calls: Mutex::default(),
+            fail_on: Some("inspect"),
+        };
+
+        assert!(!handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Inspect {
+                session_id: "worker".into()
+            },
+            &control
+        ));
+        assert_eq!(app.selected_detail(), Some("old detail"));
+        assert!(app.notice.as_deref().unwrap().contains("inspect failed"));
+    }
+
+    #[test]
+    fn open_suspends_and_always_attempts_resume_before_reporting_outcome() {
+        let action = AppAction::Open {
+            session_id: "worker".into(),
+        };
+        let mut first_app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl::default();
+        assert!(handle_action(
+            &mut terminal,
+            &mut first_app,
+            action.clone(),
+            &control
+        ));
+        assert_eq!(terminal.calls, vec!["suspend", "resume"]);
+        assert_eq!(first_app.notice.as_deref(), Some("open ok"));
+
+        let mut failed_open_app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl {
+            calls: Mutex::default(),
+            fail_on: Some("open"),
+        };
+        assert!(handle_action(
+            &mut terminal,
+            &mut failed_open_app,
+            action.clone(),
+            &control
+        ));
+        assert_eq!(terminal.calls, vec!["suspend", "resume"]);
+        assert!(failed_open_app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("failed to open session"));
+
+        let mut failed_suspend_app = app();
+        let mut terminal = FakeTerminal {
+            suspend_error: true,
+            ..FakeTerminal::default()
+        };
+        let control = FakeControl::default();
+        assert!(!handle_action(
+            &mut terminal,
+            &mut failed_suspend_app,
+            action.clone(),
+            &control
+        ));
+        assert_eq!(terminal.calls, vec!["suspend"]);
+        assert!(control.calls.lock().unwrap().is_empty());
+        assert!(failed_suspend_app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("failed to suspend"));
+
+        let mut failed_resume_app = app();
+        let mut terminal = FakeTerminal {
+            resume_error: true,
+            ..FakeTerminal::default()
+        };
+        let control = FakeControl::default();
+        assert!(handle_action(
+            &mut terminal,
+            &mut failed_resume_app,
+            action,
+            &control
+        ));
+        assert!(failed_resume_app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("failed to restore"));
+    }
+
+    #[test]
+    fn bulk_delete_stops_on_first_refusal_and_reports_exact_session() {
+        let mut second = app().snapshot.sessions.remove(0);
+        second.id = "second".into();
+        second.name = "second-name".into();
+        let mut app = app();
+        app.snapshot.sessions.push(second);
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl {
+            calls: Mutex::default(),
+            fail_on: Some("delete"),
+        };
+
+        assert!(handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Delete {
+                session_ids: vec!["worker".into(), "second".into()]
+            },
+            &control
+        ));
+        assert!(app.notice.as_deref().unwrap().contains("worker"));
+        assert_eq!(*control.calls.lock().unwrap(), vec!["delete:worker"]);
     }
 }

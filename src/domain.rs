@@ -105,7 +105,6 @@ pub enum Capability {
     Approve,
     Decline,
     Respond,
-    Resume,
     Interrupt,
     Archive,
     Delete,

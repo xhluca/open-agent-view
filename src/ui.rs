@@ -3,12 +3,13 @@ use std::time::{Duration, SystemTime};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::prelude::{Color, Frame, Line, Modifier, Span, Style};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode,
 };
-use crate::domain::{AgentSession, Capability, Provider, SessionState};
+use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -22,8 +23,13 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     let area = frame.size();
     frame.render_widget(Block::default().style(Style::default().bg(BG).fg(FG)), area);
     if area.width < 32 || area.height < 8 {
+        let message = if area.width >= 18 && area.height >= 2 {
+            vec![Line::from("coding-agents needs"), Line::from("at least 32×8")]
+        } else {
+            vec![Line::from("needs 32×8")]
+        };
         frame.render_widget(
-            Paragraph::new("coding-agents needs at least 32×8")
+            Paragraph::new(message)
                 .style(Style::default().bg(BG).fg(ATTENTION))
                 .alignment(Alignment::Center),
             area,
@@ -32,7 +38,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     }
 
     let composer_height = match app.overlay {
-        Overlay::Peek => 7.min(area.height.saturating_sub(5)),
+        Overlay::Peek => (6 + input_line_count(&app.input).saturating_sub(1))
+            .min(10)
+            .min(area.height.saturating_sub(5)),
         Overlay::Help => {
             let help_lines = pack_help_actions(
                 help_actions(app),
@@ -41,6 +49,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .len() as u16;
             (3 + help_lines).min(area.height.saturating_sub(5))
         }
+        Overlay::Composer(_) => (3 + input_line_count(&app.input).saturating_sub(1))
+            .min(7)
+            .min(area.height.saturating_sub(5)),
         _ => 3,
     };
     let header_height = if area.height < 16 { 2 } else { 4 };
@@ -60,7 +71,6 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     render_footer(frame, app, chunks[3]);
 
     match &app.overlay {
-        Overlay::Details => render_details(frame, app, area),
         Overlay::Confirm(target) => render_confirmation(frame, app, target, area),
         _ => {}
     }
@@ -144,7 +154,11 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         let suffix = collapsed.then(|| format!(" {}", group.sessions.len()));
         lines.push(styled_line(
             vec![Span::styled(
-                format!("{}{}", group.label, suffix.unwrap_or_default()),
+                format!(
+                    "{}{}",
+                    sanitize_inline(&group.label),
+                    suffix.unwrap_or_default()
+                ),
                 Style::default().add_modifier(Modifier::BOLD),
             )],
             is_selected,
@@ -165,14 +179,18 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     }
 
     if lines.is_empty() {
-        lines.push(Line::from(Span::styled(
-            if app.filter.is_empty() {
-                "No coding-agent sessions found"
-            } else {
-                "No sessions match the current filter"
-            },
-            Style::default().fg(DIM),
-        )));
+        if app.filter.is_empty() && area.width >= 60 && area.height >= 12 {
+            lines.extend(empty_state_lines());
+        } else {
+            lines.push(Line::from(Span::styled(
+                if app.filter.is_empty() {
+                    "No coding-agent sessions found"
+                } else {
+                    "No sessions match the current filter"
+                },
+                Style::default().fg(DIM),
+            )));
+        }
     }
 
     let scroll = selected_line
@@ -186,6 +204,42 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     );
 }
 
+fn empty_state_lines() -> Vec<Line<'static>> {
+    vec![
+        Line::from(Span::styled(
+            "Needs input",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " Sessions that have a question or need your decision land here",
+            Style::default().fg(DIM),
+        )),
+        Line::default(),
+        Line::from(Span::styled(
+            "Working",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " Sessions your coding agents are actively working on",
+            Style::default().fg(DIM),
+        )),
+        Line::default(),
+        Line::from(Span::styled(
+            "Completed",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            " Finished sessions wait here for you to review",
+            Style::default().fg(DIM),
+        )),
+        Line::default(),
+        Line::from(Span::styled(
+            "Hand off a substantial task below. Open Agent View will organize it by status so you can see when it needs you.",
+            Style::default().fg(DIM),
+        )),
+    ]
+}
+
 fn render_session_row(
     session: &AgentSession,
     view_mode: ViewMode,
@@ -195,12 +249,7 @@ fn render_session_row(
     let symbol = state_symbol(session.state);
     let symbol_style = Style::default().fg(state_color(session.state));
     let name_width = if width >= 100 { 26 } else { 20 };
-    let provider = match session.provider {
-        Provider::Claude => "C",
-        Provider::Codex => "X",
-        Provider::Other(_) => "?",
-    };
-    let runtime = session.runtime.label();
+    let metadata = compact_runtime_marker(session);
     let state_prefix = (view_mode == ViewMode::Directory)
         .then(|| format!("{} · ", short_state(session.state)))
         .unwrap_or_default();
@@ -209,11 +258,6 @@ fn render_session_row(
         .pull_requests
         .map(|count| format!("{count} PR{}", if count == 1 { "" } else { "s" }))
         .unwrap_or_default();
-    let metadata = if width >= 90 {
-        format!("[{provider}@{runtime}]")
-    } else {
-        format!("[{provider}]")
-    };
     let right = if prs.is_empty() {
         age
     } else {
@@ -225,14 +269,16 @@ fn render_session_row(
         &format!("{state_prefix}{}", session.summary),
         summary_width,
     );
+    let name = pad_to_width(truncate(&session.name, name_width), name_width);
+    let summary = pad_to_width(summary, summary_width);
     let spans = vec![
         Span::styled(format!(" {symbol} "), symbol_style),
         Span::styled(
-            format!("{:name_width$}", truncate(&session.name, name_width)),
+            name,
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::styled(format!("{metadata} "), Style::default().fg(DIM)),
-        Span::styled(format!("{summary:summary_width$}"), Style::default().fg(DIM)),
+        Span::styled(summary, Style::default().fg(DIM)),
         Span::styled(right, Style::default().fg(DIM)),
     ];
     styled_line(spans, selected)
@@ -260,7 +306,6 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .style(Style::default().bg(BG));
     let (prefix, content, editable) = match &app.overlay {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
-        Overlay::Composer(ComposerMode::Reply { .. }) => ("❯ reply ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Rename { .. }) => ("❯ name ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Filter) => ("❯ filter ", app.input.as_str(), true),
         _ => (
@@ -278,17 +323,38 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     } else {
         Style::default().fg(DIM)
     };
-    frame.render_widget(
-        Paragraph::new(Line::from(vec![
+    let content_lines = if editable {
+        input_lines(content)
+            .into_iter()
+            .enumerate()
+            .map(|(index, line)| {
+                Line::from(vec![
+                    Span::styled(
+                        if index == 0 { prefix } else { "" },
+                        Style::default().fg(FG),
+                    ),
+                    Span::styled(line, text_style),
+                ])
+            })
+            .collect::<Vec<_>>()
+    } else {
+        vec![Line::from(vec![
             Span::styled(prefix, Style::default().fg(FG)),
             Span::styled(content.to_owned(), text_style),
-        ]))
-        .block(block),
-        area,
-    );
+        ])]
+    };
+    frame.render_widget(Paragraph::new(content_lines).block(block), area);
     if editable {
-        let cursor_x = area.x + 1 + prefix.chars().count() as u16 + app.input.chars().count() as u16;
-        frame.set_cursor(cursor_x.min(area.right().saturating_sub(1)), area.y + 1);
+        let last_line = app.input.rsplit('\n').next().unwrap_or_default();
+        let line_index = input_line_count(&app.input)
+            .saturating_sub(1)
+            .min(area.height.saturating_sub(3));
+        let prefix_width = (line_index == 0).then(|| prefix.chars().count()).unwrap_or(0);
+        let cursor_x = area.x + 1 + prefix_width as u16 + display_width(last_line) as u16;
+        frame.set_cursor(
+            cursor_x.min(area.right().saturating_sub(1)),
+            area.y + 1 + line_index,
+        );
     }
 }
 
@@ -298,7 +364,12 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
         return;
     };
     let block = Block::default()
-        .title(format!(" {} · {} ", session.name, session.provider))
+        .title(sanitize_inline(&format!(
+            " {} · {} · {} ",
+            session.name,
+            session.provider,
+            session.runtime.label()
+        )))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(ACCENT))
         .style(Style::default().bg(BG));
@@ -320,23 +391,25 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
             (false, true) => "n deny",
             (false, false) => unreachable!(),
         };
-        Span::styled(choices, Style::default().fg(ATTENTION))
+        vec![Line::from(Span::styled(
+            choices,
+            Style::default().fg(ATTENTION),
+        ))]
     } else if can_respond {
-        if app.input.is_empty() {
-            Span::styled("❯ answer", Style::default().fg(DIM))
-        } else {
-            Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
-        }
+        editable_response_lines("answer", &app.input)
     } else if can_reply {
-        if app.input.is_empty() {
-            Span::styled("❯ reply", Style::default().fg(DIM))
-        } else {
-            Span::styled(format!("❯ {}", app.input), Style::default().fg(FG))
-        }
+        editable_response_lines("reply", &app.input)
     } else {
-        Span::styled("enter to open native session", Style::default().fg(DIM))
+        vec![Line::from(Span::styled(
+            "enter to open native session",
+            Style::default().fg(DIM),
+        ))]
     };
-    let summary_capacity = area.height.saturating_sub(4).max(1) as usize;
+    let summary_capacity = area
+        .height
+        .saturating_sub(3 + response.len() as u16)
+        .max(1) as usize;
+    let summary = sanitize_multiline(summary);
     let summary_lines: Vec<_> = summary.lines().collect();
     let summary_start = summary_lines.len().saturating_sub(summary_capacity);
     let mut lines: Vec<Line<'_>> = summary_lines[summary_start..]
@@ -344,25 +417,76 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|line| Line::from((*line).to_owned()))
         .collect();
     lines.push(Line::default());
-    lines.push(Line::from(response));
+    lines.extend(response);
     frame.render_widget(
         Paragraph::new(lines)
-        .block(block)
-        .wrap(Wrap { trim: true }),
+            .block(block)
+            .wrap(Wrap { trim: true }),
         area,
     );
     if can_respond || can_reply {
+        let last_line = app.input.rsplit('\n').next().unwrap_or_default();
+        let prefix_width = if app.input.contains('\n') { 0 } else { 2 };
         frame.set_cursor(
-            (area.x + 3 + app.input.chars().count() as u16).min(area.right().saturating_sub(2)),
+            (area.x + 1 + prefix_width + display_width(last_line) as u16)
+                .min(area.right().saturating_sub(2)),
             area.bottom().saturating_sub(2),
         );
     }
 }
 
+fn compact_runtime_marker(session: &AgentSession) -> &'static str {
+    match (&session.provider, &session.runtime) {
+        (Provider::Claude, Runtime::Host) => "C@H",
+        (Provider::Claude, Runtime::Docker { .. }) => "C@D",
+        (Provider::Codex, Runtime::Host) => "X@H",
+        (Provider::Codex, Runtime::Docker { .. }) => "X@D",
+        (Provider::Other(_), Runtime::Host) => "?@H",
+        (Provider::Other(_), Runtime::Docker { .. }) => "?@D",
+    }
+}
+
+fn editable_response_lines(label: &str, input: &str) -> Vec<Line<'static>> {
+    if input.is_empty() {
+        return vec![Line::from(Span::styled(
+            format!("❯ {label}"),
+            Style::default().fg(DIM),
+        ))];
+    }
+    input_lines(input)
+        .into_iter()
+        .enumerate()
+        .map(|(index, line)| {
+            Line::from(Span::styled(
+            format!(
+                "{}{}",
+                if index == 0 { "❯ " } else { "" },
+                sanitize_inline(&line)
+            ),
+                Style::default().fg(FG),
+            ))
+        })
+        .collect()
+}
+
+fn input_lines(input: &str) -> Vec<String> {
+    let lines = input.split('\n').collect::<Vec<_>>();
+    lines
+        .iter()
+        .skip(lines.len().saturating_sub(5))
+        .copied()
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn input_line_count(input: &str) -> u16 {
+    input.split('\n').count().min(5) as u16
+}
+
 fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let lines = pack_help_actions(help_actions(app), area.width.saturating_sub(2) as usize)
         .into_iter()
-        .map(|line| Line::from(format!("  {line}")))
+        .map(|line| Line::from(format!("  {}", sanitize_inline(&line))))
         .collect::<Vec<_>>();
     frame.render_widget(
         Paragraph::new(lines)
@@ -373,9 +497,9 @@ fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
 fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let footer = if let Some(notice) = &app.notice {
-        notice.clone()
+        sanitize_inline(notice)
     } else if let Some(warning) = app.snapshot.warnings.first() {
-        format!("warning: {warning}")
+        format!("warning: {}", sanitize_inline(warning))
     } else {
         contextual_footer(app, area.width)
     };
@@ -595,55 +719,6 @@ fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<String> {
     lines
 }
 
-fn render_details(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let Some(session) = app.selected_session() else {
-        return;
-    };
-    let popup = centered_rect(86, 80, area);
-    frame.render_widget(Clear, popup);
-    let capabilities = session
-        .capabilities
-        .iter()
-        .map(|capability| format!("{capability:?}"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(&session.name, Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(
-                format!("  {} @ {}", session.provider, session.runtime.label()),
-                Style::default().fg(DIM),
-            ),
-        ]),
-        Line::default(),
-        Line::from(format!("state: {:?}", session.state)),
-        Line::from(format!("session: {}", session.provider_session_id)),
-        Line::from(format!("directory: {}", session.cwd.display())),
-        Line::from(format!("pid: {}", session.pid.map_or("—".into(), |pid| pid.to_string()))),
-        Line::from(format!("capabilities: {capabilities}")),
-        Line::default(),
-        Line::from(if session.summary.is_empty() {
-            "No provider summary is available.".into()
-        } else {
-            session.summary.clone()
-        }),
-        Line::default(),
-        Line::from(Span::styled("esc to return", Style::default().fg(DIM))),
-    ];
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .title(" session details ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(ACCENT)),
-            )
-            .style(Style::default().bg(BG).fg(FG))
-            .wrap(Wrap { trim: false }),
-        popup,
-    );
-}
-
 fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, area: Rect) {
     let popup = centered_rect(72, 30, area);
     frame.render_widget(Clear, popup);
@@ -663,7 +738,7 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
         ),
     };
     frame.render_widget(
-        Paragraph::new(message)
+        Paragraph::new(sanitize_multiline(&message))
             .block(
                 Block::default()
                     .title(" confirm action ")
@@ -688,7 +763,7 @@ fn provider_summary(app: &App) -> String {
     if labels.is_empty() {
         "Claude + Codex".into()
     } else {
-        labels.join(" + ")
+        sanitize_inline(&labels.join(" + "))
     }
 }
 
@@ -747,15 +822,60 @@ fn format_age(age: Option<Duration>) -> String {
 }
 
 fn truncate(input: &str, width: usize) -> String {
-    if input.chars().count() <= width {
-        return input.into();
+    let input = sanitize_inline(input);
+    if display_width(&input) <= width {
+        return input;
     }
     if width <= 1 {
         return "…".into();
     }
-    let mut output: String = input.chars().take(width - 1).collect();
+    let mut output = String::new();
+    let mut used = 0;
+    for grapheme in input.graphemes(true) {
+        let grapheme_width = display_width(grapheme);
+        if used + grapheme_width + 1 > width {
+            break;
+        }
+        output.push_str(grapheme);
+        used += grapheme_width;
+    }
     output.push('…');
     output
+}
+
+fn pad_to_width(mut input: String, width: usize) -> String {
+    let padding = width.saturating_sub(display_width(&input));
+    input.extend(std::iter::repeat(' ').take(padding));
+    input
+}
+
+fn display_width(input: &str) -> usize {
+    Line::from(input).width()
+}
+
+fn sanitize_inline(input: &str) -> String {
+    input
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                '�'
+            } else {
+                character
+            }
+        })
+        .collect()
+}
+
+fn sanitize_multiline(input: &str) -> String {
+    input
+        .chars()
+        .map(|character| match character {
+            '\n' => '\n',
+            '\t' => ' ',
+            character if character.is_control() => '�',
+            character => character,
+        })
+        .collect()
 }
 
 fn header_directory(app: &App) -> String {
@@ -775,7 +895,7 @@ fn header_directory(app: &App) -> String {
     };
     selected_directory
         .or_else(|| std::env::current_dir().ok())
-        .map(|path| abbreviate_path(&path))
+        .map(|path| sanitize_inline(&abbreviate_path(&path)))
         .unwrap_or_else(|| "unknown directory".into())
 }
 
@@ -848,6 +968,63 @@ mod tests {
     }
 
     #[test]
+    fn compact_row_marker_preserves_summary_space_and_peek_shows_full_runtime() {
+        let mut item = session("worker", SessionState::Working);
+        item.provider = Provider::Codex;
+        item.runtime = Runtime::Docker {
+            container_id: "a".repeat(64),
+            container_name: "long-container-name-that-must-not-shrink-the-row".into(),
+            image: "example/image@sha256:digest".into(),
+        };
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let row = buffer_text(terminal.backend().buffer());
+        assert!(row.contains("X@D"));
+        assert!(row.contains("latest summary from worker"));
+        assert!(!row.contains("long-container-name-that-must-not-shrink-the-row"));
+
+        app.toggle_peek();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let peek = buffer_text(terminal.backend().buffer());
+        assert!(peek.contains("worker · Codex · long-container-name"));
+    }
+
+    #[test]
+    fn provider_text_cannot_emit_terminal_controls_and_wide_text_stays_bounded() {
+        let mut item = session("unsafe\u{1b}[31m\nname", SessionState::Working);
+        item.summary = "deploy\u{7} summary".into();
+        item.runtime = Runtime::Docker {
+            container_id: "a".repeat(64),
+            container_name: "container\u{1b}[2J".into(),
+            image: "example/image@sha256:digest".into(),
+        };
+        let app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec!["warning\u{1b}[2J\ncontinued".into()],
+        });
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(!rendered.contains('\u{1b}'));
+        assert!(!rendered.contains('\u{7}'));
+        assert!(rendered.contains('�'));
+        assert!(rendered.contains("warning�[2J�continued"));
+
+        let truncated = truncate("部署版本", 5);
+        assert_eq!(truncated, "部署…");
+        assert_eq!(display_width(&truncated), 5);
+        assert_eq!(display_width(&pad_to_width(truncate("部署", 8), 8)), 8);
+    }
+
+    #[test]
     fn tiny_terminals_render_a_clear_minimum_size_message() {
         let app = App::new(SessionSnapshot::default());
         let backend = TestBackend::new(31, 7);
@@ -855,7 +1032,92 @@ mod tests {
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
 
-        assert!(buffer_text(terminal.backend().buffer()).contains("needs at least"));
+        let rendered = buffer_text(terminal.backend().buffer());
+        assert!(rendered.contains("coding-agents needs"));
+        assert!(rendered.contains("at least 32×8"));
+    }
+
+    #[test]
+    fn empty_dashboard_preserves_the_reference_section_anatomy() {
+        let app = App::new(SessionSnapshot::default());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("Needs input"));
+        assert!(rendered.contains("question or need your decision"));
+        assert!(rendered.contains("Working"));
+        assert!(rendered.contains("actively working"));
+        assert!(rendered.contains("Completed"));
+        assert!(rendered.contains("wait here for you to review"));
+        assert!(rendered.contains("Hand off a substantial task below"));
+    }
+
+    #[test]
+    fn an_empty_filter_result_does_not_show_onboarding_copy() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("worker", SessionState::Working)],
+            warnings: vec![],
+        });
+        app.filter = "no-match".into();
+        app.replace_snapshot(app.snapshot.clone());
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("No sessions match the current filter"));
+        assert!(!rendered.contains("Hand off a substantial task below"));
+    }
+
+    #[test]
+    fn multiline_composer_expands_and_renders_each_input_line() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.start_new_session(None);
+        for character in "first line\nsecond line\nthird line".chars() {
+            app.push_input(character);
+        }
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("❯ first line"));
+        assert!(rendered.contains("second line"));
+        assert!(rendered.contains("third line"));
+        assert!(rendered.contains("ctrl+j for newline"));
+    }
+
+    #[test]
+    fn multiline_peek_keeps_the_latest_summary_and_draft_visible() {
+        let mut item = session("worker", SessionState::Working);
+        item.capabilities.insert(Capability::Reply);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_peek();
+        app.set_detail(
+            "worker".into(),
+            "old line\nnew provider detail".into(),
+        );
+        for character in "first reply line\nsecond reply line".chars() {
+            app.push_input(character);
+        }
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("new provider detail"));
+        assert!(rendered.contains("❯ first reply line"));
+        assert!(rendered.contains("second reply line"));
+        assert!(rendered.contains("enter to send"));
     }
 
     #[test]

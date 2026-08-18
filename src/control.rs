@@ -34,6 +34,7 @@ pub struct ControlHub {
     docker_bin: String,
     launch_provider: Provider,
     launch_cwd: PathBuf,
+    provider_io_enabled: bool,
 }
 
 impl ControlHub {
@@ -45,14 +46,19 @@ impl ControlHub {
         docker_bin: impl Into<String>,
         launch_provider: Provider,
         launch_cwd: PathBuf,
+        provider_io_enabled: bool,
     ) -> Result<Self> {
         let claude_bin = claude_bin.into();
         let codex_bin = codex_bin.into();
-        let registry = OwnershipRegistry::load(default_registry_path()?)?;
+        let claude = if provider_io_enabled && claude_enabled {
+            let registry = OwnershipRegistry::load(default_registry_path()?)?;
+            Some(ClaudeController::host(claude_bin.clone(), registry))
+        } else {
+            None
+        };
         Ok(Self {
-            claude: claude_enabled
-                .then(|| ClaudeController::host(claude_bin.clone(), registry)),
-            codex: if codex_enabled {
+            claude,
+            codex: if provider_io_enabled && codex_enabled {
                 Some(Arc::new(CodexSupervisor::host(codex_bin.clone())?))
             } else {
                 None
@@ -62,17 +68,12 @@ impl ControlHub {
             docker_bin: docker_bin.into(),
             launch_provider,
             launch_cwd,
+            provider_io_enabled,
         })
     }
 
     pub fn enrich(&self, snapshot: &mut SessionSnapshot) {
         for session in &mut snapshot.sessions {
-            match session.provider {
-                Provider::Claude | Provider::Codex => {
-                    session.capabilities.insert(Capability::Resume);
-                }
-                Provider::Other(_) => {}
-            }
             if self
                 .claude
                 .as_ref()
@@ -92,6 +93,7 @@ impl ControlHub {
     }
 
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         let request = LaunchRequest {
             provider: self.launch_provider.clone(),
             prompt,
@@ -119,6 +121,7 @@ impl ControlHub {
     }
 
     pub fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         match session.provider {
             Provider::Claude => self
                 .claude
@@ -143,6 +146,7 @@ impl ControlHub {
     }
 
     pub fn inspect(&self, session: &AgentSession) -> Result<String> {
+        self.ensure_provider_io()?;
         match (&session.provider, &session.runtime) {
             (Provider::Claude, Runtime::Host) => {
                 let mut request = CommandRequest::new(
@@ -179,6 +183,7 @@ impl ControlHub {
     }
 
     pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         if !session.capabilities.contains(&Capability::Reply) {
             bail!("reply authority was not granted for this session");
         }
@@ -201,6 +206,7 @@ impl ControlHub {
     }
 
     pub fn archive(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         if !session.capabilities.contains(&Capability::Archive) {
             bail!("archive authority was not granted for this session");
         }
@@ -219,6 +225,7 @@ impl ControlHub {
         session: &AgentSession,
         accept: bool,
     ) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         let required = if accept {
             Capability::Approve
         } else {
@@ -249,6 +256,7 @@ impl ControlHub {
         session: &AgentSession,
         answer: &str,
     ) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         if !session.capabilities.contains(&Capability::Respond) {
             bail!("structured-input authority was not granted for this session");
         }
@@ -278,6 +286,7 @@ impl ControlHub {
     }
 
     pub fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         if !session.capabilities.contains(&Capability::Delete) {
             bail!("delete authority was not granted for this session");
         }
@@ -292,6 +301,7 @@ impl ControlHub {
     }
 
     pub fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
         let managed_codex_remote = self
             .codex
             .as_ref()
@@ -358,6 +368,13 @@ impl ControlHub {
             message: format!("returned from {}", session.name),
             provider_session_hint: None,
         })
+    }
+
+    fn ensure_provider_io(&self) -> Result<()> {
+        if !self.provider_io_enabled {
+            bail!("provider actions are disabled while reading a fixture");
+        }
+        Ok(())
     }
 }
 
@@ -729,6 +746,254 @@ mod tests {
         assert!(controller.owns(&session(
             "4b34abd1-91dc-4b50-a43f-6db2837576fe"
         )));
+    }
+
+    #[test]
+    fn fixture_mode_fences_every_provider_io_path_before_dispatch() {
+        let directory = tempdir().unwrap();
+        let hub = ControlHub {
+            claude: None,
+            codex: None,
+            claude_bin: "must-not-run-claude".into(),
+            codex_bin: "must-not-run-codex".into(),
+            docker_bin: "must-not-run-docker".into(),
+            launch_provider: Provider::Claude,
+            launch_cwd: directory.path().into(),
+            provider_io_enabled: false,
+        };
+        let mut item = session("fixture-session");
+        item.provider = Provider::Codex;
+        item.capabilities.extend([
+            Capability::Inspect,
+            Capability::Reply,
+            Capability::Approve,
+            Capability::Decline,
+            Capability::Respond,
+            Capability::Interrupt,
+            Capability::Archive,
+            Capability::Delete,
+        ]);
+
+        let assert_fenced = |result: Result<ControlOutcome>| {
+            let error = result.unwrap_err().to_string();
+            assert_eq!(error, "provider actions are disabled while reading a fixture");
+        };
+        assert_fenced(hub.launch("prompt".into()));
+        assert_fenced(hub.interrupt(&item));
+        assert_eq!(
+            hub.inspect(&item).unwrap_err().to_string(),
+            "provider actions are disabled while reading a fixture"
+        );
+        assert_fenced(hub.reply(&item, "reply"));
+        assert_fenced(hub.archive(&item));
+        assert_fenced(hub.resolve_approval(&item, true));
+        assert_fenced(hub.resolve_approval(&item, false));
+        assert_fenced(hub.respond_input(&item, "answer"));
+        assert_fenced(hub.delete(&item));
+        assert_fenced(hub.open(&item));
+        assert!(hub.codex_supervisor().is_none());
+    }
+
+    fn uncontrolled_hub(launch_provider: Provider) -> ControlHub {
+        ControlHub {
+            claude: None,
+            codex: None,
+            claude_bin: "must-not-run-claude".into(),
+            codex_bin: "must-not-run-codex".into(),
+            docker_bin: "must-not-run-docker".into(),
+            launch_provider,
+            launch_cwd: PathBuf::from("/work"),
+            provider_io_enabled: true,
+        }
+    }
+
+    #[test]
+    fn control_hub_refuses_missing_capabilities_before_codex_dispatch() {
+        let hub = uncontrolled_hub(Provider::Codex);
+        let mut item = session("thread");
+        item.provider = Provider::Codex;
+
+        assert_eq!(
+            hub.reply(&item, "reply").unwrap_err().to_string(),
+            "reply authority was not granted for this session"
+        );
+        assert_eq!(
+            hub.archive(&item).unwrap_err().to_string(),
+            "archive authority was not granted for this session"
+        );
+        assert_eq!(
+            hub.resolve_approval(&item, true).unwrap_err().to_string(),
+            "inline approval authority was not granted for this session"
+        );
+        assert_eq!(
+            hub.resolve_approval(&item, false).unwrap_err().to_string(),
+            "inline approval authority was not granted for this session"
+        );
+        assert_eq!(
+            hub.respond_input(&item, "answer").unwrap_err().to_string(),
+            "structured-input authority was not granted for this session"
+        );
+        assert_eq!(
+            hub.delete(&item).unwrap_err().to_string(),
+            "delete authority was not granted for this session"
+        );
+    }
+
+    #[test]
+    fn inline_codex_controls_require_the_exact_host_provider_runtime() {
+        let hub = uncontrolled_hub(Provider::Codex);
+        let mut claude = session("claude");
+        claude.capabilities.extend([
+            Capability::Reply,
+            Capability::Approve,
+            Capability::Respond,
+        ]);
+        assert_eq!(
+            hub.reply(&claude, "reply").unwrap_err().to_string(),
+            "inline reply is supported only for owned host Codex threads"
+        );
+        assert_eq!(
+            hub.resolve_approval(&claude, true).unwrap_err().to_string(),
+            "inline approvals are supported only for owned host Codex threads"
+        );
+        assert_eq!(
+            hub.respond_input(&claude, "answer").unwrap_err().to_string(),
+            "structured input is supported only for owned host Codex threads"
+        );
+
+        let mut docker_codex = claude;
+        docker_codex.provider = Provider::Codex;
+        docker_codex.runtime = Runtime::Docker {
+            container_name: "fixture".into(),
+            container_id: "immutable".into(),
+            image: "fixture@sha256:exact".into(),
+        };
+        assert!(hub.reply(&docker_codex, "reply").is_err());
+        assert!(hub.resolve_approval(&docker_codex, false).is_err());
+        assert!(hub.respond_input(&docker_codex, "answer").is_err());
+    }
+
+    #[test]
+    fn unsupported_or_disabled_provider_routes_fail_locally() {
+        let unsupported = Provider::Other("future-agent".into());
+        let hub = uncontrolled_hub(unsupported.clone());
+        let mut item = session("other");
+        item.provider = unsupported;
+
+        assert!(hub
+            .launch("prompt".into())
+            .unwrap_err()
+            .to_string()
+            .contains("no launch controller"));
+        assert!(hub
+            .interrupt(&item)
+            .unwrap_err()
+            .to_string()
+            .contains("no controller"));
+        assert!(hub
+            .inspect(&item)
+            .unwrap_err()
+            .to_string()
+            .contains("cannot inspect unsupported provider"));
+
+        let claude_hub = uncontrolled_hub(Provider::Claude);
+        assert_eq!(
+            claude_hub.launch("prompt".into()).unwrap_err().to_string(),
+            "host Claude launch is disabled"
+        );
+        let codex_hub = uncontrolled_hub(Provider::Codex);
+        assert_eq!(
+            codex_hub.launch("prompt".into()).unwrap_err().to_string(),
+            "host Codex launch is disabled"
+        );
+    }
+
+    #[test]
+    fn docker_codex_inspection_is_refused_without_invoking_docker() {
+        let hub = uncontrolled_hub(Provider::Codex);
+        let mut item = session("docker-thread");
+        item.provider = Provider::Codex;
+        item.runtime = Runtime::Docker {
+            container_name: "fixture".into(),
+            container_id: "immutable".into(),
+            image: "fixture@sha256:exact".into(),
+        };
+
+        assert_eq!(
+            hub.inspect(&item).unwrap_err().to_string(),
+            "Docker Codex transcript inspection is observe-only"
+        );
+    }
+
+    #[test]
+    fn claude_launch_rejects_empty_failed_and_unparseable_results() {
+        let directory = tempdir().unwrap();
+        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        let runner = Arc::new(FakeRunner {
+            requests: Mutex::new(Vec::new()),
+            output: Mutex::new(Some(CommandOutput {
+                status: 7,
+                stdout: vec![],
+                stderr: b"provider failure".to_vec(),
+            })),
+        });
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: "claude-test".into(),
+                prefix_args: Vec::new(),
+            },
+            runtime: Runtime::Host,
+            runner: runner.clone(),
+            registry: Arc::new(Mutex::new(registry)),
+        };
+        assert_eq!(
+            controller
+                .launch(&LaunchRequest {
+                    provider: Provider::Claude,
+                    prompt: "   ".into(),
+                    cwd: PathBuf::from("/work"),
+                })
+                .unwrap_err()
+                .to_string(),
+            "the launch prompt cannot be empty"
+        );
+        assert!(runner.requests.lock().unwrap().is_empty());
+        assert!(controller
+            .launch(&LaunchRequest {
+                provider: Provider::Claude,
+                prompt: "prompt".into(),
+                cwd: PathBuf::from("/work"),
+            })
+            .unwrap_err()
+            .to_string()
+            .contains("status 7"));
+
+        let registry = OwnershipRegistry::load(directory.path().join("other.json")).unwrap();
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: "claude-test".into(),
+                prefix_args: Vec::new(),
+            },
+            runtime: Runtime::Host,
+            runner: Arc::new(FakeRunner {
+                requests: Mutex::new(Vec::new()),
+                output: Mutex::new(Some(CommandOutput {
+                    status: 0,
+                    stdout: b"unexpected success output".to_vec(),
+                    stderr: vec![],
+                })),
+            }),
+            registry: Arc::new(Mutex::new(registry)),
+        };
+        assert!(controller
+            .launch(&LaunchRequest {
+                provider: Provider::Claude,
+                prompt: "prompt".into(),
+                cwd: PathBuf::from("/work"),
+            })
+            .unwrap_err()
+            .to_string()
+            .contains("did not return a background session ID"));
     }
 
     struct FakeRunner {

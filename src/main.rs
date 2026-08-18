@@ -173,6 +173,7 @@ fn main() -> Result<()> {
         }
         return Ok(());
     }
+    let provider_io_enabled = provider_io_enabled(&cli);
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,
@@ -189,6 +190,7 @@ fn main() -> Result<()> {
         cli.docker_bin.clone(),
         launch_provider,
         launch_cwd,
+        provider_io_enabled,
     )?;
 
     let mut engine = DiscoveryEngine::new();
@@ -246,18 +248,17 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+fn provider_io_enabled(cli: &Cli) -> bool {
+    cli.fixture.is_none()
+}
+
 fn run_docker_command(
     command: &DockerCommand,
     docker_bin: &str,
     registry_path: Option<PathBuf>,
     json: bool,
 ) -> Result<()> {
-    if matches!(command, DockerCommand::Stop { yes: false, .. }) {
-        bail!("refusing to stop without --yes after verifying the exact managed target");
-    }
-    if matches!(command, DockerCommand::Remove { yes: false, .. }) {
-        bail!("refusing to remove without --yes; stop and verify the target first");
-    }
+    require_destructive_confirmation(command)?;
     let registry_path = match registry_path {
         Some(path) => path,
         None => default_managed_docker_registry_path()?,
@@ -323,6 +324,16 @@ fn run_docker_command(
     Ok(())
 }
 
+fn require_destructive_confirmation(command: &DockerCommand) -> Result<()> {
+    if matches!(command, DockerCommand::Stop { yes: false, .. }) {
+        bail!("refusing to stop without --yes after verifying the exact managed target");
+    }
+    if matches!(command, DockerCommand::Remove { yes: false, .. }) {
+        bail!("refusing to remove without --yes; stop and verify the target first");
+    }
+    Ok(())
+}
+
 fn print_managed_statuses(statuses: &[ManagedDockerStatus], json: bool) -> Result<()> {
     if json {
         serde_json::to_writer_pretty(io::stdout().lock(), statuses)?;
@@ -360,6 +371,16 @@ fn current_user_ids() -> Result<(u32, u32)> {
 mod tests {
     use super::*;
 
+    fn docker_command(arguments: &[&str]) -> DockerCommand {
+        let mut argv = vec!["coding-agents", "docker"];
+        argv.extend_from_slice(arguments);
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Some(Commands::Docker { command }) = cli.command else {
+            panic!("expected a Docker command");
+        };
+        command
+    }
+
     #[test]
     fn parses_digest_pinned_managed_create_command() {
         let cli = Cli::try_parse_from([
@@ -396,5 +417,174 @@ mod tests {
                 command: DockerCommand::Remove { yes: false, .. }
             })
         ));
+    }
+
+    #[test]
+    fn parses_every_non_destructive_managed_docker_subcommand_exactly() {
+        assert_eq!(docker_command(&["list"]), DockerCommand::List);
+        assert_eq!(
+            docker_command(&["status", "oav-agent"]),
+            DockerCommand::Status {
+                container: "oav-agent".into()
+            }
+        );
+        assert_eq!(
+            docker_command(&["start", "sha256:exact"]),
+            DockerCommand::Start {
+                container: "sha256:exact".into()
+            }
+        );
+    }
+
+    #[test]
+    fn parses_all_managed_create_fields_without_shell_interpretation() {
+        assert_eq!(
+            docker_command(&[
+                "create",
+                "--name",
+                "name with spaces",
+                "--image",
+                "registry/image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "--workspace",
+                "/work space",
+                "--state-home",
+                "/state space",
+                "--network",
+                "none",
+                "--uid",
+                "1234",
+                "--gid",
+                "5678",
+            ]),
+            DockerCommand::Create {
+                name: "name with spaces".into(),
+                image: "registry/image@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
+                workspace: PathBuf::from("/work space"),
+                state_home: PathBuf::from("/state space"),
+                network: "none".into(),
+                uid: Some(1234),
+                gid: Some(5678),
+            }
+        );
+    }
+
+    #[test]
+    fn stop_and_remove_parse_confirmation_as_false_unless_explicit() {
+        assert_eq!(
+            docker_command(&["stop", "agent"]),
+            DockerCommand::Stop {
+                container: "agent".into(),
+                yes: false
+            }
+        );
+        assert_eq!(
+            docker_command(&["stop", "agent", "--yes"]),
+            DockerCommand::Stop {
+                container: "agent".into(),
+                yes: true
+            }
+        );
+        assert_eq!(
+            docker_command(&["remove", "agent"]),
+            DockerCommand::Remove {
+                container: "agent".into(),
+                yes: false
+            }
+        );
+        assert_eq!(
+            docker_command(&["remove", "agent", "--yes"]),
+            DockerCommand::Remove {
+                container: "agent".into(),
+                yes: true
+            }
+        );
+    }
+
+    #[test]
+    fn confirmation_gate_blocks_only_unconfirmed_destructive_commands() {
+        let stop = docker_command(&["stop", "agent"]);
+        assert_eq!(
+            require_destructive_confirmation(&stop)
+                .unwrap_err()
+                .to_string(),
+            "refusing to stop without --yes after verifying the exact managed target"
+        );
+        let remove = docker_command(&["remove", "agent"]);
+        assert_eq!(
+            require_destructive_confirmation(&remove)
+                .unwrap_err()
+                .to_string(),
+            "refusing to remove without --yes; stop and verify the target first"
+        );
+
+        for command in [
+            docker_command(&["list"]),
+            docker_command(&["status", "agent"]),
+            docker_command(&["start", "agent"]),
+            docker_command(&["stop", "agent", "--yes"]),
+            docker_command(&["remove", "agent", "--yes"]),
+        ] {
+            require_destructive_confirmation(&command).unwrap();
+        }
+    }
+
+    #[test]
+    fn malformed_docker_commands_are_rejected_during_parsing() {
+        for arguments in [
+            vec!["coding-agents", "docker"],
+            vec!["coding-agents", "docker", "status"],
+            vec!["coding-agents", "docker", "start"],
+            vec!["coding-agents", "docker", "create", "--name", "agent"],
+            vec!["coding-agents", "docker", "stop", "agent", "--yes=true"],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+    }
+
+    #[test]
+    fn dashboard_cli_parses_fixture_and_safety_related_options() {
+        let cli = Cli::try_parse_from([
+            "coding-agents",
+            "--fixture",
+            "/tmp/snapshot.json",
+            "--no-host-claude",
+            "--no-host-codex",
+            "--all",
+            "--include-interactive",
+            "--cwd",
+            "/project",
+            "--launch-provider",
+            "codex",
+            "--launch-cwd",
+            "/launch",
+            "--refresh-ms",
+            "250",
+            "--docker-container",
+            "explicit-container",
+        ])
+        .unwrap();
+
+        assert_eq!(cli.fixture, Some(PathBuf::from("/tmp/snapshot.json")));
+        assert!(cli.no_host_claude);
+        assert!(cli.no_host_codex);
+        assert!(cli.all);
+        assert!(cli.include_interactive);
+        assert_eq!(cli.cwd, Some(PathBuf::from("/project")));
+        assert_eq!(cli.launch_provider, LaunchProvider::Codex);
+        assert_eq!(cli.launch_cwd, Some(PathBuf::from("/launch")));
+        assert_eq!(cli.refresh_ms, 250);
+        assert_eq!(cli.docker_containers, vec!["explicit-container"]);
+        assert!(!provider_io_enabled(&cli));
+    }
+
+    #[test]
+    fn live_discovery_mode_keeps_provider_io_enabled() {
+        let cli = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
+        assert!(provider_io_enabled(&cli));
+    }
+
+    #[test]
+    fn refresh_interval_below_the_supported_floor_is_rejected() {
+        assert!(Cli::try_parse_from(["coding-agents", "--refresh-ms", "249"]).is_err());
     }
 }
