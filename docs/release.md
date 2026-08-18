@@ -6,13 +6,11 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-No tag or GitHub release has been published yet. The Cargo package version is
-development metadata, not evidence of a downloadable release. The repository
-is private, so a future preview release will require an authenticated GitHub
-account until the project is made public.
-
-Do not present the one-line installer as usable until the first GitHub release
-contains the archive and checksum for every supported target:
+Version 0.1.0 is the initial private preview release. The repository is
+private, so preview installation requires an authenticated GitHub account until
+the project is made public. A version tag alone is not sufficient: present the
+one-line installer as usable only after its GitHub release contains the archive
+and checksum for every supported target:
 
 ```text
 open-agent-view-VERSION-x86_64-unknown-linux-gnu.tar.gz
@@ -43,7 +41,7 @@ The Ubuntu 22.04 builders establish a glibc 2.35 floor. Windows and older
 GNU/Linux systems are not release targets yet. The installer fails clearly on
 those systems instead of downloading an incompatible binary.
 
-## Prepare the first release
+## Prepare a release
 
 Before creating a tag:
 

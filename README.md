@@ -12,10 +12,10 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is a private pre-alpha. The no-Rust binary installer and
-> four-platform release pipeline are ready, but no GitHub release has been
-> published yet. A maintainer-approved first release is still required before
-> either installation command below can download a binary.
+> Open Agent View is an early private preview. Prebuilt releases cover Linux
+> and macOS on x86-64 and ARM64; collaborators authenticate with GitHub to
+> install them. Provider capabilities and compatibility boundaries may still
+> evolve before a public stable release.
 
 ## Why Open Agent View?
 
@@ -32,8 +32,8 @@ open, provider-neutral project.
 
 ## Install
 
-Once the first private release exists, collaborators can install with their
-existing GitHub authentication—no Rust, Cargo, or source checkout:
+Collaborators can install from the private release with their existing GitHub
+authentication—no Rust, Cargo, or source checkout:
 
 `gh` is GitHub's official CLI and is required only to authenticate to this
 private repository.

@@ -5,10 +5,10 @@ installation downloads a verified prebuilt binary: Rust and Cargo are not user
 prerequisites.
 
 > [!IMPORTANT]
-> The repository is currently private and has no published release. The
-> installer is implemented and tested, but there is no binary for it to
-> download until a maintainer approves and publishes the first release. See the
-> [release guide](release.md) for the exact boundary.
+> The repository and its preview releases are currently private. An authorized
+> GitHub account is required to read the installer and download release assets.
+> See the [release guide](release.md) for the packaging and verification
+> contract.
 
 ## Supported platforms
 
@@ -24,13 +24,13 @@ GitHub-hosted runner. The installer detects the host and stops with an
 explanation on unsupported systems.
 
 The dashboard needs an interactive terminal. `--json` works without a TTY.
-Claude Code, Codex, and Docker are optional; install only the providers you
+All provider CLIs and Docker are optional; install only the providers you
 intend to supervise.
 
 ## One-line installation
 
-Once a release exists, an authorized user of the current private repository can
-fetch the installer and release with GitHub CLI authentication:
+An authorized user of the current private repository can fetch the installer
+and release with GitHub CLI authentication:
 
 ```console
 gh auth login
