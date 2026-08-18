@@ -54,12 +54,25 @@ impl DiscoveryEngine {
 
     pub fn discover(&self, request: &DiscoveryRequest) -> SessionSnapshot {
         let mut snapshot = SessionSnapshot::default();
-        for source in &self.sources {
-            match source.discover(request) {
-                Ok(mut sessions) => snapshot.sessions.append(&mut sessions),
-                Err(error) => snapshot
+        let results = std::thread::scope(|scope| {
+            self.sources
+                .iter()
+                .map(|source| {
+                    let label = source.label().to_owned();
+                    (label, scope.spawn(|| source.discover(request)))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|(label, worker)| (label, worker.join()))
+                .collect::<Vec<_>>()
+        });
+        for (label, result) in results {
+            match result {
+                Ok(Ok(mut sessions)) => snapshot.sessions.append(&mut sessions),
+                Ok(Err(error)) => snapshot.warnings.push(format!("{label}: {error:#}")),
+                Err(_) => snapshot
                     .warnings
-                    .push(format!("{}: {error:#}", source.label())),
+                    .push(format!("{label}: provider discovery panicked")),
             }
         }
         snapshot.sort_for_display();
@@ -69,11 +82,21 @@ impl DiscoveryEngine {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Condvar, Mutex};
+    use std::time::Duration;
+
     use anyhow::anyhow;
 
     use super::*;
 
     struct BrokenSource;
+
+    struct PanickingSource;
+
+    struct CoordinatedSource {
+        label: &'static str,
+        arrivals: Arc<(Mutex<usize>, Condvar)>,
+    }
 
     impl SessionSource for BrokenSource {
         fn label(&self) -> &str {
@@ -82,6 +105,36 @@ mod tests {
 
         fn discover(&self, _: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
             Err(anyhow!("unavailable"))
+        }
+    }
+
+    impl SessionSource for PanickingSource {
+        fn label(&self) -> &str {
+            "panicking"
+        }
+
+        fn discover(&self, _: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+            panic!("provider bug")
+        }
+    }
+
+    impl SessionSource for CoordinatedSource {
+        fn label(&self) -> &str {
+            self.label
+        }
+
+        fn discover(&self, _: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+            let (arrivals, ready) = &*self.arrivals;
+            let mut count = arrivals.lock().expect("lock arrival count");
+            *count += 1;
+            ready.notify_all();
+            let (count, _) = ready
+                .wait_timeout_while(count, Duration::from_secs(2), |count| *count < 2)
+                .expect("wait for concurrent source");
+            if *count < 2 {
+                return Err(anyhow!("other provider was not polled concurrently"));
+            }
+            Ok(Vec::new())
         }
     }
 
@@ -94,5 +147,42 @@ mod tests {
 
         assert!(snapshot.sessions.is_empty());
         assert_eq!(snapshot.warnings, vec!["broken: unavailable"]);
+    }
+
+    #[test]
+    fn one_source_panic_does_not_hide_other_providers() {
+        let mut engine = DiscoveryEngine::new();
+        engine.add_source(PanickingSource);
+        engine.add_source(CoordinatedSource {
+            label: "healthy",
+            arrivals: Arc::new((Mutex::new(2), Condvar::new())),
+        });
+
+        let snapshot = engine.discover(&DiscoveryRequest::default());
+
+        assert!(snapshot.sessions.is_empty());
+        assert_eq!(
+            snapshot.warnings,
+            vec!["panicking: provider discovery panicked"]
+        );
+    }
+
+    #[test]
+    fn enabled_sources_are_polled_concurrently() {
+        let arrivals = Arc::new((Mutex::new(0), Condvar::new()));
+        let mut engine = DiscoveryEngine::new();
+        engine.add_source(CoordinatedSource {
+            label: "one",
+            arrivals: arrivals.clone(),
+        });
+        engine.add_source(CoordinatedSource {
+            label: "two",
+            arrivals,
+        });
+
+        let snapshot = engine.discover(&DiscoveryRequest::default());
+
+        assert!(snapshot.sessions.is_empty());
+        assert!(snapshot.warnings.is_empty());
     }
 }
