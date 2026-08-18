@@ -1,5 +1,6 @@
 mod claude;
 mod codex;
+mod copilot;
 mod docker;
 mod fixture;
 mod managed_docker;
@@ -13,6 +14,11 @@ use anyhow::Result;
 
 pub use claude::{parse_claude_sessions, ClaudeSource};
 pub use codex::{parse_codex_thread_list, CodexSource};
+pub use copilot::{
+    normalize_copilot_sessions, parse_copilot_session_page, CopilotAcpCapabilities,
+    CopilotAcpConnection, CopilotAcpMessage, CopilotAcpMode, CopilotPermissionOption,
+    CopilotPermissionRequest, CopilotSessionInfo, CopilotSessionPage, CopilotSource,
+};
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
 pub use managed_docker::{
@@ -25,8 +31,10 @@ pub use managed_docker_registry::{
     default_managed_docker_registry_path, generate_managed_instance_id, ManagedDockerRegistry,
     ManagedDockerService, ManagedDockerState, ManagedDockerStatus,
 };
-pub use opencode::{parse_opencode_session_list, OpenCodeInvocation, OpenCodeSource};
-pub use pi::{default_pi_session_dir, parse_pi_session, PiSource};
+pub use opencode::{
+    parse_opencode_session_list, OpenCodeController, OpenCodeInvocation, OpenCodeSource,
+};
+pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
 
 use crate::domain::{AgentSession, SessionSnapshot};
 

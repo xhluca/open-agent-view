@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::SystemTime;
 
 use anyhow::{bail, Context, Result};
@@ -9,11 +10,65 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{DiscoveryRequest, SessionSource};
+use crate::control::{ControlOutcome, ProviderController};
 use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
 
 /// Read-only discovery of Pi's documented JSONL session store.
 pub struct PiSource {
     session_dir: PathBuf,
+}
+
+/// Read-only history control plus native TUI resume for Pi.
+///
+/// Pi's live RPC transport is stdio-only. This controller intentionally does
+/// not claim reply or interrupt authority over unrelated processes.
+pub struct PiController {
+    executable: String,
+    source: PiSource,
+}
+
+impl PiController {
+    pub fn host(executable: impl Into<String>, session_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            executable: executable.into(),
+            source: PiSource::host(session_dir),
+        }
+    }
+
+    pub fn host_default(executable: impl Into<String>) -> Result<Self> {
+        Ok(Self::host(executable, default_pi_session_dir()?))
+    }
+}
+
+impl ProviderController for PiController {
+    fn provider(&self) -> Provider {
+        Provider::Pi
+    }
+
+    fn inspect(&self, session: &AgentSession) -> Result<String> {
+        self.source.inspect(session)
+    }
+
+    fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if session.provider != Provider::Pi || session.runtime != Runtime::Host {
+            bail!("the host Pi controller does not own this runtime");
+        }
+        let status = Command::new(&self.executable)
+            .args(["--session", &session.provider_session_id])
+            .current_dir(&session.cwd)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("failed to open the Pi session")?;
+        if !status.success() {
+            bail!("Pi session exited with status {status}");
+        }
+        Ok(ControlOutcome {
+            message: format!("returned from Pi session {}", session.name),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
+    }
 }
 
 impl PiSource {
@@ -25,6 +80,19 @@ impl PiSource {
 
     pub fn host_default() -> Result<Self> {
         Ok(Self::host(default_pi_session_dir()?))
+    }
+
+    /// Render a persisted Pi transcript without attaching to or changing it.
+    pub fn inspect(&self, session: &AgentSession) -> Result<String> {
+        if session.provider != Provider::Pi || session.runtime != Runtime::Host {
+            bail!("the Pi source does not own this provider runtime");
+        }
+        let path = find_pi_session_file(&self.session_dir, &session.provider_session_id)?
+            .context("the Pi session file is no longer present")?;
+        let input = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read Pi session {}", path.display()))?;
+        render_pi_transcript(&input)
+            .with_context(|| format!("invalid Pi session {}", path.display()))
     }
 }
 
@@ -94,6 +162,33 @@ fn collect_jsonl_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<()>
         }
     }
     Ok(())
+}
+
+fn find_pi_session_file(directory: &Path, session_id: &str) -> Result<Option<PathBuf>> {
+    if !directory.exists() {
+        return Ok(None);
+    }
+    let mut files = Vec::new();
+    collect_jsonl_files(directory, &mut files)?;
+    if files.len() > 10_000 {
+        bail!("Pi session store exceeded the 10,000-file safety cap");
+    }
+    for path in files {
+        let file = File::open(&path)?;
+        let mut lines = BufReader::new(file).lines();
+        let Some(line) = lines.next() else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&line?) else {
+            continue;
+        };
+        if value.get("type").and_then(Value::as_str) == Some("session")
+            && value.get("id").and_then(Value::as_str) == Some(session_id)
+        {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 fn parse_pi_session_file(
@@ -196,7 +291,7 @@ pub fn parse_pi_session(
     Ok(AgentSession {
         id: format!("pi:host:{}", header.id),
         provider_session_id: header.id,
-        provider: Provider::Other("Pi".into()),
+        provider: Provider::Pi,
         runtime: Runtime::Host,
         kind: SessionKind::Unknown,
         name: name.unwrap_or(fallback_name),
@@ -218,6 +313,72 @@ pub fn parse_pi_session(
         pull_requests: None,
         capabilities: BTreeSet::from([Capability::Inspect]),
     })
+}
+
+fn render_pi_transcript(input: &str) -> Result<String> {
+    let mut transcript = Vec::new();
+    for (index, line) in input.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let value: Value = serde_json::from_str(line)
+            .with_context(|| format!("invalid JSON on Pi session line {}", index + 1))?;
+        if value.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(message) = value.get("message") else {
+            continue;
+        };
+        let role = message.get("role").and_then(Value::as_str).unwrap_or("event");
+        let text = match role {
+            "bashExecution" => message
+                .get("output")
+                .and_then(Value::as_str)
+                .map(|output| {
+                    format!(
+                        "$ {}\n{}",
+                        message
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                        output
+                    )
+                }),
+            _ => message.get("content").and_then(message_text),
+        };
+        if let Some(text) = text.filter(|value| !value.trim().is_empty()) {
+            transcript.push(format!("{}: {}", capitalize(role), text.trim()));
+        }
+    }
+    Ok(limit_transcript(if transcript.is_empty() {
+        "No text messages are available in this Pi session.".into()
+    } else {
+        transcript.join("\n\n")
+    }))
+}
+
+fn capitalize(value: &str) -> String {
+    let mut characters = value.chars();
+    match characters.next() {
+        Some(first) => first.to_uppercase().chain(characters).collect(),
+        None => String::new(),
+    }
+}
+
+fn limit_transcript(mut value: String) -> String {
+    const MAX_CHARS: usize = 32 * 1024;
+    if value.chars().count() <= MAX_CHARS {
+        return value;
+    }
+    value = value
+        .chars()
+        .rev()
+        .take(MAX_CHARS.saturating_sub(24))
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    format!("[earlier output omitted]\n{value}")
 }
 
 fn message_text(content: &Value) -> Option<String> {
@@ -250,6 +411,8 @@ fn truncate_chars(input: &str, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     use tempfile::tempdir;
 
@@ -271,7 +434,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(session.provider, Provider::Other("Pi".into()));
+        assert_eq!(session.provider, Provider::Pi);
         assert_eq!(session.provider_session_id, "123e4567-e89b-12d3-a456-426614174000");
         assert_eq!(session.name, "provider-work");
         assert_eq!(session.state, SessionState::Completed);
@@ -315,6 +478,44 @@ mod tests {
 
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].name, "provider-work");
+    }
+
+    #[test]
+    fn inspect_finds_exact_header_id_and_formats_transcript() {
+        let directory = tempdir().unwrap();
+        fs::write(directory.path().join("one.jsonl"), SESSION).unwrap();
+        let source = PiSource::host(directory.path());
+        let session = parse_pi_session(SESSION, Path::new("one.jsonl"), None, None).unwrap();
+
+        assert_eq!(
+            source.inspect(&session).unwrap(),
+            "User: Implement the provider dashboard\n\nAssistant: The adapter is ready."
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn controller_opens_the_exact_native_session() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("pi-test");
+        fs::write(
+            &executable,
+            "#!/bin/sh\n[ \"$1\" = --session ] && [ \"$2\" = 123e4567-e89b-12d3-a456-426614174000 ]\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable, permissions).unwrap();
+        let input = SESSION.replace("/work/project", &directory.path().display().to_string());
+        let session = parse_pi_session(&input, Path::new("one.jsonl"), None, None).unwrap();
+        let controller = PiController::host(executable.display().to_string(), directory.path());
+
+        let outcome = controller.open(&session).unwrap();
+
+        assert_eq!(
+            outcome.provider_session_hint,
+            Some("123e4567-e89b-12d3-a456-426614174000".into())
+        );
     }
 
     #[test]
