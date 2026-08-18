@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use crate::domain::SessionState;
 
 const RECORD_VERSION: u32 = 1;
+#[cfg(target_os = "linux")]
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
 const RPC_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
@@ -120,6 +121,7 @@ pub struct PiSupervisor {
     state_dir: PathBuf,
     record_path: PathBuf,
     lock_path: PathBuf,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     daemon_exe: PathBuf,
 }
 
@@ -1043,6 +1045,7 @@ fn load_record(path: &Path, state_dir: &Path) -> Result<Option<SupervisorRecord>
     Ok(Some(record))
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
     let temporary = path.with_extension(format!("tmp-{}-{}", std::process::id(), now_millis()));
     let mut options = OpenOptions::new();

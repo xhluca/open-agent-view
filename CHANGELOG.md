@@ -8,7 +8,10 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-08-18
+## [0.1.1] - 2026-08-18
+
+The `v0.1.0` build tag did not publish a GitHub release because its native
+macOS gate exposed a portability error. It was not moved or reused.
 
 ### Added
 
@@ -65,7 +68,7 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Known limitations
 
-- Version 0.1.0 is a private preview rather than a supported public stable
+- Version 0.1.1 is a private preview rather than a supported public stable
   release or package-registry distribution.
 - No authenticated Claude/Codex lifecycle has been recorded inside the fresh
   credential-free Docker TUI probes.

@@ -6,11 +6,13 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.0 is the initial private preview release. The repository is
-private, so preview installation requires an authenticated GitHub account until
-the project is made public. A version tag alone is not sufficient: present the
-one-line installer as usable only after its GitHub release contains the archive
-and checksum for every supported target:
+Version 0.1.1 is the initial private preview release. The unpublished `v0.1.0`
+build tag was retained rather than moved after its native macOS gate exposed a
+portability error. The repository is private, so preview installation requires
+an authenticated GitHub account until the project is made public. A version tag
+alone is not sufficient: present the one-line installer as usable only after
+its GitHub release contains the archive and checksum for every supported
+target:
 
 ```text
 open-agent-view-VERSION-x86_64-unknown-linux-gnu.tar.gz

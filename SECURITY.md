@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-No version is publicly released or supported yet. The private `main` branch is
-a pre-alpha development target and receives best-effort security fixes. The
-`0.1.0` package version does not constitute a supported release.
+No version is publicly stable or supported yet. Private preview releases and
+the `main` branch receive best-effort security fixes; a `0.x` package version
+does not constitute a supported public release.
 
 ## Reporting a vulnerability
 

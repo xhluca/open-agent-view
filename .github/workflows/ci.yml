@@ -30,3 +30,18 @@ jobs:
           toolchain: ${{ matrix.rust }}
       - run: cargo test --locked
       - run: cargo build --release --locked
+
+  native-portability:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04-arm
+          - runner: macos-15-intel
+          - runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - run: cargo test --locked
+      - run: cargo build --release --locked

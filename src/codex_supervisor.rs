@@ -1349,6 +1349,11 @@ fn effective_uid() -> Result<u32> {
         .context("invalid effective uid in /proc/self/status")
 }
 
+#[cfg(all(unix, not(target_os = "linux")))]
+fn effective_uid() -> Result<u32> {
+    Ok(unsafe { libc::geteuid() })
+}
+
 fn private_append_file(path: &Path) -> Result<File> {
     reject_unsafe_existing_file(path, "Codex App Server log")?;
     let mut options = OpenOptions::new();

@@ -266,7 +266,7 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.0")
+        screen.contains("Open Agent View v0.1.1")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -581,7 +581,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.0")
+        screen.contains("Open Agent View v0.1.1")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")
@@ -632,7 +632,7 @@ fn arrow_navigation_and_group_collapse_are_real_terminal_events() {
 fn open_pty(columns: u16, rows: u16) -> io::Result<(RawFd, RawFd)> {
     let mut master = -1;
     let mut slave = -1;
-    let size = libc::winsize {
+    let mut size = libc::winsize {
         ws_row: rows,
         ws_col: columns,
         ws_xpixel: 0,
@@ -643,8 +643,8 @@ fn open_pty(columns: u16, rows: u16) -> io::Result<(RawFd, RawFd)> {
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            &size,
+            std::ptr::null_mut(),
+            &mut size,
         )
     };
     if result == -1 {
