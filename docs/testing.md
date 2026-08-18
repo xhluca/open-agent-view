@@ -5,6 +5,11 @@ They are intentionally split between deterministic tests and disposable runtime
 probes. Existing user containers and live agent sessions were never used as
 test targets for lifecycle operations.
 
+The reproducible commands, synthetic populated fixture, exhaustive key route,
+visual acceptance criteria, and evidence template live in
+[the real-TTY validation guide](tui-validation.md). This file records completed
+checks; the guide also contains release gates that are not yet complete.
+
 ## Automated checks
 
 - `cargo test --locked`: domain normalization, provider parsing, App Server
@@ -31,7 +36,10 @@ test targets for lifecycle operations.
   navigation, direct escape-to-quit, printable-to-compose behavior,
   context-sensitive `?`, selection reconciliation after filtering, Claude
   worktree grouping, aggregate review/working counts, capability-aware help,
-  and the narrow footer's retained help affordance.
+  and the narrow footer's retained help affordance. Focused rendering tests
+  sanitize terminal-control characters from every provider-derived or dynamic
+  surface and use terminal display width for CJK/grapheme-aware row truncation,
+  padding, and editable cursor placement.
 - Safety-focused state tests verify that ready-for-review and needs-input
   sessions are treated as live (and therefore require interrupt authority),
   completed sessions use delete language, and active groups cannot enter a
@@ -39,6 +47,16 @@ test targets for lifecycle operations.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions repeats tests and release builds on Rust 1.75.0 and stable.
+- `scripts/real-tui-tests.sh` runs five serialized tests against real Unix PTYs
+  with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
+  exercise populated sections, contextual help, grouping toggle, filter
+  apply/cancel/clear, multiline new-task launch/cancellation, peek, rename
+  cancellation/submission, native-open suspend/restore, reply, interrupt,
+  approval `y`/`n`, single/bulk delete and archive confirmation, structured
+  input, and fixture-fenced refusals. A 90×24 case sends real arrow sequences
+  and collapses/expands a group. The 55×18 and 31×7 cases verify the bounded
+  narrow layout and explicit too-small fallback. Every case asserts alternate
+  screen and cursor restoration from the raw PTY stream.
 
 ## Runtime checks
 
@@ -52,6 +70,24 @@ test targets for lifecycle operations.
   `ctrl+s`, and restored the alternate screen on Escape. The Open Agent View
   probe additionally ran unprivileged with a read-only root, dropped
   capabilities, `no-new-privileges`, a PID limit, and isolated tmpfs home/state.
+- The exact fresh-container command shape is documented in
+  [the TUI validation guide](tui-validation.md). It pins the immutable image,
+  uses a different `--rm` container name for each dashboard, and mounts neither
+  host credentials nor a workspace. The committed
+  [`populated-sessions.json`](../fixtures/populated-sessions.json) fixture
+  supplies nine sessions across every normalized state and actionable
+  capability for repeatable populated-screen testing without provider access.
+  Fixture mode fences every provider operation,
+  including native open and launch, so synthetic capabilities cannot mutate a
+  provider.
+- The current release binary and nine-session fixture were then rerun in fresh
+  isolated containers at 120×34, 55×18, and 31×7. The wide run verified
+  populated status rendering, help, directory grouping, compact row markers,
+  and clean exit; 55×18 verified responsive truncation; 31×7 verified the
+  explicit minimum-size fallback. Claude 2.1.209 was separately rerun empty at
+  the same sizes: wide help/exit, narrow startup/exit, and tiny intro-only
+  degradation/exit. The exhaustive action matrix ran against the actual binary
+  in host `openpty`; it was not redundantly repeated inside Docker.
 - Host Claude discovery was compared with `claude agents --json --all`.
 - The TUI was exercised in a 120-by-30 pseudo-terminal, including navigation,
   grouping, help, and clean shutdown.
@@ -81,6 +117,66 @@ approval/input handling, and destructive-action gates are covered by the
 deterministic fixtures and disposable mock App Server tests above. A full live
 task inside a fresh container remains a separate opt-in credentialed test.
 
+## Claim matrix
+
+| Claim | Evidence | Current status |
+| --- | --- | --- |
+| Normalization, key routing, responsive layout, capability gates | Locked Rust test suite with Ratatui test backend | Verified |
+| Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
+| Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
+| Every current TUI action route and all normalized states in a real PTY | Five-test `real_tty` harness using the canonical fixture | Verified |
+| Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
+| Codex request replay and exact response ownership | Disposable mock App Server | Verified |
+| Managed-Docker command construction and authority failures | Injected command runner; no Docker daemon | Verified |
+| Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated credentials, network, and disposable tasks required | Not run |
+| SSH portability and broad terminal/theme matrix | Environment-specific real-TTY runs required | Not yet claimed |
+
+“Verified manually” records observed behavior but is not a pixel-diff or
+automated golden-screen assertion. ANSI pane capture also cannot establish
+exact color fidelity; screenshots must be reviewed as external, redacted test
+artifacts.
+
+## Documentation checks
+
+Validate the canonical fixture through the same parser used by the application:
+
+```console
+jq empty fixtures/populated-sessions.json
+target/release/coding-agents \
+  --fixture fixtures/populated-sessions.json \
+  --no-host-claude \
+  --no-host-codex \
+  --json --all |
+  jq -e '.sessions | length > 0'
+```
+
+The following dependency-free Ruby check resolves every relative Markdown link
+from the document that contains it. External URLs are intentionally outside its
+scope:
+
+```console
+ruby <<'RUBY'
+failed = false
+Dir.glob('{*.md,docs/**/*.md}').sort.each do |file|
+  File.read(file).scan(/\[[^\]]*\]\(([^)]+)\)/).flatten.each do |target|
+    target = target.sub(/^</, '').sub(/>$/, '')
+    next if target.match?(%r{^(?:https?://|mailto:|#)})
+    path = target.split('#', 2).first
+    next if path.empty?
+    resolved = File.expand_path(path, File.dirname(file))
+    unless File.exist?(resolved)
+      warn "broken: #{file}: #{target}"
+      failed = true
+    end
+  end
+end
+exit(failed ? 1 : 0)
+RUBY
+```
+
+Also run `git diff --check` so whitespace errors do not undermine rendered
+examples.
+
 ## Safety assertions
 
 - Docker commands use argument arrays and exact inspected container IDs, not a
@@ -101,6 +197,10 @@ task inside a fresh container remains a separate opt-in credentialed test.
   external owner record before lifecycle operations.
 - Authentication values were not read into the repository, fixtures, or test
   logs.
+- Provider/runtime/session/group/summary/warning/notice/confirmation text is
+  sanitized before terminal rendering, and dynamic transcript tails are
+  bounded; provider text cannot intentionally inject raw terminal controls
+  through those surfaces.
 
 ## Known unimplemented paths
 

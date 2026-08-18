@@ -132,6 +132,14 @@ running container, does not pass Docker's volume-removal flag, and forgets the
 owner record only after exact removal succeeds. Existing `--docker-container`
 targets never enter this authority tier.
 
+The external registry defaults to
+`$XDG_STATE_HOME/open-agent-view/managed-docker/owners.json`, or
+`~/.local/state/open-agent-view/managed-docker/owners.json` when
+`XDG_STATE_HOME` is unset. A CLI override changes this authority namespace and
+must be supplied consistently. See the [CLI reference](cli.md) for the complete
+lifecycle and [troubleshooting](troubleshooting.md) before repairing refused
+state.
+
 ## Deliberate limitations
 
 - Inline Claude replies are not implemented by scraping private IPC or editing

@@ -46,22 +46,21 @@ tool. See [the control model](docs/control-model.md) and
 
 ## Installation
 
-Tagged releases provide a checksum-verified archive for
-`x86_64-unknown-linux-gnu`. A pinned Cargo install is available for other
-platforms:
+There is no published release or `v0.1.0` tag yet. Install the current private
+pre-alpha from an authorized checkout:
 
 ```console
-cargo +1.75.0 install \
-  --locked \
-  --git https://github.com/xhluca/open-agent-view \
-  --tag v0.1.0 \
-  open-agent-view
+git clone git@github.com:xhluca/open-agent-view.git
+cd open-agent-view
+cargo +1.75.0 test --locked
+cargo +1.75.0 install --path . --locked
+coding-agents --version
 ```
 
-See [installation and release verification](docs/install.md) for the exact
-archive download, SHA-256 verification, user-local install, non-destructive
-smoke tests, and maintainer tag procedure. No release is published until a
-maintainer pushes a matching `vMAJOR.MINOR.PATCH` tag.
+This requires access to the private repository and Rust 1.75.0 or newer. See
+[installation and release verification](docs/install.md) for prerequisites,
+user-local installation, non-destructive smoke tests, uninstall behavior, and
+the clearly separated future release procedure.
 
 ## Usage
 
@@ -125,7 +124,10 @@ coding-agents docker create \
   --workspace /absolute/project \
   --state-home /absolute/dedicated-agent-home
 coding-agents docker start oav-agent
+coding-agents docker status oav-agent
 coding-agents docker list
+coding-agents docker stop oav-agent --yes
+coding-agents docker remove oav-agent --yes
 ```
 
 The two host directories must already exist. The state home is mounted as the
@@ -134,7 +136,14 @@ intend that container to use. Existing host Claude/Codex homes are never
 mounted automatically. Stop and removal require `--yes`, removal refuses a
 running container, and neither workspace nor state data is deleted.
 
+See [the CLI reference](docs/cli.md) before using managed containers. It
+documents networking, UID/GID mapping, JSON output, the ownership-registry
+path, and recovery behavior.
+
 ### Keyboard map
+
+Compact row markers read `C@H`/`C@D` for Claude on host/Docker and
+`X@H`/`X@D` for Codex on host/Docker; Peek shows the full provider and runtime.
 
 | Key | Action |
 | --- | --- |
@@ -166,6 +175,11 @@ See [the approved product specification](docs/product-spec.md),
 [installation guide](docs/install.md), and
 [exploration notes](docs/exploration/README.md).
 
+The [documentation index](docs/README.md) routes operators, testers, and
+maintainers to the remaining guides. Contributions should follow
+[CONTRIBUTING.md](CONTRIBUTING.md); security-sensitive findings should follow
+[SECURITY.md](SECURITY.md).
+
 ## Safety model
 
 - Existing agent sessions and Docker containers are treated as read-only until
@@ -179,10 +193,12 @@ See [the approved product specification](docs/product-spec.md),
 
 ## Status
 
-Pre-alpha. The dashboard supports ownership-gated host Claude launch/stop,
+Private pre-alpha: source installation is available to repository
+collaborators, but no tag, GitHub release, public package, or stability promise
+exists. The dashboard supports ownership-gated host Claude launch/stop,
 durable managed host Codex lifecycle controls, and ownership-gated managed
-Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for remaining provider
-request types and distribution work.
+Docker lifecycle commands. See [ROADMAP.md](ROADMAP.md) for verified status and
+remaining provider, terminal, and distribution work.
 
 ## Non-affiliation
 

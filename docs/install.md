@@ -1,120 +1,198 @@
 # Installation and release verification
 
-`open-agent-view` installs one executable named `coding-agents`. Tagged
-releases provide a GNU/Linux x86_64 archive and a separate SHA-256 checksum:
+`open-agent-view` installs one executable named `coding-agents`.
+
+> [!IMPORTANT]
+> No `v0.1.0` tag, GitHub release, public package, or downloadable archive is
+> published as of this private pre-alpha. The `0.1.0` Cargo package version is
+> development metadata, not evidence of a release. Use the checkout procedure
+> below. The archive instructions later in this document become applicable
+> only after the matching release actually appears in the repository.
+
+## Prerequisites
+
+- An authorized checkout of the private repository.
+- Rust 1.75.0 or newer. CI tests both the minimum version and current stable.
+- A terminal for the interactive dashboard; JSON mode works without a TTY.
+- Claude Code, Codex, or Docker only for the adapters you intend to use.
+- Linux for durable managed host Codex supervision. Other read-only adapters
+  may compile elsewhere, but this pre-alpha is not validated as portable.
+
+Claude, Codex, and Docker are optional at startup. Disable an unavailable host
+provider with `--no-host-claude` or `--no-host-codex`.
+
+## Install the current private checkout
+
+Clone through the access method authorized for your GitHub account:
+
+```console
+git clone git@github.com:xhluca/open-agent-view.git
+cd open-agent-view
+rustup toolchain install 1.75.0 --profile minimal
+cargo +1.75.0 test --locked
+cargo +1.75.0 build --release --locked
+cargo +1.75.0 install --path . --locked
+```
+
+The final command normally installs to the Cargo binary directory
+(`$CARGO_HOME/bin`, usually `~/.cargo/bin`). To install under the conventional
+user-local prefix instead:
+
+```console
+cargo +1.75.0 install --path . --locked --root "$HOME/.local"
+```
+
+Ensure the selected `bin` directory is on `PATH`. Record the source revision
+when comparing test reports or filing a problem:
+
+```console
+git rev-parse HEAD
+coding-agents --version
+```
+
+`--locked` is required for tests, builds, and installation. It prevents Cargo
+from resolving a dependency graph different from the committed `Cargo.lock`.
+
+## Non-destructive smoke tests
+
+Verify the executable and parser without contacting a provider:
+
+```console
+coding-agents --version
+coding-agents --help
+coding-agents --json --no-host-claude --no-host-codex
+```
+
+The JSON command should report empty `sessions` and `warnings` arrays. It does
+not start the TUI, a provider, Docker, or the durable Codex App Server.
+
+Next inspect locally configured prerequisites:
+
+```console
+coding-agents doctor
+coding-agents doctor --json
+```
+
+`doctor` is read-only. Missing optional host providers are warnings because
+single-provider and Docker-only use are valid. An explicitly requested
+container that cannot be inspected is an error and makes the command exit
+nonzero.
+
+Finally perform a real-TTY empty-state check:
+
+```console
+coding-agents --no-host-claude --no-host-codex
+```
+
+Press `?`, close help, press `ctrl+s`, and press `esc`. Confirm that the
+alternate screen, cursor, and terminal input mode are restored. Follow the
+[TUI validation guide](tui-validation.md) for populated fixtures and fresh
+Docker isolation. An empty-state smoke test does not validate authenticated
+provider lifecycle behavior.
+
+## Upgrade a checkout installation
+
+Review the target commit and changelog, update the checkout without discarding
+local work, then repeat the locked test/build/install sequence:
+
+```console
+git status --short
+git fetch origin
+git log --oneline --decorate HEAD..origin/main
+git switch main
+git pull --ff-only
+cargo +1.75.0 test --locked
+cargo +1.75.0 install --path . --locked
+```
+
+Proceed with the switch/pull only when `git status` is clean and the reviewed
+commits are the intended upgrade.
+
+Do not delete `$XDG_STATE_HOME/open-agent-view` (or its default under
+`~/.local/state`) while upgrading. Authority records are deliberately retained
+across binary replacement. See [troubleshooting](troubleshooting.md) before
+changing them.
+
+## Uninstall
+
+For a normal Cargo installation:
+
+```console
+cargo uninstall open-agent-view
+```
+
+When installed with `--root "$HOME/.local"`, specify the same root:
+
+```console
+cargo uninstall open-agent-view --root "$HOME/.local"
+```
+
+Uninstalling the executable does not stop or delete provider sessions,
+containers, bind-mounted workspaces/state homes, or authority records. This is
+intentional; the pre-alpha has no all-state purge operation.
+
+## Future tagged archives (not currently available)
+
+The release workflow is prepared to publish these GNU/Linux x86_64 assets:
 
 ```text
 open-agent-view-VERSION-x86_64-unknown-linux-gnu.tar.gz
 open-agent-view-VERSION-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
-The release binary targets `x86_64-unknown-linux-gnu` and is built on Ubuntu
-22.04 (glibc 2.35 floor). Other architectures, older GNU/Linux systems, and
-operating systems should install from source until native archives are added.
-Claude Code, Codex, and Docker are optional at startup; only the adapters for
-installed or explicitly enabled runtimes are used.
+The binary is built on Ubuntu 22.04, establishing a glibc 2.35 floor. Other
+architectures, older GNU/Linux systems, and other operating systems should use
+a tested source build until native artifacts exist.
 
-## Install a tagged Linux archive
-
-Choose an explicit version rather than a moving “latest” URL so the archive
-name, source tag, and expected checksum stay reviewable. This example installs
-version `0.1.0` for the current user:
+Only use this procedure after confirming the exact `vMAJOR.MINOR.PATCH` release
+and both named assets exist in the repository's Releases page. Choose an
+explicit version rather than a moving “latest” URL:
 
 ```console
-VERSION=0.1.0
-TARGET=x86_64-unknown-linux-gnu
-ARCHIVE="open-agent-view-${VERSION}-${TARGET}.tar.gz"
-RELEASE_URL="https://github.com/xhluca/open-agent-view/releases/download/v${VERSION}"
+OAV_VERSION=MAJOR.MINOR.PATCH
+OAV_TARGET=x86_64-unknown-linux-gnu
+OAV_ARCHIVE="open-agent-view-${OAV_VERSION}-${OAV_TARGET}.tar.gz"
+OAV_RELEASE_URL="https://github.com/xhluca/open-agent-view/releases/download/v${OAV_VERSION}"
 
 curl --fail --location --proto '=https' --tlsv1.2 \
-  --remote-name "${RELEASE_URL}/${ARCHIVE}"
+  --remote-name "${OAV_RELEASE_URL}/${OAV_ARCHIVE}"
 curl --fail --location --proto '=https' --tlsv1.2 \
-  --remote-name "${RELEASE_URL}/${ARCHIVE}.sha256"
-sha256sum --check "${ARCHIVE}.sha256"
-
-tar -xzf "${ARCHIVE}"
-install -d "${HOME}/.local/bin"
+  --remote-name "${OAV_RELEASE_URL}/${OAV_ARCHIVE}.sha256"
+sha256sum --check "${OAV_ARCHIVE}.sha256"
+tar -xzf "${OAV_ARCHIVE}"
+install -d "$HOME/.local/bin"
 install -m 0755 \
-  "open-agent-view-${VERSION}-${TARGET}/coding-agents" \
-  "${HOME}/.local/bin/coding-agents"
+  "open-agent-view-${OAV_VERSION}-${OAV_TARGET}/coding-agents" \
+  "$HOME/.local/bin/coding-agents"
 ```
 
-The checksum command must print the archive name followed by `OK`. Stop if it
-does not. Ensure `${HOME}/.local/bin` is on `PATH`, then run the smoke tests
-below.
+The checksum command must print the archive name followed by `OK`; stop if it
+does not. The archive also contains the exact release `README.md` and `LICENSE`.
+The workflow creates sorted members with the tag commit timestamp, numeric
+owner/group zero, and normalized file modes so packaging metadata is stable for
+the same tagged build.
 
-The archive also contains the exact release `README.md` and `LICENSE`. The
-workflow creates it with sorted members, the tag commit timestamp, numeric
-owner/group zero, and normalized file modes so packaging metadata is stable
-for the same tagged build.
-
-## Install a tagged source build with Cargo
-
-Source installation builds the same locked dependency graph but compiles for
-the local machine. Pin both the tag and the documented Rust toolchain:
+A tagged source install, once that tag exists, can be pinned as follows:
 
 ```console
-rustup toolchain install 1.75.0 --profile minimal
+OAV_TAG=vMAJOR.MINOR.PATCH
 cargo +1.75.0 install \
   --locked \
-  --git https://github.com/xhluca/open-agent-view \
-  --tag v0.1.0 \
+  --git ssh://git@github.com/xhluca/open-agent-view.git \
+  --tag "${OAV_TAG}" \
   open-agent-view
 ```
 
-For development from an existing checkout:
-
-```console
-cargo test --locked
-cargo build --release --locked
-cargo install --path . --locked
-```
-
-`--locked` is required in all three cases; it prevents Cargo from silently
-resolving a dependency graph different from the committed `Cargo.lock`.
-
-## Non-destructive smoke tests
-
-First verify that the installed executable and command parser are healthy:
-
-```console
-coding-agents --version
-coding-agents --help
-```
-
-For release `v0.1.0`, the first command should print:
-
-```text
-coding-agents 0.1.0
-```
-
-Then exercise normalized startup without probing Claude, Codex, or Docker:
-
-```console
-coding-agents --json --no-host-claude --no-host-codex
-```
-
-The result should contain empty `sessions` and `warnings` arrays. This command
-does not start the TUI or contact a provider.
-
-Finally, inspect the local provider prerequisites without changing sessions:
-
-```console
-coding-agents doctor
-```
-
-`doctor` is read-only. Missing host providers are warnings because Docker-only
-use is valid. An explicitly requested container that cannot be verified is an
-error and makes the command exit nonzero.
-
 ## Maintainer release procedure
 
-The package version in `Cargo.toml` and the tag must match exactly. After the
-commit intended for release passes CI:
+This section describes prepared automation, not a completed release. Before
+publishing, finish the release gates in [ROADMAP.md](../ROADMAP.md), update
+[CHANGELOG.md](../CHANGELOG.md), and ensure the package version in `Cargo.toml`
+matches the intended tag exactly. From the reviewed release commit:
 
 ```console
-git tag -s v0.1.0 -m "open-agent-view v0.1.0"
-git push origin v0.1.0
+git tag -s vMAJOR.MINOR.PATCH -m "open-agent-view vMAJOR.MINOR.PATCH"
+git push origin vMAJOR.MINOR.PATCH
 ```
 
 Pushing a stable `vMAJOR.MINOR.PATCH` tag triggers
@@ -127,27 +205,7 @@ Pushing a stable `vMAJOR.MINOR.PATCH` tag triggers
 5. retains both files as workflow artifacts; and
 6. creates the GitHub release with generated notes and both original assets.
 
-The workflow refuses prerelease-shaped or version-mismatched tags. It uses the
-tag that GitHub already received (`gh release create --verify-tag`); it never
-creates a missing tag or publishes from an untagged branch run.
-
-No release is created by merely merging the workflow. Publishing occurs only
-after an authorized maintainer pushes a matching tag.
-
-## Uninstall
-
-For an archive installed to the user-local path:
-
-```console
-rm "${HOME}/.local/bin/coding-agents"
-```
-
-For a Cargo installation:
-
-```console
-cargo uninstall open-agent-view
-```
-
-Uninstalling the executable does not delete provider sessions. Runtime
-ownership/state files are intentionally kept so a future installation cannot
-silently adopt unrelated sessions.
+The workflow refuses prerelease-shaped or version-mismatched tags. It publishes
+only the tag GitHub already received (`gh release create --verify-tag`); it
+does not create a missing tag or publish from an ordinary branch run. Merging
+the workflow alone never creates a release.

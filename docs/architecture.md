@@ -69,6 +69,12 @@ authority for a supervisor.
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.
 
+Fixture discovery is a test input, not an adapter authority source. When
+`--fixture` is present, the control hub fences every provider-I/O method before
+dispatch even if the synthetic record advertises actionable capabilities. This
+allows real-PTY tests to render and route every UI action without contacting a
+provider or Docker.
+
 ## Docker boundary
 
 Docker is a runtime wrapper, not a provider. A container can expose Claude,
