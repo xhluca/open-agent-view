@@ -11,7 +11,7 @@ use super::{DiscoveryRequest, SessionSource};
 use crate::codex_rpc::{AppServerClient, AppServerInvocation};
 use crate::codex_supervisor::CodexSupervisor;
 use crate::domain::{
-    AgentSession, Capability, Provider, Runtime, SessionKind, SessionState,
+    AgentSession, Provider, Runtime, SessionKind, SessionState,
 };
 
 const SOURCE_KINDS: [&str; 10] = [
@@ -210,7 +210,9 @@ fn normalize_thread(thread: CodexThread, runtime: Runtime) -> AgentSession {
         Runtime::Host => "host",
         Runtime::Docker { container_id, .. } => container_id,
     };
-    let capabilities = BTreeSet::from([Capability::Inspect]);
+    // The summary remains observable, but transcript/control capabilities are
+    // granted only after the host supervisor proves exact ownership.
+    let capabilities = BTreeSet::new();
 
     AgentSession {
         id: format!("codex:{runtime_id}:{}", thread.id),

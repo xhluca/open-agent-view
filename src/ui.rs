@@ -408,14 +408,17 @@ fn contextual_footer(app: &App, width: u16) -> String {
             }
         }
         Overlay::None if app.selected_session().is_some() && width >= 80 => {
-            let control = app
-                .selected_session()
-                .map(session_control_suffix)
-                .unwrap_or_default();
-            format!("enter to open · space to reply{control} · ? for shortcuts")
+            let session = app.selected_session().expect("selection checked");
+            let peek = session_peek_suffix(session);
+            let control = session_control_suffix(session);
+            format!("enter to open{peek}{control} · ? for shortcuts")
         }
         Overlay::None if app.selected_session().is_some() && width >= 55 => {
-            "enter to open · space to reply · ? for shortcuts".into()
+            let session = app.selected_session().expect("selection checked");
+            format!(
+                "enter to open{} · ? for shortcuts",
+                session_peek_suffix(session)
+            )
         }
         Overlay::None if app.selected_session().is_some() => {
             "enter to open · ? for shortcuts".into()
@@ -444,10 +447,24 @@ fn session_control_suffix(session: &AgentSession) -> &'static str {
         } else {
             " · observe-only"
         }
+    } else if session.capabilities.contains(&Capability::Delete)
+        && session.capabilities.contains(&Capability::Archive)
+    {
+        " · ctrl+a archive · ctrl+x delete"
     } else if session.capabilities.contains(&Capability::Delete) {
-        " · ctrl+x to delete"
+        " · ctrl+x delete"
     } else {
         " · observe-only"
+    }
+}
+
+fn session_peek_suffix(session: &AgentSession) -> &'static str {
+    if session.capabilities.contains(&Capability::Reply) {
+        " · space to reply"
+    } else if session.capabilities.contains(&Capability::Inspect) {
+        " · space to inspect"
+    } else {
+        ""
     }
 }
 
@@ -461,6 +478,11 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("/ to filter".into());
     actions.push("tab for new task".into());
     if let Some(session) = app.selected_session() {
+        if session.capabilities.contains(&Capability::Reply) {
+            actions.push("space to inspect/reply".into());
+        } else if session.capabilities.contains(&Capability::Inspect) {
+            actions.push("space to inspect".into());
+        }
         let action = if is_active_session_state(session.state)
             && session.capabilities.contains(&Capability::Interrupt)
         {
@@ -474,6 +496,11 @@ fn help_actions(app: &App) -> Vec<String> {
         };
         if let Some(action) = action {
             actions.push(action.into());
+        }
+        if !is_active_session_state(session.state)
+            && session.capabilities.contains(&Capability::Archive)
+        {
+            actions.push("ctrl+a to archive".into());
         }
     } else if selected_group_can_delete(app) {
         actions.push("ctrl+x to delete all".into());
@@ -562,6 +589,9 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
         }
         ConfirmTarget::Session { id, running: false } => {
             format!("Delete the exact session record?\n\n{id}\n\nEnter confirms; escape keeps it.")
+        }
+        ConfirmTarget::Archive { id } => {
+            format!("Archive the exact session?\n\n{id}\n\nEnter confirms; escape keeps it.")
         }
         ConfirmTarget::Group { key, session_ids } => format!(
             "Delete all {} sessions in {key}?\n\nEnter confirms; escape keeps them.",

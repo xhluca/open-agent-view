@@ -16,6 +16,7 @@ use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionSnapshot
 
 const RECORD_VERSION: u32 = 1;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
+const MAX_TRANSCRIPT_CHARS: usize = 32 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +66,12 @@ pub struct CodexSupervisor {
     record_path: PathBuf,
     lock_path: PathBuf,
     control: Mutex<ControlConnection>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CodexReplyMode {
+    Started,
+    Steered,
 }
 
 impl CodexSupervisor {
@@ -184,6 +191,112 @@ impl CodexSupervisor {
         Ok(())
     }
 
+    pub fn inspect(&self, session: &AgentSession) -> Result<String> {
+        let (server, _) = self.owned_thread(session)?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        let response = self.control_client(&mut control, &server)?.request(
+            "thread/read",
+            json!({
+                "threadId": session.provider_session_id,
+                "includeTurns": true
+            }),
+        )?;
+        format_thread_transcript(&response)
+    }
+
+    pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<CodexReplyMode> {
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            bail!("the Codex reply cannot be empty");
+        }
+        let (server, owned) = self.owned_thread(session)?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        let client = self.control_client(&mut control, &server)?;
+        if let Some(expected_turn_id) = owned.active_turn_id {
+            if session.state != SessionState::Working {
+                bail!("refusing to steer without an active provider state");
+            }
+            let response = client.request(
+                "turn/steer",
+                json!({
+                    "threadId": session.provider_session_id,
+                    "input": [{"type": "text", "text": prompt}],
+                    "expectedTurnId": expected_turn_id
+                }),
+            )?;
+            let accepted_turn_id = response
+                .get("turnId")
+                .and_then(Value::as_str)
+                .context("turn/steer response omitted turnId")?;
+            if accepted_turn_id != expected_turn_id {
+                bail!("turn/steer accepted an unexpected active turn ID");
+            }
+            return Ok(CodexReplyMode::Steered);
+        }
+        if session.state != SessionState::Completed {
+            bail!("refusing to start a turn unless the owned thread is known idle");
+        }
+        let response = client.request(
+            "turn/start",
+            json!({
+                "threadId": session.provider_session_id,
+                "input": [{"type": "text", "text": prompt}]
+            }),
+        )?;
+        let turn_id = response
+            .pointer("/turn/id")
+            .and_then(Value::as_str)
+            .context("turn/start response omitted turn.id")?
+            .to_owned();
+        self.update_record_for_server(&server, |record| {
+            let thread = record
+                .threads
+                .get_mut(&session.provider_session_id)
+                .context("owned Codex thread disappeared while recording its new turn")?;
+            thread.active_turn_id = Some(turn_id);
+            Ok(())
+        })?;
+        Ok(CodexReplyMode::Started)
+    }
+
+    pub fn archive(&self, session: &AgentSession) -> Result<()> {
+        let (server, owned) = self.owned_thread(session)?;
+        require_idle_mutation(session, &owned, "archive")?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        self.control_client(&mut control, &server)?.request(
+            "thread/archive",
+            json!({"threadId": session.provider_session_id}),
+        )?;
+        Ok(())
+    }
+
+    pub fn delete(&self, session: &AgentSession) -> Result<()> {
+        let (server, owned) = self.owned_thread(session)?;
+        require_idle_mutation(session, &owned, "delete")?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        self.control_client(&mut control, &server)?.request(
+            "thread/delete",
+            json!({"threadId": session.provider_session_id}),
+        )?;
+        self.update_record_for_server(&server, |record| {
+            record.threads.remove(&session.provider_session_id);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     pub fn enrich(&self, snapshot: &mut SessionSnapshot) {
         if let Ok(mut control) = self.control.lock() {
             let disconnected = control
@@ -207,12 +320,21 @@ impl CodexSupervisor {
             let Some(owned) = record.threads.get_mut(&session.provider_session_id) else {
                 continue;
             };
+            session.capabilities.insert(Capability::Inspect);
             if matches!(session.state, SessionState::Working | SessionState::NeedsInput)
                 && owned.active_turn_id.is_some()
             {
                 session.capabilities.insert(Capability::Interrupt);
+                if session.state == SessionState::Working {
+                    session.capabilities.insert(Capability::Reply);
+                }
             } else if owned.active_turn_id.take().is_some() {
                 changed = true;
+            }
+            if session.state == SessionState::Completed && owned.active_turn_id.is_none() {
+                session.capabilities.insert(Capability::Reply);
+                session.capabilities.insert(Capability::Archive);
+                session.capabilities.insert(Capability::Delete);
             }
         }
         if changed {
@@ -249,6 +371,19 @@ impl CodexSupervisor {
             control.server = Some(server.clone());
         }
         Ok(control.client.as_mut().expect("Codex client initialized"))
+    }
+
+    fn owned_thread(&self, session: &AgentSession) -> Result<(SupervisorRecord, OwnedThread)> {
+        if session.provider != Provider::Codex || session.runtime != Runtime::Host {
+            bail!("the host Codex supervisor does not own this runtime");
+        }
+        let server = self.ensure_endpoint()?;
+        let owned = server
+            .threads
+            .get(&session.provider_session_id)
+            .cloned()
+            .context("refusing to control a Codex thread not owned by this supervisor")?;
+        Ok((server, owned))
     }
 
     fn ensure_endpoint(&self) -> Result<SupervisorRecord> {
@@ -395,6 +530,97 @@ impl CodexSupervisor {
         }
         save_record(&self.record_path, replacement)
     }
+}
+
+fn require_idle_mutation(session: &AgentSession, owned: &OwnedThread, operation: &str) -> Result<()> {
+    if owned.active_turn_id.is_some() || session.state != SessionState::Completed {
+        bail!("refusing to {operation} a Codex thread that is not known idle");
+    }
+    Ok(())
+}
+
+fn format_thread_transcript(response: &Value) -> Result<String> {
+    let thread = response
+        .get("thread")
+        .and_then(Value::as_object)
+        .context("thread/read response omitted thread")?;
+    let turns = thread
+        .get("turns")
+        .and_then(Value::as_array)
+        .context("thread/read response omitted included turns")?;
+    let mut sections = Vec::new();
+    for turn in turns {
+        let Some(items) = turn.get("items").and_then(Value::as_array) else {
+            continue;
+        };
+        for item in items {
+            let kind = item.get("type").and_then(Value::as_str).unwrap_or("unknown");
+            match kind {
+                "userMessage" => {
+                    let text = item
+                        .get("content")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter(|content| content.get("type").and_then(Value::as_str) == Some("text"))
+                        .filter_map(|content| content.get("text").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    if !text.is_empty() {
+                        sections.push(format!("You\n{text}"));
+                    }
+                }
+                "agentMessage" => {
+                    if let Some(text) = item.get("text").and_then(Value::as_str) {
+                        sections.push(format!("Codex\n{text}"));
+                    }
+                }
+                "plan" => {
+                    if let Some(text) = item.get("text").and_then(Value::as_str) {
+                        sections.push(format!("Plan\n{text}"));
+                    }
+                }
+                "commandExecution" => {
+                    let command = item.get("command").and_then(Value::as_str).unwrap_or("command");
+                    let status = item.get("status").and_then(Value::as_str).unwrap_or("unknown");
+                    let output = item
+                        .get("aggregatedOutput")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    let rendered = if output.is_empty() {
+                        format!("Command ({status})\n$ {command}")
+                    } else {
+                        format!("Command ({status})\n$ {command}\n{output}")
+                    };
+                    sections.push(rendered);
+                }
+                "fileChange" => sections.push("Codex applied file changes".into()),
+                "enteredReviewMode" | "exitedReviewMode" => {
+                    if let Some(review) = item.get("review").and_then(Value::as_str) {
+                        sections.push(format!("Review\n{review}"));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    if sections.is_empty() {
+        Ok("No persisted Codex transcript items are available.".into())
+    } else {
+        Ok(limit_transcript(sections.join("\n\n")))
+    }
+}
+
+fn limit_transcript(transcript: String) -> String {
+    let count = transcript.chars().count();
+    if count <= MAX_TRANSCRIPT_CHARS {
+        return transcript;
+    }
+    let tail = transcript
+        .chars()
+        .skip(count - MAX_TRANSCRIPT_CHARS)
+        .collect::<String>();
+    format!("[earlier transcript truncated]\n{tail}")
 }
 
 fn default_state_dir() -> Result<PathBuf> {
@@ -696,6 +922,27 @@ mod tests {
     }
 
     #[test]
+    fn transcript_rendering_is_bounded_and_keeps_recent_unicode() {
+        let old = "x".repeat(MAX_TRANSCRIPT_CHARS + 100);
+        let response = json!({
+            "thread": {
+                "turns": [{
+                    "items": [
+                        {"type": "agentMessage", "text": old},
+                        {"type": "agentMessage", "text": "recent 🦀"}
+                    ]
+                }]
+            }
+        });
+
+        let rendered = format_thread_transcript(&response).unwrap();
+
+        assert!(rendered.starts_with("[earlier transcript truncated]"));
+        assert!(rendered.ends_with("recent 🦀"));
+        assert!(rendered.chars().count() <= MAX_TRANSCRIPT_CHARS + 32);
+    }
+
+    #[test]
     fn durable_server_reconnects_and_preserves_exact_thread_ownership() {
         let directory = tempdir().unwrap();
         let state_dir = directory.path().join("state");
@@ -752,12 +999,57 @@ mod tests {
             .clone();
         assert_eq!(session.state, SessionState::Working);
         assert!(session.capabilities.contains(&Capability::Interrupt));
+        assert!(session.capabilities.contains(&Capability::Reply));
+        let transcript = second.inspect(&session).unwrap();
+        assert!(transcript.contains("You\nImplement the test"));
+        assert!(transcript.contains("Codex\nWorking on it"));
+        assert_eq!(
+            second.reply(&session, "Keep the tests focused").unwrap(),
+            CodexReplyMode::Steered
+        );
 
         second.interrupt(&session).unwrap();
         let mut external = session.clone();
         external.provider_session_id = "external-thread".into();
         external.id = "codex:host:external-thread".into();
         assert!(second.interrupt(&external).is_err());
+
+        let idle = discover_owned(&second, &thread_id);
+        assert_eq!(idle.state, SessionState::Completed);
+        assert!(idle.capabilities.contains(&Capability::Reply));
+        assert!(idle.capabilities.contains(&Capability::Archive));
+        assert!(idle.capabilities.contains(&Capability::Delete));
+        assert_eq!(
+            second.reply(&idle, "Run one more check").unwrap(),
+            CodexReplyMode::Started
+        );
+        let active = discover_owned(&second, &thread_id);
+        second.interrupt(&active).unwrap();
+        let idle = discover_owned(&second, &thread_id);
+        second.archive(&idle).unwrap();
+        second.delete(&idle).unwrap();
+        assert!(second.delete(&idle).is_err());
+    }
+
+    fn discover_owned(supervisor: &Arc<CodexSupervisor>, thread_id: &str) -> AgentSession {
+        let source = CodexSource::managed(supervisor.clone());
+        let sessions = source
+            .discover(&DiscoveryRequest {
+                include_completed: true,
+                include_interactive: true,
+                cwd: None,
+            })
+            .unwrap();
+        let mut snapshot = SessionSnapshot {
+            sessions,
+            warnings: vec![],
+        };
+        supervisor.enrich(&mut snapshot);
+        snapshot
+            .sessions
+            .into_iter()
+            .find(|session| session.provider_session_id == thread_id)
+            .unwrap()
     }
 
     /// Reaps the exact mock child created by this test, including on panic.
@@ -834,7 +1126,7 @@ if args[:2] == ["app-server", "--listen"]:
     server.bind(path)
     os.chmod(path, 0o600)
     server.listen()
-    state = {"thread": None, "turn": None, "active": False}
+    state = {"thread": None, "turn": None, "turn_seq": 0, "active": False, "archived": False}
     def handle(conn):
         stream = conn.makefile("rwb")
         for raw in stream:
@@ -843,17 +1135,35 @@ if args[:2] == ["app-server", "--listen"]:
             ident = message.get("id")
             if method == "initialize": result = {"userAgent": "mock/1"}
             elif method == "thread/start":
-                state.update(thread="owned-thread", active=False)
+                state.update(thread="owned-thread", active=False, archived=False)
                 result = {"thread": {"id": state["thread"]}}
             elif method == "turn/start":
-                state.update(turn="owned-turn", active=True)
+                state["turn_seq"] += 1
+                state.update(turn="owned-turn-"+str(state["turn_seq"]), active=True)
                 result = {"turn": {"id": state["turn"], "status": "inProgress", "items": []}}
+            elif method == "turn/steer":
+                if message["params"]["threadId"] != state["thread"] or message["params"]["expectedTurnId"] != state["turn"] or not state["active"]:
+                    stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "stale turn"}})+"\n").encode()); stream.flush(); continue
+                result = {"turnId": state["turn"]}
             elif method == "turn/interrupt":
                 if message["params"]["threadId"] != state["thread"] or not state["active"]:
                     stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "not active"}})+"\n").encode()); stream.flush(); continue
                 state["active"] = False; result = {}
+            elif method == "thread/read":
+                result = {"thread": {"id": state["thread"], "turns": [{"items": [
+                    {"type": "userMessage", "content": [{"type": "text", "text": "Implement the test"}]},
+                    {"type": "agentMessage", "text": "Working on it"}
+                ]}]}}
+            elif method == "thread/archive":
+                if state["active"]:
+                    stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "active"}})+"\n").encode()); stream.flush(); continue
+                state["archived"] = True; result = {}
+            elif method == "thread/delete":
+                if state["active"]:
+                    stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "active"}})+"\n").encode()); stream.flush(); continue
+                state.update(thread=None, turn=None, archived=False); result = {}
             elif method == "thread/list":
-                data = [] if state["thread"] is None else [{
+                data = [] if state["thread"] is None or state["archived"] else [{
                     "id": state["thread"], "cwd": "/tmp", "createdAt": 1,
                     "updatedAt": 2, "preview": "Implement the test", "name": None,
                     "status": {"type": "active" if state["active"] else "idle", "activeFlags": []},

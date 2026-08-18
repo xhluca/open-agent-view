@@ -75,6 +75,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                     AppAction::None
                 }
             },
+            KeyCode::Char('a') if app.overlay == Overlay::None => {
+                app.start_archive_confirm();
+                AppAction::None
+            }
             KeyCode::Char('j') => {
                 app.push_input('\n');
                 AppAction::None
@@ -199,11 +203,22 @@ fn handle_action(
             }
             true
         }
-        AppAction::Reply { session_id, .. } => {
-            app.set_notice(format!(
-                "inline reply is not supported safely for {session_id}; press enter to attach"
-            ));
-            false
+        AppAction::Reply { session_id, prompt } => {
+            let Some(session) = app
+                .snapshot
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .cloned()
+            else {
+                app.set_notice("the selected session disappeared during refresh");
+                return false;
+            };
+            match control.reply(&session, &prompt) {
+                Ok(outcome) => app.set_notice(outcome.message),
+                Err(error) => app.set_notice(format!("reply refused: {error:#}")),
+            }
+            true
         }
         AppAction::Rename { .. } => {
             app.set_notice("rename is unavailable through the supported provider CLI");
@@ -226,9 +241,47 @@ fn handle_action(
             }
             true
         }
-        AppAction::Delete { .. } => {
-            app.set_notice("delete is unavailable through the supported provider CLI");
-            false
+        AppAction::Archive { session_id } => {
+            let Some(session) = app
+                .snapshot
+                .sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .cloned()
+            else {
+                app.set_notice("the selected session disappeared during refresh");
+                return false;
+            };
+            match control.archive(&session) {
+                Ok(outcome) => app.set_notice(outcome.message),
+                Err(error) => app.set_notice(format!("archive refused: {error:#}")),
+            }
+            true
+        }
+        AppAction::Delete { session_ids } => {
+            let sessions = session_ids
+                .iter()
+                .map(|id| {
+                    app.snapshot
+                        .sessions
+                        .iter()
+                        .find(|session| &session.id == id)
+                        .cloned()
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(sessions) = sessions else {
+                app.set_notice("a selected session disappeared during refresh");
+                return false;
+            };
+            let count = sessions.len();
+            for session in sessions {
+                if let Err(error) = control.delete(&session) {
+                    app.set_notice(format!("delete refused for {}: {error:#}", session.name));
+                    return true;
+                }
+            }
+            app.set_notice(format!("deleted {count} managed Codex session(s)"));
+            true
         }
     }
 }
@@ -341,6 +394,15 @@ mod tests {
         }
     }
 
+    fn control_key(character: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(character),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
     #[test]
     fn printable_j_starts_a_task_instead_of_moving_the_list() {
         let mut app = app();
@@ -378,5 +440,22 @@ mod tests {
         assert_eq!(app.overlay, Overlay::Help);
         handle_key(&mut app, key(KeyCode::Char('?')));
         assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn control_a_opens_archive_confirmation_only_with_authority() {
+        let mut app = app();
+        app.snapshot.sessions[0].state = SessionState::Completed;
+        app.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Archive);
+
+        assert_eq!(handle_key(&mut app, control_key('a')), AppAction::None);
+        assert_eq!(
+            app.overlay,
+            Overlay::Confirm(crate::app::ConfirmTarget::Archive {
+                id: "worker".into()
+            })
+        );
     }
 }

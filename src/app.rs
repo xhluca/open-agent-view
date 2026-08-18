@@ -37,6 +37,7 @@ pub enum ComposerMode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConfirmTarget {
     Session { id: String, running: bool },
+    Archive { id: String },
     Group { key: String, session_ids: Vec<String> },
 }
 
@@ -51,6 +52,7 @@ pub enum AppAction {
     Reply { session_id: String, prompt: String },
     Rename { session_id: String, name: String },
     Interrupt { session_id: String },
+    Archive { session_id: String },
     Delete { session_ids: Vec<String> },
 }
 
@@ -184,6 +186,12 @@ impl App {
                 let Some(session) = self.selected_session() else {
                     return AppAction::None;
                 };
+                if !session.capabilities.contains(&Capability::Reply) {
+                    let name = session.name.clone();
+                    self.set_notice(format!("{name} is read-only; reply authority was not granted"));
+                    self.input.clear();
+                    return AppAction::None;
+                }
                 let action = AppAction::Reply {
                     session_id: session.id.clone(),
                     prompt: self.input.trim().to_owned(),
@@ -244,7 +252,14 @@ impl App {
     }
 
     pub fn toggle_peek(&mut self) {
-        if self.selected_session().is_none() {
+        let Some(session) = self.selected_session() else {
+            return;
+        };
+        if !session.capabilities.contains(&Capability::Inspect) {
+            let name = session.name.clone();
+            self.set_notice(format!(
+                "{name} is observe/open-only; transcript inspection was not granted"
+            ));
             return;
         }
         self.overlay = if self.overlay == Overlay::Peek {
@@ -325,8 +340,33 @@ impl App {
         }
     }
 
+    pub fn start_archive_confirm(&mut self) {
+        let Some(session) = self.selected_session() else {
+            return;
+        };
+        if is_active_session_state(session.state) {
+            let name = session.name.clone();
+            self.set_notice(format!("{name} must be idle before it can be archived"));
+            return;
+        }
+        if !session.capabilities.contains(&Capability::Archive) {
+            let name = session.name.clone();
+            self.set_notice(format!(
+                "{name} is observe-only; Archive authority was not granted"
+            ));
+            return;
+        }
+        self.overlay = Overlay::Confirm(ConfirmTarget::Archive {
+            id: session.id.clone(),
+        });
+    }
+
     pub fn push_input(&mut self, character: char) {
-        if self.overlay == Overlay::Peek || matches!(self.overlay, Overlay::Composer(_)) {
+        let peek_is_writable = self.overlay == Overlay::Peek
+            && self
+                .selected_session()
+                .is_some_and(|session| session.capabilities.contains(&Capability::Reply));
+        if peek_is_writable || matches!(self.overlay, Overlay::Composer(_)) {
             self.input.push(character);
         }
     }
@@ -397,6 +437,7 @@ impl App {
             ConfirmTarget::Session { id, running: false } => AppAction::Delete {
                 session_ids: vec![id],
             },
+            ConfirmTarget::Archive { id } => AppAction::Archive { session_id: id },
             ConfirmTarget::Group { session_ids, .. } => AppAction::Delete { session_ids },
         }
     }
@@ -634,5 +675,42 @@ mod tests {
             app.notice.as_deref(),
             Some("bulk stop is unavailable; select one running session")
         );
+    }
+
+    #[test]
+    fn archive_requires_capability_and_an_idle_session() {
+        let mut item = session("one", SessionState::Completed);
+        item.capabilities.insert(Capability::Archive);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+
+        app.start_archive_confirm();
+
+        assert_eq!(
+            app.overlay,
+            Overlay::Confirm(ConfirmTarget::Archive { id: "one".into() })
+        );
+        assert_eq!(
+            app.activate(),
+            AppAction::Archive {
+                session_id: "one".into()
+            }
+        );
+    }
+
+    #[test]
+    fn read_only_peek_cannot_accept_reply_text() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("one", SessionState::Working)],
+            warnings: vec![],
+        });
+        app.toggle_peek();
+
+        app.push_input('x');
+
+        assert_eq!(app.overlay, Overlay::Peek);
+        assert!(app.input.is_empty());
     }
 }

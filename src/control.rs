@@ -9,8 +9,8 @@ use std::time::{Duration, SystemTime};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::codex_supervisor::{CodexReplyMode, CodexSupervisor};
 use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionSnapshot};
-use crate::codex_supervisor::CodexSupervisor;
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -166,11 +166,66 @@ impl ControlHub {
                 request.timeout = Duration::from_secs(8);
                 read_command_output(&ProcessRunner.run(&request)?, "Claude logs")
             }
-            (Provider::Codex, _) => bail!(
-                "Codex transcript inspection requires the owning App Server connection"
-            ),
+            (Provider::Codex, Runtime::Host) => self
+                .codex
+                .as_ref()
+                .context("host Codex control is disabled")?
+                .inspect(session),
+            (Provider::Codex, Runtime::Docker { .. }) => {
+                bail!("Docker Codex transcript inspection is observe-only")
+            }
             (Provider::Other(name), _) => bail!("cannot inspect unsupported provider {name}"),
         }
+    }
+
+    pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        if !session.capabilities.contains(&Capability::Reply) {
+            bail!("reply authority was not granted for this session");
+        }
+        if session.provider != Provider::Codex || session.runtime != Runtime::Host {
+            bail!("inline reply is supported only for owned host Codex threads");
+        }
+        let mode = self
+            .codex
+            .as_ref()
+            .context("host Codex control is disabled")?
+            .reply(session, prompt)?;
+        let verb = match mode {
+            CodexReplyMode::Started => "started a new turn for",
+            CodexReplyMode::Steered => "steered the active turn for",
+        };
+        Ok(ControlOutcome {
+            message: format!("{verb} managed Codex thread {}", session.provider_session_id),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
+    }
+
+    pub fn archive(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if !session.capabilities.contains(&Capability::Archive) {
+            bail!("archive authority was not granted for this session");
+        }
+        self.codex
+            .as_ref()
+            .context("host Codex control is disabled")?
+            .archive(session)?;
+        Ok(ControlOutcome {
+            message: format!("archived managed Codex thread {}", session.provider_session_id),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
+    }
+
+    pub fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if !session.capabilities.contains(&Capability::Delete) {
+            bail!("delete authority was not granted for this session");
+        }
+        self.codex
+            .as_ref()
+            .context("host Codex control is disabled")?
+            .delete(session)?;
+        Ok(ControlOutcome {
+            message: format!("deleted managed Codex thread {}", session.provider_session_id),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        })
     }
 
     pub fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
