@@ -12,6 +12,11 @@ use crate::control::{ControlOutcome, ProviderController};
 use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
+// `opencode session list` is workspace-scoped in OpenCode 1.18.18 despite its
+// generic help text. The official read-only `db` command is the only current
+// CLI surface that projects every root and child session across workspaces.
+const GLOBAL_SESSION_QUERY: &str = "SELECT id, title, time_created AS created, time_updated AS updated, project_id AS projectId, directory FROM session ORDER BY time_updated DESC";
+
 /// A command prefix for an OpenCode installation on the host or in Docker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpenCodeInvocation {
@@ -172,20 +177,34 @@ impl SessionSource for OpenCodeSource {
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
         let mut args = self.invocation.prefix_args.clone();
         args.extend([
-            "session".into(),
-            "list".into(),
+            "db".into(),
+            GLOBAL_SESSION_QUERY.into(),
             "--format".into(),
             "json".into(),
         ]);
         let mut command = CommandRequest::new(self.invocation.program.clone(), args);
         command.timeout = Duration::from_secs(8);
-        let output = self.runner.run(&command)?;
+        let mut output = self.runner.run(&command)?;
         if output.status != 0 {
-            bail!(
-                "opencode session list exited with status {}: {}",
-                output.status,
-                output.stderr_lossy()
-            );
+            // Older OpenCode builds do not have `db`; retain their supported,
+            // though potentially workspace-scoped, session-list behavior.
+            let mut args = self.invocation.prefix_args.clone();
+            args.extend([
+                "session".into(),
+                "list".into(),
+                "--format".into(),
+                "json".into(),
+            ]);
+            let mut fallback = CommandRequest::new(self.invocation.program.clone(), args);
+            fallback.timeout = Duration::from_secs(8);
+            output = self.runner.run(&fallback)?;
+            if output.status != 0 {
+                bail!(
+                    "OpenCode global discovery and session-list fallback failed with status {}: {}",
+                    output.status,
+                    output.stderr_lossy()
+                );
+            }
         }
 
         let mut sessions = parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?;
@@ -218,8 +237,8 @@ pub fn parse_opencode_session_list(input: &str, runtime: Runtime) -> Result<Vec<
     if input.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let records: Vec<OpenCodeRecord> = serde_json::from_str(input)
-        .context("invalid `opencode session list --format json` output")?;
+    let records: Vec<OpenCodeRecord> =
+        serde_json::from_str(input).context("invalid OpenCode session-list JSON")?;
     Ok(records
         .into_iter()
         .map(|record| normalize_record(record, runtime.clone()))
@@ -392,8 +411,8 @@ mod tests {
         let mut expected = CommandRequest::new(
             "opencode",
             vec![
-                "session".into(),
-                "list".into(),
+                "db".into(),
+                GLOBAL_SESSION_QUERY.into(),
                 "--format".into(),
                 "json".into(),
             ],
@@ -487,8 +506,8 @@ mod tests {
         let mut expected = CommandRequest::new(
             "opencode",
             vec![
-                "session".into(),
-                "list".into(),
+                "db".into(),
+                GLOBAL_SESSION_QUERY.into(),
                 "--format".into(),
                 "json".into(),
             ],

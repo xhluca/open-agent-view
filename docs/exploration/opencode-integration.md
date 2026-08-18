@@ -34,11 +34,13 @@ The TUI itself is a client of an OpenCode server. A normal TUI uses a random loc
 
 ## Persistence and read-only discovery
 
-On Linux, the tested isolated store was an SQLite database below `$XDG_DATA_HOME/opencode/`. The adapter deliberately uses the supported CLI instead of reading that private database schema:
+On Linux, the tested isolated store was an SQLite database below `$XDG_DATA_HOME/opencode/`. The first probe used the documented session command:
 
 ```bash
 opencode session list --format json
 ```
+
+Real mixed-provider validation then exposed an important 1.18.18 behavior: that command returned only the current workspace's sessions, so a dashboard launched elsewhere silently missed them. The adapter now uses OpenCode's official, read-only `db` command to project the session table globally, including child sessions, and falls back to `session list` for older releases that do not provide `db`. This deliberately couples the global path to the current table columns; a schema change becomes a visible source warning instead of silently reading the SQLite file itself.
 
 OpenCode 1.18.18 prints **zero bytes**, not `[]`, when the store is empty. With a session it returns records with:
 
@@ -106,10 +108,13 @@ Verified against 1.18.18:
 - adding a `noReply` user message without invoking a model;
 - message listing and full session export;
 - CLI JSON session-list schema after creation;
+- global discovery from a different working directory through the read-only DB command;
 - parser behavior for blank output, multiple records, cwd filtering, and timestamps;
 - host and explicit-Docker command construction;
 - read-only transcript formatting;
-- coexistence through the provider-neutral discovery engine unit suite.
+- coexistence through the provider-neutral discovery engine unit suite;
+- combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory;
+- exact native TUI resume by session ID and clean terminal restoration.
 
 Not claimed:
 
@@ -117,4 +122,3 @@ Not claimed:
 - live state from the history CLI;
 - control of an arbitrary existing TUI's unregistered random server;
 - destructive API behavior.
-

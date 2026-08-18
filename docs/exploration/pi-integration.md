@@ -112,11 +112,12 @@ Verified:
 - parsing current v3 JSONL fixtures;
 - nested discovery, cwd filtering, missing stores, invalid/incomplete state handling, and symlink exclusion;
 - read-only transcript rendering by exact header UUID;
-- coexistence through the provider-neutral discovery engine unit suite.
+- coexistence through the provider-neutral discovery engine unit suite;
+- exact native TUI resume by UUID with a custom session directory and clean terminal restoration;
+- combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory.
 
 Not claimed:
 
 - a model-backed prompt, because the isolation test intentionally supplied no real credentials;
 - reconnection to a pre-existing Pi process, because the provider has no such transport;
 - safe control of sessions not launched by Open Agent View.
-
