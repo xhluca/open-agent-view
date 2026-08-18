@@ -116,7 +116,10 @@ impl ControlHub {
                     provider_session_hint: Some(thread_id),
                 })
             }
-            Provider::Other(name) => bail!("no launch controller is configured for {name}"),
+            provider => bail!(
+                "no launch controller is configured for {}",
+                provider.label()
+            ),
         }
     }
 
@@ -141,7 +144,7 @@ impl ControlHub {
                     provider_session_hint: Some(session.provider_session_id.clone()),
                 })
             }
-            Provider::Other(ref name) => bail!("no controller is configured for {name}"),
+            ref provider => bail!("no controller is configured for {}", provider.label()),
         }
     }
 
@@ -178,7 +181,7 @@ impl ControlHub {
             (Provider::Codex, Runtime::Docker { .. }) => {
                 bail!("Docker Codex transcript inspection is observe-only")
             }
-            (Provider::Other(name), _) => bail!("cannot inspect unsupported provider {name}"),
+            (provider, _) => bail!("cannot inspect unsupported provider {}", provider.label()),
         }
     }
 
@@ -353,7 +356,7 @@ impl ControlHub {
                 ]);
                 command
             }
-            (Provider::Other(name), _) => bail!("cannot open unsupported provider {name}"),
+            (provider, _) => bail!("cannot open unsupported provider {}", provider.label()),
         };
         let status = command
             .stdin(Stdio::inherit())

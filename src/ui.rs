@@ -9,7 +9,7 @@ use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode,
 };
-use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionState};
+use crate::domain::{AgentSession, Capability, Runtime, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -437,13 +437,23 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn compact_runtime_marker(session: &AgentSession) -> &'static str {
-    match (&session.provider, &session.runtime) {
-        (Provider::Claude, Runtime::Host) => "C@H",
-        (Provider::Claude, Runtime::Docker { .. }) => "C@D",
-        (Provider::Codex, Runtime::Host) => "X@H",
-        (Provider::Codex, Runtime::Docker { .. }) => "X@D",
-        (Provider::Other(_), Runtime::Host) => "?@H",
-        (Provider::Other(_), Runtime::Docker { .. }) => "?@D",
+    match (session.provider.compact_marker(), &session.runtime) {
+        ("C", Runtime::Host) => "C@H",
+        ("C", Runtime::Docker { .. }) => "C@D",
+        ("X", Runtime::Host) => "X@H",
+        ("X", Runtime::Docker { .. }) => "X@D",
+        ("P", Runtime::Host) => "P@H",
+        ("P", Runtime::Docker { .. }) => "P@D",
+        ("O", Runtime::Host) => "O@H",
+        ("O", Runtime::Docker { .. }) => "O@D",
+        ("R", Runtime::Host) => "R@H",
+        ("R", Runtime::Docker { .. }) => "R@D",
+        ("G", Runtime::Host) => "G@H",
+        ("G", Runtime::Docker { .. }) => "G@D",
+        ("A", Runtime::Host) => "A@H",
+        ("A", Runtime::Docker { .. }) => "A@D",
+        (_, Runtime::Host) => "?@H",
+        (_, Runtime::Docker { .. }) => "?@D",
     }
 }
 

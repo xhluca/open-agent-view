@@ -11,6 +11,13 @@ use serde::{Deserialize, Serialize};
 pub enum Provider {
     Claude,
     Codex,
+    Pi,
+    #[serde(rename = "opencode")]
+    OpenCode,
+    Cursor,
+    #[serde(rename = "github_copilot")]
+    GitHubCopilot,
+    Antigravity,
     Other(String),
 }
 
@@ -19,7 +26,25 @@ impl Provider {
         match self {
             Self::Claude => "Claude",
             Self::Codex => "Codex",
+            Self::Pi => "Pi",
+            Self::OpenCode => "OpenCode",
+            Self::Cursor => "Cursor",
+            Self::GitHubCopilot => "GitHub Copilot",
+            Self::Antigravity => "Antigravity",
             Self::Other(name) => name,
+        }
+    }
+
+    pub fn compact_marker(&self) -> &str {
+        match self {
+            Self::Claude => "C",
+            Self::Codex => "X",
+            Self::Pi => "P",
+            Self::OpenCode => "O",
+            Self::Cursor => "R",
+            Self::GitHubCopilot => "G",
+            Self::Antigravity => "A",
+            Self::Other(_) => "?",
         }
     }
 }
@@ -248,5 +273,39 @@ mod tests {
 
         assert!(json.contains("\"started_at\":1234"));
         assert!(json.contains("\"updated_at\":null"));
+    }
+
+    #[test]
+    fn supported_provider_names_are_stable_on_the_wire() {
+        let cases = [
+            (Provider::Claude, "\"claude\"", "Claude", "C"),
+            (Provider::Codex, "\"codex\"", "Codex", "X"),
+            (Provider::Pi, "\"pi\"", "Pi", "P"),
+            (
+                Provider::OpenCode,
+                "\"opencode\"",
+                "OpenCode",
+                "O",
+            ),
+            (Provider::Cursor, "\"cursor\"", "Cursor", "R"),
+            (
+                Provider::GitHubCopilot,
+                "\"github_copilot\"",
+                "GitHub Copilot",
+                "G",
+            ),
+            (
+                Provider::Antigravity,
+                "\"antigravity\"",
+                "Antigravity",
+                "A",
+            ),
+        ];
+
+        for (provider, wire, label, marker) in cases {
+            assert_eq!(serde_json::to_string(&provider).unwrap(), wire);
+            assert_eq!(provider.label(), label);
+            assert_eq!(provider.compact_marker(), marker);
+        }
     }
 }

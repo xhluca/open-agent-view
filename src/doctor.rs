@@ -30,7 +30,16 @@ impl DoctorReport {
         self.checks
             .iter()
             .filter(|check| {
-                matches!(check.name.as_str(), "Claude" | "Codex") && check.status == CheckStatus::Ok
+                matches!(
+                    check.name.as_str(),
+                    "Claude"
+                        | "Codex"
+                        | "Pi"
+                        | "OpenCode"
+                        | "Cursor"
+                        | "GitHub Copilot"
+                        | "Antigravity"
+                ) && check.status == CheckStatus::Ok
             })
             .count()
     }
