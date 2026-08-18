@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -762,6 +762,8 @@ fn now_millis() -> u64 {
 mod tests {
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(target_os = "linux")]
+    use std::process::Command;
 
     use tempfile::tempdir;
 
@@ -837,7 +839,7 @@ while :; do sleep 1; done
             cwd: None,
         };
         let session = wait_for_session(&supervisor, &request, SessionState::Working);
-        assert_eq!(session.pid.is_some(), true);
+        assert!(session.pid.is_some());
         assert!(session.capabilities.contains(&Capability::Interrupt));
         assert_eq!(supervisor.inspect(&session).unwrap(), "working");
 
