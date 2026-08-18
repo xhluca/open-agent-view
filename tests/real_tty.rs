@@ -188,12 +188,68 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
     }
 
     app.send(b"/");
-    app.send(b"copilot");
+    app.send(b"pi-refactor");
+    app.send(ENTER);
+    app.wait_for("managed Pi fixture row", |screen| {
+        screen.contains("pi-refactor") && !screen.contains("cursor-owned-chat")
+    });
+    app.send(b" ");
+    app.wait_for("managed Pi reply affordance", |screen| {
+        screen.contains("pi-refactor · Pi") && screen.contains("❯ reply")
+    });
+    app.send(b"fixture-pi-reply");
+    app.send(ENTER);
+    app.wait_for("fixture-fenced Pi reply", |screen| {
+        screen.contains("reply refused:")
+            && screen.contains("provider actions are disabled while reading a fixture")
+    });
+    app.send(ESC);
+    app.send(ESC);
+    app.wait_for("managed Pi peek close", |screen| {
+        !screen.contains("pi-refactor · Pi")
+    });
+
+    app.send(b"/");
+    app.send(&[0x7f; 64]);
+    app.send(b"cursor-owned-chat");
+    app.send(ENTER);
+    app.wait_for("managed Cursor fixture row", |screen| {
+        screen.contains("cursor-owned-chat") && screen.contains("Working")
+    });
+    app.send(CTRL_X);
+    app.wait_for("managed Cursor interrupt affordance", |screen| {
+        screen.contains("Interrupt the exact running session?")
+            && screen.contains("cursor:host:cursor-chat")
+    });
+    app.send(ENTER);
+    app.wait_for("fixture-fenced Cursor interrupt", |screen| {
+        screen.contains("stop refused:")
+            && screen.contains("provider actions are disabled while reading a fixture")
+    });
+
+    app.send(b"/");
+    app.send(&[0x7f; 64]);
+    app.send(b"copilot-acp-session");
     app.send(ENTER);
     let filtered = app.wait_for("Copilot mixed-provider filter", |screen| {
         screen.contains("copilot-acp-session") && !screen.contains("pi-refactor")
     });
     assert_lines_fit(&filtered, 150);
+    app.send(b" ");
+    app.wait_for("managed Copilot approval affordance", |screen| {
+        screen.contains("copilot-acp-session · GitHub Copilot")
+            && screen.contains("y allow once · n deny")
+    });
+    app.send(b"y");
+    app.wait_for("fixture-fenced Copilot approval", |screen| {
+        screen.contains("approval response refused:")
+            && screen.contains("provider actions are disabled while reading a fixture")
+    });
+    app.send(ESC);
+    app.send(ESC);
+    app.wait_for("managed Copilot peek close", |screen| {
+        !screen.contains("copilot-acp-session · GitHub Copilot")
+    });
 
     app.send(CTRL_S);
     let directory = app.wait_for("Copilot directory view", |screen| {

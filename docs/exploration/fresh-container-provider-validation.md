@@ -88,6 +88,8 @@ cargo test --locked --test real_tty \
 ```
 
 That test passed on 2026-08-18. It asserts all provider labels, help rendering,
-alternate-screen entry, and clean terminal restoration. It intentionally uses
-synthetic sessions: mixing three real unauthenticated CLIs cannot exercise
-session rows, while copying user credentials would defeat the isolation goal.
+managed Pi reply, managed Cursor interrupt, managed Copilot approval,
+alternate-screen entry, and clean terminal restoration. Every action is
+rejected at the fixture I/O fence. The test intentionally uses synthetic
+sessions: mixing three real unauthenticated CLIs cannot exercise session rows,
+while copying user credentials would defeat the isolation goal.

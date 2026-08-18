@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -26,6 +26,7 @@ const CREATE_TIMEOUT: Duration = Duration::from_secs(15);
 const IDENTITY_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_LOG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TRANSCRIPT_CHARS: usize = 32 * 1024;
+const EXECUTABLE_BUSY_RETRIES: usize = 5;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -119,7 +120,7 @@ impl CursorSupervisor {
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
-        let output = self.runner.run(&request)?;
+        let output = self.run_command(&request)?;
         if output.status != 0 {
             bail!(
                 "Cursor create-chat exited with status {}: {}",
@@ -245,11 +246,13 @@ impl CursorSupervisor {
         // pass only prevents a fixture or another source from gaining control
         // merely by reusing an owned ID with a different runtime/cwd.
         for session in &mut snapshot.sessions {
-            if session.provider != Provider::Cursor || session.kind == SessionKind::Managed {
+            if session.provider != Provider::Cursor
+                || session.runtime != Runtime::Host
+                || session.kind == SessionKind::Managed
+            {
                 continue;
             }
-            session.capabilities.remove(&Capability::Reply);
-            session.capabilities.remove(&Capability::Interrupt);
+            session.capabilities.clear();
         }
     }
 
@@ -294,9 +297,8 @@ impl CursorSupervisor {
                 Ok(())
             });
         }
-        let mut child = command
-            .spawn()
-            .context("failed to launch managed Cursor turn")?;
+        let mut child =
+            spawn_with_busy_retry(&mut command).context("failed to launch managed Cursor turn")?;
         let process = match wait_for_identity(child.id(), IDENTITY_TIMEOUT) {
             Ok(identity) => identity,
             Err(error) => {
@@ -350,6 +352,26 @@ impl CursorSupervisor {
                 .cloned()
                 .with_context(|| format!("Cursor session {session_id} is not owned"))
         })
+    }
+
+    fn run_command(
+        &self,
+        request: &crate::process::CommandRequest,
+    ) -> Result<crate::process::CommandOutput> {
+        let mut attempts = 0;
+        loop {
+            match self.runner.run(request) {
+                Ok(output) => return Ok(output),
+                Err(error)
+                    if error_has_errno(&error, libc::ETXTBSY)
+                        && attempts < EXECUTABLE_BUSY_RETRIES =>
+                {
+                    attempts += 1;
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => return Err(error),
+            }
+        }
     }
 
     fn require_owned_host(&self, session: &AgentSession) -> Result<()> {
@@ -619,6 +641,32 @@ fn wait_for_identity(pid: u32, timeout: Duration) -> Result<CursorProcessIdentit
     }
 }
 
+fn spawn_with_busy_retry(command: &mut Command) -> std::io::Result<std::process::Child> {
+    let mut attempts = 0;
+    loop {
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error)
+                if error.raw_os_error() == Some(libc::ETXTBSY)
+                    && attempts < EXECUTABLE_BUSY_RETRIES =>
+            {
+                attempts += 1;
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn error_has_errno(error: &anyhow::Error, errno: i32) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .map(|error| error.raw_os_error() == Some(errno))
+            .unwrap_or(false)
+    })
+}
+
 fn verify_process(identity: &CursorProcessIdentity) -> Result<bool> {
     let (start_token, state) = match process_stat(identity.pid) {
         Ok(value) => value,
@@ -762,9 +810,6 @@ fn now_millis() -> u64 {
 mod tests {
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(target_os = "linux")]
-    use std::process::Command;
-
     use tempfile::tempdir;
 
     use super::*;

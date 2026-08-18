@@ -17,7 +17,11 @@ use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapsho
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_STDERR_BYTES: u64 = 1024 * 1024;
+const MAX_QUEUED_MESSAGES: usize = 1024;
+const MAX_PENDING_PERMISSIONS: usize = 256;
 const MAX_LIST_PAGES: usize = 100;
+const EXECUTABLE_BUSY_RETRIES: usize = 5;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CopilotAcpMode {
@@ -118,9 +122,24 @@ impl CopilotAcpConnection {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command
-            .spawn()
-            .with_context(|| format!("failed to start Copilot ACP executable `{executable}`"))?;
+        let mut attempts = 0;
+        let mut child = loop {
+            match command.spawn() {
+                Ok(child) => break child,
+                Err(error)
+                    if error.raw_os_error() == Some(libc::ETXTBSY)
+                        && attempts < EXECUTABLE_BUSY_RETRIES =>
+                {
+                    attempts += 1;
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("failed to start Copilot ACP executable `{executable}`")
+                    })
+                }
+            }
+        };
         let stdin = child
             .stdin
             .take()
@@ -134,14 +153,18 @@ impl CopilotAcpConnection {
             .take()
             .context("failed to open Copilot ACP stderr")?;
 
-        let (sender, messages) = mpsc::channel();
+        let (sender, messages) = mpsc::sync_channel(MAX_QUEUED_MESSAGES);
         let stdout_thread = thread::spawn(move || read_ndjson(stdout, sender));
         let stderr = Arc::new(Mutex::new(Vec::new()));
         let stderr_sink = stderr.clone();
         let stderr_thread = thread::spawn(move || {
             let mut reader = BufReader::new(child_stderr);
             let mut bytes = Vec::new();
-            let _ = reader.read_to_end(&mut bytes);
+            let _ = reader
+                .by_ref()
+                .take(MAX_STDERR_BYTES + 1)
+                .read_to_end(&mut bytes);
+            bytes.truncate(MAX_STDERR_BYTES as usize);
             if let Ok(mut sink) = stderr_sink.lock() {
                 *sink = bytes;
             }
@@ -336,7 +359,7 @@ impl CopilotAcpConnection {
                         )
                     });
                 }
-                message => self.queued.push_back(message),
+                message => self.queue_message(message)?,
             }
         }
     }
@@ -400,7 +423,7 @@ impl CopilotAcpConnection {
                         anyhow!("Copilot ACP `{method}` failed: {}", compact_json(&error))
                     });
                 }
-                message => self.queued.push_back(message),
+                message => self.queue_message(message)?,
             }
         }
     }
@@ -474,6 +497,11 @@ impl CopilotAcpConnection {
                             .map(|option| option.id.clone())
                             .collect(),
                     };
+                    if self.pending_permissions.len() >= MAX_PENDING_PERMISSIONS {
+                        bail!(
+                            "Copilot ACP exceeded the {MAX_PENDING_PERMISSIONS}-request pending permission limit"
+                        );
+                    }
                     if self.pending_permissions.insert(key, pending).is_some() {
                         bail!("Copilot ACP reused a pending permission request ID");
                     }
@@ -525,6 +553,14 @@ impl CopilotAcpConnection {
             .lock()
             .map(|bytes| String::from_utf8_lossy(&bytes).trim().to_owned())
             .unwrap_or_default()
+    }
+
+    fn queue_message(&mut self, message: CopilotAcpMessage) -> Result<()> {
+        if self.queued.len() >= MAX_QUEUED_MESSAGES {
+            bail!("Copilot ACP exceeded the {MAX_QUEUED_MESSAGES}-message deferred queue limit");
+        }
+        self.queued.push_back(message);
+        Ok(())
     }
 }
 
@@ -882,7 +918,7 @@ fn parse_permission_request(id: Value, params: Value) -> Result<CopilotPermissio
     })
 }
 
-fn read_ndjson(stdout: impl Read, sender: mpsc::Sender<std::result::Result<Value, String>>) {
+fn read_ndjson(stdout: impl Read, sender: mpsc::SyncSender<std::result::Result<Value, String>>) {
     let mut reader = BufReader::new(stdout);
     loop {
         let mut bytes = Vec::new();

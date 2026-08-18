@@ -146,6 +146,13 @@ impl CopilotSupervisor {
         let result = (|| -> Result<()> {
             let mut state = self.lock_state()?;
             state.drain()?;
+            for session in snapshot.sessions.iter_mut().filter(|session| {
+                session.provider == Provider::GitHubCopilot
+                    && session.runtime == Runtime::Host
+                    && !state.sessions.contains_key(&session.provider_session_id)
+            }) {
+                session.capabilities.clear();
+            }
             for managed in state.sessions.values() {
                 let normalized = normalize_managed(managed);
                 if let Some(session) = snapshot.sessions.iter_mut().find(|session| {
@@ -324,6 +331,11 @@ impl CopilotManagedState {
                 }
                 CopilotAcpMessage::PermissionRequest(request) => {
                     if let Some(session) = self.sessions.get_mut(&request.session_id) {
+                        if session.permission.is_some() {
+                            self.connection_mut()?
+                                .respond_permission_cancelled(&request.request_id)?;
+                            continue;
+                        }
                         session.permission = Some(request);
                         session.state = SessionState::NeedsInput;
                         session.summary = "Copilot needs permission".into();
@@ -337,11 +349,24 @@ impl CopilotManagedState {
                     let Some(request_id) = id.as_u64() else {
                         continue;
                     };
-                    if let Some(session) = self
+                    let session_id = self
                         .sessions
-                        .values_mut()
-                        .find(|session| session.active_prompt == Some(request_id))
-                    {
+                        .iter()
+                        .find(|(_, session)| session.active_prompt == Some(request_id))
+                        .map(|(session_id, _)| session_id.clone());
+                    if let Some(session_id) = session_id {
+                        let pending_request = self.sessions[&session_id]
+                            .permission
+                            .as_ref()
+                            .map(|permission| permission.request_id.clone());
+                        if let Some(pending_request) = pending_request {
+                            self.connection_mut()?
+                                .respond_permission_cancelled(&pending_request)?;
+                        }
+                        let session = self
+                            .sessions
+                            .get_mut(&session_id)
+                            .expect("managed session found by ID");
                         session.active_prompt = None;
                         session.permission = None;
                         session.updated_at = SystemTime::now();
