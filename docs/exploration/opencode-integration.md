@@ -1,6 +1,10 @@
 # OpenCode provider exploration
 
-Status: history discovery and read-only transcript inspection implemented; owned-server lifecycle control is not yet integrated.
+Status: history discovery and read-only transcript inspection are implemented.
+The provider layer also implements Linux-only durable owned-server launch,
+reconnect, live discovery, inspection, reply, and interrupt; ordinary history
+remains read-only. CLI construction must select the managed constructors to
+enable that authority.
 
 Explored on 2026-08-18 against:
 
@@ -79,9 +83,27 @@ The local server offers the primitives needed for complete managed control:
 - `DELETE /session/:id`: destructive deletion;
 - SSE event streams for state, message, permission, and question changes.
 
-An OAV controller should launch one loopback-only server, persist its exact endpoint plus process-start identity, and record every session ID it creates. Control capabilities must be granted only when both server identity and session ownership are proven. A loopback listener alone is not proof of ownership, and PID reuse must not be trusted.
+The managed controller launches one loopback-only server and records every
+canonical session ID returned by `POST /session`. Reconnection requires all of:
 
-OpenCode supports Basic authentication through `OPENCODE_SERVER_PASSWORD`. A managed server should use an OAV-generated secret in a user-private state file even though it listens only on `127.0.0.1`.
+1. the exact Linux `/proc` start token and command-line bytes;
+2. proof that the recorded process owns the exact `127.0.0.1` listening socket;
+3. a successful authenticated health response using a random 256-bit secret;
+4. an exact session ID and absolute working directory in the private ownership
+   record.
+
+A loopback listener or PID alone is never authority. Zombie processes are
+rejected. Shutdown, used by isolated tests rather than ordinary dashboard exit,
+opens a Linux pidfd first, revalidates identity/listener ownership, signals
+through `pidfd_send_signal`, and waits for that exact process to exit.
+
+OpenCode supports Basic authentication through `OPENCODE_SERVER_PASSWORD`. The
+managed server sets that to an OAV-generated secret and stores it only in a
+current-user-owned `0600` record below
+`$XDG_STATE_HOME/open-agent-view/opencode/` (or the corresponding
+`~/.local/state` path). The state directory is `0700`; symlinks, permissive or
+wrong-owner files, malformed IDs/directories, and oversized records are
+refused.
 
 OpenCode 1.18.18's actual `serve --help` reports a default port of `0` (random), while the prose documentation still shows `4096`. A managed controller should always pass an explicit selected port and verify `/global/health` instead of relying on either default.
 
@@ -92,7 +114,7 @@ OpenCode 1.18.18's actual `serve --help` reports a default port of `0` (random),
 | Existing persisted history | yes | yes | possible via `opencode --session <id>` | no | no | no | no |
 | Arbitrary unregistered TUI/server | history only | export | possible | no | no | no | no |
 | Explicit operator-enrolled server (future) | yes | yes | `opencode attach <url>` | only with explicit authority | exact server | exact request IDs | never by default |
-| OAV-owned server/session (planned) | yes | yes | attach | yes | yes | yes | owned + confirmation |
+| OAV-owned server/session on Linux | yes | yes | currently refused through a second server | yes | yes | not yet exposed | not exposed |
 
 ## Isolated real-CLI and API validation
 
@@ -115,6 +137,13 @@ Verified against 1.18.18:
 - coexistence through the provider-neutral discovery engine unit suite;
 - combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory;
 - exact native TUI resume by session ID and clean terminal restoration.
+- authenticated managed-server startup using a random secret, exact listener
+  ownership, `0700`/`0600` state permissions, and canonical owned IDs;
+- ten consecutive dashboard-client reconnects to one live fake server;
+- owned launch, live/idle state, transcript, active and idle reply, interrupt,
+  external-ID refusal, pidfd shutdown, and panic-safe cleanup;
+- a credential-empty managed probe against the real 1.18.18 server, including
+  creation, async prompt acceptance, listing, inspection, and exact shutdown.
 
 Not claimed:
 
@@ -122,3 +151,11 @@ Not claimed:
 - live state from the history CLI;
 - control of an arbitrary existing TUI's unregistered random server;
 - destructive API behavior.
+- permission/question SSE reduction and responses, which remain provider-native;
+- treating a `204` from `prompt_async` as proof that a model turn started or
+  succeeded. In the credential-empty 1.18.18 probe the request was accepted but
+  the asynchronous provider startup could fail before persisting a user
+  message, matching the upstream fire-and-forget contract;
+- durable managed control on macOS; history discovery/export/native resume are
+  retained there until an equally strong process/listener identity primitive is
+  available.

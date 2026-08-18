@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -8,8 +8,11 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, ProviderController};
-use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
+use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::domain::{
+    AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
+};
+use crate::opencode_supervisor::{ManagedOpenCodeSession, OpenCodeSupervisor};
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 // `opencode session list` is workspace-scoped in OpenCode 1.18.18 despite its
@@ -51,15 +54,17 @@ pub struct OpenCodeSource {
     invocation: OpenCodeInvocation,
     runtime: Runtime,
     runner: Arc<dyn CommandRunner>,
+    supervisor: Option<Arc<OpenCodeSupervisor>>,
 }
 
-/// Read-only history control plus native TUI resume for OpenCode.
+/// Read-only history control plus optional exact owned-server lifecycle.
 ///
-/// This controller does not grant mutation capabilities. Managed HTTP-server
-/// ownership is a separate contract and must not be inferred from history.
+/// Managed HTTP authority comes only from `OpenCodeSupervisor`; it is never
+/// inferred from the history commands used by `OpenCodeSource`.
 pub struct OpenCodeController {
     executable: String,
     source: OpenCodeSource,
+    supervisor: Option<Arc<OpenCodeSupervisor>>,
 }
 
 impl OpenCodeController {
@@ -68,6 +73,16 @@ impl OpenCodeController {
         Self {
             source: OpenCodeSource::host(executable.clone()),
             executable,
+            supervisor: None,
+        }
+    }
+
+    pub fn managed(executable: impl Into<String>, supervisor: Arc<OpenCodeSupervisor>) -> Self {
+        let executable = executable.into();
+        Self {
+            source: OpenCodeSource::managed(executable.clone(), supervisor.clone()),
+            executable,
+            supervisor: Some(supervisor),
         }
     }
 }
@@ -77,13 +92,96 @@ impl ProviderController for OpenCodeController {
         Provider::OpenCode
     }
 
+    fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        let Some(supervisor) = &self.supervisor else {
+            return;
+        };
+        let managed = match supervisor.list() {
+            Ok(managed) => managed,
+            Err(error) => {
+                snapshot
+                    .warnings
+                    .push(format!("OpenCode managed control: {error:#}"));
+                return;
+            }
+        };
+        let managed: BTreeMap<_, _> = managed
+            .into_iter()
+            .map(|session| (session.id.clone(), session))
+            .collect();
+        for session in snapshot.sessions.iter_mut().filter(|session| {
+            session.provider == Provider::OpenCode && session.runtime == Runtime::Host
+        }) {
+            let Some(owned) = managed.get(&session.provider_session_id) else {
+                continue;
+            };
+            overlay_managed(session, owned);
+            grant_managed_capabilities(session, owned);
+        }
+    }
+
+    fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::OpenCode {
+            bail!("the OpenCode controller cannot launch another provider");
+        }
+        let session = self
+            .supervisor
+            .as_ref()
+            .context("managed OpenCode launch is not configured")?
+            .launch(&request.prompt, &request.cwd)?;
+        Ok(ControlOutcome {
+            message: format!("started managed OpenCode session {}", session.title),
+            provider_session_hint: Some(session.id),
+        })
+    }
+
     fn inspect(&self, session: &AgentSession) -> Result<String> {
+        if self.owned_session(session)?.is_some() {
+            return self
+                .supervisor
+                .as_ref()
+                .context("managed OpenCode control is not configured")?
+                .inspect(&session.provider_session_id);
+        }
         self.source.inspect(session)
+    }
+
+    fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
+        let owned = self.require_owned(session)?;
+        if owned.state == SessionState::NeedsInput {
+            bail!("the managed OpenCode session needs provider-native recovery");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed OpenCode control is not configured")?
+            .reply(&owned.id, prompt)?;
+        Ok(ControlOutcome {
+            message: format!("sent a reply to OpenCode session {}", session.name),
+            provider_session_hint: Some(owned.id),
+        })
+    }
+
+    fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        let owned = self.require_owned(session)?;
+        if owned.state != SessionState::Working {
+            bail!("the managed OpenCode session is not currently working");
+        }
+        self.supervisor
+            .as_ref()
+            .context("managed OpenCode control is not configured")?
+            .interrupt(&owned.id)?;
+        Ok(ControlOutcome {
+            message: format!("interrupted OpenCode session {}", session.name),
+            provider_session_hint: Some(owned.id),
+        })
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.provider != Provider::OpenCode || session.runtime != Runtime::Host {
             bail!("the host OpenCode controller does not own this runtime");
+        }
+        if self.owned_session(session)?.is_some() {
+            bail!("a live managed OpenCode session cannot be opened through a second server; use inline controls");
         }
         let status = Command::new(&self.executable)
             .args(["--session", &session.provider_session_id])
@@ -103,6 +201,26 @@ impl ProviderController for OpenCodeController {
     }
 }
 
+impl OpenCodeController {
+    fn owned_session(&self, session: &AgentSession) -> Result<Option<ManagedOpenCodeSession>> {
+        if session.provider != Provider::OpenCode || session.runtime != Runtime::Host {
+            bail!("the host OpenCode controller does not own this runtime");
+        }
+        let Some(supervisor) = &self.supervisor else {
+            return Ok(None);
+        };
+        Ok(supervisor
+            .list()?
+            .into_iter()
+            .find(|owned| owned.id == session.provider_session_id))
+    }
+
+    fn require_owned(&self, session: &AgentSession) -> Result<ManagedOpenCodeSession> {
+        self.owned_session(session)?
+            .context("refusing to control an OpenCode session not created by this supervisor")
+    }
+}
+
 impl OpenCodeSource {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
@@ -110,6 +228,17 @@ impl OpenCodeSource {
             invocation: OpenCodeInvocation::host(executable),
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
+            supervisor: None,
+        }
+    }
+
+    pub fn managed(executable: impl Into<String>, supervisor: Arc<OpenCodeSupervisor>) -> Self {
+        Self {
+            label: "OpenCode (host)".into(),
+            invocation: OpenCodeInvocation::host(executable),
+            runtime: Runtime::Host,
+            runner: Arc::new(ProcessRunner),
+            supervisor: Some(supervisor),
         }
     }
 
@@ -129,6 +258,7 @@ impl OpenCodeSource {
                 image: image.into(),
             },
             runner: Arc::new(ProcessRunner),
+            supervisor: None,
         }
     }
 
@@ -165,6 +295,7 @@ impl OpenCodeSource {
             invocation,
             runtime,
             runner,
+            supervisor: None,
         }
     }
 }
@@ -207,17 +338,83 @@ impl SessionSource for OpenCodeSource {
             }
         }
 
-        let mut sessions =
-            parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?;
-        sessions.retain(|session| {
-            request.include_completed
-                && request
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| session.cwd.starts_with(cwd))
-                    .unwrap_or(true)
-        });
-        Ok(sessions)
+        let mut sessions: BTreeMap<_, _> =
+            parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?
+                .into_iter()
+                .filter(|session| {
+                    request.include_completed
+                        && request
+                            .cwd
+                            .as_ref()
+                            .map(|cwd| session.cwd.starts_with(cwd))
+                            .unwrap_or(true)
+                })
+                .map(|session| (session.provider_session_id.clone(), session))
+                .collect();
+        if let Some(supervisor) = &self.supervisor {
+            for managed in supervisor.list()? {
+                let session = agent_session_from_managed(&managed);
+                if (request.include_completed || session.state != SessionState::Completed)
+                    && request
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| session.cwd.starts_with(cwd))
+                        .unwrap_or(true)
+                {
+                    sessions.insert(session.provider_session_id.clone(), session);
+                }
+            }
+        }
+        Ok(sessions.into_values().collect())
+    }
+}
+
+fn agent_session_from_managed(managed: &ManagedOpenCodeSession) -> AgentSession {
+    AgentSession {
+        id: format!("opencode:host:{}", managed.id),
+        provider_session_id: managed.id.clone(),
+        provider: Provider::OpenCode,
+        runtime: Runtime::Host,
+        kind: SessionKind::Managed,
+        name: managed.title.clone(),
+        cwd: managed.cwd.clone(),
+        state: managed.state,
+        summary: managed.summary.clone(),
+        raw_state: Some("managed_server".into()),
+        pid: Some(managed.server_pid),
+        started_at: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(managed.created_at_ms)),
+        updated_at: Some(SystemTime::UNIX_EPOCH + Duration::from_millis(managed.updated_at_ms)),
+        pull_requests: None,
+        capabilities: BTreeSet::from([Capability::Inspect]),
+    }
+}
+
+fn overlay_managed(session: &mut AgentSession, managed: &ManagedOpenCodeSession) {
+    session.kind = SessionKind::Managed;
+    session.name = managed.title.clone();
+    session.cwd = managed.cwd.clone();
+    session.state = managed.state;
+    session.summary = managed.summary.clone();
+    session.raw_state = Some("managed_server".into());
+    session.pid = Some(managed.server_pid);
+    session.started_at =
+        Some(SystemTime::UNIX_EPOCH + Duration::from_millis(managed.created_at_ms));
+    session.updated_at =
+        Some(SystemTime::UNIX_EPOCH + Duration::from_millis(managed.updated_at_ms));
+}
+
+fn grant_managed_capabilities(session: &mut AgentSession, managed: &ManagedOpenCodeSession) {
+    session.capabilities.clear();
+    session.capabilities.insert(Capability::Inspect);
+    match managed.state {
+        SessionState::Working => {
+            session.capabilities.insert(Capability::Reply);
+            session.capabilities.insert(Capability::Interrupt);
+        }
+        SessionState::Completed | SessionState::ReadyForReview => {
+            session.capabilities.insert(Capability::Reply);
+        }
+        SessionState::NeedsInput | SessionState::Unknown => {}
     }
 }
 
