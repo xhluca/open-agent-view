@@ -64,9 +64,11 @@ jobs:
           fi
 
           stem="open-agent-view-${version}-${TARGET}"
-          echo "version=${version}" >>"${GITHUB_OUTPUT}"
-          echo "stem=${stem}" >>"${GITHUB_OUTPUT}"
-          echo "archive=${stem}.tar.gz" >>"${GITHUB_OUTPUT}"
+          {
+            echo "version=${version}"
+            echo "stem=${stem}"
+            echo "archive=${stem}.tar.gz"
+          } >>"${GITHUB_OUTPUT}"
 
       - name: Test installer behavior and locked source
         shell: bash
