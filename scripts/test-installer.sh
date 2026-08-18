@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-repo_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+repo_dir="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-view-installer-test.XXXXXX")"
 trap 'rm -rf -- "$temp_root"' EXIT HUP INT TERM
 

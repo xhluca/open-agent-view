@@ -171,7 +171,7 @@ install -m 0755 "$binary" "$staged_binary"
 mv -f -- "$staged_binary" "${install_dir}/coding-agents"
 staged_binary=""
 
-installed_version="$(${install_dir}/coding-agents --version 2>/dev/null)" ||
+installed_version="$("${install_dir}/coding-agents" --version 2>/dev/null)" ||
   fail "the installed binary could not be executed"
 [[ "$installed_version" == "coding-agents ${version}" ]] ||
   fail "installed binary reported an unexpected version: ${installed_version}"
