@@ -281,14 +281,16 @@ pub fn parse_pi_session(
                 .map(ToOwned::to_owned)
         })
         .unwrap_or_else(|| format!("pi-{}", &header.id[..header.id.len().min(8)]));
-    let state = if last_role.as_deref() == Some("assistant")
-        && matches!(last_assistant_stop.as_deref(), Some("stop" | "length" | "error" | "aborted"))
-    {
-        SessionState::Completed
-    } else {
-        // A JSONL file alone cannot prove that an interactive or RPC process is
-        // still attached, nor can it safely accept input on that process.
-        SessionState::Unknown
+    let state = match (last_role.as_deref(), last_assistant_stop.as_deref()) {
+        (Some("assistant"), Some("stop")) => SessionState::Completed,
+        (Some("assistant"), Some("length" | "error" | "aborted")) => {
+            SessionState::NeedsInput
+        }
+        _ => {
+            // A JSONL file alone cannot prove that an interactive or RPC
+            // process is still attached, nor can it safely accept input.
+            SessionState::Unknown
+        }
     };
 
     Ok(AgentSession {
@@ -305,10 +307,10 @@ pub fn parse_pi_session(
             .map(|text| truncate_chars(text, 160))
             .or(first_user_text)
             .unwrap_or_default(),
-        raw_state: Some(if state == SessionState::Completed {
-            "persisted_complete".into()
-        } else {
-            "persisted_unknown".into()
+        raw_state: Some(match state {
+            SessionState::Completed => "persisted_complete".into(),
+            SessionState::NeedsInput => "persisted_error".into(),
+            _ => "persisted_unknown".into(),
         }),
         pid: None,
         started_at,
@@ -473,6 +475,18 @@ mod tests {
 
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].state, SessionState::Unknown);
+    }
+
+    #[test]
+    fn terminal_error_is_visible_as_needing_input() {
+        let input = r#"{"type":"session","version":3,"id":"abc","timestamp":"2026-08-18T12:00:00Z","cwd":"/work"}
+{"type":"message","id":"a1","parentId":null,"timestamp":"2026-08-18T12:00:01Z","message":{"role":"assistant","content":[{"type":"text","text":"Provider unavailable"}],"stopReason":"error"}}
+"#;
+
+        let session = parse_pi_session(input, Path::new("session.jsonl"), None, None).unwrap();
+
+        assert_eq!(session.state, SessionState::NeedsInput);
+        assert_eq!(session.raw_state.as_deref(), Some("persisted_error"));
     }
 
     #[test]
