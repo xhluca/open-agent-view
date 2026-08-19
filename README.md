@@ -84,7 +84,8 @@ coding-agents --launch-provider opencode
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
 `/` to filter, and `?` for contextual shortcuts. Start typing to hand off a new
-task to the configured managed provider.
+task to the configured managed provider. Every row spells out its provider
+name; open Peek to see whether it runs on the host or in Docker.
 
 ## Provider support
 

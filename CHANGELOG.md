@@ -8,6 +8,21 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-18
+
+### Fixed
+
+- Every session row now spells out its provider name—including Claude, Codex,
+  Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity—instead of requiring
+  users to decode undocumented `C@H`/`X@D`-style markers.
+- Provider identity remains visible at narrow terminal widths by yielding task
+  name and summary space first; full host/container details remain in Peek.
+
+### Changed
+
+- Real-render and real-PTY coverage now proves that each fixture session and
+  its provider name appear on the same terminal row.
+
 ## [0.1.3] - 2026-08-18
 
 ### Fixed

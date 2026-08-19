@@ -34,19 +34,6 @@ impl Provider {
             Self::Other(name) => name,
         }
     }
-
-    pub fn compact_marker(&self) -> &str {
-        match self {
-            Self::Claude => "C",
-            Self::Codex => "X",
-            Self::Pi => "P",
-            Self::OpenCode => "O",
-            Self::Cursor => "R",
-            Self::GitHubCopilot => "G",
-            Self::Antigravity => "A",
-            Self::Other(_) => "?",
-        }
-    }
 }
 
 impl fmt::Display for Provider {
@@ -278,24 +265,22 @@ mod tests {
     #[test]
     fn supported_provider_names_are_stable_on_the_wire() {
         let cases = [
-            (Provider::Claude, "\"claude\"", "Claude", "C"),
-            (Provider::Codex, "\"codex\"", "Codex", "X"),
-            (Provider::Pi, "\"pi\"", "Pi", "P"),
-            (Provider::OpenCode, "\"opencode\"", "OpenCode", "O"),
-            (Provider::Cursor, "\"cursor\"", "Cursor", "R"),
+            (Provider::Claude, "\"claude\"", "Claude"),
+            (Provider::Codex, "\"codex\"", "Codex"),
+            (Provider::Pi, "\"pi\"", "Pi"),
+            (Provider::OpenCode, "\"opencode\"", "OpenCode"),
+            (Provider::Cursor, "\"cursor\"", "Cursor"),
             (
                 Provider::GitHubCopilot,
                 "\"github_copilot\"",
                 "GitHub Copilot",
-                "G",
             ),
-            (Provider::Antigravity, "\"antigravity\"", "Antigravity", "A"),
+            (Provider::Antigravity, "\"antigravity\"", "Antigravity"),
         ];
 
-        for (provider, wire, label, marker) in cases {
+        for (provider, wire, label) in cases {
             assert_eq!(serde_json::to_string(&provider).unwrap(), wire);
             assert_eq!(provider.label(), label);
-            assert_eq!(provider.compact_marker(), marker);
         }
     }
 }

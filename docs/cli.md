@@ -144,25 +144,11 @@ and mount details.
 
 ## TUI keys and mode behavior
 
-Rows use compact provider/runtime markers to leave more width for the task
-summary and right-aligned metadata:
-
-| Marker | Meaning |
-| --- | --- |
-| `C@H` | Claude on the host |
-| `C@D` | Claude in an explicitly enrolled Docker container |
-| `X@H` | Codex on the host |
-| `X@D` | Codex in an explicitly enrolled Docker container |
-| `P@H` | Pi on the host |
-| `O@H` | OpenCode on the host |
-| `R@H` | Cursor on the host |
-| `G@H` | GitHub Copilot CLI on the host |
-| `A@H` | Antigravity CLI on the host |
-| `?@H` / `?@D` | Unknown/future provider on host / in Docker |
-
-The `X` distinguishes Codex from Claude while keeping every marker three
-columns wide. Peek expands the selected row to its full provider name and host
-or container runtime label.
+Every session row spells out its provider name: Claude, Codex, Pi, OpenCode,
+Cursor, GitHub Copilot, Antigravity, or the adapter-provided name for a future
+provider. Provider identity takes priority over task summary width on narrow
+terminals. Peek expands the selected row with the full host or container runtime
+label.
 
 | Context | Key | Result |
 | --- | --- | --- |

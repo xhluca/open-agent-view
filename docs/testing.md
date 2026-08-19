@@ -115,7 +115,7 @@ checks; the guide also contains release gates that are not yet complete.
   provider.
 - The current release binary and nine-session fixture were then rerun in fresh
   isolated containers at 120×34, 55×18, and 31×7. The wide run verified
-  populated status rendering, help, directory grouping, compact row markers,
+  populated status rendering, help, directory grouping, explicit provider names,
   and clean exit; 55×18 verified responsive truncation; 31×7 verified the
   explicit minimum-size fallback. Claude 2.1.209 was separately rerun empty at
   the same sizes: wide help/exit, narrow startup/exit, and tiny intro-only

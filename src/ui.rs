@@ -9,7 +9,7 @@ use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode,
 };
-use crate::domain::{AgentSession, Capability, Runtime, SessionState};
+use crate::domain::{AgentSession, Capability, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -258,8 +258,23 @@ fn render_session_row(
 ) -> Line<'static> {
     let symbol = state_symbol(session.state);
     let symbol_style = Style::default().fg(state_color(session.state));
-    let name_width = if width >= 100 { 26 } else { 20 };
-    let metadata = compact_runtime_marker(session);
+    let name_width = if width >= 100 {
+        26
+    } else if width >= 70 {
+        20
+    } else if width >= 50 {
+        16
+    } else {
+        10
+    };
+    // Provider identity is primary row information. Keep the complete names of
+    // every built-in provider visible instead of requiring users to decode the
+    // old C@H/X@D-style marker. Runtime details remain available in Peek.
+    let provider_width = 14;
+    let provider = pad_to_width(
+        truncate(session.provider.label(), provider_width),
+        provider_width,
+    );
     let state_prefix = (view_mode == ViewMode::Directory)
         .then(|| format!("{} · ", short_state(session.state)))
         .unwrap_or_default();
@@ -273,7 +288,7 @@ fn render_session_row(
     } else {
         format!("{prs:>7} {age:>5}")
     };
-    let fixed = 4 + name_width + metadata.len() + right.len();
+    let fixed = 5 + name_width + provider_width + right.len();
     let summary_width = (width as usize).saturating_sub(fixed).max(1);
     let summary = truncate(&format!("{state_prefix}{}", session.summary), summary_width);
     let name = pad_to_width(truncate(&session.name, name_width), name_width);
@@ -281,7 +296,7 @@ fn render_session_row(
     let spans = vec![
         Span::styled(format!(" {symbol} "), symbol_style),
         Span::styled(name, Style::default().add_modifier(Modifier::BOLD)),
-        Span::styled(format!("{metadata} "), Style::default().fg(DIM)),
+        Span::styled(format!(" {provider} "), Style::default().fg(ACCENT)),
         Span::styled(summary, Style::default().fg(DIM)),
         Span::styled(right, Style::default().fg(DIM)),
     ];
@@ -433,27 +448,6 @@ fn render_peek(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 .min(area.right().saturating_sub(2)),
             area.bottom().saturating_sub(2),
         );
-    }
-}
-
-fn compact_runtime_marker(session: &AgentSession) -> &'static str {
-    match (session.provider.compact_marker(), &session.runtime) {
-        ("C", Runtime::Host) => "C@H",
-        ("C", Runtime::Docker { .. }) => "C@D",
-        ("X", Runtime::Host) => "X@H",
-        ("X", Runtime::Docker { .. }) => "X@D",
-        ("P", Runtime::Host) => "P@H",
-        ("P", Runtime::Docker { .. }) => "P@D",
-        ("O", Runtime::Host) => "O@H",
-        ("O", Runtime::Docker { .. }) => "O@D",
-        ("R", Runtime::Host) => "R@H",
-        ("R", Runtime::Docker { .. }) => "R@D",
-        ("G", Runtime::Host) => "G@H",
-        ("G", Runtime::Docker { .. }) => "G@D",
-        ("A", Runtime::Host) => "A@H",
-        ("A", Runtime::Docker { .. }) => "A@D",
-        (_, Runtime::Host) => "?@H",
-        (_, Runtime::Docker { .. }) => "?@D",
     }
 }
 
@@ -978,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn compact_row_marker_preserves_summary_space_and_peek_shows_full_runtime() {
+    fn row_names_provider_and_peek_shows_full_runtime() {
         let mut item = session("worker", SessionState::Working);
         item.provider = Provider::Codex;
         item.runtime = Runtime::Docker {
@@ -995,7 +989,8 @@ mod tests {
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let row = buffer_text(terminal.backend().buffer());
-        assert!(row.contains("X@D"));
+        assert!(row.contains("Codex"));
+        assert!(!row.contains("X@D"));
         assert!(row.contains("latest summary from worker"));
         assert!(!row.contains("long-container-name-that-must-not-shrink-the-row"));
 
@@ -1003,6 +998,48 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let peek = buffer_text(terminal.backend().buffer());
         assert!(peek.contains("worker · Codex · long-container-name"));
+    }
+
+    #[test]
+    fn every_builtin_provider_is_named_on_its_session_row() {
+        let providers = [
+            (Provider::Claude, "Claude"),
+            (Provider::Codex, "Codex"),
+            (Provider::Pi, "Pi"),
+            (Provider::OpenCode, "OpenCode"),
+            (Provider::Cursor, "Cursor"),
+            (Provider::GitHubCopilot, "GitHub Copilot"),
+            (Provider::Antigravity, "Antigravity"),
+        ];
+
+        for (provider, expected) in providers {
+            let mut item = session("recognizable-session", SessionState::Working);
+            item.provider = provider;
+            let row = render_session_row(&item, ViewMode::Status, 120, false);
+            let text: String = row.spans.iter().map(|span| span.content.as_ref()).collect();
+
+            assert!(
+                text.contains(expected),
+                "session row did not name provider {expected}: {text:?}"
+            );
+            assert!(!text.contains('@'));
+        }
+    }
+
+    #[test]
+    fn truncated_session_name_keeps_a_gap_before_provider() {
+        let mut item = session(
+            "session-name-that-is-much-longer-than-the-column",
+            SessionState::Working,
+        );
+        item.provider = Provider::Antigravity;
+        let row = render_session_row(&item, ViewMode::Status, 120, false);
+        let text: String = row.spans.iter().map(|span| span.content.as_ref()).collect();
+
+        assert!(
+            text.contains("… Antigravity"),
+            "provider column touched name: {text:?}"
+        );
     }
 
     #[test]

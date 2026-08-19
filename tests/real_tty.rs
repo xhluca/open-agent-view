@@ -207,13 +207,25 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
             && screen.contains("cursor-owned-chat")
             && screen.contains("copilot-acp-session")
             && screen.contains("antigravity-last-conversa")
-            && ["C@", "X@", "P@H", "O@H", "R@H", "G@H", "A@H"]
-                .iter()
-                .all(|marker| screen.contains(marker))
     });
     assert_lines_fit(&startup, 150);
-    for marker in ["C@", "X@", "P@H", "O@H", "R@H", "G@H", "A@H"] {
-        assert!(startup.contains(marker), "missing provider marker {marker}");
+    for (session, provider) in [
+        ("release-reviewer", "Claude"),
+        ("approval-needed", "Codex"),
+        ("pi-refactor", "Pi"),
+        ("opencode-api", "OpenCode"),
+        ("cursor-owned-chat", "Cursor"),
+        ("copilot-acp-session", "GitHub Copilot"),
+        ("antigravity-last-conversa", "Antigravity"),
+    ] {
+        let row = startup
+            .lines()
+            .find(|line| line.contains(session))
+            .unwrap_or_else(|| panic!("missing session row {session}"));
+        assert!(
+            row.contains(provider),
+            "session row {session} did not name {provider}: {row:?}"
+        );
     }
 
     app.send(b"/");
@@ -390,7 +402,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.3")
+        screen.contains("Open Agent View v0.1.4")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -719,7 +731,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.3")
+        screen.contains("Open Agent View v0.1.4")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

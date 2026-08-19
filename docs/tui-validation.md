@@ -80,8 +80,8 @@ and narrow 60×20. At minimum verify:
   spilling into the next line, including CJK and multi-code-point graphemes;
 - provider text containing newlines, tabs, Escape, or C0/C1 controls cannot
   move the cursor, alter style, or inject a new terminal control sequence;
-- compact `C@H`/`C@D`/`X@H`/`X@D` markers align across rows while Peek expands
-  the full provider and runtime label;
+- each row spells out its provider name, including Claude versus Codex, while
+  Peek expands the full runtime label;
 - every state is present in reference order and the selected row is apparent;
 - 60×20 retains a discoverable `?` help affordance and usable composer;
 - no stale glyphs remain after changing view, filter, overlay, or selection;
