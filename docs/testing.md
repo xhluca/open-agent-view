@@ -60,7 +60,8 @@ checks; the guide also contains release gates that are not yet complete.
   normalization and confirm that answers never enter the supervisor record.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
-  context-sensitive `?`, selection reconciliation after filtering, Claude
+  context-sensitive `?`, `ctrl+f` filtering, task slash commands,
+  provider/model selection, Claude attach-return guidance, selection reconciliation after filtering, Claude
   worktree grouping, aggregate review/working counts, capability-aware help,
   and the narrow footer's retained help affordance. Focused rendering tests
   sanitize terminal-control characters from every provider-derived or dynamic
@@ -76,8 +77,8 @@ checks; the guide also contains release gates that are not yet complete.
   targets, then repeats tests and release builds on Rust 1.75.0 and stable.
 - `scripts/real-tui-tests.sh` runs eleven serialized tests against real Unix PTYs
   with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
-  exercise populated sections, contextual help, grouping toggle, filter
-  apply/cancel/clear, multiline new-task launch/cancellation, peek, rename
+  exercise populated sections, contextual help, grouping toggle, `ctrl+f`
+  filter apply/cancel/clear, slash commands, multiline new-task launch/cancellation, peek, rename
   cancellation/submission, native-open suspend/restore, reply, interrupt,
   approval `y`/`n`, single/bulk delete and archive confirmation, structured
   input, and fixture-fenced refusals. A 90×24 case sends real arrow sequences
@@ -94,7 +95,9 @@ checks; the guide also contains release gates that are not yet complete.
   present, selects `Show 25 more · 475 hidden` with real arrow keys, reveals the
   second page, then sends 200 down-arrow events in one burst. It requires the
   exact destination to appear within 750 ms while emitting less than 24 KiB,
-  guarding bounded rendering, input coalescing, and page-aligned scrolling. A
+  guarding bounded rendering, input coalescing, and page-aligned scrolling. It
+  also submits `/help` and a 200-character typing burst, requiring each within
+  750 ms and bounding terminal output. A
   separate startup case makes Claude discovery sleep for two seconds and
   requires an immediately available Antigravity row within 750 ms, proving
   that the first screen is not gated on the slowest provider.
@@ -135,6 +138,12 @@ checks; the guide also contains release gates that are not yet complete.
   degradation/exit. The exhaustive action matrix ran against the actual binary
   in host `openpty`; it was not redundantly repeated inside Docker.
 - Host Claude discovery was compared with `claude agents --json --all`.
+- On the reported host environment, Claude 2.1.236 returned completed rows even
+  without `--all`; a current-binary JSON probe centrally reduced that result to
+  the two active Needs-input rows and removed the stale Antigravity cache row.
+  Three warm probes completed in 0.44–0.47 seconds. The Claude CLI process
+  itself peaked near 369 MiB, motivating the 15-second default refresh plus
+  `ctrl+l` manual refresh.
 - Cursor `2026.03.20-44cb435`, GitHub Copilot CLI `1.0.80`, and Antigravity
   `1.1.14` were probed with disposable homes/configuration roots and no copied
   credentials. Cursor and Antigravity empty-state interfaces were exercised in
@@ -149,6 +158,10 @@ checks; the guide also contains release gates that are not yet complete.
   invoke a model, clean EOF, and exact native TUI resume/terminal restoration
   were verified. The managed model-prompt lifecycle uses the isolated mock
   above; no authenticated model call is claimed.
+- Pi 0.80.6 was additionally resumed from the reported host's real recursive
+  per-workspace JSONL directory by exact UUID and exact file-parent
+  `--session-dir`; it opened under a PTY and exited with Ctrl+D without the
+  former `No session found matching` error. No prompt was sent.
 - The official Cursor, Copilot, and Antigravity install/version/help paths were
   then repeated in three new `--rm` containers using pinned Debian/Node image
   digests, tmpfs homes, and no host mounts. Cursor's current installer returned
@@ -167,6 +180,16 @@ checks; the guide also contains release gates that are not yet complete.
 - Claude peek was checked against a real host session using read-only logs; the
   VT100 reconstruction surfaced the final assistant screen without escape-code
   leakage.
+- Claude 2.1.236 native attach was checked on a completed host background
+  session: left arrow entered Claude's agent view, while Ctrl+Z exited the
+  attachment and returned control to the caller. The dashboard now presents
+  that distinction before suspending its alternate screen.
+- Three opt-in real-host `openpty` regressions now preserve those reproductions:
+  nested Pi resume/return, completed Claude attach/Ctrl+Z return, and a
+  mutation-free composer route through Pi/Claude provider cycling, Claude model
+  selection, the dedicated filter, and manual refresh. They are ignored in
+  ordinary CI because they require installed provider binaries or private host
+  history paths.
 - Codex App Server discovery was refreshed repeatedly inside a disposable,
   network-disabled container. Separate protocol probes established that two
   servers sharing `CODEX_HOME` cannot control one another's live turns,
@@ -198,7 +221,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
 | Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Eleven-test `real_tty` harness using canonical and generated fixtures | Verified |
-| Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, provider command trap, planner/executor and CLI parser tests | Verified |
+| Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/interrupt ownership | Disposable mock RPC plus isolated real non-model protocol/TUI probes | Verified on Linux |
@@ -297,8 +320,9 @@ examples.
   lifecycle; enter the started container through ordinary Docker tooling or
   observe it with `--docker-container`.
 - Claude inline reply and rename, for which the explored CLI exposes no safe
-  background-agent command. Enter hands the terminal to Claude's native attach
-  interface; owned Codex threads support inline idle reply and active steer.
+  background-agent command. Enter explains that Ctrl+Z returns from Claude's
+  native attach (`←` stays in Claude's agent view); owned Codex threads support
+  inline idle reply and active steer.
 - Managed OpenCode permission and structured-input requests are not yet exposed
   inline. Durable supervision requires Linux; other platforms retain external
   history inspection and native resume.

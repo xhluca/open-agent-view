@@ -27,7 +27,8 @@ authenticated fresh-container end-to-end run.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
   exposes an exact resume command.
-- [x] Stop only exact Claude sessions launched by `coding-agents`.
+- [x] Stop only exact provider-listed active host Claude background sessions,
+  with a fresh full-UUID/state/kind revalidation immediately before mutation.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
   reconnectable App Server supervisor.
 - [x] Own Linux Pi launch, reconnect, reply/steer, exact dialog response, and

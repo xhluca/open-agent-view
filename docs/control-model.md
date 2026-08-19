@@ -11,13 +11,15 @@ not permission to interrupt or delete it.
 | Inspect | `claude logs`, reconstructed as a terminal screen | `thread/read(includeTurns: true)`, bounded for display | Summary only | Claude logs; Codex summary |
 | Open | `claude attach` | `codex --remote … resume` against the owning server | `codex resume` | Interactive `docker exec` to the provider CLI |
 | Launch | `claude --background` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
-| Interrupt | `claude stop`, owned sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
+| Interrupt | `claude stop`, exact provider-listed active host background sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
 | Inline reply or provider request | Not exposed by the supported non-TTY CLI | Idle `turn/start`; working `turn/steer`; exact one-shot command decisions, safe denials, and non-secret structured input | Native TUI only | Disabled |
 | Archive or delete | No supported Claude command | Idle owned threads only | Disabled | Disabled |
 
 Opening a session temporarily suspends the dashboard's alternate screen and
 runs the provider's native interactive client with inherited terminal I/O.
-Returning restores raw mode and refreshes the dashboard.
+Returning restores raw mode and refreshes the dashboard. Claude's left arrow
+opens Claude's own agent view; `ctrl+z` is Claude's documented return key and
+is shown in a confirmation before attachment.
 
 ## Claude ownership registry
 
@@ -34,11 +36,13 @@ or, when `XDG_STATE_HOME` is unset:
 ~/.local/state/open-agent-view/ownership.json
 ```
 
-The file is written atomically with user-only permissions on Unix. A discovered
-full Claude UUID must match the stored prefix, provider, and runtime before the
-Interrupt capability is added. Arbitrary pre-existing sessions remain
-observe-only even though the underlying Claude installation may be able to
-stop them.
+The file is written atomically with user-only permissions on Unix and records
+which sessions Open Agent View launched. Interrupt does not trust this record
+or a stale dashboard row as current authority: any active host Claude
+background row may advertise Ctrl+X, but immediately before stopping it the
+controller reruns `claude agents --json` and requires the exact full UUID,
+host runtime, background kind, and active state to still match. Interactive,
+completed, Docker, missing, or changed sessions are refused.
 
 The registry grants provider-session authority only. It never grants authority
 to stop or remove a Docker container.

@@ -32,7 +32,7 @@ coding-agents [OPTIONS]
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
 | `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
-| `--refresh-ms N` | Refresh interval, at least 250 ms; default 5000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. |
+| `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
 The `--managed-docker-registry PATH` global option applies to the managed
 Docker subcommands described below. Provider discovery warnings appear in the
@@ -55,12 +55,15 @@ coding-agents doctor --json
 coding-agents doctor --docker-container exact-name-or-id
 ```
 
-The composer uses exactly one `--launch-provider`. Claude and Codex follow
-their documented ownership models; Pi, OpenCode, and Cursor use durable Linux
-supervisors. Copilot retains one process-local ACP control connection for
-sessions launched by the current dashboard. A later dashboard may still list a
-persisted Copilot session, but that row is observe/native-open rather than
-silently inheriting control.
+`--launch-provider` chooses the initial composer provider. In the TUI, `tab`
+cycles only providers whose configured controller can launch; `/provider NAME`
+selects one explicitly. Claude and Codex also accept `/model NAME` or `/model
+default`; the selected provider/model is always displayed in the composer
+border before submission. Pi, OpenCode, Cursor, and Copilot currently use their
+provider default model. Copilot retains one process-local ACP control
+connection for sessions launched by the current dashboard. A later dashboard
+may still list a persisted Copilot session, but that row is
+observe/native-open rather than silently inheriting control.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -70,10 +73,13 @@ container is an error and produces a nonzero exit status.
 ## Completed history and bulk archive
 
 The default dashboard and default JSON snapshot exclude completed sessions.
-This filter is applied at discovery time: Claude is queried without `--all`,
-and OpenCode's global persisted-history query is not started at all. The header
-shows `completed hidden` rather than a misleading zero. Use `coding-agents
---all` or `coding-agents --json --all` only when completed history is needed.
+This filter is applied both by adapters and again at the central discovery
+boundary: Claude is queried without `--all`, OpenCode's global
+persisted-history query is not started at all, and rows returned in violation
+of a provider's active-only/cwd/interactive contract are removed before a
+partial snapshot reaches the UI. The header shows `completed hidden` rather
+than a misleading zero. Use `coding-agents --all` or `coding-agents --json
+--all` only when completed history is needed.
 
 Provider-native bulk archive is currently available for exact OAV-owned,
 completed host Codex threads. The first command is always a read-only preview:
@@ -190,14 +196,19 @@ label.
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
 | Show more row | `enter` | Reveal the next 25 matching sessions in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
-| Session row | `enter` | Suspend the dashboard and open the provider-native interface. |
+| Session row | `enter` | Suspend the dashboard and open the provider-native interface. Claude first explains that `ctrl+z`, not `←`, returns to Open Agent View. |
 | Session row | `space` | Inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
 | Inspect peek | `y` / `n` | Allow once / deny only when the exact capability is advertised. |
 | Inspect peek | `enter` with no text | Open the provider-native interface. |
 | Session list | `ctrl+s` | Toggle status and working-directory grouping. |
-| Session list | `/` | Edit the case-insensitive name/summary/path/provider filter. |
-| Session list | `tab` or printable text | Compose a new host task for the configured launch provider/directory. |
+| Session list | `ctrl+f` | Edit the case-insensitive name/summary/path/provider filter. |
+| Session list | `ctrl+l` | Request an immediate provider refresh. |
+| Session list | `tab`, `/`, or printable text | Compose a new host task. `/` begins a dashboard command rather than a filter. |
+| New-task composer | `tab` | Cycle configured launch-capable providers and reset the model to provider default. |
+| New-task composer | `/provider NAME` | Select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available. |
+| New-task composer | `/model NAME` / `/model default` | Select or reset a Claude/Codex model; unsupported providers refuse locally. |
+| New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |
 | Writable composer | `backspace` | Remove the last character. |
 | Session row | `ctrl+r` | Enter rename composition; submission currently reports unsupported. |
@@ -219,6 +230,12 @@ Paging affects only the interactive list. Counts, filtering, JSON output, and
 group-level safety checks always use the complete discovered session set. The
 revealed count is remembered across ordinary provider refreshes and reset when
 switching views or applying a filter, keeping a newly narrowed queue bounded.
+
+For active host Claude background rows, Interrupt is provider-native rather
+than registry-owned: immediately before `claude stop`, Open Agent View reruns
+`claude agents --json` and requires the exact full UUID to remain a host
+background session in an active state. Interactive, completed, Docker,
+missing, or changed rows are refused. Ctrl+X remains a two-step confirmation.
 
 Managed Cursor rows on Linux expose Inspect and either Interrupt while the
 verified owned process is active or Reply after it becomes idle. Managed

@@ -23,14 +23,16 @@ open, provider-neutral project.
   slow or unavailable provider does not hide results from the others.
 - **Responsive large queues.** Each group initially shows 25 sessions behind a
   selectable Show more row, and completed history is excluded unless `--all`
-  is explicit. Buffered key repeats are coalesced so large histories do not
-  flood SSH, tmux, or the terminal renderer.
+  is explicit—even when a provider ignores its own active-only flag. Buffered
+  key repeats and typed bursts are coalesced so large histories do not flood
+  SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
   working, completed, and unknown state.
 - **Native when it matters.** Open a selected session in its own CLI without
   abandoning the dashboard workflow.
-- **Safe by default.** Finding a session never grants authority to change it.
-  Mutating controls require exact, locally recorded ownership.
+- **Safe by default.** Finding a session never grants broad authority to change
+  it. Mutating controls require either exact local ownership or an exact
+  provider-native active-session revalidation.
 - **Host and container aware.** Supervise host agents and explicitly enrolled
   Docker targets without silently scanning or restarting containers.
 
@@ -94,9 +96,10 @@ coding-agents sessions archive --older-than-days 30 --limit 100 --yes
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
-`/` to filter, and `?` for contextual shortcuts. Start typing to hand off a new
-task to the configured managed provider. Every row spells out its provider
-name; open Peek to see whether it runs on the host or in Docker. Groups with
+`ctrl+f` to filter, and `?` for contextual shortcuts. Start typing to hand off a
+new task; `tab` cycles launch-capable providers, while `/provider` and `/model`
+select them explicitly. Every row spells out its provider name; open Peek to
+see whether it runs on the host or in Docker. Groups with
 more than 25 matches end in a selectable **Show more** row; filtering always
 searches the complete discovered set, including rows that have not been
 revealed. Completed history is hidden before discovery by default; start with
@@ -110,7 +113,7 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch and interrupt exact OAV-owned host sessions |
+| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch with model selection; interrupt an exact host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; owned launch, reply/steer, request handling, and interrupt |
 | OpenCode | Persisted host history, plus durable OAV-managed authenticated loopback sessions on Linux | External history inspect/native resume; owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |

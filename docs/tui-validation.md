@@ -63,8 +63,9 @@ This runs `cargo test --locked --test real_tty -- --test-threads=1`. It uses
 `libc::openpty`, feeds real key bytes, parses output with VT100 semantics, and
 isolates `HOME` and `XDG_STATE_HOME`. Eleven tests create PTYs at 120×34, 105×30,
 100×28, 90×24, 55×18, and 31×7 (the narrow/fallback test creates two PTYs).
-They cover startup/sections, help, status/directory grouping, filter
-apply/cancel/clear, multiline launch/cancellation, inspect peek, rename
+They cover startup/sections, help, status/directory grouping, `ctrl+f` filter
+apply/cancel/clear, slash commands, provider/model composer state, multiline
+launch/cancellation, inspect peek, rename
 cancellation/submission, native-open suspend/restore, reply, interrupt,
 approval `y`/`n`, structured input, single/bulk delete, archive, safe
 fixture-fenced refusals without echoing submitted text into notices, real arrow
@@ -100,9 +101,12 @@ fixture expected by the next entry:
 | Bounded group paging | Use a fixture with at least 50 sessions in one group; verify only 25 rows render, move to `Show 25 more`, press `enter`, and verify selection moves to row 26 while full counts stay unchanged. Filter for a still-hidden row and verify it is found. |
 | Collapse | Move to each heading, `enter`, then `enter`; its rows disappear and return without losing a valid selection. |
 | Directory view | `ctrl+s`; rows regroup by working directory, then `ctrl+s` restores status order. |
-| Filter | `/`, type `codex`, edit with Backspace, `enter`; only matches remain. `/`, erase all text, `enter` restores all rows. |
+| Filter | `ctrl+f`, type `codex`, edit with Backspace, `enter`; only matches remain. `ctrl+f`, erase all text, `enter` restores all rows. |
 | Help | `?`; inspect the contextual rows, then close with `?`. Repeat and close with `enter`, then with `esc`. |
-| New task | `tab`, type text, `ctrl+j`, type another line, then `esc` to discard. Repeat and `enter`; the fixture-mode refusal is expected and must not repeat the prompt. Also verify a printable key from the list seeds the composer. |
+| New task | `tab`, verify the provider/default-model title, type text, `ctrl+j`, type another line, then `esc` to discard. Repeat and `enter`; the fixture-mode refusal is expected and must not repeat the prompt. Also verify a printable key from the list seeds the composer. |
+| Task commands | `/help`, `enter` lists dashboard commands rather than filtering. Use `/provider NAME` and `/model NAME`, verify the title after reopening the composer, then `/model default`. `tab` cycles only available launch providers. `/filter TEXT` remains an explicit alternative to `ctrl+f`. |
+| Manual refresh | `ctrl+l`; the dashboard reports a refresh without blocking subsequent arrow or typing input. |
+| Claude attachment | Select a Claude row and `enter`; verify the confirmation says `←` stays inside Claude and `ctrl+z` returns to Open Agent View. Cancel with `esc`; in a safe real-provider probe, attach and use `ctrl+z` to return. |
 | Rename | Select a row, `ctrl+r`, edit the prefilled name, `esc`. Repeat and `enter`; the explicit unsupported notice must not repeat the proposed name. |
 | Inspect | Select `release-reviewer`, `space`; peek opens without raw escape sequences. `space` closes it and `esc` also closes it. |
 | Native open | Select any row and `enter`; fixture mode refuses before invoking a provider, and the dashboard is restored. Repeat with empty peek then `enter`. |

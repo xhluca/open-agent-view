@@ -44,12 +44,22 @@ be running. Open Agent View will not start it during discovery. Check it with
 ordinary read-only Docker inspection, or remove the `--docker-container`
 option.
 
-## Tens of thousands of completed sessions make startup slow
+## The dashboard is sluggish or completed rows appear while hidden
 
-Upgrade to version 0.1.7 or newer and run plain `coding-agents`. Completed
-history is excluded before it reaches the dashboard; OpenCode's global history
-query is skipped entirely. The header should say `completed hidden`. Do not add
-`--all` unless you deliberately want to load the history.
+Upgrade to version 0.1.8 or newer and run plain `coding-agents`. Completed,
+interactive, and cwd filtering is enforced centrally even when a provider CLI
+returns rows that violate its own flags. OpenCode's global history query is
+skipped entirely. The header should say `completed hidden`, and no Completed
+section should render. Do not add `--all` unless you deliberately want to load
+the history.
+
+The default refresh is 15 seconds because repeatedly starting several provider
+CLIs can cause substantial CPU and memory churn. Use `ctrl+l` for an immediate
+refresh; use `--refresh-ms` only when you have measured a reason to poll more
+often. Groups render 25 sessions at a time behind Show more. Filtering still
+searches every discovered row. If typing or arrows remain slow on 0.1.8,
+capture the provider count, `--all`/`--include-interactive` flags, terminal/tmux
+context, and an isolated real-PTY reproduction.
 
 For exact OAV-owned completed Codex threads, preview bounded provider-native
 archiving before changing anything:
@@ -63,12 +73,49 @@ External Codex, Claude, Pi, OpenCode, Cursor, Copilot, and Antigravity history
 does not gain archive authority merely because it is visible; keep it hidden or
 use that provider's documented native maintenance interface.
 
+## Pi says `No session found matching ...`
+
+Pi's default history store is recursive: a session file can live in a
+per-workspace child directory, while `pi --session` searches only the exact
+`--session-dir` it receives. Version 0.1.8 resolves the UUID to the JSONL file
+and passes that file's parent directory. Upgrade and retry. If it persists,
+confirm `coding-agents --json --all` reports the exact UUID and that the JSONL
+file still exists under the configured `--pi-session-dir`; do not move or edit
+provider history as a recovery step.
+
+## Antigravity reports a missing workspace
+
+Antigravity's documented cache can retain the last conversation for a deleted
+workspace. Version 0.1.8 suppresses those stale entries during discovery and
+refuses a stale injected row with `the cached Antigravity workspace no longer
+exists` before spawning `agy`. It does not rewrite or delete Antigravity's
+cache. Reopen the conversation from an existing workspace through
+Antigravity's native interface if needed.
+
+## Claude left arrow does not return to Open Agent View
+
+This is Claude's own keymap: left arrow enters Claude's agent view. Open Agent
+View now shows a confirmation before attachment. Press `ctrl+z` inside Claude
+to return to the dashboard; the background session keeps running. Escape only
+cancels the pre-attach confirmation.
+
+## Slash opens the wrong mode or model/provider selection is unclear
+
+On 0.1.8, `ctrl+f` is the filter. `/` starts a task command: `/help`,
+`/provider NAME`, `/model NAME`, `/model default`, or `/filter TEXT`. The
+composer border always displays the chosen provider and model. `tab` cycles
+launch-capable providers. Model selection is currently exposed for Claude and
+Codex; other providers use their default and refuse `/model` locally.
+
 ## A session is visible but a control is unavailable
 
-Visibility is not authority. Pre-existing Claude sessions, external Codex App
-Servers, explicit Docker targets, and sessions whose exact ownership record no
-longer matches are observe/open-only. Re-running with elevated privileges does
-not legitimately add authority and is not a recovery method.
+Visibility is not broad authority. External Codex App Servers, explicit Docker
+targets, and sessions whose exact ownership record no longer matches remain
+observe/open-only. Active host Claude background sessions are the narrow
+exception: Ctrl+X is offered only with a fresh exact provider inventory check;
+interactive, completed, Docker, missing, or changed Claude rows are refused.
+Re-running with elevated privileges does not legitimately add authority and is
+not a recovery method.
 
 For a Codex provider request, open peek with `space` and read the exact request.
 Only one Open Agent View process holds the controller lease. A second dashboard

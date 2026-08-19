@@ -139,7 +139,24 @@ impl PtyApp {
             }
             thread::sleep(Duration::from_millis(20));
         }
-        panic!("timed out waiting for {description}");
+        let screen = self.screen();
+        panic!("timed out waiting for {description}\n--- screen ---\n{screen}");
+    }
+
+    fn wait_for_byte_count(&mut self, needle: &[u8], count: usize, description: &str) {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while Instant::now() < deadline {
+            self.drain();
+            if count_bytes(&self.raw, needle) >= count {
+                return;
+            }
+            if self.child.try_wait().expect("poll child").is_some() {
+                panic!("coding-agents exited while waiting for {description}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        let screen = self.screen();
+        panic!("timed out waiting for {description}\n--- screen ---\n{screen}");
     }
 
     fn exit_cleanly(mut self) {
@@ -585,7 +602,7 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.screen();
     let typing_output_before = app.raw.len();
     let typing_started = Instant::now();
-    app.send(&vec![b'x'; 200]);
+    app.send(&[b'x'; 200]);
     app.wait_for_output_after(typing_output_before, "coalesced 200-character task input");
     assert!(
         typing_started.elapsed() < Duration::from_millis(750),
@@ -663,6 +680,207 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
 }
 
 #[test]
+#[ignore = "set OAV_REAL_PI_SESSION_DIR and OAV_REAL_PI_SESSION_NAME for a read-only host probe"]
+fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
+    let _serial = serialize_real_tty_test();
+    let session_dir = std::env::var("OAV_REAL_PI_SESSION_DIR")
+        .expect("OAV_REAL_PI_SESSION_DIR must name the recursive Pi history root");
+    let session_name = std::env::var("OAV_REAL_PI_SESSION_NAME")
+        .expect("OAV_REAL_PI_SESSION_NAME must identify one existing row");
+    let mut app = PtyApp::spawn_configured(120, 34, |command, _| {
+        command.args([
+            "--pi-session-dir",
+            &session_dir,
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("real Pi row", |screen| screen.contains(&session_name));
+    app.send(CTRL_F);
+    app.send(session_name.as_bytes());
+    app.send(ENTER);
+    app.wait_for("filtered real Pi row", |screen| {
+        screen.contains(&session_name)
+    });
+    let raw_before_open = app.raw.len();
+    let leaves_before = count_bytes(&app.raw, b"\x1b[?1049l");
+    let enters_before = count_bytes(&app.raw, b"\x1b[?1049h");
+    app.send(ENTER);
+    app.wait_for_byte_count(
+        b"\x1b[?1049l",
+        leaves_before + 1,
+        "dashboard suspension for real Pi",
+    );
+    let native = app.wait_for("real Pi native TUI or trust prompt", |screen| {
+        (screen.contains("ctrl+c/ctrl+d") && screen.contains("clear/exit"))
+            || screen.contains("Trust project folder?")
+    });
+    if native.contains("Trust project folder?") {
+        // Choose the non-persistent refusal so this read-only probe does not
+        // modify project trust state in its isolated HOME.
+        app.send(&DOWN.repeat(4));
+        app.send(ENTER);
+        app.wait_for("real Pi native TUI input", |screen| {
+            screen.contains("ctrl+c/ctrl+d") && screen.contains("clear/exit")
+        });
+    }
+    app.send(b"\x04");
+    app.wait_for_byte_count(
+        b"\x1b[?1049h",
+        enters_before + 1,
+        "dashboard restoration after real Pi",
+    );
+    let returned = app.wait_for("returned Open Agent View after Pi", |screen| {
+        screen.contains("Open Agent View")
+    });
+    assert!(returned.contains(&session_name));
+    assert!(!contains_bytes(
+        &app.raw[raw_before_open..],
+        b"No session found matching"
+    ));
+    app.exit_cleanly();
+}
+
+#[test]
+#[ignore = "set OAV_REAL_CLAUDE_HOME, OAV_REAL_CLAUDE_CWD, and OAV_REAL_CLAUDE_SESSION_NAME for a read-only host probe"]
+fn real_claude_attach_explains_and_honors_ctrl_z_return() {
+    let _serial = serialize_real_tty_test();
+    let claude_home = std::env::var("OAV_REAL_CLAUDE_HOME")
+        .expect("OAV_REAL_CLAUDE_HOME must contain the provider state");
+    let cwd = std::env::var("OAV_REAL_CLAUDE_CWD")
+        .expect("OAV_REAL_CLAUDE_CWD must contain the selected completed session");
+    let session_name = std::env::var("OAV_REAL_CLAUDE_SESSION_NAME")
+        .expect("OAV_REAL_CLAUDE_SESSION_NAME must identify one completed row");
+    let mut app = PtyApp::spawn_configured(120, 34, |command, _| {
+        command.env("HOME", &claude_home).args([
+            "--all",
+            "--cwd",
+            &cwd,
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("real completed Claude row", |screen| {
+        screen.contains(&session_name)
+    });
+    app.send(CTRL_F);
+    app.send(session_name.as_bytes());
+    app.send(ENTER);
+    app.wait_for("filtered real Claude row", |screen| {
+        screen.contains(&session_name)
+    });
+    app.send(ENTER);
+    let confirmation = app.wait_for("Claude attach return guidance", |screen| {
+        screen.contains("Ctrl+Z returns to Open Agent View")
+            && screen.contains("← opens Claude's agent view")
+    });
+    assert!(confirmation.contains("background session keeps running"));
+
+    let raw_before_open = app.raw.len();
+    let leaves_before = count_bytes(&app.raw, b"\x1b[?1049l");
+    let enters_before = count_bytes(&app.raw, b"\x1b[?1049h");
+    app.send(ENTER);
+    app.wait_for_byte_count(
+        b"\x1b[?1049l",
+        leaves_before + 1,
+        "dashboard suspension for real Claude",
+    );
+    thread::sleep(Duration::from_millis(1_000));
+    app.send(b"\x1a");
+    app.wait_for_byte_count(
+        b"\x1b[?1049h",
+        enters_before + 1,
+        "dashboard restoration after Claude Ctrl+Z",
+    );
+    app.wait_for("returned Open Agent View after Claude", |screen| {
+        screen.contains("Open Agent View") && screen.contains(&session_name)
+    });
+    assert!(!contains_bytes(
+        &app.raw[raw_before_open..],
+        b"failed to open session"
+    ));
+    app.exit_cleanly();
+}
+
+#[test]
+#[ignore = "requires installed Claude and Pi executables; performs no provider mutation"]
+fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 34, |command, _| {
+        command.args([
+            "--no-host-codex",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+    app.wait_for("real host composer startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading")
+    });
+
+    app.send(b"/provider pi\r");
+    app.wait_for("Pi provider command", |screen| {
+        screen.contains("new tasks will use Pi with its default model")
+    });
+    app.send(b"x");
+    app.wait_for("Pi composer title", |screen| {
+        screen.contains("new task · Pi · model default")
+    });
+    app.send(b"\t");
+    app.wait_for("cycled Claude composer title", |screen| {
+        screen.contains("new task · Claude · model default")
+    });
+    app.send(ESC);
+    app.wait_for("provider composer close", |screen| {
+        !screen.contains("new task · Claude · model default")
+    });
+
+    app.send(b"/model opus\r");
+    app.wait_for("Claude model command", |screen| {
+        screen.contains("new Claude tasks will use model opus")
+    });
+    app.send(b"x");
+    app.wait_for("Claude model composer title", |screen| {
+        screen.contains("new task · Claude · model opus")
+    });
+    app.send(ESC);
+    app.wait_for("model composer close", |screen| {
+        !screen.contains("new task · Claude · model opus")
+    });
+
+    app.send(CTRL_F);
+    app.wait_for("dedicated filter composer", |screen| {
+        screen.contains("❯ filter") && screen.contains("enter to apply · esc to cancel")
+    });
+    app.send(ESC);
+    app.wait_for("filter composer close", |screen| {
+        !screen.contains("❯ filter")
+    });
+    app.send(b"\x0c");
+    app.wait_for("manual provider refresh", |screen| {
+        screen.contains("refreshing provider sessions")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
 fn default_dashboard_never_starts_opencode_completed_history_query() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
@@ -718,7 +936,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.7")
+        screen.contains("Open Agent View v0.1.8")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -1047,7 +1265,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.7")
+        screen.contains("Open Agent View v0.1.8")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

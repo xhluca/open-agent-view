@@ -8,6 +8,48 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-08-19
+
+### Added
+
+- The new-task composer names its selected provider and model. `tab` cycles
+  launch-capable providers; `/provider`, `/model`, `/filter`, and `/help` are
+  local dashboard commands, while `ctrl+f` exclusively edits the session
+  filter and `ctrl+l` requests an immediate refresh.
+- Claude attachment now presents the provider-native navigation contract before
+  handoff: left arrow stays in Claude's agent view and Ctrl+Z returns to Open
+  Agent View without stopping the background session.
+
+### Fixed
+
+- Discovery centrally enforces completed, interactive, and cwd filters even
+  when a provider version ignores its own flags, preventing hidden completed
+  histories from entering the TUI model.
+- Pi native resume passes the exact recursive JSONL file's parent as
+  `--session-dir`, fixing `No session found matching ...` for ordinary
+  per-workspace stores.
+- Stale Antigravity last-conversation cache entries whose workspaces were
+  deleted are omitted; a stale injected row is refused before process spawn
+  with a precise explanation.
+- Ctrl+X is available for active host Claude background sessions and performs a
+  fresh full-UUID/runtime/kind/state inventory check immediately before the
+  confirmed `claude stop` call.
+
+### Changed
+
+- The automatic refresh default is 15 seconds to reduce repeated provider-CLI
+  CPU/memory churn. Status aggregation and provider-label collection no longer
+  repeatedly sort or scan full histories on every frame.
+- Real-PTY stress coverage now includes slash-command handling and a
+  200-character burst with 500 sessions, in addition to bounded 25-row paging
+  and 200-arrow coalescing.
+
+### Security
+
+- Claude stopping never trusts a stale dashboard capability or a short-ID
+  prefix alone. Interactive, completed, Docker, missing, and changed targets
+  are refused after live provider revalidation.
+
 ## [0.1.7] - 2026-08-19
 
 ### Added

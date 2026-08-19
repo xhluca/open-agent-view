@@ -69,13 +69,21 @@ Filtering and counts still operate over the full snapshot. Together these
 rules bound render work and prevent key-repeat frame backlogs while preserving
 exact selection movement.
 
+The default refresh period is 15 seconds because starting several provider
+CLIs—especially Claude—can consume substantial CPU and memory even for a small
+JSON response. `ctrl+l` requests an immediate refresh. Status grouping is
+computed in one snapshot pass, provider labels are deduplicated without sorting
+the full history, and ready key/typing bursts produce one final frame.
+
 Completed sessions are excluded from the default discovery request rather than
 merely hidden after rendering. This lets providers avoid expensive history
 work: Claude does not receive its `--all` flag, and OpenCode does not run its
-global persisted-session database query. `--all` opts into both discovery and
-display. Bulk Codex archive is a separate bounded maintenance path with a
-read-only plan, explicit `--yes`, and the same per-session ownership checks as
-the TUI.
+global persisted-session database query. Because provider versions can violate
+those flags, the discovery engine independently enforces completed,
+interactive, and cwd filters before every partial snapshot is published.
+`--all` opts into both discovery and display. Bulk Codex archive is a separate
+bounded maintenance path with a read-only plan, explicit `--yes`, and the same
+per-session ownership checks as the TUI.
 
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes
