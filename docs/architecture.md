@@ -58,6 +58,14 @@ whose protocol grants only connection-local authority retain control for the
 dashboard process instead. Provider sessions remain the source of truth for
 conversation state.
 
+Discovery sources run concurrently. During the first refresh, the dashboard
+publishes completed provider results incrementally instead of waiting for the
+slowest CLI; the final snapshot is then enriched with ownership-gated control
+capabilities. Later refreshes replace the queue atomically and remain entirely
+off the input thread. Terminal input is drained in bounded bursts before a
+draw, and long lists use page-aligned viewports. Together these rules prevent
+key-repeat frame backlogs while preserving exact selection movement.
+
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes
 the supported `attach`, `logs`, and `stop` commands. Managed host Codex uses one

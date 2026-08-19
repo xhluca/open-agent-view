@@ -203,9 +203,15 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         }
     }
 
+    // Keep the viewport page-aligned. A one-line sliding window rewrites every
+    // visible row for every arrow repeat once the selection reaches the bottom,
+    // which creates a large output backlog on SSH/tmux with long session lists.
+    // Within a page, navigation now changes only the old and new selected rows.
+    let page_height = area.height.max(1) as usize;
     let scroll = selected_line
-        .map(|line| line.saturating_sub(area.height.saturating_sub(1) as usize))
-        .unwrap_or(0);
+        .map(|line| (line / page_height) * page_height)
+        .unwrap_or(0)
+        .min(u16::MAX as usize);
     frame.render_widget(
         Paragraph::new(lines)
             .style(Style::default().bg(BG).fg(FG))

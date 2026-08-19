@@ -8,6 +8,28 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-19
+
+### Fixed
+
+- Buffered key-repeat bursts are now applied before drawing instead of
+  repainting hundreds of intermediate frames that can saturate SSH, tmux, and
+  tall terminal panes.
+- Long lists use page-aligned viewports, so moving within a page repaints only
+  the previous and next selected rows rather than shifting every visible row
+  on every arrow press.
+- Initial discovery publishes each completed provider incrementally, so a slow
+  provider with a large history no longer hides sessions already returned by
+  faster providers.
+
+### Changed
+
+- The real-PTY suite includes a 500-session stress case that queues 200 arrow
+  events, requires the final destination within 750 ms, and caps emitted
+  terminal output at 24 KiB.
+- A separate real-PTY startup case holds Claude discovery for two seconds and
+  requires the fast Antigravity result to render within 750 ms.
+
 ## [0.1.4] - 2026-08-18
 
 ### Fixed

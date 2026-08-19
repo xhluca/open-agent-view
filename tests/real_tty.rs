@@ -10,6 +10,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use open_agent_view::domain::{SessionSnapshot, SessionState};
 use tempfile::TempDir;
 
 const ESC: &[u8] = b"\x1b";
@@ -398,11 +399,152 @@ printf '%s\n' '[{"id":"first","cwd":"/workspace/one","kind":"background","sessio
 }
 
 #[test]
+fn slow_initial_provider_does_not_hide_fast_provider_results() {
+    let _serial = serialize_real_tty_test();
+    let startup_started = Instant::now();
+    let mut app = PtyApp::spawn_configured(100, 28, |command, home| {
+        let fake_claude = home.path().join("slow-claude");
+        fs::write(
+            &fake_claude,
+            r#"#!/bin/sh
+sleep 2
+printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessionId":"11111111-1111-4111-8111-111111111111","name":"slow-claude-session","status":"busy","state":"working"}]'
+"#,
+        )
+        .expect("write slow initial Claude executable");
+        fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o755))
+            .expect("make slow initial Claude executable runnable");
+
+        let fake_antigravity = home.path().join("fast-agy");
+        fs::write(&fake_antigravity, "#!/bin/sh\nexit 0\n")
+            .expect("write fake Antigravity executable");
+        fs::set_permissions(&fake_antigravity, fs::Permissions::from_mode(0o755))
+            .expect("make fake Antigravity executable runnable");
+        let antigravity_cache = home
+            .path()
+            .join(".gemini/antigravity-cli/cache/last_conversations.json");
+        fs::create_dir_all(
+            antigravity_cache
+                .parent()
+                .expect("Antigravity cache has a parent"),
+        )
+        .expect("create Antigravity cache directory");
+        fs::write(
+            antigravity_cache,
+            r#"{"/workspace/fast":"fast-conversation"}"#,
+        )
+        .expect("write fast Antigravity cache");
+
+        command.args([
+            "--claude-bin",
+            fake_claude.to_str().expect("UTF-8 Claude path"),
+            "--antigravity-bin",
+            fake_antigravity.to_str().expect("UTF-8 Antigravity path"),
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    let partial = app.wait_for("fast provider partial startup", |screen| {
+        screen.contains("fast (last conversation)")
+            && screen.contains("loading remaining providers… (1/2)")
+            && !screen.contains("slow-claude-session")
+    });
+    assert!(
+        startup_started.elapsed() < Duration::from_millis(750),
+        "fast provider was hidden behind the slow initial provider"
+    );
+    assert_lines_fit(&partial, 100);
+
+    app.wait_for("complete initial provider snapshot", |screen| {
+        screen.contains("fast (last conversation)") && screen.contains("slow-claude-session")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
+        let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("all-providers-sessions.json");
+        let template: SessionSnapshot =
+            serde_json::from_slice(&fs::read(template_path).expect("read stress fixture template"))
+                .expect("parse stress fixture template");
+        let template = template
+            .sessions
+            .into_iter()
+            .find(|session| session.state == SessionState::Working)
+            .expect("fixture contains a working session");
+        let sessions = (0..500)
+            .map(|index| {
+                let mut session = template.clone();
+                session.id = format!("stress:host:{index:04}");
+                session.provider_session_id = format!("stress-{index:04}");
+                session.name = format!("session-{index:04}");
+                session.summary = format!("stress session {index:04}");
+                session.state = SessionState::Working;
+                session.started_at = None;
+                session.updated_at = None;
+                session.pull_requests = None;
+                session
+            })
+            .collect();
+        let fixture = home.path().join("500-sessions.json");
+        fs::write(
+            &fixture,
+            serde_json::to_vec(&SessionSnapshot {
+                sessions,
+                warnings: Vec::new(),
+            })
+            .expect("serialize stress fixture"),
+        )
+        .expect("write stress fixture");
+        command.args([
+            "--fixture",
+            fixture.to_str().expect("UTF-8 stress fixture path"),
+            "--include-interactive",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("500-session startup", |screen| {
+        screen.contains("session-0000") && !screen.contains("session-0400")
+    });
+    app.screen();
+    let output_before = app.raw.len();
+    let navigation_started = Instant::now();
+    app.send(&DOWN.repeat(200));
+    app.wait_for("coalesced 200-arrow destination", |screen| {
+        screen.contains("session-0200")
+    });
+    let navigation_elapsed = navigation_started.elapsed();
+    let navigation_bytes = app.raw.len() - output_before;
+
+    assert!(
+        navigation_elapsed < Duration::from_millis(750),
+        "200 queued arrows took {navigation_elapsed:?} with 500 sessions"
+    );
+    assert!(
+        navigation_bytes < 24 * 1024,
+        "200 queued arrows emitted {navigation_bytes} bytes instead of coalescing frames"
+    );
+    app.exit_cleanly();
+}
+
+#[test]
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.4")
+        screen.contains("Open Agent View v0.1.5")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -731,7 +873,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.4")
+        screen.contains("Open Agent View v0.1.5")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

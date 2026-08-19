@@ -18,6 +18,12 @@ use crate::control::{ControlHub, ControlOutcome};
 use crate::domain::{AgentSession, Capability, SessionSnapshot};
 use crate::ui;
 
+// Apply a burst of already-buffered terminal input before drawing. Holding an
+// arrow key can otherwise enqueue hundreds of repeat events, each of which
+// would repaint a frame that the user will never see and can saturate a remote
+// terminal or tmux pane.
+const MAX_READY_EVENTS_PER_TICK: usize = 256;
+
 pub fn run_dashboard(
     engine: &DiscoveryEngine,
     request: &DiscoveryRequest,
@@ -25,17 +31,33 @@ pub fn run_dashboard(
     control: &ControlHub,
 ) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
-    let (snapshot_tx, snapshot_rx) = mpsc::channel();
+    let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
     let worker_engine = (*engine).clone();
     let worker_request = request.clone();
     let worker_control = control.clone();
     let _refresh_worker = thread::spawn(move || {
+        let mut first_refresh = true;
         while refresh_rx.recv().is_ok() {
-            let mut snapshot = worker_engine.discover(&worker_request);
+            let partial_sender = snapshot_tx.clone();
+            let mut snapshot = if first_refresh {
+                worker_engine.discover_progressively(
+                    &worker_request,
+                    |partial, completed, total| {
+                        let mut partial = partial.clone();
+                        partial.warnings.push(format!(
+                            "loading remaining providers… ({completed}/{total})"
+                        ));
+                        let _ = partial_sender.send((partial, false));
+                    },
+                )
+            } else {
+                worker_engine.discover(&worker_request)
+            };
             worker_control.enrich(&mut snapshot);
-            if snapshot_tx.send(snapshot).is_err() {
+            if snapshot_tx.send((snapshot, true)).is_err() {
                 break;
             }
+            first_refresh = false;
         }
     });
 
@@ -52,11 +74,13 @@ pub fn run_dashboard(
     let result = 'dashboard: loop {
         loop {
             match snapshot_rx.try_recv() {
-                Ok(snapshot) => {
+                Ok((snapshot, complete)) => {
                     let changed = snapshot != app.snapshot;
                     app.replace_snapshot(snapshot);
-                    refresh_in_flight = false;
-                    last_refresh = Instant::now();
+                    if complete {
+                        refresh_in_flight = false;
+                        last_refresh = Instant::now();
+                    }
                     needs_draw |= changed;
                 }
                 Err(TryRecvError::Empty) => break,
@@ -85,22 +109,30 @@ pub fn run_dashboard(
             refresh_interval.saturating_sub(last_refresh.elapsed())
         };
         if event::poll(until_refresh.min(Duration::from_millis(50)))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    let action = handle_key(&mut app, key);
-                    let refresh = handle_action(&mut terminal, &mut app, action, control);
-                    needs_draw = true;
-                    if refresh {
-                        if refresh_in_flight {
-                            refresh_after_current = true;
-                        } else {
-                            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
-                            last_refresh = Instant::now();
+            for event_index in 0..MAX_READY_EVENTS_PER_TICK {
+                match event::read()? {
+                    Event::Key(key) => {
+                        let action = handle_key(&mut app, key);
+                        let refresh = handle_action(&mut terminal, &mut app, action, control);
+                        needs_draw = true;
+                        if refresh {
+                            if refresh_in_flight {
+                                refresh_after_current = true;
+                            } else {
+                                schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+                                last_refresh = Instant::now();
+                            }
                         }
                     }
+                    Event::Resize(_, _) => needs_draw = true,
+                    _ => {}
                 }
-                Event::Resize(_, _) => needs_draw = true,
-                _ => {}
+                if app.should_quit
+                    || event_index + 1 == MAX_READY_EVENTS_PER_TICK
+                    || !event::poll(Duration::ZERO)?
+                {
+                    break;
+                }
             }
         }
         if !refresh_in_flight && last_refresh.elapsed() >= refresh_interval {

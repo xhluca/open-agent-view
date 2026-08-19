@@ -20,7 +20,9 @@ open, provider-neutral project.
 ## Why Open Agent View?
 
 - **All sessions, one queue.** Enabled providers refresh concurrently and one
-  unavailable provider does not hide the others.
+  slow or unavailable provider does not hide results from the others.
+- **Responsive large queues.** Buffered key repeats are coalesced and long
+  lists page without flooding SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
   working, completed, and unknown state.
 - **Native when it matters.** Open a selected session in its own CLI without

@@ -32,7 +32,7 @@ coding-agents [OPTIONS]
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
 | `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
-| `--refresh-ms N` | Refresh interval, at least 250 ms; default 5000 ms. Refresh runs off the input thread. |
+| `--refresh-ms N` | Refresh interval, at least 250 ms; default 5000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. |
 
 The `--managed-docker-registry PATH` global option applies to the managed
 Docker subcommands described below. Provider discovery warnings appear in the
