@@ -83,6 +83,15 @@ tracks each server request by its opaque string/integer ID plus exact owned
 thread and active-turn ID. Transcript rendering keeps only a bounded recent
 tail.
 
+`coding-agents sessions archive` uses the same boundary in bulk. It discovers
+only ordinary non-archived host Codex threads, enriches them through the owning
+supervisor, selects only completed rows carrying the exact Archive capability,
+and defaults to a read-only plan. `--cwd`, `--older-than-days`, and the bounded
+`--limit` narrow that plan; literal `--yes` authorizes execution. Each selected
+thread is revalidated again by `ControlHub` and `CodexSupervisor` immediately
+before `thread/archive`. A partial failure is reported per thread and never
+causes an unowned or active thread to be adopted.
+
 Codex keeps pending server callbacks inside the owning App Server, not in a
 dashboard connection. On reconnect, `thread/resume` first restores the exact
 owned active thread and then replays unresolved requests with their original

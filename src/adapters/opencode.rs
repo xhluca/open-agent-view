@@ -306,51 +306,56 @@ impl SessionSource for OpenCodeSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        let mut args = self.invocation.prefix_args.clone();
-        args.extend([
-            "db".into(),
-            GLOBAL_SESSION_QUERY.into(),
-            "--format".into(),
-            "json".into(),
-        ]);
-        let mut command = CommandRequest::new(self.invocation.program.clone(), args);
-        command.timeout = Duration::from_secs(8);
-        let mut output = self.runner.run(&command)?;
-        if output.status != 0 {
-            // Older OpenCode builds do not have `db`; retain their supported,
-            // though potentially workspace-scoped, session-list behavior.
+        let mut sessions = BTreeMap::new();
+        // Persisted OpenCode history has no live-state signal and every record
+        // normalizes as Completed. Avoid starting the potentially enormous
+        // global database query when completed sessions were not requested.
+        if request.include_completed {
             let mut args = self.invocation.prefix_args.clone();
             args.extend([
-                "session".into(),
-                "list".into(),
+                "db".into(),
+                GLOBAL_SESSION_QUERY.into(),
                 "--format".into(),
                 "json".into(),
             ]);
-            let mut fallback = CommandRequest::new(self.invocation.program.clone(), args);
-            fallback.timeout = Duration::from_secs(8);
-            output = self.runner.run(&fallback)?;
+            let mut command = CommandRequest::new(self.invocation.program.clone(), args);
+            command.timeout = Duration::from_secs(8);
+            let mut output = self.runner.run(&command)?;
             if output.status != 0 {
-                bail!(
-                    "OpenCode global discovery and session-list fallback failed with status {}: {}",
-                    output.status,
-                    output.stderr_lossy()
-                );
+                // Older OpenCode builds do not have `db`; retain their supported,
+                // though potentially workspace-scoped, session-list behavior.
+                let mut args = self.invocation.prefix_args.clone();
+                args.extend([
+                    "session".into(),
+                    "list".into(),
+                    "--format".into(),
+                    "json".into(),
+                ]);
+                let mut fallback = CommandRequest::new(self.invocation.program.clone(), args);
+                fallback.timeout = Duration::from_secs(8);
+                output = self.runner.run(&fallback)?;
+                if output.status != 0 {
+                    bail!(
+                        "OpenCode global discovery and session-list fallback failed with status {}: {}",
+                        output.status,
+                        output.stderr_lossy()
+                    );
+                }
             }
-        }
 
-        let mut sessions: BTreeMap<_, _> =
-            parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?
-                .into_iter()
-                .filter(|session| {
-                    request.include_completed
-                        && request
+            sessions.extend(
+                parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?
+                    .into_iter()
+                    .filter(|session| {
+                        request
                             .cwd
                             .as_ref()
                             .map(|cwd| session.cwd.starts_with(cwd))
                             .unwrap_or(true)
-                })
-                .map(|session| (session.provider_session_id.clone(), session))
-                .collect();
+                    })
+                    .map(|session| (session.provider_session_id.clone(), session)),
+            );
+        }
         if let Some(supervisor) = &self.supervisor {
             for managed in supervisor.list()? {
                 let session = agent_session_from_managed(&managed);
@@ -729,12 +734,16 @@ mod tests {
             "test",
             OpenCodeInvocation::host("opencode"),
             Runtime::Host,
-            runner,
+            runner.clone(),
         );
 
         assert!(source
             .discover(&DiscoveryRequest::default())
             .unwrap()
             .is_empty());
+        assert!(
+            runner.output.lock().unwrap().is_some(),
+            "completed-history discovery should not run at all when it is hidden"
+        );
     }
 }

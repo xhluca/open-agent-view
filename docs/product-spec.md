@@ -22,7 +22,8 @@ delete, filter, and refresh.
 ## Initial interface scope
 
 - A compact header with runtime context and state counts.
-- Sections for ready-for-review, needs-input, working, and completed sessions.
+- Sections for ready-for-review, needs-input, working, and, when `--all` is
+  explicit, completed sessions.
 - Rows with status, provider/runtime, name, latest useful summary, age, and
   optional repository metadata.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,
@@ -57,4 +58,3 @@ delete, filter, and refresh.
   later public release under the MIT license.
 - Frequent coherent commits, exploration records, architectural decisions,
   tests, and reproducible installation instructions.
-

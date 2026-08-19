@@ -8,6 +8,29 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-08-19
+
+### Added
+
+- `coding-agents sessions archive` previews bounded batches of exact OAV-owned
+  completed Codex threads, with optional directory, age, and limit scopes.
+  Literal `--yes` is required to execute; JSON reporting and per-thread failure
+  details are available.
+
+### Changed
+
+- Completed sessions are excluded from both the dashboard and JSON by default.
+  `--all` now explicitly opts either interface into completed-history
+  discovery, and the TUI says `completed hidden` when they are excluded.
+- OpenCode skips its global persisted-history database query entirely unless
+  `--all` is present, avoiding the 70,000-row startup path seen in user data.
+
+### Security
+
+- Bulk archive selects only completed rows already carrying Archive authority,
+  defaults to a read-only plan, caps each batch, sanitizes text output, and
+  revalidates ownership and idle state immediately before every mutation.
+
 ## [0.1.6] - 2026-08-19
 
 ### Added

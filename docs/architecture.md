@@ -69,6 +69,14 @@ Filtering and counts still operate over the full snapshot. Together these
 rules bound render work and prevent key-repeat frame backlogs while preserving
 exact selection movement.
 
+Completed sessions are excluded from the default discovery request rather than
+merely hidden after rendering. This lets providers avoid expensive history
+work: Claude does not receive its `--all` flag, and OpenCode does not run its
+global persisted-session database query. `--all` opts into both discovery and
+display. Bulk Codex archive is a separate bounded maintenance path with a
+read-only plan, explicit `--yes`, and the same per-session ownership checks as
+the TUI.
+
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes
 the supported `attach`, `logs`, and `stop` commands. Managed host Codex uses one

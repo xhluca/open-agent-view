@@ -42,6 +42,7 @@ First validate the synthetic populated screen without contacting providers:
 ```console
 target/release/coding-agents \
   --fixture fixtures/populated-sessions.json \
+  --all \
   --no-host-claude \
   --no-host-codex
 ```
@@ -60,7 +61,7 @@ scripts/real-tui-tests.sh
 
 This runs `cargo test --locked --test real_tty -- --test-threads=1`. It uses
 `libc::openpty`, feeds real key bytes, parses output with VT100 semantics, and
-isolates `HOME` and `XDG_STATE_HOME`. Nine tests create PTYs at 120×34, 105×30,
+isolates `HOME` and `XDG_STATE_HOME`. Eleven tests create PTYs at 120×34, 105×30,
 100×28, 90×24, 55×18, and 31×7 (the narrow/fallback test creates two PTYs).
 They cover startup/sections, help, status/directory grouping, filter
 apply/cancel/clear, multiline launch/cancellation, inspect peek, rename
@@ -223,6 +224,7 @@ docker run --rm --interactive --tty \
   --entrypoint /usr/local/bin/coding-agents \
   "$OAV_PROBE_IMAGE" \
   --fixture /fixtures/populated-sessions.json \
+  --all \
   --no-host-claude \
   --no-host-codex
 ```
@@ -238,7 +240,7 @@ real PTY. Use a unique session and a command from above:
 
 ```console
 tmux new-session -d -s oav-tui-check -x 120 -y 30 \
-  'target/release/coding-agents --fixture fixtures/populated-sessions.json --no-host-claude --no-host-codex'
+  'target/release/coding-agents --fixture fixtures/populated-sessions.json --all --no-host-claude --no-host-codex'
 tmux capture-pane -e -p -t oav-tui-check
 tmux send-keys -t oav-tui-check '?'
 tmux capture-pane -e -p -t oav-tui-check

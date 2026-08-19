@@ -79,6 +79,11 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let cwd = header_directory(app);
     let completed = app.snapshot.count(SessionState::Completed);
+    let completed_status = if app.includes_completed {
+        format!("{completed} completed")
+    } else {
+        "completed hidden".into()
+    };
     let working = app.snapshot.count(SessionState::ReadyForReview)
         + app.snapshot.count(SessionState::Working);
     let awaiting = app.snapshot.count(SessionState::NeedsInput);
@@ -96,7 +101,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
             ]),
             Line::from(format!(
-                "{awaiting} awaiting · {working} working · {completed} completed"
+                "{awaiting} awaiting · {working} working · {completed_status}"
             )),
         ]
     } else if area.width >= 70 {
@@ -113,7 +118,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 Span::styled("  ◇◇  ", Style::default().fg(ACCENT)),
                 Span::styled(
                     format!(
-                        "{awaiting} awaiting input · {working} working · {completed} completed · {mode} view"
+                        "{awaiting} awaiting input · {working} working · {completed_status} · {mode} view"
                     ),
                     Style::default().fg(DIM),
                 ),
@@ -130,7 +135,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 Style::default().fg(DIM),
             )),
             Line::from(Span::styled(
-                format!("{awaiting} awaiting · {working} working · {completed} completed"),
+                format!("{awaiting} awaiting · {working} working · {completed_status}"),
                 Style::default().fg(DIM),
             )),
         ]
@@ -200,7 +205,7 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
     if lines.is_empty() {
         if app.filter.is_empty() && area.width >= 60 && area.height >= 12 {
-            lines.extend(empty_state_lines());
+            lines.extend(empty_state_lines(app.includes_completed));
         } else {
             lines.push(Line::from(Span::styled(
                 if app.filter.is_empty() {
@@ -244,7 +249,7 @@ fn render_show_more_row(hidden: usize, selected: bool) -> Line<'static> {
     )
 }
 
-fn empty_state_lines() -> Vec<Line<'static>> {
+fn empty_state_lines(includes_completed: bool) -> Vec<Line<'static>> {
     vec![
         Line::from(Span::styled(
             "Needs input",
@@ -269,7 +274,11 @@ fn empty_state_lines() -> Vec<Line<'static>> {
             Style::default().add_modifier(Modifier::BOLD),
         )),
         Line::from(Span::styled(
-            " Finished sessions wait here for you to review",
+            if includes_completed {
+                " Finished sessions wait here for you to review"
+            } else {
+                " Hidden by default · start with --all to include them"
+            },
             Style::default().fg(DIM),
         )),
         Line::default(),
@@ -1009,6 +1018,26 @@ mod tests {
         assert!(rendered.contains("Completed"));
         assert!(rendered.contains("describe a task for a new session"));
         assert!(rendered.contains("1 awaiting input · 2 working · 1 completed"));
+    }
+
+    #[test]
+    fn header_makes_default_completed_filter_explicit() {
+        let app = App::with_completed_visibility(
+            SessionSnapshot {
+                sessions: vec![],
+                warnings: vec![],
+            },
+            false,
+        );
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("completed hidden"));
+        assert!(!rendered.contains("0 completed"));
+        assert!(rendered.contains("start with --all to include them"));
     }
 
     #[test]

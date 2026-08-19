@@ -13,7 +13,7 @@ coding-agents [OPTIONS]
 | Option | Meaning |
 | --- | --- |
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
-| `--all` | Include completed sessions in JSON; the TUI already includes them. |
+| `--all` | Include completed sessions in the dashboard or JSON output. They are excluded by default. |
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
 | `--cwd PATH` | Keep sessions whose working directory starts with `PATH`. |
 | `--fixture FILE` | Read a normalized snapshot/session array instead of probing providers; all provider operations are fenced. |
@@ -47,6 +47,7 @@ Useful read-only invocations:
 
 ```console
 coding-agents --json --all
+coding-agents --all
 coding-agents --json --no-host-claude --no-host-codex
 coding-agents --json --cwd /absolute/project
 coding-agents doctor
@@ -65,6 +66,40 @@ silently inheriting control.
 does not launch, stop, or modify a provider session or container. A missing
 optional host provider is a warning; failure to verify an explicitly requested
 container is an error and produces a nonzero exit status.
+
+## Completed history and bulk archive
+
+The default dashboard and default JSON snapshot exclude completed sessions.
+This filter is applied at discovery time: Claude is queried without `--all`,
+and OpenCode's global persisted-history query is not started at all. The header
+shows `completed hidden` rather than a misleading zero. Use `coding-agents
+--all` or `coding-agents --json --all` only when completed history is needed.
+
+Provider-native bulk archive is currently available for exact OAV-owned,
+completed host Codex threads. The first command is always a read-only preview:
+
+```console
+coding-agents sessions archive
+coding-agents sessions archive --cwd /absolute/project --older-than-days 30 --limit 100
+coding-agents --json sessions archive --older-than-days 30
+```
+
+The report distinguishes all completed threads seen, those matching the
+directory/age scope, those with exact Archive authority, and the bounded batch
+selected. It lists skipped matched threads that are visible but unowned. To
+apply the reviewed batch, repeat the exact command with `--yes`:
+
+```console
+coding-agents sessions archive --cwd /absolute/project --older-than-days 30 --limit 100 --yes
+```
+
+The default batch limit is 100 and the maximum is 1,100, matching the guarded
+Codex discovery ceiling. Every archive is independently revalidated against
+the live owning App Server; one refusal is reported without granting authority
+to or silently skipping the remaining selected records. Fixture mode, disabled
+host Codex, missing Codex, active threads, external threads, Docker threads,
+and providers without a documented archive operation are refused or reported
+as ineligible. Open Agent View does not call deletion an archive.
 
 ## Managed Docker lifecycle
 

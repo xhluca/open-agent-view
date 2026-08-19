@@ -7,6 +7,7 @@ pub mod codex_supervisor;
 pub mod control;
 pub mod doctor;
 pub mod domain;
+pub mod maintenance;
 pub mod opencode_supervisor;
 pub mod pi_supervisor;
 pub mod process;

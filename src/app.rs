@@ -76,6 +76,7 @@ pub struct Group {
 #[derive(Debug)]
 pub struct App {
     pub snapshot: SessionSnapshot,
+    pub includes_completed: bool,
     pub view_mode: ViewMode,
     pub selection: Option<SelectionKey>,
     pub overlay: Overlay,
@@ -91,8 +92,13 @@ pub struct App {
 
 impl App {
     pub fn new(snapshot: SessionSnapshot) -> Self {
+        Self::with_completed_visibility(snapshot, true)
+    }
+
+    pub fn with_completed_visibility(snapshot: SessionSnapshot, includes_completed: bool) -> Self {
         let mut app = Self {
             snapshot,
+            includes_completed,
             view_mode: ViewMode::Status,
             selection: None,
             overlay: Overlay::None,

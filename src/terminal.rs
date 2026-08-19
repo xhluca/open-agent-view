@@ -63,7 +63,7 @@ pub fn run_dashboard(
 
     let mut initial = SessionSnapshot::default();
     initial.warnings.push("loading provider sessions…".into());
-    let mut app = App::new(initial);
+    let mut app = App::with_completed_visibility(initial, request.include_completed);
     let mut terminal = TerminalSession::enter()?;
     let mut last_refresh = Instant::now();
     let mut refresh_in_flight = false;

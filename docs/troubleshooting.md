@@ -44,6 +44,25 @@ be running. Open Agent View will not start it during discovery. Check it with
 ordinary read-only Docker inspection, or remove the `--docker-container`
 option.
 
+## Tens of thousands of completed sessions make startup slow
+
+Upgrade to version 0.1.7 or newer and run plain `coding-agents`. Completed
+history is excluded before it reaches the dashboard; OpenCode's global history
+query is skipped entirely. The header should say `completed hidden`. Do not add
+`--all` unless you deliberately want to load the history.
+
+For exact OAV-owned completed Codex threads, preview bounded provider-native
+archiving before changing anything:
+
+```console
+coding-agents sessions archive --older-than-days 30 --limit 100
+```
+
+Review every candidate, then repeat with `--yes` if the scope is correct.
+External Codex, Claude, Pi, OpenCode, Cursor, Copilot, and Antigravity history
+does not gain archive authority merely because it is visible; keep it hidden or
+use that provider's documented native maintenance interface.
+
 ## A session is visible but a control is unavailable
 
 Visibility is not authority. Pre-existing Claude sessions, external Codex App

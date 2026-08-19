@@ -1,9 +1,9 @@
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
@@ -18,6 +18,9 @@ use open_agent_view::adapters::{CursorSource, CursorSupervisor};
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
+use open_agent_view::maintenance::{
+    execute_completed_archive, plan_completed_archive, BulkArchiveReport,
+};
 #[cfg(target_os = "linux")]
 use open_agent_view::opencode_supervisor::OpenCodeSupervisor;
 use open_agent_view::pi_supervisor::run_pi_supervisor_daemon;
@@ -45,12 +48,36 @@ enum Commands {
         #[command(subcommand)]
         command: DockerCommand,
     },
+    /// Preview or perform capability-gated maintenance on provider sessions.
+    Sessions {
+        #[command(subcommand)]
+        command: SessionCommand,
+    },
     #[command(name = "__pi-supervisor", hide = true)]
     PiSupervisor {
         #[arg(long)]
         state_dir: PathBuf,
         #[arg(long)]
         socket: PathBuf,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
+enum SessionCommand {
+    /// Archive a bounded batch of exact OAV-owned completed Codex sessions.
+    Archive {
+        /// Limit candidates to sessions under this directory.
+        #[arg(long, value_name = "PATH")]
+        cwd: Option<PathBuf>,
+        /// Limit candidates to sessions last updated at least this many days ago.
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=365_000))]
+        older_than_days: Option<u64>,
+        /// Maximum sessions to archive in this invocation.
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=1_100))]
+        limit: u64,
+        /// Perform the planned mutations; omission is a read-only dry run.
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -104,7 +131,7 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Include completed sessions in JSON output (the TUI includes them by default).
+    /// Include completed sessions in the dashboard or JSON output.
     #[arg(long)]
     all: bool,
 
@@ -245,12 +272,14 @@ fn main() -> Result<()> {
                 cli.managed_docker_registry.clone(),
                 cli.json,
             )?,
+            Commands::Sessions { command } => run_session_command(command, &cli)?,
             Commands::PiSupervisor { state_dir, socket } => {
                 run_pi_supervisor_daemon(state_dir.clone(), socket.clone(), cli.pi_bin.clone())?
             }
         }
         return Ok(());
     }
+    let request = discovery_request(&cli);
     let provider_io_enabled = provider_io_enabled(&cli);
     let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
     let claude_enabled =
@@ -420,12 +449,6 @@ fn main() -> Result<()> {
             engine.add_source(CodexSource::docker(target.name, target.id, display_image));
         }
     }
-    let request = DiscoveryRequest {
-        include_completed: cli.all || !cli.json,
-        include_interactive: cli.include_interactive,
-        cwd: cli.cwd,
-    };
-
     if cli.json {
         let mut snapshot = engine.discover(&request);
         control.enrich(&mut snapshot);
@@ -450,6 +473,169 @@ fn main() -> Result<()> {
 
 fn provider_io_enabled(cli: &Cli) -> bool {
     cli.fixture.is_none()
+}
+
+fn discovery_request(cli: &Cli) -> DiscoveryRequest {
+    DiscoveryRequest {
+        include_completed: cli.all,
+        include_interactive: cli.include_interactive,
+        cwd: cli.cwd.clone(),
+    }
+}
+
+fn run_session_command(command: &SessionCommand, cli: &Cli) -> Result<()> {
+    match command {
+        SessionCommand::Archive {
+            cwd,
+            older_than_days,
+            limit,
+            yes,
+        } => run_completed_archive(cli, cwd.as_deref(), *older_than_days, *limit as usize, *yes),
+    }
+}
+
+fn run_completed_archive(
+    cli: &Cli,
+    cwd: Option<&std::path::Path>,
+    older_than_days: Option<u64>,
+    limit: usize,
+    yes: bool,
+) -> Result<()> {
+    if cli.fixture.is_some() {
+        bail!("session archiving is disabled while reading a fixture");
+    }
+    if cli.no_host_providers || cli.no_host_codex {
+        bail!("session archiving requires host Codex to be enabled");
+    }
+    if !executable_available(&cli.codex_bin) {
+        bail!("Codex executable is unavailable: {}", cli.codex_bin);
+    }
+
+    let scope = cwd
+        .map(|path| {
+            std::fs::canonicalize(path)
+                .with_context(|| format!("failed to resolve archive scope {}", path.display()))
+        })
+        .transpose()?;
+    let updated_before = older_than_days
+        .map(|days| {
+            let seconds = days
+                .checked_mul(86_400)
+                .context("older-than duration overflowed")?;
+            SystemTime::now()
+                .checked_sub(Duration::from_secs(seconds))
+                .context("older-than cutoff predates the system clock")
+        })
+        .transpose()?;
+
+    let control = ControlHub::new(ControlHubConfig {
+        claude_enabled: false,
+        codex_enabled: true,
+        claude_bin: cli.claude_bin.clone(),
+        codex_bin: cli.codex_bin.clone(),
+        docker_bin: cli.docker_bin.clone(),
+        launch_provider: Provider::Codex,
+        launch_cwd: std::env::current_dir()?,
+        provider_io_enabled: true,
+    })?;
+    let supervisor = control
+        .codex_supervisor()
+        .context("Codex supervisor was not initialized")?;
+    let mut engine = DiscoveryEngine::new();
+    engine.add_source(CodexSource::managed(supervisor));
+    let mut snapshot = engine.discover(&DiscoveryRequest {
+        include_completed: true,
+        include_interactive: true,
+        cwd: None,
+    });
+    if !snapshot.warnings.is_empty() {
+        bail!(
+            "refusing maintenance because Codex discovery was incomplete: {}",
+            snapshot.warnings.join("; ")
+        );
+    }
+    control.enrich(&mut snapshot);
+    let plan = plan_completed_archive(&snapshot, scope.as_deref(), updated_before, limit);
+    let report = if yes {
+        execute_completed_archive(&plan, |session| control.archive(session).map(|_| ()))
+    } else {
+        plan.report().clone()
+    };
+    print_bulk_archive_report(&report, cli.json)?;
+    if !report.failures.is_empty() {
+        bail!(
+            "{} of {} selected sessions could not be archived",
+            report.failures.len(),
+            report.selected.len()
+        );
+    }
+    Ok(())
+}
+
+fn print_bulk_archive_report(report: &BulkArchiveReport, json: bool) -> Result<()> {
+    if json {
+        serde_json::to_writer_pretty(io::stdout().lock(), report)?;
+        println!();
+        return Ok(());
+    }
+
+    let mode = if report.dry_run {
+        "Dry run"
+    } else {
+        "Archive run"
+    };
+    println!(
+        "{mode}: {} completed seen; {} matched scope; {} owned and archivable; {} selected.",
+        report.completed_seen,
+        report.matched_scope,
+        report.eligible,
+        report.selected.len()
+    );
+    if report.skipped_without_authority > 0 {
+        println!(
+            "Skipped {} matched session(s) without exact archive authority.",
+            report.skipped_without_authority
+        );
+    }
+    for item in &report.selected {
+        println!(
+            "  {}  {}  {}",
+            sanitize_cli_text(&item.provider_session_id),
+            sanitize_cli_text(&item.name),
+            sanitize_cli_text(&item.cwd.to_string_lossy())
+        );
+    }
+    if report.dry_run && !report.selected.is_empty() {
+        println!("No sessions changed. Re-run the same command with --yes to archive this batch.");
+    } else if !report.dry_run {
+        println!(
+            "Archived {}; {} failed.",
+            report.archived.len(),
+            report.failures.len()
+        );
+        for failure in &report.failures {
+            println!(
+                "  failed {}: {}",
+                sanitize_cli_text(&failure.session.provider_session_id),
+                sanitize_cli_text(&failure.error)
+            );
+        }
+    }
+    Ok(())
+}
+
+fn sanitize_cli_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| {
+            if character.is_control() {
+                '\u{fffd}'
+            } else {
+                character
+            }
+        })
+        .take(240)
+        .collect()
 }
 
 fn executable_available(program: &str) -> bool {
@@ -616,6 +802,16 @@ mod tests {
         command
     }
 
+    fn session_command(arguments: &[&str]) -> SessionCommand {
+        let mut argv = vec!["coding-agents", "sessions"];
+        argv.extend_from_slice(arguments);
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Some(Commands::Sessions { command }) = cli.command else {
+            panic!("expected a sessions command");
+        };
+        command
+    }
+
     #[test]
     fn parses_digest_pinned_managed_create_command() {
         let cli = Cli::try_parse_from([
@@ -651,6 +847,73 @@ mod tests {
                 command: DockerCommand::Remove { yes: false, .. }
             })
         ));
+    }
+
+    #[test]
+    fn bulk_archive_is_dry_run_by_default_and_parses_every_scope() {
+        assert_eq!(
+            session_command(&[
+                "archive",
+                "--cwd",
+                "/work/project",
+                "--older-than-days",
+                "30",
+                "--limit",
+                "250",
+            ]),
+            SessionCommand::Archive {
+                cwd: Some(PathBuf::from("/work/project")),
+                older_than_days: Some(30),
+                limit: 250,
+                yes: false,
+            }
+        );
+        assert_eq!(
+            session_command(&["archive", "--yes"]),
+            SessionCommand::Archive {
+                cwd: None,
+                older_than_days: None,
+                limit: 100,
+                yes: true,
+            }
+        );
+        for arguments in [
+            vec!["coding-agents", "sessions"],
+            vec!["coding-agents", "sessions", "archive", "--limit", "0"],
+            vec![
+                "coding-agents",
+                "sessions",
+                "archive",
+                "--older-than-days",
+                "0",
+            ],
+        ] {
+            assert!(Cli::try_parse_from(arguments).is_err());
+        }
+    }
+
+    #[test]
+    fn completed_sessions_are_hidden_unless_all_is_explicit() {
+        for arguments in [vec!["coding-agents"], vec!["coding-agents", "--json"]] {
+            let cli = Cli::try_parse_from(arguments).unwrap();
+            assert!(!discovery_request(&cli).include_completed);
+        }
+        for arguments in [
+            vec!["coding-agents", "--all"],
+            vec!["coding-agents", "--json", "--all"],
+        ] {
+            let cli = Cli::try_parse_from(arguments).unwrap();
+            assert!(discovery_request(&cli).include_completed);
+        }
+    }
+
+    #[test]
+    fn cli_text_sanitization_blocks_controls_and_bounds_provider_output() {
+        let sanitized = sanitize_cli_text(&format!("name\u{1b}[2J\n{}", "x".repeat(500)));
+        assert!(!sanitized.contains('\u{1b}'));
+        assert!(!sanitized.contains('\n'));
+        assert!(sanitized.contains('\u{fffd}'));
+        assert_eq!(sanitized.chars().count(), 240);
     }
 
     #[test]

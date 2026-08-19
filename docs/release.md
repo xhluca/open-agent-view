@@ -6,7 +6,7 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.6 is the current private preview release; version 0.1.2 was the
+Version 0.1.7 is the current private preview release; version 0.1.2 was the
 initial published preview. The unpublished `v0.1.0` and `v0.1.1` build tags
 were retained rather than moved after their native release gates exposed,
 respectively, a macOS portability error and an incremental terminal-repaint

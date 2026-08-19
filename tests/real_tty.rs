@@ -52,6 +52,7 @@ impl PtyApp {
             command.args([
                 "--fixture",
                 fixture.to_str().expect("UTF-8 fixture path"),
+                "--all",
                 "--no-host-claude",
                 "--no-host-codex",
                 "--include-interactive",
@@ -509,6 +510,7 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
         command.args([
             "--fixture",
             fixture.to_str().expect("UTF-8 stress fixture path"),
+            "--all",
             "--include-interactive",
             "--refresh-ms",
             "60000",
@@ -562,11 +564,122 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
 }
 
 #[test]
+fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
+        let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("all-providers-sessions.json");
+        let template: SessionSnapshot =
+            serde_json::from_slice(&fs::read(template_path).expect("read completed template"))
+                .expect("parse completed template");
+        let template = template
+            .sessions
+            .into_iter()
+            .find(|session| session.state == SessionState::Completed)
+            .expect("fixture contains a completed session");
+        let sessions = (0..1_000)
+            .map(|index| {
+                let mut session = template.clone();
+                session.id = format!("completed:host:{index:04}");
+                session.provider_session_id = format!("completed-{index:04}");
+                session.name = format!("completed-session-{index:04}");
+                session.summary = format!("completed history {index:04}");
+                session
+            })
+            .collect();
+        let fixture = home.path().join("1000-completed-sessions.json");
+        fs::write(
+            &fixture,
+            serde_json::to_vec(&SessionSnapshot {
+                sessions,
+                warnings: Vec::new(),
+            })
+            .expect("serialize completed fixture"),
+        )
+        .expect("write completed fixture");
+        command.args([
+            "--fixture",
+            fixture.to_str().expect("UTF-8 completed fixture path"),
+            "--no-host-providers",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+    let startup = Instant::now();
+
+    let screen = app.wait_for("default completed-history filter", |screen| {
+        screen.contains("completed hidden")
+            && screen.contains("start with --all to include them")
+            && !screen.contains("loading provider sessions")
+            && !screen.contains("completed-session-0000")
+    });
+
+    assert!(
+        startup.elapsed() < Duration::from_millis(750),
+        "hidden completed history delayed first usable screen"
+    );
+    assert_lines_fit(&screen, 120);
+    app.exit_cleanly();
+}
+
+#[test]
+fn default_dashboard_never_starts_opencode_completed_history_query() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
+        let fake_opencode = home.path().join("opencode-history-trap");
+        fs::write(
+            &fake_opencode,
+            "#!/bin/sh\n: > \"$OAV_OPENCODE_HISTORY_CALLED\"\nsleep 2\nexit 1\n",
+        )
+        .expect("write OpenCode history trap");
+        fs::set_permissions(&fake_opencode, fs::Permissions::from_mode(0o755))
+            .expect("make OpenCode history trap executable");
+        command
+            .args([
+                "--opencode-bin",
+                fake_opencode
+                    .to_str()
+                    .expect("UTF-8 OpenCode history trap path"),
+                "--no-host-claude",
+                "--no-host-codex",
+                "--no-host-pi",
+                "--no-host-copilot",
+                "--no-host-cursor",
+                "--no-host-antigravity",
+                "--refresh-ms",
+                "60000",
+            ])
+            .env(
+                "OAV_OPENCODE_HISTORY_CALLED",
+                home.path().join("opencode-history-called"),
+            );
+    });
+    let startup = Instant::now();
+
+    app.wait_for("OpenCode history-free default startup", |screen| {
+        screen.contains("completed hidden")
+            && screen.contains("start with --all to include them")
+            && !screen.contains("loading provider sessions")
+    });
+
+    assert!(
+        startup.elapsed() < Duration::from_millis(750),
+        "default dashboard waited on OpenCode completed history"
+    );
+    assert!(
+        !app.home_path().join("opencode-history-called").exists(),
+        "OpenCode history command ran even though completed sessions were hidden"
+    );
+    app.exit_cleanly();
+}
+
+#[test]
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.6")
+        screen.contains("Open Agent View v0.1.7")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -895,7 +1008,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.6")
+        screen.contains("Open Agent View v0.1.7")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

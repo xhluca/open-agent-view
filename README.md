@@ -3,8 +3,8 @@
 **One terminal for all your coding agents.**
 
 Open Agent View turns agent sessions into a single live queue: see what needs
-input, follow work in progress, review completed tasks, and jump back into the
-provider's native interface. Run it as `coding-agents`.
+input, follow work in progress, review completed tasks when needed, and jump
+back into the provider's native interface. Run it as `coding-agents`.
 
 ![Open Agent View showing Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity sessions](docs/assets/open-agent-view.gif)
 
@@ -22,8 +22,9 @@ open, provider-neutral project.
 - **All sessions, one queue.** Enabled providers refresh concurrently and one
   slow or unavailable provider does not hide results from the others.
 - **Responsive large queues.** Each group initially shows 25 sessions behind a
-  selectable Show more row; buffered key repeats are coalesced so large
-  histories do not flood SSH, tmux, or the terminal renderer.
+  selectable Show more row, and completed history is excluded unless `--all`
+  is explicit. Buffered key repeats are coalesced so large histories do not
+  flood SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
   working, completed, and unknown state.
 - **Native when it matters.** Open a selected session in its own CLI without
@@ -72,6 +73,9 @@ Useful examples:
 # Focus on the current project.
 coding-agents --cwd "$PWD"
 
+# Review completed sessions too.
+coding-agents --all
+
 # Include persisted interactive history in machine-readable output.
 coding-agents --json --all --include-interactive
 
@@ -83,6 +87,10 @@ coding-agents doctor
 
 # Choose a managed task backend (Claude is the default).
 coding-agents --launch-provider opencode
+
+# Preview a bounded archive batch; add --yes only after reviewing it.
+coding-agents sessions archive --older-than-days 30 --limit 100
+coding-agents sessions archive --older-than-days 30 --limit 100 --yes
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
@@ -90,7 +98,9 @@ Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspe
 task to the configured managed provider. Every row spells out its provider
 name; open Peek to see whether it runs on the host or in Docker. Groups with
 more than 25 matches end in a selectable **Show more** row; filtering always
-searches the complete session set, including rows that have not been revealed.
+searches the complete discovered set, including rows that have not been
+revealed. Completed history is hidden before discovery by default; start with
+`--all` when you intend to load and review it.
 
 ## Provider support
 

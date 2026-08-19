@@ -74,7 +74,7 @@ checks; the guide also contains release gates that are not yet complete.
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
   targets, then repeats tests and release builds on Rust 1.75.0 and stable.
-- `scripts/real-tui-tests.sh` runs nine serialized tests against real Unix PTYs
+- `scripts/real-tui-tests.sh` runs eleven serialized tests against real Unix PTYs
   with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, filter
   apply/cancel/clear, multiline new-task launch/cancellation, peek, rename
@@ -98,6 +98,11 @@ checks; the guide also contains release gates that are not yet complete.
   separate startup case makes Claude discovery sleep for two seconds and
   requires an immediately available Antigravity row within 750 ms, proving
   that the first screen is not gated on the slowest provider.
+- A separate default-mode PTY supplies 1,000 completed fixture records without
+  `--all`, requires a usable `completed hidden` screen within 750 ms, and
+  proves that no completed row enters navigation. A second real-PTY test points
+  OpenCode at a marker-writing, two-second executable and proves it is never
+  started; the adapter test independently retains an unused runner response.
 
 ## Runtime checks
 
@@ -192,7 +197,8 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Normalization, key routing, responsive layout, capability gates | Locked Rust test suite with Ratatui test backend | Verified |
 | Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
-| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Nine-test `real_tty` harness using canonical and generated fixtures | Verified |
+| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Eleven-test `real_tty` harness using canonical and generated fixtures | Verified |
+| Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, provider command trap, planner/executor and CLI parser tests | Verified |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/interrupt ownership | Disposable mock RPC plus isolated real non-model protocol/TUI probes | Verified on Linux |

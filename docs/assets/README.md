@@ -15,6 +15,7 @@ asciinema rec --overwrite --quiet --cols 150 --rows 42 \
   --idle-time-limit 1 \
   -c './target/release/coding-agents \
       --fixture fixtures/all-providers-sessions.json \
+      --all \
       --include-interactive --refresh-ms 10000' \
   open-agent-view.cast
 agg --theme github-dark --font-size 13 --idle-time-limit 1 \
