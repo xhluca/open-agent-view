@@ -14,7 +14,10 @@ pub enum ViewMode {
 pub enum SelectionKey {
     Group(String),
     Session(String),
+    ShowMore(String),
 }
+
+pub const SESSION_PAGE_SIZE: usize = 25;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
@@ -79,6 +82,7 @@ pub struct App {
     pub input: String,
     pub filter: String,
     pub collapsed: BTreeSet<String>,
+    visible_limits: BTreeMap<String, usize>,
     pub notice: Option<String>,
     pub details: BTreeMap<String, String>,
     pub refreshed_at: SystemTime,
@@ -95,6 +99,7 @@ impl App {
             input: String::new(),
             filter: String::new(),
             collapsed: BTreeSet::new(),
+            visible_limits: BTreeMap::new(),
             notice: None,
             details: BTreeMap::new(),
             refreshed_at: SystemTime::now(),
@@ -127,14 +132,33 @@ impl App {
         for group in self.groups() {
             keys.push(SelectionKey::Group(group.key.clone()));
             if !self.collapsed.contains(&group.key) {
+                let visible = self.visible_session_count(&group);
                 keys.extend(
-                    group.sessions.into_iter().map(|index| {
-                        SelectionKey::Session(self.snapshot.sessions[index].id.clone())
+                    group.sessions.iter().take(visible).map(|index| {
+                        SelectionKey::Session(self.snapshot.sessions[*index].id.clone())
                     }),
                 );
+                if visible < group.sessions.len() {
+                    keys.push(SelectionKey::ShowMore(group.key));
+                }
             }
         }
         keys
+    }
+
+    pub fn visible_session_count(&self, group: &Group) -> usize {
+        self.visible_limits
+            .get(&group.key)
+            .copied()
+            .unwrap_or(SESSION_PAGE_SIZE)
+            .min(group.sessions.len())
+    }
+
+    pub fn hidden_session_count(&self, group: &Group) -> usize {
+        group
+            .sessions
+            .len()
+            .saturating_sub(self.visible_session_count(group))
     }
 
     pub fn select_next(&mut self) {
@@ -236,6 +260,10 @@ impl App {
                         .unwrap_or_default();
                     AppAction::Open { session_id }
                 }
+                Some(SelectionKey::ShowMore(key)) => {
+                    self.show_more(&key);
+                    AppAction::None
+                }
                 None => AppAction::None,
             },
         }
@@ -271,6 +299,7 @@ impl App {
             ViewMode::Directory => ViewMode::Status,
         };
         self.collapsed.clear();
+        self.visible_limits.clear();
         self.reconcile_selection();
     }
 
@@ -475,6 +504,7 @@ impl App {
             },
             ComposerMode::Filter => {
                 self.filter = input;
+                self.visible_limits.clear();
                 self.reconcile_selection();
                 AppAction::None
             }
@@ -532,6 +562,26 @@ impl App {
                 sessions,
             })
             .collect()
+    }
+
+    fn show_more(&mut self, key: &str) {
+        let Some(group) = self.groups().into_iter().find(|group| group.key == key) else {
+            self.reconcile_selection();
+            return;
+        };
+        let previously_visible = self.visible_session_count(&group);
+        let newly_visible = previously_visible
+            .saturating_add(SESSION_PAGE_SIZE)
+            .min(group.sessions.len());
+        let first_revealed = group
+            .sessions
+            .get(previously_visible)
+            .map(|index| self.snapshot.sessions[*index].id.clone());
+
+        self.visible_limits.insert(key.to_owned(), newly_visible);
+        self.selection = first_revealed.map(SelectionKey::Session);
+        self.notice = None;
+        self.reconcile_selection();
     }
 
     fn reconcile_selection(&mut self) {
@@ -632,6 +682,83 @@ mod tests {
         app.activate();
 
         assert_eq!(app.selectable_keys().len(), 1);
+    }
+
+    #[test]
+    fn large_groups_reveal_twenty_five_sessions_at_a_time() {
+        let sessions = (0..61)
+            .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
+            .collect();
+        let mut app = app_with(sessions);
+        let group = app.groups().remove(0);
+
+        assert_eq!(app.visible_session_count(&group), SESSION_PAGE_SIZE);
+        assert_eq!(app.hidden_session_count(&group), 36);
+        assert_eq!(app.selectable_keys().len(), 27);
+        assert_eq!(
+            app.selectable_keys().last(),
+            Some(&SelectionKey::ShowMore("state:Working".into()))
+        );
+
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("session-25".into()))
+        );
+        assert_eq!(app.visible_session_count(&group), 50);
+        assert_eq!(app.hidden_session_count(&group), 11);
+
+        app.replace_snapshot(app.snapshot.clone());
+        assert_eq!(app.visible_session_count(&group), 50);
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("session-25".into()))
+        );
+
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("session-50".into()))
+        );
+        assert_eq!(app.visible_session_count(&group), 61);
+        assert_eq!(app.hidden_session_count(&group), 0);
+        assert!(!app
+            .selectable_keys()
+            .iter()
+            .any(|key| matches!(key, SelectionKey::ShowMore(_))));
+    }
+
+    #[test]
+    fn filtering_searches_hidden_sessions_and_resets_paging() {
+        let sessions = (0..60)
+            .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
+            .collect();
+        let mut app = app_with(sessions);
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        app.activate();
+        assert_eq!(app.visible_session_count(&app.groups()[0]), 50);
+
+        app.start_filter();
+        app.input = "session-59".into();
+        assert_eq!(app.activate(), AppAction::None);
+
+        let filtered = app.groups().remove(0);
+        assert_eq!(filtered.sessions, vec![59]);
+        assert_eq!(app.visible_session_count(&filtered), 1);
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("session-59".into()))
+        );
+
+        app.start_filter();
+        app.input.clear();
+        app.activate();
+        assert_eq!(
+            app.visible_session_count(&app.groups()[0]),
+            SESSION_PAGE_SIZE
+        );
     }
 
     #[test]

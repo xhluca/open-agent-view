@@ -516,14 +516,28 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     });
 
     app.wait_for("500-session startup", |screen| {
-        screen.contains("session-0000") && !screen.contains("session-0400")
+        screen.contains("session-0000")
+            && screen.contains("session-0024")
+            && !screen.contains("session-0025")
+            && !screen.contains("session-0400")
     });
+    app.send(&DOWN.repeat(25));
+    app.wait_for("selectable show-more control", |screen| {
+        screen.contains("Show 25 more · 475 hidden") && screen.contains("enter to show more")
+    });
+    app.send(ENTER);
+    app.wait_for("second bounded session page", |screen| {
+        screen.contains("session-0025")
+            && screen.contains("session-0049")
+            && screen.contains("Show 25 more · 450 hidden")
+    });
+
     app.screen();
     let output_before = app.raw.len();
     let navigation_started = Instant::now();
     app.send(&DOWN.repeat(200));
     app.wait_for("coalesced 200-arrow destination", |screen| {
-        screen.contains("session-0200")
+        screen.contains("session-0017") && !screen.contains("session-0049")
     });
     let navigation_elapsed = navigation_started.elapsed();
     let navigation_bytes = app.raw.len() - output_before;
@@ -536,6 +550,14 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
         navigation_bytes < 24 * 1024,
         "200 queued arrows emitted {navigation_bytes} bytes instead of coalescing frames"
     );
+    app.send(b" ");
+    app.wait_for("exact selected session after arrow burst", |screen| {
+        screen.contains("session-0017 ·")
+    });
+    app.send(ESC);
+    app.wait_for("stress peek close", |screen| {
+        !screen.contains("session-0017 ·")
+    });
     app.exit_cleanly();
 }
 
@@ -544,7 +566,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.5")
+        screen.contains("Open Agent View v0.1.6")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -873,7 +895,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.5")
+        screen.contains("Open Agent View v0.1.6")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

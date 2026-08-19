@@ -90,9 +90,11 @@ checks; the guide also contains release gates that are not yet complete.
   milliseconds. It also asserts that an unchanged frame emits no idle terminal
   output and that cancellation leaves no fake provider child behind. This
   catches accidental provider I/O or unconditional redraws on the input thread.
-- A 500-session real-PTY stress case sends 200 down-arrow events in one burst.
-  It requires the exact destination to appear within 750 ms while emitting less
-  than 24 KiB, guarding both input coalescing and page-aligned scrolling. A
+- A 500-session real-PTY stress case verifies that only 25 rows are initially
+  present, selects `Show 25 more · 475 hidden` with real arrow keys, reveals the
+  second page, then sends 200 down-arrow events in one burst. It requires the
+  exact destination to appear within 750 ms while emitting less than 24 KiB,
+  guarding bounded rendering, input coalescing, and page-aligned scrolling. A
   separate startup case makes Claude discovery sleep for two seconds and
   requires an immediately available Antigravity row within 750 ms, proving
   that the first screen is not gated on the slowest provider.

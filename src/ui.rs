@@ -7,7 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
-    SelectionKey, ViewMode,
+    SelectionKey, ViewMode, SESSION_PAGE_SIZE,
 };
 use crate::domain::{AgentSession, Capability, SessionState};
 
@@ -172,8 +172,9 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         if collapsed {
             continue;
         }
-        for index in group.sessions {
-            let session = &app.snapshot.sessions[index];
+        let visible = app.visible_session_count(&group);
+        for index in group.sessions.iter().take(visible) {
+            let session = &app.snapshot.sessions[*index];
             let is_selected = selection_visible
                 && app.selection == Some(SelectionKey::Session(session.id.clone()));
             if is_selected {
@@ -185,6 +186,15 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 area.width,
                 is_selected,
             ));
+        }
+        let hidden = app.hidden_session_count(&group);
+        if hidden > 0 {
+            let is_selected = selection_visible
+                && app.selection == Some(SelectionKey::ShowMore(group.key.clone()));
+            if is_selected {
+                selected_line = Some(lines.len());
+            }
+            lines.push(render_show_more_row(hidden, is_selected));
         }
     }
 
@@ -218,6 +228,20 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .scroll((scroll as u16, 0)),
         area,
     );
+}
+
+fn render_show_more_row(hidden: usize, selected: bool) -> Line<'static> {
+    let next = hidden.min(SESSION_PAGE_SIZE);
+    styled_line(
+        vec![
+            Span::styled("  ↓ ", Style::default().fg(ACCENT)),
+            Span::styled(
+                format!("Show {next} more · {hidden} hidden"),
+                Style::default().fg(DIM),
+            ),
+        ],
+        selected,
+    )
 }
 
 fn empty_state_lines() -> Vec<Line<'static>> {
@@ -565,6 +589,13 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::Peek if app.input.is_empty() => "enter to open".into(),
         Overlay::Peek => "enter to send · esc to close".into(),
         Overlay::Help => String::new(),
+        Overlay::None if matches!(app.selection, Some(SelectionKey::ShowMore(_))) => {
+            if width >= 55 {
+                "enter to show more · ↑/↓ to select · ? for shortcuts".into()
+            } else {
+                "enter to show more · ? for shortcuts".into()
+            }
+        }
         Overlay::None if matches!(app.selection, Some(SelectionKey::Group(_))) => {
             let action = if selected_group_can_delete(app) {
                 " · ctrl+x to delete all"
@@ -654,6 +685,9 @@ fn session_peek_suffix(session: &AgentSession) -> &'static str {
 
 fn help_actions(app: &App) -> Vec<String> {
     let mut actions = Vec::new();
+    if matches!(app.selection, Some(SelectionKey::ShowMore(_))) {
+        actions.push("enter to show more".into());
+    }
     if app.selected_session().is_some() {
         actions.push("ctrl+r to rename".into());
     }
@@ -975,6 +1009,41 @@ mod tests {
         assert!(rendered.contains("Completed"));
         assert!(rendered.contains("describe a task for a new session"));
         assert!(rendered.contains("1 awaiting input · 2 working · 1 completed"));
+    }
+
+    #[test]
+    fn large_groups_render_a_bounded_page_and_show_more_control() {
+        let sessions = (0..60)
+            .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
+            .collect();
+        let mut app = App::new(SessionSnapshot {
+            sessions,
+            warnings: vec![],
+        });
+        let backend = TestBackend::new(120, 70);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let first_page = buffer_text(terminal.backend().buffer());
+        assert!(first_page.contains("session-00"));
+        assert!(first_page.contains("session-24"));
+        assert!(!first_page.contains("session-25"));
+        assert!(first_page.contains("Show 25 more · 35 hidden"));
+
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        assert_eq!(app.activate(), crate::app::AppAction::None);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let second_page = buffer_text(terminal.backend().buffer());
+        assert!(second_page.contains("session-25"));
+        assert!(second_page.contains("session-49"));
+        assert!(!second_page.contains("session-50"));
+        assert!(second_page.contains("Show 10 more · 10 hidden"));
+        assert!(second_page.contains("enter to open"));
+
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let selected_control = buffer_text(terminal.backend().buffer());
+        assert!(selected_control.contains("enter to show more"));
     }
 
     #[test]

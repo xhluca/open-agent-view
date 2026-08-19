@@ -8,6 +8,21 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-08-19
+
+### Added
+
+- Groups with more than 25 matching sessions now end in a keyboard-selectable
+  `Show 25 more · N hidden` row. Enter reveals the next bounded page and moves
+  selection to its first session.
+
+### Changed
+
+- TUI paging is presentation-only: counts, filtering, JSON output, and bulk
+  safety checks continue to use the complete discovered session set.
+- Applying a filter or switching views restores the 25-session bound, while
+  ordinary provider refreshes preserve pages the user explicitly revealed.
+
 ## [0.1.5] - 2026-08-19
 
 ### Fixed

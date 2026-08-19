@@ -63,8 +63,11 @@ publishes completed provider results incrementally instead of waiting for the
 slowest CLI; the final snapshot is then enriched with ownership-gated control
 capabilities. Later refreshes replace the queue atomically and remain entirely
 off the input thread. Terminal input is drained in bounded bursts before a
-draw, and long lists use page-aligned viewports. Together these rules prevent
-key-repeat frame backlogs while preserving exact selection movement.
+draw. Each group initially contributes at most 25 session rows plus a
+selectable Show more control; revealed rows use page-aligned viewports.
+Filtering and counts still operate over the full snapshot. Together these
+rules bound render work and prevent key-repeat frame backlogs while preserving
+exact selection movement.
 
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes

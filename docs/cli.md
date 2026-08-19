@@ -153,6 +153,7 @@ label.
 | Context | Key | Result |
 | --- | --- | --- |
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
+| Show more row | `enter` | Reveal the next 25 matching sessions in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
 | Session row | `enter` | Suspend the dashboard and open the provider-native interface. |
 | Session row | `space` | Inspect transcript/request details when capability is advertised. |
@@ -178,6 +179,11 @@ show an authority notice for an observe-only, mismatched, expired, or otherwise
 unsupported target. Approval `y` is never offered for a file change lacking a
 correlated diff, expanded permissions, or unknown request form. See the
 [control model](control-model.md) for the exact boundary.
+
+Paging affects only the interactive list. Counts, filtering, JSON output, and
+group-level safety checks always use the complete discovered session set. The
+revealed count is remembered across ordinary provider refreshes and reset when
+switching views or applying a filter, keeping a newly narrowed queue bounded.
 
 Managed Cursor rows on Linux expose Inspect and either Interrupt while the
 verified owned process is active or Reply after it becomes idle. Managed

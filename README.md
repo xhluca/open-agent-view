@@ -21,8 +21,9 @@ open, provider-neutral project.
 
 - **All sessions, one queue.** Enabled providers refresh concurrently and one
   slow or unavailable provider does not hide results from the others.
-- **Responsive large queues.** Buffered key repeats are coalesced and long
-  lists page without flooding SSH, tmux, or the terminal renderer.
+- **Responsive large queues.** Each group initially shows 25 sessions behind a
+  selectable Show more row; buffered key repeats are coalesced so large
+  histories do not flood SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
   working, completed, and unknown state.
 - **Native when it matters.** Open a selected session in its own CLI without
@@ -87,7 +88,9 @@ coding-agents --launch-provider opencode
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
 `/` to filter, and `?` for contextual shortcuts. Start typing to hand off a new
 task to the configured managed provider. Every row spells out its provider
-name; open Peek to see whether it runs on the host or in Docker.
+name; open Peek to see whether it runs on the host or in Docker. Groups with
+more than 25 matches end in a selectable **Show more** row; filtering always
+searches the complete session set, including rows that have not been revealed.
 
 ## Provider support
 
