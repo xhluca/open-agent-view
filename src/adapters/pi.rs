@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
@@ -62,6 +62,14 @@ impl PiController {
 impl ProviderController for PiController {
     fn provider(&self) -> Provider {
         Provider::Pi
+    }
+
+    fn launch_mode(&self) -> LaunchMode {
+        if self.supervisor.is_some() {
+            LaunchMode::DefaultModel
+        } else {
+            LaunchMode::Unavailable
+        }
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -289,7 +297,7 @@ impl PiSource {
     fn session_directory_for(&self, session_id: &str) -> Result<Option<PathBuf>> {
         Ok(
             find_pi_session_file_in_roots(&self.session_dirs, session_id)?
-                .map(|(directory, _)| directory),
+                .and_then(|(_, path)| path.parent().map(Path::to_path_buf)),
         )
     }
 }
@@ -828,15 +836,20 @@ mod tests {
     #[test]
     fn controller_opens_the_exact_native_session() {
         let directory = tempdir().unwrap();
+        let nested_session_dir = directory.path().join("sessions/workspace-key");
+        fs::create_dir_all(&nested_session_dir).unwrap();
         let executable = directory.path().join("pi-test");
         fs::write(&executable, "#!/bin/sh\nprintf '%s\\n' \"$@\" > pi-args\n").unwrap();
         let mut permissions = fs::metadata(&executable).unwrap().permissions();
         permissions.set_mode(0o700);
         fs::set_permissions(&executable, permissions).unwrap();
         let input = SESSION.replace("/work/project", &directory.path().display().to_string());
-        fs::write(directory.path().join("one.jsonl"), &input).unwrap();
+        fs::write(nested_session_dir.join("one.jsonl"), &input).unwrap();
         let session = parse_pi_session(&input, Path::new("one.jsonl"), None, None).unwrap();
-        let controller = PiController::host(executable.display().to_string(), directory.path());
+        let controller = PiController::host(
+            executable.display().to_string(),
+            directory.path().join("sessions"),
+        );
 
         let outcome = controller.open(&session).unwrap();
 
@@ -848,7 +861,7 @@ mod tests {
             fs::read_to_string(directory.path().join("pi-args")).unwrap(),
             format!(
                 "--session\n123e4567-e89b-12d3-a456-426614174000\n--session-dir\n{}\n",
-                directory.path().display()
+                nested_session_dir.display()
             )
         );
     }

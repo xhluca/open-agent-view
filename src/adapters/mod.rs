@@ -53,7 +53,7 @@ pub use opencode::{
 };
 pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
 
-use crate::domain::{AgentSession, SessionSnapshot};
+use crate::domain::{AgentSession, SessionKind, SessionSnapshot, SessionState};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct DiscoveryRequest {
@@ -135,7 +135,14 @@ impl DiscoveryEngine {
                     break;
                 };
                 match result {
-                    Ok(Ok(mut sessions)) => snapshot.sessions.append(&mut sessions),
+                    Ok(Ok(mut sessions)) => {
+                        // Provider CLIs are not consistent about honoring their
+                        // own active-only and cwd filters. Enforce the public
+                        // discovery contract before a large history can enter
+                        // the dashboard model or any progressive update.
+                        sessions.retain(|session| session_matches_request(session, request));
+                        snapshot.sessions.append(&mut sessions);
+                    }
                     Ok(Err(error)) => snapshot.warnings.push(format!("{label}: {error:#}")),
                     Err(_) => snapshot
                         .warnings
@@ -158,6 +165,16 @@ impl DiscoveryEngine {
             source.cancel();
         }
     }
+}
+
+fn session_matches_request(session: &AgentSession, request: &DiscoveryRequest) -> bool {
+    (request.include_completed || session.state != SessionState::Completed)
+        && (request.include_interactive || session.kind != SessionKind::Interactive)
+        && request
+            .cwd
+            .as_ref()
+            .map(|cwd| session.cwd.starts_with(cwd))
+            .unwrap_or(true)
 }
 
 #[cfg(test)]
@@ -185,6 +202,8 @@ mod tests {
         label: &'static str,
         delay: Duration,
     }
+
+    struct UnfilteredSource;
 
     impl SessionSource for BrokenSource {
         fn label(&self) -> &str {
@@ -250,6 +269,58 @@ mod tests {
                 pull_requests: None,
                 capabilities: BTreeSet::new(),
             }])
+        }
+    }
+
+    impl SessionSource for UnfilteredSource {
+        fn label(&self) -> &str {
+            "unfiltered"
+        }
+
+        fn discover(&self, _: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+            let session = |id: &str, state, kind, cwd: &str| AgentSession {
+                id: format!("test:host:{id}"),
+                provider_session_id: id.into(),
+                provider: Provider::Other("test".into()),
+                runtime: Runtime::Host,
+                kind,
+                name: id.into(),
+                cwd: PathBuf::from(cwd),
+                state,
+                summary: String::new(),
+                raw_state: None,
+                pid: None,
+                started_at: None,
+                updated_at: None,
+                pull_requests: None,
+                capabilities: BTreeSet::new(),
+            };
+            Ok(vec![
+                session(
+                    "active",
+                    SessionState::Working,
+                    SessionKind::Background,
+                    "/workspace/project",
+                ),
+                session(
+                    "completed",
+                    SessionState::Completed,
+                    SessionKind::Background,
+                    "/workspace/project",
+                ),
+                session(
+                    "interactive",
+                    SessionState::Working,
+                    SessionKind::Interactive,
+                    "/workspace/project",
+                ),
+                session(
+                    "elsewhere",
+                    SessionState::Working,
+                    SessionKind::Background,
+                    "/other/project",
+                ),
+            ])
         }
     }
 
@@ -344,5 +415,40 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["fast", "slow"]
         );
+    }
+
+    #[test]
+    fn engine_enforces_filters_even_when_a_provider_ignores_them() {
+        let mut engine = DiscoveryEngine::new();
+        engine.add_source(UnfilteredSource);
+
+        let snapshot = engine.discover(&DiscoveryRequest {
+            include_completed: false,
+            include_interactive: false,
+            cwd: Some(PathBuf::from("/workspace")),
+        });
+
+        assert_eq!(
+            snapshot
+                .sessions
+                .iter()
+                .map(|session| session.provider_session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["active"]
+        );
+    }
+
+    #[test]
+    fn engine_allows_explicit_completed_and_interactive_history() {
+        let mut engine = DiscoveryEngine::new();
+        engine.add_source(UnfilteredSource);
+
+        let snapshot = engine.discover(&DiscoveryRequest {
+            include_completed: true,
+            include_interactive: true,
+            cwd: None,
+        });
+
+        assert_eq!(snapshot.sessions.len(), 4);
     }
 }

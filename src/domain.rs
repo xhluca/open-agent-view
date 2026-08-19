@@ -42,6 +42,13 @@ impl fmt::Display for Provider {
     }
 }
 
+/// A provider exposed by the new-task composer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LaunchTarget {
+    pub provider: Provider,
+    pub supports_model: bool,
+}
+
 /// Where the provider process is running.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

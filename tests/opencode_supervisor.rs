@@ -34,6 +34,7 @@ fn owned_server_survives_dashboard_reconnect_and_rejects_external_sessions() {
     let launched = controller
         .launch(&LaunchRequest {
             provider: Provider::OpenCode,
+            model: None,
             prompt: "initial managed task".into(),
             cwd: directory.path().to_path_buf(),
         })

@@ -99,11 +99,12 @@ impl SessionSource for AntigravitySource {
         Ok(sessions
             .into_iter()
             .filter(|session| {
-                request
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| session.cwd.starts_with(cwd))
-                    .unwrap_or(true)
+                session.cwd.is_dir()
+                    && request
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| session.cwd.starts_with(cwd))
+                        .unwrap_or(true)
             })
             .collect())
     }
@@ -175,6 +176,12 @@ impl ProviderController for AntigravityController {
         if session.provider != Provider::Antigravity || session.runtime != Runtime::Host {
             bail!("the Antigravity host controller cannot open this session");
         }
+        if !session.cwd.is_dir() {
+            bail!(
+                "the cached Antigravity workspace no longer exists: {}",
+                session.cwd.display()
+            );
+        }
         let spec = self
             .invocation
             .resume(&session.provider_session_id, &session.cwd)?;
@@ -245,15 +252,64 @@ mod tests {
             .is_empty());
 
         let path = directory.path().join("last_conversations.json");
-        fs::write(&path, r#"{"/work/one":"one","/other/two":"two"}"#).unwrap();
+        let workspace = directory.path().join("work/one");
+        let other = directory.path().join("other/two");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        fs::write(
+            &path,
+            serde_json::json!({
+                workspace.display().to_string(): "one",
+                other.display().to_string(): "two"
+            })
+            .to_string(),
+        )
+        .unwrap();
         let sessions = AntigravitySource::host(path)
             .discover(&DiscoveryRequest {
-                cwd: Some(PathBuf::from("/work")),
+                cwd: Some(directory.path().join("work")),
                 ..DiscoveryRequest::default()
             })
             .unwrap();
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].provider_session_id, "one");
+    }
+
+    #[test]
+    fn source_hides_cached_workspaces_that_no_longer_exist() {
+        let directory = tempdir().unwrap();
+        let path = directory.path().join("last_conversations.json");
+        let stale = directory.path().join("deleted-workspace");
+        fs::write(
+            &path,
+            serde_json::json!({stale.display().to_string(): "stale-id"}).to_string(),
+        )
+        .unwrap();
+
+        assert!(AntigravitySource::host(path)
+            .discover(&DiscoveryRequest::default())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn controller_explains_a_stale_workspace_before_spawning() {
+        let directory = tempdir().unwrap();
+        let stale = directory.path().join("deleted-workspace");
+        let session = parse_antigravity_last_conversations(
+            &serde_json::json!({stale.display().to_string(): "stale-id"}).to_string(),
+            Runtime::Host,
+        )
+        .unwrap()
+        .remove(0);
+
+        let error = AntigravityController::host("must-not-run")
+            .open(&session)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("cached Antigravity workspace no longer exists"));
+        assert!(error.contains("deleted-workspace"));
     }
 
     #[test]

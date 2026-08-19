@@ -18,6 +18,7 @@ const ENTER: &[u8] = b"\r";
 const UP: &[u8] = b"\x1b[A";
 const DOWN: &[u8] = b"\x1b[B";
 const CTRL_A: &[u8] = b"\x01";
+const CTRL_F: &[u8] = b"\x06";
 const CTRL_J: &[u8] = b"\x0a";
 const CTRL_R: &[u8] = b"\x12";
 const CTRL_S: &[u8] = b"\x13";
@@ -230,7 +231,7 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         );
     }
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(b"pi-refactor");
     app.send(ENTER);
     app.wait_for("managed Pi fixture row", |screen| {
@@ -253,7 +254,7 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         !screen.contains("pi-refactor · Pi") && screen.contains("pi-refactor")
     });
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 64]);
     app.send(b"cursor-owned-chat");
     app.send(ENTER);
@@ -271,7 +272,7 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
             && screen.contains("provider actions are disabled while reading a fixture")
     });
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 64]);
     app.send(b"copilot-acp-session");
     app.send(ENTER);
@@ -424,6 +425,8 @@ printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessio
         let antigravity_cache = home
             .path()
             .join(".gemini/antigravity-cli/cache/last_conversations.json");
+        let antigravity_workspace = home.path().join("fast");
+        fs::create_dir_all(&antigravity_workspace).expect("create Antigravity fixture workspace");
         fs::create_dir_all(
             antigravity_cache
                 .parent()
@@ -432,7 +435,10 @@ printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessio
         .expect("create Antigravity cache directory");
         fs::write(
             antigravity_cache,
-            r#"{"/workspace/fast":"fast-conversation"}"#,
+            serde_json::json!({
+                antigravity_workspace.display().to_string(): "fast-conversation"
+            })
+            .to_string(),
         )
         .expect("write fast Antigravity cache");
 
@@ -559,6 +565,39 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.send(ESC);
     app.wait_for("stress peek close", |screen| {
         !screen.contains("session-0017 ·")
+    });
+
+    let command_started = Instant::now();
+    app.send(b"/help");
+    app.send(ENTER);
+    app.wait_for("dashboard slash-command help", |screen| {
+        screen.contains("commands: /provider NAME · /model NAME|default · /filter TEXT")
+    });
+    assert!(
+        command_started.elapsed() < Duration::from_millis(750),
+        "slash-command handling stalled with 500 sessions"
+    );
+
+    app.send(b"\t");
+    app.wait_for("stress task composer", |screen| {
+        screen.contains("new task · Claude · model default")
+    });
+    app.screen();
+    let typing_output_before = app.raw.len();
+    let typing_started = Instant::now();
+    app.send(&vec![b'x'; 200]);
+    app.wait_for_output_after(typing_output_before, "coalesced 200-character task input");
+    assert!(
+        typing_started.elapsed() < Duration::from_millis(750),
+        "200 typed characters stalled with 500 sessions"
+    );
+    assert!(
+        app.raw.len() - typing_output_before < 24 * 1024,
+        "typed input produced an unbounded repaint backlog"
+    );
+    app.send(ESC);
+    app.wait_for("stress task composer close", |screen| {
+        !screen.contains("new task · Claude · model default")
     });
     app.exit_cleanly();
 }
@@ -712,7 +751,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(CTRL_S);
     app.wait_for("status view", |screen| screen.contains("status view"));
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.wait_for("filter composer", |screen| {
         screen.contains("❯ filter") && screen.contains("enter to apply · esc to cancel")
     });
@@ -721,11 +760,11 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let filtered = app.wait_for("applied filter", |screen| {
         screen.contains("approval-needed")
             && !screen.contains("release-reviewer")
-            && screen.contains("type to start a new session · / to change filter")
+            && screen.contains("describe a task · ctrl+f to change filter")
     });
-    assert!(filtered.contains("type to start a new session · / to change filter"));
+    assert!(filtered.contains("describe a task · ctrl+f to change filter"));
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.wait_for("filter edit", |screen| screen.contains("❯ filter approval"));
     app.send(ESC);
     let filter_cancelled = app.wait_for("filter cancellation", |screen| {
@@ -735,7 +774,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     });
     assert!(!filter_cancelled.contains("release-reviewer"));
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 8]);
     app.send(ENTER);
     app.wait_for("cleared filter", |screen| {
@@ -744,7 +783,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
 
     app.send(b"\t");
     app.wait_for("new task composer", |screen| {
-        screen.contains('❯') && screen.contains("enter to create · ctrl+j for newline")
+        screen.contains('❯') && screen.contains("new task · Claude · model default")
     });
     app.send(b"draft a release");
     app.send(CTRL_J);
@@ -754,7 +793,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     });
     app.send(ESC);
     app.wait_for("composer cancellation", |screen| {
-        screen.contains("describe a task for a new session")
+        screen.contains("describe a task · /help for commands")
             && !screen.contains("draft a release")
             && !screen.contains("include rollback")
     });
@@ -762,7 +801,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     // Select the review row deterministically after the earlier filter changed
     // selection. Peek remains useful when provider inspection is disabled: it
     // still shows the fixture summary and a safe refusal notice.
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(b"release-reviewer");
     app.send(ENTER);
     app.wait_for("review row", |screen| screen.contains("release-reviewer"));
@@ -815,7 +854,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     });
     assert!(!launch_refused.contains("launch-should-stay-in-fixture"));
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(b"owned-codex-worker");
     app.send(ENTER);
     app.wait_for("owned Codex fixture row", |screen| {
@@ -873,7 +912,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
             && !screen.contains("Enter confirms; escape keeps it")
     });
 
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 18]);
     app.send(b"migration");
     app.send(ENTER);
@@ -905,7 +944,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 
     // Filter selects the approval session directly, making approval affordances
     // deterministic without depending on the number of section headers.
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(b"approval-needed");
     app.send(ENTER);
     app.wait_for("approval row", |screen| screen.contains("approval-needed"));
@@ -935,7 +974,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     });
 
     // Clear the filter, then select the completed session by a new filter.
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 15]);
     app.send(b"schema-migration");
     app.send(ENTER);
@@ -973,7 +1012,7 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 
     // Structured input is accepted only into volatile UI state. A refusal from
     // the disabled fixture controller must not copy the answer into its notice.
-    app.send(b"/");
+    app.send(CTRL_F);
     app.send(&[0x7f; 16]);
     app.send(b"needs-environment");
     app.send(ENTER);

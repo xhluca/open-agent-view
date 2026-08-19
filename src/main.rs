@@ -237,7 +237,7 @@ struct Cli {
     launch_cwd: Option<PathBuf>,
 
     /// Provider refresh interval in milliseconds.
-    #[arg(long, default_value_t = 5000, value_parser = clap::value_parser!(u64).range(250..))]
+    #[arg(long, default_value_t = 15000, value_parser = clap::value_parser!(u64).range(250..))]
     refresh_ms: u64,
 }
 
@@ -1090,7 +1090,7 @@ mod tests {
     fn live_discovery_mode_keeps_provider_io_enabled() {
         let cli = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
         assert!(provider_io_enabled(&cli));
-        assert_eq!(cli.refresh_ms, 5_000);
+        assert_eq!(cli.refresh_ms, 15_000);
     }
 
     #[test]

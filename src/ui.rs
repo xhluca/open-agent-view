@@ -78,15 +78,22 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
 fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let cwd = header_directory(app);
-    let completed = app.snapshot.count(SessionState::Completed);
+    let (awaiting, working, completed) = app.snapshot.sessions.iter().fold(
+        (0usize, 0usize, 0usize),
+        |(awaiting, working, completed), session| match session.state {
+            SessionState::NeedsInput => (awaiting + 1, working, completed),
+            SessionState::ReadyForReview | SessionState::Working => {
+                (awaiting, working + 1, completed)
+            }
+            SessionState::Completed => (awaiting, working, completed + 1),
+            SessionState::Unknown => (awaiting, working, completed),
+        },
+    );
     let completed_status = if app.includes_completed {
         format!("{completed} completed")
     } else {
         "completed hidden".into()
     };
-    let working = app.snapshot.count(SessionState::ReadyForReview)
-        + app.snapshot.count(SessionState::Working);
-    let awaiting = app.snapshot.count(SessionState::NeedsInput);
     let providers = provider_summary(app);
     let title = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
     let mode = match app.view_mode {
@@ -358,10 +365,17 @@ fn render_bottom_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let block = Block::default()
+    let mut block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(Style::default().fg(DIM))
         .style(Style::default().bg(BG));
+    if matches!(app.overlay, Overlay::Composer(ComposerMode::NewSession)) {
+        let model = app.launch_model.as_deref().unwrap_or("default");
+        block = block.title(format!(
+            " new task · {} · model {model} ",
+            app.launch_provider.label()
+        ));
+    }
     let (prefix, content, editable) = match &app.overlay {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Rename { .. }) => ("❯ name ", app.input.as_str(), true),
@@ -369,9 +383,9 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         _ => (
             "❯ ",
             if app.filter.is_empty() {
-                "describe a task for a new session"
+                "describe a task · /help for commands"
             } else {
-                "type to start a new session · / to change filter"
+                "describe a task · ctrl+f to change filter"
             },
             false,
         ),
@@ -558,10 +572,17 @@ fn contextual_footer(app: &App, width: u16) -> String {
     match &app.overlay {
         Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
         Overlay::Composer(ComposerMode::Rename { .. }) => "enter to save · esc to cancel".into(),
-        Overlay::Composer(_) if width >= 70 => {
-            "enter to create · ctrl+j for newline · esc to clear".into()
+        Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
+            "enter to create · tab provider · /provider · /model · ctrl+j newline · esc cancel"
+                .into()
         }
-        Overlay::Composer(_) => "enter to create · esc to clear".into(),
+        Overlay::Composer(ComposerMode::NewSession) if width >= 70 => {
+            "enter to create · ctrl+j for newline · tab provider · /help · esc cancel".into()
+        }
+        Overlay::Composer(ComposerMode::NewSession) if width >= 55 => {
+            "enter to create · tab provider · /help · esc cancel".into()
+        }
+        Overlay::Composer(ComposerMode::NewSession) => "enter to create · tab provider".into(),
         Overlay::Peek
             if app.selected_session().is_some_and(|session| {
                 session.capabilities.contains(&Capability::Approve)
@@ -643,7 +664,9 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::None if app.selected_session().is_some() => {
             "enter to open · ? for shortcuts".into()
         }
-        _ if width >= 70 => "type to create · ↑/↓ to select · / to filter · ? for shortcuts".into(),
+        _ if width >= 70 => {
+            "type to create · ↑/↓ to select · ctrl+f to filter · ? for shortcuts".into()
+        }
         _ => "↑/↓ to select · ? for shortcuts".into(),
     }
 }
@@ -702,8 +725,10 @@ fn help_actions(app: &App) -> Vec<String> {
     }
     actions.push("ctrl+s to switch views".into());
     actions.push("ctrl+j for newline".into());
-    actions.push("/ to filter".into());
-    actions.push("tab for new task".into());
+    actions.push("ctrl+f to filter".into());
+    actions.push("ctrl+l to refresh".into());
+    actions.push("tab for new task/provider".into());
+    actions.push("/help for task commands".into());
     if let Some(session) = app.selected_session() {
         if session.capabilities.contains(&Capability::Approve)
             || session.capabilities.contains(&Capability::Decline)
@@ -774,6 +799,9 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
     let popup = centered_rect(72, 30, area);
     frame.render_widget(Clear, popup);
     let message = match target {
+        ConfirmTarget::OpenClaude { id } => format!(
+            "Attach to this Claude background session?\n\n{id}\n\nInside Claude:\n← opens Claude's agent view.\nCtrl+Z returns to Open Agent View.\nThe background session keeps running.\n\nEnter attaches; escape cancels."
+        ),
         ConfirmTarget::Session { id, running: true } => {
             format!(
                 "Interrupt the exact running session?\n\n{id}\n\nEnter confirms; escape keeps it."
@@ -805,18 +833,16 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
 }
 
 fn provider_summary(app: &App) -> String {
-    let mut labels = app
+    let labels = app
         .snapshot
         .sessions
         .iter()
         .map(|session| session.provider.label())
-        .collect::<Vec<_>>();
-    labels.sort_unstable();
-    labels.dedup();
+        .collect::<std::collections::BTreeSet<_>>();
     if labels.is_empty() {
         "Coding agents".into()
     } else {
-        sanitize_inline(&labels.join(" + "))
+        sanitize_inline(&labels.into_iter().collect::<Vec<_>>().join(" + "))
     }
 }
 
@@ -1016,7 +1042,7 @@ mod tests {
         assert!(rendered.contains("Needs input"));
         assert!(rendered.contains("Working"));
         assert!(rendered.contains("Completed"));
-        assert!(rendered.contains("describe a task for a new session"));
+        assert!(rendered.contains("describe a task · /help for commands"));
         assert!(rendered.contains("1 awaiting input · 2 working · 1 completed"));
     }
 
@@ -1299,7 +1325,7 @@ mod tests {
 
         assert!(rendered.contains("ctrl+r to rename"));
         assert!(rendered.contains("ctrl+s to switch views"));
-        assert!(rendered.contains("describe a task for a new session"));
+        assert!(rendered.contains("describe a task · /help for commands"));
         assert!(!rendered.contains("ctrl+x to stop"));
         assert!(!rendered.contains("j/k"));
     }
@@ -1364,6 +1390,41 @@ mod tests {
 
         assert!(rendered.contains("n deny"));
         assert!(!rendered.contains("y allow once"));
+    }
+
+    #[test]
+    fn new_task_composer_names_the_selected_provider_and_model() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.launch_model = Some("opus".into());
+        app.start_new_session(None);
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("new task · Claude · model opus"));
+        assert!(rendered.contains("tab provider"));
+        assert!(rendered.contains("/provider"));
+        assert!(rendered.contains("/model"));
+    }
+
+    #[test]
+    fn claude_attach_confirmation_explains_the_only_return_key() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("worker", SessionState::Working)],
+            warnings: vec![],
+        });
+        assert_eq!(app.activate(), crate::app::AppAction::None);
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("Attach to this Claude background session?"));
+        assert!(rendered.contains("Ctrl+Z returns to Open Agent View"));
+        assert!(rendered.contains("← opens Claude's agent view"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

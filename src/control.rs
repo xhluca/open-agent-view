@@ -9,15 +9,27 @@ use std::time::{Duration, SystemTime};
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::adapters::parse_claude_sessions;
 use crate::codex_supervisor::{CodexReplyMode, CodexSupervisor};
-use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionSnapshot};
+use crate::domain::{
+    AgentSession, Capability, LaunchTarget, Provider, Runtime, SessionKind, SessionSnapshot,
+    SessionState,
+};
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LaunchRequest {
     pub provider: Provider,
+    pub model: Option<String>,
     pub prompt: String,
     pub cwd: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LaunchMode {
+    Unavailable,
+    DefaultModel,
+    SelectableModel,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -43,6 +55,10 @@ pub struct ControlHubConfig {
 /// own. The hub checks those capabilities again before dispatching mutations.
 pub trait ProviderController: Send + Sync {
     fn provider(&self) -> Provider;
+
+    fn launch_mode(&self) -> LaunchMode {
+        LaunchMode::Unavailable
+    }
 
     fn enrich(&self, _snapshot: &mut SessionSnapshot) {}
 
@@ -151,14 +167,56 @@ impl ControlHub {
         self.codex.clone()
     }
 
+    pub fn default_launch_provider(&self) -> Provider {
+        self.launch_provider.clone()
+    }
+
+    pub fn launch_targets(&self) -> Vec<LaunchTarget> {
+        self.controllers
+            .values()
+            .filter_map(|controller| match controller.launch_mode() {
+                LaunchMode::Unavailable => None,
+                LaunchMode::DefaultModel => Some(LaunchTarget {
+                    provider: controller.provider(),
+                    supports_model: false,
+                }),
+                LaunchMode::SelectableModel => Some(LaunchTarget {
+                    provider: controller.provider(),
+                    supports_model: true,
+                }),
+            })
+            .collect()
+    }
+
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
+        self.launch_with(self.launch_provider.clone(), None, prompt)
+    }
+
+    pub fn launch_with(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome> {
         self.ensure_provider_io()?;
+        let controller = self.controller(&provider)?;
+        let model = validate_model(model)?;
+        match (controller.launch_mode(), model.as_ref()) {
+            (LaunchMode::Unavailable, _) => {
+                bail!("{} launch is unavailable", provider.label())
+            }
+            (LaunchMode::DefaultModel, Some(_)) => {
+                bail!("{} does not expose model selection", provider.label())
+            }
+            _ => {}
+        }
         let request = LaunchRequest {
-            provider: self.launch_provider.clone(),
+            provider,
+            model,
             prompt,
             cwd: self.launch_cwd.clone(),
         };
-        self.controller(&request.provider)?.launch(&request)
+        controller.launch(&request)
     }
 
     pub fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -270,6 +328,9 @@ impl ClaudeController {
             bail!("the launch prompt cannot be empty");
         }
         let mut args = self.invocation.prefix_args.clone();
+        if let Some(model) = &request.model {
+            args.extend(["--model".into(), model.clone()]);
+        }
         args.extend(["--background".into(), request.prompt.trim().to_owned()]);
         let mut command = CommandRequest::new(self.invocation.program.clone(), args);
         command.current_dir = Some(request.cwd.clone());
@@ -302,12 +363,7 @@ impl ClaudeController {
     }
 
     fn stop(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        if !self.owns(session) {
-            bail!("refusing to stop a Claude session not launched by coding-agents");
-        }
-        if session.runtime != self.runtime {
-            bail!("the configured controller does not own this runtime");
-        }
+        self.revalidate_interrupt_target(session)?;
         let short_id = short_claude_id(&session.provider_session_id);
         let mut args = self.invocation.prefix_args.clone();
         args.extend(["stop".into(), short_id.clone()]);
@@ -327,6 +383,34 @@ impl ClaudeController {
         })
     }
 
+    fn revalidate_interrupt_target(&self, session: &AgentSession) -> Result<()> {
+        if session.provider != Provider::Claude || session.runtime != Runtime::Host {
+            bail!("the Claude host controller cannot stop this provider runtime");
+        }
+        let mut args = self.invocation.prefix_args.clone();
+        args.extend(["agents".into(), "--json".into()]);
+        let mut request = CommandRequest::new(self.invocation.program.clone(), args);
+        request.timeout = Duration::from_secs(8);
+        let output = self.runner.run(&request)?;
+        if output.status != 0 {
+            bail!(
+                "Claude session revalidation exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        let current = parse_claude_sessions(output.stdout_text()?, Runtime::Host)?;
+        let exact = current
+            .iter()
+            .find(|candidate| candidate.provider_session_id == session.provider_session_id)
+            .context("the exact Claude session is no longer listed")?;
+        if !is_interruptible_claude_session(exact) {
+            bail!("the exact Claude session is no longer an active background session");
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     fn owns(&self, session: &AgentSession) -> bool {
         session.provider == Provider::Claude
             && self
@@ -342,9 +426,13 @@ impl ProviderController for ClaudeController {
         Provider::Claude
     }
 
+    fn launch_mode(&self) -> LaunchMode {
+        LaunchMode::SelectableModel
+    }
+
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
         for session in &mut snapshot.sessions {
-            if self.owns(session) {
+            if is_interruptible_claude_session(session) {
                 session.capabilities.insert(Capability::Interrupt);
             }
         }
@@ -416,12 +504,20 @@ impl ProviderController for CodexController {
         Provider::Codex
     }
 
+    fn launch_mode(&self) -> LaunchMode {
+        LaunchMode::SelectableModel
+    }
+
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
         self.supervisor.enrich(snapshot);
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        let thread_id = self.supervisor.launch(&request.prompt, &request.cwd)?;
+        let thread_id = self.supervisor.launch_with_model(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
         Ok(ControlOutcome {
             message: format!("started managed Codex thread {thread_id}"),
             provider_session_hint: Some(thread_id),
@@ -614,6 +710,7 @@ impl OwnershipRegistry {
         self.save()
     }
 
+    #[cfg(test)]
     fn owns(&self, session: &AgentSession) -> bool {
         let runtime = runtime_key(&session.runtime);
         self.records.iter().any(|record| {
@@ -688,6 +785,33 @@ fn short_claude_id(provider_session_id: &str) -> String {
     provider_session_id.chars().take(8).collect()
 }
 
+fn is_interruptible_claude_session(session: &AgentSession) -> bool {
+    session.provider == Provider::Claude
+        && session.runtime == Runtime::Host
+        && session.kind == SessionKind::Background
+        && matches!(
+            session.state,
+            SessionState::Working | SessionState::NeedsInput | SessionState::ReadyForReview
+        )
+}
+
+fn validate_model(model: Option<String>) -> Result<Option<String>> {
+    let Some(model) = model else {
+        return Ok(None);
+    };
+    let model = model.trim();
+    if model.is_empty() || model.len() > 128 {
+        bail!("the model name must contain between 1 and 128 bytes");
+    }
+    if model
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("the model name cannot contain whitespace or control characters");
+    }
+    Ok(Some(model.to_owned()))
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -759,7 +883,7 @@ fn recent_terminal_screen(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeSet, VecDeque};
     use std::sync::Mutex;
 
     use tempfile::tempdir;
@@ -832,6 +956,7 @@ mod tests {
         let outcome = controller
             .launch(&LaunchRequest {
                 provider: Provider::Claude,
+                model: Some("opus".into()),
                 prompt: "Implement the dashboard".into(),
                 cwd: PathBuf::from("/work/project"),
             })
@@ -843,13 +968,118 @@ mod tests {
         assert_eq!(requests[0].program, "claude-test");
         assert_eq!(
             requests[0].args,
-            vec!["--background", "Implement the dashboard"]
+            vec!["--model", "opus", "--background", "Implement the dashboard"]
         );
         assert_eq!(
             requests[0].current_dir,
             Some(PathBuf::from("/work/project"))
         );
         assert!(controller.owns(&session("4b34abd1-91dc-4b50-a43f-6db2837576fe")));
+    }
+
+    #[test]
+    fn claude_interrupt_is_granted_and_revalidated_for_exact_host_background_session() {
+        let directory = tempdir().unwrap();
+        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        let provider_id = "4b34abd1-91dc-4b50-a43f-6db2837576fe";
+        let inventory = format!(
+            r#"[{{"pid":42,"id":"4b34abd1","cwd":"/work","kind":"background","startedAt":1,"sessionId":"{provider_id}","name":"external","status":"busy","state":"working"}}]"#
+        );
+        let runner = Arc::new(QueueRunner {
+            requests: Mutex::new(Vec::new()),
+            outputs: Mutex::new(VecDeque::from([
+                CommandOutput {
+                    status: 0,
+                    stdout: inventory.into_bytes(),
+                    stderr: vec![],
+                },
+                CommandOutput {
+                    status: 0,
+                    stdout: vec![],
+                    stderr: vec![],
+                },
+            ])),
+        });
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: "claude-test".into(),
+                prefix_args: Vec::new(),
+            },
+            docker_bin: "must-not-run-docker".into(),
+            runtime: Runtime::Host,
+            runner: runner.clone(),
+            registry: Arc::new(Mutex::new(registry)),
+        };
+        let external = session(provider_id);
+        let mut snapshot = SessionSnapshot {
+            sessions: vec![external.clone()],
+            warnings: Vec::new(),
+        };
+
+        controller.enrich(&mut snapshot);
+        assert!(snapshot.sessions[0]
+            .capabilities
+            .contains(&Capability::Interrupt));
+        assert!(!controller.owns(&external));
+        controller.interrupt(&external).unwrap();
+
+        let requests = runner.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0].args, vec!["agents", "--json"]);
+        assert_eq!(requests[1].args, vec!["stop", "4b34abd1"]);
+    }
+
+    #[test]
+    fn claude_interrupt_never_targets_interactive_completed_or_stale_sessions() {
+        let directory = tempdir().unwrap();
+        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        let provider_id = "4b34abd1-91dc-4b50-a43f-6db2837576fe";
+        let runner = Arc::new(QueueRunner {
+            requests: Mutex::new(Vec::new()),
+            outputs: Mutex::new(VecDeque::from([CommandOutput {
+                status: 0,
+                stdout: b"[]".to_vec(),
+                stderr: vec![],
+            }])),
+        });
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: "claude-test".into(),
+                prefix_args: Vec::new(),
+            },
+            docker_bin: "must-not-run-docker".into(),
+            runtime: Runtime::Host,
+            runner: runner.clone(),
+            registry: Arc::new(Mutex::new(registry)),
+        };
+        let mut completed = session("completed");
+        completed.state = SessionState::Completed;
+        let mut interactive = session("interactive");
+        interactive.kind = SessionKind::Interactive;
+        let mut docker = session("docker");
+        docker.runtime = Runtime::Docker {
+            container_id: "exact".into(),
+            container_name: "container".into(),
+            image: "image@sha256:exact".into(),
+        };
+        let mut snapshot = SessionSnapshot {
+            sessions: vec![completed, interactive, docker],
+            warnings: Vec::new(),
+        };
+
+        controller.enrich(&mut snapshot);
+        assert!(snapshot
+            .sessions
+            .iter()
+            .all(|item| !item.capabilities.contains(&Capability::Interrupt)));
+        assert_eq!(
+            controller
+                .interrupt(&session(provider_id))
+                .unwrap_err()
+                .to_string(),
+            "the exact Claude session is no longer listed"
+        );
+        assert_eq!(runner.requests.lock().unwrap().len(), 1);
     }
 
     #[test]
@@ -1053,6 +1283,7 @@ mod tests {
             controller
                 .launch(&LaunchRequest {
                     provider: Provider::Claude,
+                    model: None,
                     prompt: "   ".into(),
                     cwd: PathBuf::from("/work"),
                 })
@@ -1064,6 +1295,7 @@ mod tests {
         assert!(controller
             .launch(&LaunchRequest {
                 provider: Provider::Claude,
+                model: None,
                 prompt: "prompt".into(),
                 cwd: PathBuf::from("/work"),
             })
@@ -1092,6 +1324,7 @@ mod tests {
         assert!(controller
             .launch(&LaunchRequest {
                 provider: Provider::Claude,
+                model: None,
                 prompt: "prompt".into(),
                 cwd: PathBuf::from("/work"),
             })
@@ -1105,6 +1338,11 @@ mod tests {
         output: Mutex<Option<CommandOutput>>,
     }
 
+    struct QueueRunner {
+        requests: Mutex<Vec<CommandRequest>>,
+        outputs: Mutex<VecDeque<CommandOutput>>,
+    }
+
     struct StubController {
         provider: Provider,
         marker: &'static str,
@@ -1113,6 +1351,10 @@ mod tests {
     impl ProviderController for StubController {
         fn provider(&self) -> Provider {
             self.provider.clone()
+        }
+
+        fn launch_mode(&self) -> LaunchMode {
+            LaunchMode::DefaultModel
         }
 
         fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -1144,6 +1386,17 @@ mod tests {
         }
     }
 
+    impl CommandRunner for QueueRunner {
+        fn run(&self, request: &CommandRequest) -> Result<CommandOutput> {
+            self.requests.lock().unwrap().push(request.clone());
+            self.outputs
+                .lock()
+                .unwrap()
+                .pop_front()
+                .context("test runner exhausted")
+        }
+    }
+
     #[test]
     fn registered_provider_controller_enriches_and_dispatches_without_replacement() {
         let mut hub = uncontrolled_hub(Provider::Pi);
@@ -1160,6 +1413,19 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "a Pi controller is already registered"
+        );
+        assert_eq!(
+            hub.launch_targets(),
+            vec![LaunchTarget {
+                provider: Provider::Pi,
+                supports_model: false,
+            }]
+        );
+        assert_eq!(
+            hub.launch_with(Provider::Pi, Some("custom".into()), "prompt".into())
+                .unwrap_err()
+                .to_string(),
+            "Pi does not expose model selection"
         );
 
         let mut pi = session("pi-session");

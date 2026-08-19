@@ -2,7 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
-use crate::domain::{AgentSession, Capability, SessionSnapshot, SessionState};
+use crate::domain::{
+    AgentSession, Capability, LaunchTarget, Provider, SessionSnapshot, SessionState,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ViewMode {
@@ -37,6 +39,9 @@ pub enum ComposerMode {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConfirmTarget {
+    OpenClaude {
+        id: String,
+    },
     Session {
         id: String,
         running: bool,
@@ -54,16 +59,43 @@ pub enum ConfirmTarget {
 pub enum AppAction {
     None,
     Quit,
-    Open { session_id: String },
-    Inspect { session_id: String },
-    Launch { prompt: String },
-    Reply { session_id: String, prompt: String },
-    ResolveApproval { session_id: String, accept: bool },
-    RespondInput { session_id: String, answer: String },
-    Rename { session_id: String, name: String },
-    Interrupt { session_id: String },
-    Archive { session_id: String },
-    Delete { session_ids: Vec<String> },
+    Refresh,
+    Open {
+        session_id: String,
+    },
+    Inspect {
+        session_id: String,
+    },
+    Launch {
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    },
+    Reply {
+        session_id: String,
+        prompt: String,
+    },
+    ResolveApproval {
+        session_id: String,
+        accept: bool,
+    },
+    RespondInput {
+        session_id: String,
+        answer: String,
+    },
+    Rename {
+        session_id: String,
+        name: String,
+    },
+    Interrupt {
+        session_id: String,
+    },
+    Archive {
+        session_id: String,
+    },
+    Delete {
+        session_ids: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -82,6 +114,9 @@ pub struct App {
     pub overlay: Overlay,
     pub input: String,
     pub filter: String,
+    pub launch_targets: Vec<LaunchTarget>,
+    pub launch_provider: Provider,
+    pub launch_model: Option<String>,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
     pub notice: Option<String>,
@@ -96,6 +131,29 @@ impl App {
     }
 
     pub fn with_completed_visibility(snapshot: SessionSnapshot, includes_completed: bool) -> Self {
+        Self::with_launch_targets(
+            snapshot,
+            includes_completed,
+            Provider::Claude,
+            vec![LaunchTarget {
+                provider: Provider::Claude,
+                supports_model: true,
+            }],
+        )
+    }
+
+    pub fn with_launch_targets(
+        snapshot: SessionSnapshot,
+        includes_completed: bool,
+        default_provider: Provider,
+        launch_targets: Vec<LaunchTarget>,
+    ) -> Self {
+        let launch_provider = launch_targets
+            .iter()
+            .find(|target| target.provider == default_provider)
+            .map(|target| target.provider.clone())
+            .or_else(|| launch_targets.first().map(|target| target.provider.clone()))
+            .unwrap_or(default_provider);
         let mut app = Self {
             snapshot,
             includes_completed,
@@ -104,6 +162,9 @@ impl App {
             overlay: Overlay::None,
             input: String::new(),
             filter: String::new(),
+            launch_targets,
+            launch_provider,
+            launch_model: None,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
             notice: None,
@@ -217,12 +278,7 @@ impl App {
                 self.overlay = Overlay::None;
                 AppAction::None
             }
-            Overlay::Peek if self.input.trim().is_empty() => self
-                .selected_session()
-                .map(|session| AppAction::Open {
-                    session_id: session.id.clone(),
-                })
-                .unwrap_or(AppAction::None),
+            Overlay::Peek if self.input.trim().is_empty() => self.request_open(),
             Overlay::Peek => {
                 let Some(session) = self.selected_session() else {
                     return AppAction::None;
@@ -259,13 +315,7 @@ impl App {
                     }
                     AppAction::None
                 }
-                Some(SelectionKey::Session(_)) => {
-                    let session_id = self
-                        .selected_session()
-                        .map(|session| session.id.clone())
-                        .unwrap_or_default();
-                    AppAction::Open { session_id }
-                }
+                Some(SelectionKey::Session(_)) => self.request_open(),
                 Some(SelectionKey::ShowMore(key)) => {
                     self.show_more(&key);
                     AppAction::None
@@ -336,6 +386,28 @@ impl App {
             self.input.push(character);
         }
         self.overlay = Overlay::Composer(ComposerMode::NewSession);
+    }
+
+    pub fn cycle_launch_provider(&mut self) {
+        if self.launch_targets.is_empty() {
+            self.set_notice("no launch-capable provider is configured");
+            return;
+        }
+        let current = self
+            .launch_targets
+            .iter()
+            .position(|target| target.provider == self.launch_provider)
+            .unwrap_or(0);
+        let next = (current + 1) % self.launch_targets.len();
+        self.launch_provider = self.launch_targets[next].provider.clone();
+        self.launch_model = None;
+        self.notice = None;
+    }
+
+    pub fn launch_target(&self) -> Option<&LaunchTarget> {
+        self.launch_targets
+            .iter()
+            .find(|target| target.provider == self.launch_provider)
     }
 
     pub fn start_filter(&mut self) {
@@ -503,7 +575,7 @@ impl App {
         self.input.clear();
         self.overlay = Overlay::None;
         match mode {
-            ComposerMode::NewSession => AppAction::Launch { prompt: input },
+            ComposerMode::NewSession => self.submit_new_session(input),
             ComposerMode::Rename { session_id } => AppAction::Rename {
                 session_id,
                 name: input,
@@ -520,6 +592,7 @@ impl App {
     fn confirm(&mut self, target: ConfirmTarget) -> AppAction {
         self.overlay = Overlay::None;
         match target {
+            ConfirmTarget::OpenClaude { id } => AppAction::Open { session_id: id },
             ConfirmTarget::Session { id, running: true } => AppAction::Interrupt { session_id: id },
             ConfirmTarget::Session { id, running: false } => AppAction::Delete {
                 session_ids: vec![id],
@@ -529,18 +602,140 @@ impl App {
         }
     }
 
+    fn request_open(&mut self) -> AppAction {
+        let Some(session) = self.selected_session() else {
+            return AppAction::None;
+        };
+        let id = session.id.clone();
+        if session.provider == Provider::Claude {
+            self.overlay = Overlay::Confirm(ConfirmTarget::OpenClaude { id });
+            self.notice = None;
+            AppAction::None
+        } else {
+            AppAction::Open { session_id: id }
+        }
+    }
+
+    fn submit_new_session(&mut self, input: String) -> AppAction {
+        if !input.starts_with('/') {
+            return AppAction::Launch {
+                provider: self.launch_provider.clone(),
+                model: self.launch_model.clone(),
+                prompt: input,
+            };
+        }
+        let (command, argument) = input
+            .split_once(char::is_whitespace)
+            .map(|(command, argument)| (command, argument.trim()))
+            .unwrap_or((input.as_str(), ""));
+        match command.to_ascii_lowercase().as_str() {
+            "/help" => self.set_notice(
+                "commands: /provider NAME · /model NAME|default · /filter TEXT · ctrl+f filter",
+            ),
+            "/provider" => self.select_launch_provider(argument),
+            "/model" => self.select_launch_model(argument),
+            "/filter" => {
+                self.filter = argument.to_owned();
+                self.visible_limits.clear();
+                self.reconcile_selection();
+                self.set_notice(if argument.is_empty() {
+                    "session filter cleared".into()
+                } else {
+                    format!("session filter: {argument}")
+                });
+            }
+            _ => self.set_notice(format!("unknown dashboard command {command}; use /help")),
+        }
+        AppAction::None
+    }
+
+    fn select_launch_provider(&mut self, argument: &str) {
+        if argument.is_empty() {
+            let choices = self
+                .launch_targets
+                .iter()
+                .map(|target| target.provider.label())
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.set_notice(if choices.is_empty() {
+                "no launch-capable provider is configured".into()
+            } else {
+                format!("launch providers: {choices}")
+            });
+            return;
+        }
+        let normalized = normalize_provider_name(argument);
+        let selected = self.launch_targets.iter().find(|target| {
+            normalize_provider_name(target.provider.label()) == normalized
+                || provider_alias(&target.provider) == normalized
+        });
+        if let Some(target) = selected {
+            self.launch_provider = target.provider.clone();
+            self.launch_model = None;
+            self.set_notice(format!(
+                "new tasks will use {} with its default model",
+                target.provider.label()
+            ));
+        } else {
+            self.set_notice(format!(
+                "{argument} is not an available launch provider; use /provider"
+            ));
+        }
+    }
+
+    fn select_launch_model(&mut self, argument: &str) {
+        if !self
+            .launch_target()
+            .is_some_and(|target| target.supports_model)
+        {
+            self.set_notice(format!(
+                "{} does not expose model selection",
+                self.launch_provider.label()
+            ));
+            return;
+        }
+        if argument.is_empty() {
+            self.set_notice(format!(
+                "{} model: {}; use /model NAME or /model default",
+                self.launch_provider.label(),
+                self.launch_model.as_deref().unwrap_or("default")
+            ));
+            return;
+        }
+        if argument.eq_ignore_ascii_case("default") {
+            self.launch_model = None;
+            self.set_notice(format!(
+                "{} will use its default model",
+                self.launch_provider.label()
+            ));
+            return;
+        }
+        if argument.len() > 128
+            || argument
+                .chars()
+                .any(|character| character.is_control() || character.is_whitespace())
+        {
+            self.set_notice("model names must be 1–128 characters without whitespace");
+            return;
+        }
+        self.launch_model = Some(argument.to_owned());
+        self.set_notice(format!(
+            "new {} tasks will use model {argument}",
+            self.launch_provider.label()
+        ));
+    }
+
     fn status_groups(&self) -> Vec<Group> {
+        let mut grouped: BTreeMap<SessionState, Vec<usize>> = BTreeMap::new();
+        for (index, session) in self.snapshot.sessions.iter().enumerate() {
+            if self.filtered(session) {
+                grouped.entry(session.state).or_default().push(index);
+            }
+        }
         SessionState::DISPLAY_ORDER
             .iter()
             .filter_map(|state| {
-                let sessions: Vec<_> = self
-                    .snapshot
-                    .sessions
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, session)| session.state == *state && self.filtered(session))
-                    .map(|(index, _)| index)
-                    .collect();
+                let sessions = grouped.remove(state).unwrap_or_default();
                 (!sessions.is_empty()).then(|| Group {
                     key: format!("state:{state:?}"),
                     label: state.heading().into(),
@@ -609,6 +804,22 @@ impl App {
 
 pub(crate) fn is_active_session_state(state: SessionState) -> bool {
     state != SessionState::Completed
+}
+
+fn normalize_provider_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn provider_alias(provider: &Provider) -> String {
+    match provider {
+        Provider::GitHubCopilot => "copilot".into(),
+        Provider::OpenCode => "opencode".into(),
+        _ => normalize_provider_name(provider.label()),
+    }
 }
 
 pub(crate) fn project_group_path(path: &std::path::Path) -> PathBuf {
@@ -1079,6 +1290,11 @@ mod tests {
         assert_eq!(app.overlay, Overlay::None);
 
         app.overlay = Overlay::None;
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(
+            app.overlay,
+            Overlay::Confirm(ConfirmTarget::OpenClaude { id: "one".into() })
+        );
         assert_eq!(
             app.activate(),
             AppAction::Open {
@@ -1188,6 +1404,8 @@ mod tests {
         assert_eq!(
             app.activate(),
             AppAction::Launch {
+                provider: Provider::Claude,
+                model: None,
                 prompt: "build it".into()
             }
         );
@@ -1433,5 +1651,101 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("inspection was not granted"));
+    }
+
+    #[test]
+    fn task_commands_select_provider_model_and_filter_without_launching() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+            ],
+        );
+
+        app.start_new_session(None);
+        app.input = "/provider pi".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.launch_provider, Provider::Pi);
+
+        app.start_new_session(None);
+        app.input = "/model opus".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(app.launch_model.is_none());
+        assert!(app.notice.as_deref().unwrap().contains("does not expose"));
+
+        app.start_new_session(None);
+        app.input = "/provider claude".into();
+        app.activate();
+        app.start_new_session(None);
+        app.input = "/model opus".into();
+        app.activate();
+        assert_eq!(app.launch_model.as_deref(), Some("opus"));
+
+        app.start_new_session(None);
+        app.input = "ship it".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Launch {
+                provider: Provider::Claude,
+                model: Some("opus".into()),
+                prompt: "ship it".into(),
+            }
+        );
+
+        app.start_new_session(None);
+        app.input = "/filter codex".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.filter, "codex");
+    }
+
+    #[test]
+    fn task_command_validation_is_local_and_provider_cycle_resets_model() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Codex,
+                    supports_model: true,
+                },
+            ],
+        );
+        app.launch_model = Some("opus".into());
+        app.cycle_launch_provider();
+        assert_eq!(app.launch_provider, Provider::Codex);
+        assert!(app.launch_model.is_none());
+
+        app.start_new_session(None);
+        app.input = "/model invalid model".into();
+        app.activate();
+        assert!(app.launch_model.is_none());
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("without whitespace"));
+
+        app.start_new_session(None);
+        app.input = "/unknown".into();
+        app.activate();
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("unknown dashboard command"));
     }
 }

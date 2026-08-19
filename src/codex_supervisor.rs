@@ -171,6 +171,15 @@ impl CodexSupervisor {
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
+        self.launch_with_model(prompt, cwd, None)
+    }
+
+    pub fn launch_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<String> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the launch prompt cannot be empty");
@@ -184,15 +193,16 @@ impl CodexSupervisor {
             .lock()
             .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
         let client = self.control_client(&mut control, &server)?;
-        let started = client.request(
-            "thread/start",
-            json!({
-                "cwd": cwd,
-                "approvalPolicy": "on-request",
-                "sandbox": "workspace-write",
-                "serviceName": "open_agent_view"
-            }),
-        )?;
+        let mut start_params = json!({
+            "cwd": cwd,
+            "approvalPolicy": "on-request",
+            "sandbox": "workspace-write",
+            "serviceName": "open_agent_view"
+        });
+        if let Some(model) = model {
+            start_params["model"] = Value::String(model.to_owned());
+        }
+        let started = client.request("thread/start", start_params)?;
         let thread_id = started
             .pointer("/thread/id")
             .and_then(Value::as_str)

@@ -7,7 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::cursor_managed::CursorSupervisor;
-use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{AgentSession, Provider, Runtime, SessionSnapshot};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -200,6 +200,14 @@ impl CursorController {
 impl ProviderController for CursorController {
     fn provider(&self) -> Provider {
         Provider::Cursor
+    }
+
+    fn launch_mode(&self) -> LaunchMode {
+        if self.supervisor.is_some() {
+            LaunchMode::DefaultModel
+        } else {
+            LaunchMode::Unavailable
+        }
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {

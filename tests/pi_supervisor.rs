@@ -38,6 +38,7 @@ fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     let launched = first_controller
         .launch(&LaunchRequest {
             provider: Provider::Pi,
+            model: None,
             prompt: "initial task".into(),
             cwd: directory.path().to_path_buf(),
         })

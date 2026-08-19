@@ -15,7 +15,7 @@ use ratatui::Terminal;
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay};
 use crate::control::{ControlHub, ControlOutcome};
-use crate::domain::{AgentSession, Capability, SessionSnapshot};
+use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot};
 use crate::ui;
 
 // Apply a burst of already-buffered terminal input before drawing. Holding an
@@ -63,7 +63,12 @@ pub fn run_dashboard(
 
     let mut initial = SessionSnapshot::default();
     initial.warnings.push("loading provider sessions…".into());
-    let mut app = App::with_completed_visibility(initial, request.include_completed);
+    let mut app = App::with_launch_targets(
+        initial,
+        request.include_completed,
+        control.default_launch_provider(),
+        control.launch_targets(),
+    );
     let mut terminal = TerminalSession::enter()?;
     let mut last_refresh = Instant::now();
     let mut refresh_in_flight = false;
@@ -172,6 +177,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                 app.start_rename();
                 AppAction::None
             }
+            KeyCode::Char('f') if app.overlay == Overlay::None => {
+                app.start_filter();
+                AppAction::None
+            }
+            KeyCode::Char('l') if app.overlay == Overlay::None => AppAction::Refresh,
             KeyCode::Char('x') => match app.overlay.clone() {
                 Overlay::Confirm(_) => app.activate(),
                 Overlay::None => {
@@ -243,8 +253,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.start_new_session(None);
             AppAction::None
         }
+        KeyCode::Tab if app.overlay == Overlay::Composer(crate::app::ComposerMode::NewSession) => {
+            app.cycle_launch_provider();
+            AppAction::None
+        }
         KeyCode::Char('/') if app.overlay == Overlay::None => {
-            app.start_filter();
+            app.start_new_session(Some('/'));
             AppAction::None
         }
         KeyCode::Char('q') if app.overlay == Overlay::None && app.selection.is_none() => {
@@ -271,7 +285,12 @@ trait DashboardTerminal {
 trait DashboardControl {
     fn inspect_session(&self, session: &AgentSession) -> Result<String>;
     fn open_session(&self, session: &AgentSession) -> Result<ControlOutcome>;
-    fn launch_session(&self, prompt: String) -> Result<ControlOutcome>;
+    fn launch_session(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome>;
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome>;
     fn resolve_session_approval(
         &self,
@@ -294,8 +313,13 @@ impl DashboardControl for ControlHub {
         self.open(session)
     }
 
-    fn launch_session(&self, prompt: String) -> Result<ControlOutcome> {
-        self.launch(prompt)
+    fn launch_session(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome> {
+        self.launch_with(provider, model, prompt)
     }
 
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
@@ -339,6 +363,10 @@ fn handle_action<T: DashboardTerminal, C: DashboardControl>(
 ) -> bool {
     match action {
         AppAction::None | AppAction::Quit => false,
+        AppAction::Refresh => {
+            app.set_notice("refreshing provider sessions…");
+            true
+        }
         AppAction::Inspect { session_id } => {
             let Some(session) = app
                 .snapshot
@@ -384,8 +412,12 @@ fn handle_action<T: DashboardTerminal, C: DashboardControl>(
             }
             true
         }
-        AppAction::Launch { prompt } => {
-            match control.launch_session(prompt) {
+        AppAction::Launch {
+            provider,
+            model,
+            prompt,
+        } => {
+            match control.launch_session(provider, model, prompt) {
                 Ok(outcome) => app.set_notice(outcome.message),
                 Err(error) => app.set_notice(format!("launch failed: {error:#}")),
             }
@@ -760,6 +792,14 @@ mod tests {
     }
 
     #[test]
+    fn control_l_requests_refresh_only_from_the_list() {
+        let mut app = app();
+        assert_eq!(handle_key(&mut app, control_key('l')), AppAction::Refresh);
+        app.start_new_session(None);
+        assert_eq!(handle_key(&mut app, control_key('l')), AppAction::None);
+    }
+
+    #[test]
     fn control_r_starts_rename_only_from_the_list() {
         let mut app = app();
         handle_key(&mut app, control_key('r'));
@@ -863,6 +903,13 @@ mod tests {
     #[test]
     fn enter_activates_composer_group_and_session_paths() {
         let mut app = app();
+        assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), AppAction::None);
+        assert_eq!(
+            app.overlay,
+            Overlay::Confirm(crate::app::ConfirmTarget::OpenClaude {
+                id: "worker".into()
+            })
+        );
         assert_eq!(
             handle_key(&mut app, key(KeyCode::Enter)),
             AppAction::Open {
@@ -880,6 +927,8 @@ mod tests {
         assert_eq!(
             handle_key(&mut app, key(KeyCode::Enter)),
             AppAction::Launch {
+                provider: Provider::Claude,
+                model: None,
                 prompt: "ship".into()
             }
         );
@@ -934,6 +983,10 @@ mod tests {
 
         app.escape();
         handle_key(&mut app, key(KeyCode::Char('/')));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "/");
+        app.escape();
+        handle_key(&mut app, control_key('f'));
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::Filter));
         app.escape();
         handle_key(&mut app, key(KeyCode::Char('q')));
@@ -998,7 +1051,12 @@ mod tests {
             self.invoke("open", session.id.clone())
         }
 
-        fn launch_session(&self, prompt: String) -> Result<ControlOutcome> {
+        fn launch_session(
+            &self,
+            _provider: Provider,
+            _model: Option<String>,
+            prompt: String,
+        ) -> Result<ControlOutcome> {
             self.invoke("launch", prompt)
         }
 
@@ -1047,6 +1105,13 @@ mod tests {
             AppAction::None,
             &control
         ));
+        assert!(handle_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Refresh,
+            &control
+        ));
+        assert_eq!(app.notice.as_deref(), Some("refreshing provider sessions…"));
         assert!(!handle_action(
             &mut terminal,
             &mut app,
@@ -1088,6 +1153,8 @@ mod tests {
 
         let actions = vec![
             AppAction::Launch {
+                provider: Provider::Claude,
+                model: None,
                 prompt: "build".into(),
             },
             AppAction::Reply {
@@ -1188,7 +1255,11 @@ mod tests {
         let cases = vec![
             (
                 "launch",
-                AppAction::Launch { prompt: "x".into() },
+                AppAction::Launch {
+                    provider: Provider::Claude,
+                    model: None,
+                    prompt: "x".into(),
+                },
                 "launch failed",
             ),
             (

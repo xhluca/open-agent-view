@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
@@ -90,6 +90,14 @@ impl OpenCodeController {
 impl ProviderController for OpenCodeController {
     fn provider(&self) -> Provider {
         Provider::OpenCode
+    }
+
+    fn launch_mode(&self) -> LaunchMode {
+        if self.supervisor.is_some() {
+            LaunchMode::DefaultModel
+        } else {
+            LaunchMode::Unavailable
+        }
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {

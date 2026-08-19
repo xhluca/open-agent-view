@@ -65,6 +65,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"result":"finished
     let outcome = controller
         .launch(&LaunchRequest {
             provider: Provider::Cursor,
+            model: None,
             prompt: "exercise public Cursor controller".into(),
             cwd: workspace.clone(),
         })
@@ -143,6 +144,7 @@ while read remaining; do :; done
     let outcome = controller
         .launch(&LaunchRequest {
             provider: Provider::GitHubCopilot,
+            model: None,
             prompt: "exercise public Copilot controller".into(),
             cwd: workspace.clone(),
         })

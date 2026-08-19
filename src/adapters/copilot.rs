@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::copilot_managed::CopilotSupervisor;
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, LaunchRequest, ProviderController};
+use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
@@ -634,6 +634,14 @@ impl CopilotController {
 impl ProviderController for CopilotController {
     fn provider(&self) -> Provider {
         Provider::GitHubCopilot
+    }
+
+    fn launch_mode(&self) -> LaunchMode {
+        if self.supervisor.is_some() {
+            LaunchMode::DefaultModel
+        } else {
+            LaunchMode::Unavailable
+        }
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
