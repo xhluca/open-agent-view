@@ -8,6 +8,28 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-08-18
+
+### Fixed
+
+- Provider discovery and controller enrichment now run on a dedicated refresh
+  worker, so slow provider CLIs cannot block drawing, arrow navigation, help,
+  filtering, or dashboard exit.
+- Arrow-key repeat events are handled as navigation instead of being discarded.
+- Unchanged frames no longer repaint on every input-poll tick, and dashboard
+  exit cancels in-flight discovery process groups instead of leaving temporary
+  provider children behind.
+
+### Changed
+
+- The default provider refresh interval is five seconds instead of 1.5 seconds,
+  substantially reducing provider-process churn while retaining a configurable
+  `--refresh-ms` override.
+- The real-PTY suite now includes a live regression in which Claude discovery
+  deliberately stalls for two seconds while exact selected-row arrow repaints
+  and exit must each complete within 750 milliseconds; the same test rejects
+  idle terminal output when no frame changed.
+
 ## [0.1.2] - 2026-08-18
 
 The `v0.1.0` and `v0.1.1` build tags did not publish GitHub releases because

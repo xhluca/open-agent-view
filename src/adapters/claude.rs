@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource};
 use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, SessionState};
-use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
+use crate::process::{CancellableProcessRunner, CommandRequest, CommandRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Invocation {
@@ -45,7 +45,7 @@ impl ClaudeSource {
             label: "Claude (host)".into(),
             invocation: Invocation::host(executable),
             runtime: Runtime::Host,
-            runner: Arc::new(ProcessRunner),
+            runner: Arc::new(CancellableProcessRunner::default()),
         }
     }
 
@@ -64,7 +64,7 @@ impl ClaudeSource {
                 container_name,
                 image: image.into(),
             },
-            runner: Arc::new(ProcessRunner),
+            runner: Arc::new(CancellableProcessRunner::default()),
         }
     }
 
@@ -116,6 +116,10 @@ impl SessionSource for ClaudeSource {
                 request.include_interactive || session.kind != SessionKind::Interactive
             })
             .collect())
+    }
+
+    fn cancel(&self) {
+        self.runner.cancel();
     }
 }
 

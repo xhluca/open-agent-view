@@ -64,6 +64,7 @@ pub struct DiscoveryRequest {
 pub trait SessionSource: Send + Sync {
     fn label(&self) -> &str;
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>>;
+    fn cancel(&self) {}
 }
 
 impl<T> SessionSource for Arc<T>
@@ -77,11 +78,15 @@ where
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
         (**self).discover(request)
     }
+
+    fn cancel(&self) {
+        (**self).cancel();
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct DiscoveryEngine {
-    sources: Vec<Box<dyn SessionSource>>,
+    sources: Vec<Arc<dyn SessionSource>>,
 }
 
 impl DiscoveryEngine {
@@ -90,7 +95,7 @@ impl DiscoveryEngine {
     }
 
     pub fn add_source(&mut self, source: impl SessionSource + 'static) {
-        self.sources.push(Box::new(source));
+        self.sources.push(Arc::new(source));
     }
 
     pub fn discover(&self, request: &DiscoveryRequest) -> SessionSnapshot {
@@ -118,6 +123,12 @@ impl DiscoveryEngine {
         }
         snapshot.sort_for_display();
         snapshot
+    }
+
+    pub fn cancel(&self) {
+        for source in &self.sources {
+            source.cancel();
+        }
     }
 }
 

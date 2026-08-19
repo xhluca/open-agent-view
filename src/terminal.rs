@@ -1,7 +1,9 @@
 use std::io::{self, Stdout};
+use std::sync::mpsc::{self, SyncSender, TryRecvError, TrySendError};
+use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -13,7 +15,7 @@ use ratatui::Terminal;
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay};
 use crate::control::{ControlHub, ControlOutcome};
-use crate::domain::{AgentSession, Capability};
+use crate::domain::{AgentSession, Capability, SessionSnapshot};
 use crate::ui;
 
 pub fn run_dashboard(
@@ -22,44 +24,110 @@ pub fn run_dashboard(
     refresh_interval: Duration,
     control: &ControlHub,
 ) -> Result<()> {
-    let mut snapshot = engine.discover(request);
-    control.enrich(&mut snapshot);
-    let mut app = App::new(snapshot);
+    let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
+    let (snapshot_tx, snapshot_rx) = mpsc::channel();
+    let worker_engine = (*engine).clone();
+    let worker_request = request.clone();
+    let worker_control = control.clone();
+    let _refresh_worker = thread::spawn(move || {
+        while refresh_rx.recv().is_ok() {
+            let mut snapshot = worker_engine.discover(&worker_request);
+            worker_control.enrich(&mut snapshot);
+            if snapshot_tx.send(snapshot).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut initial = SessionSnapshot::default();
+    initial.warnings.push("loading provider sessions…".into());
+    let mut app = App::new(initial);
     let mut terminal = TerminalSession::enter()?;
     let mut last_refresh = Instant::now();
+    let mut refresh_in_flight = false;
+    let mut refresh_after_current = false;
+    let mut needs_draw = true;
+    schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
 
-    loop {
-        terminal.terminal.draw(|frame| ui::render(frame, &app))?;
-        if app.should_quit {
-            break;
-        }
-
-        let until_refresh = refresh_interval.saturating_sub(last_refresh.elapsed());
-        if event::poll(until_refresh.min(Duration::from_millis(100)))? {
-            if let Event::Key(key) = event::read()? {
-                let action = handle_key(&mut app, key);
-                let refresh = handle_action(&mut terminal, &mut app, action, control);
-                if refresh {
-                    let mut snapshot = engine.discover(request);
-                    control.enrich(&mut snapshot);
+    let result = 'dashboard: loop {
+        loop {
+            match snapshot_rx.try_recv() {
+                Ok(snapshot) => {
+                    let changed = snapshot != app.snapshot;
                     app.replace_snapshot(snapshot);
+                    refresh_in_flight = false;
                     last_refresh = Instant::now();
+                    needs_draw |= changed;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    break 'dashboard Err(anyhow!("provider refresh worker stopped unexpectedly"));
                 }
             }
         }
-        if last_refresh.elapsed() >= refresh_interval {
-            let mut snapshot = engine.discover(request);
-            control.enrich(&mut snapshot);
-            app.replace_snapshot(snapshot);
+        if refresh_after_current && !refresh_in_flight {
+            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+            refresh_after_current = false;
             last_refresh = Instant::now();
         }
-    }
 
-    Ok(())
+        if app.should_quit {
+            break Ok(());
+        }
+        if needs_draw {
+            terminal.terminal.draw(|frame| ui::render(frame, &app))?;
+            needs_draw = false;
+        }
+
+        let until_refresh = if refresh_in_flight {
+            Duration::from_millis(50)
+        } else {
+            refresh_interval.saturating_sub(last_refresh.elapsed())
+        };
+        if event::poll(until_refresh.min(Duration::from_millis(50)))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    let action = handle_key(&mut app, key);
+                    let refresh = handle_action(&mut terminal, &mut app, action, control);
+                    needs_draw = true;
+                    if refresh {
+                        if refresh_in_flight {
+                            refresh_after_current = true;
+                        } else {
+                            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+                            last_refresh = Instant::now();
+                        }
+                    }
+                }
+                Event::Resize(_, _) => needs_draw = true,
+                _ => {}
+            }
+        }
+        if !refresh_in_flight && last_refresh.elapsed() >= refresh_interval {
+            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+            last_refresh = Instant::now();
+        }
+    };
+
+    engine.cancel();
+    drop(refresh_tx);
+    result
+}
+
+fn schedule_refresh(sender: &SyncSender<()>, refresh_in_flight: &mut bool) -> Result<()> {
+    match sender.try_send(()) {
+        Ok(()) | Err(TrySendError::Full(())) => {
+            *refresh_in_flight = true;
+            Ok(())
+        }
+        Err(TrySendError::Disconnected(())) => {
+            Err(anyhow!("provider refresh worker stopped unexpectedly"))
+        }
+    }
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
-    if key.kind != KeyEventKind::Press {
+    if key.kind == KeyEventKind::Release {
         return AppAction::None;
     }
     if key.modifiers.contains(KeyModifiers::CONTROL) {
@@ -622,7 +690,7 @@ mod tests {
     }
 
     #[test]
-    fn non_press_key_events_are_ignored() {
+    fn key_release_events_are_ignored() {
         let mut app = app();
         let mut released = key(KeyCode::Esc);
         released.kind = KeyEventKind::Release;
@@ -637,7 +705,9 @@ mod tests {
         let initial = app.selection.clone();
         handle_key(&mut app, key(KeyCode::Up));
         assert_ne!(app.selection, initial);
-        handle_key(&mut app, key(KeyCode::Down));
+        let mut repeated_down = key(KeyCode::Down);
+        repeated_down.kind = KeyEventKind::Repeat;
+        handle_key(&mut app, repeated_down);
         assert_eq!(app.selection, initial);
 
         app.start_new_session(None);

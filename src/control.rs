@@ -86,6 +86,7 @@ pub trait ProviderController: Send + Sync {
     }
 }
 
+#[derive(Clone)]
 pub struct ControlHub {
     controllers: BTreeMap<Provider, Arc<dyn ProviderController>>,
     codex: Option<Arc<CodexSupervisor>>,

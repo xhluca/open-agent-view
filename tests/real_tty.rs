@@ -1,9 +1,10 @@
 #![cfg(unix)]
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
-use std::path::PathBuf;
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
 use std::thread;
@@ -43,6 +44,27 @@ impl PtyApp {
     }
 
     fn spawn_fixture(columns: u16, rows: u16, fixture_name: &str) -> Self {
+        Self::spawn_configured(columns, rows, |command, _| {
+            let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("fixtures")
+                .join(fixture_name);
+            command.args([
+                "--fixture",
+                fixture.to_str().expect("UTF-8 fixture path"),
+                "--no-host-claude",
+                "--no-host-codex",
+                "--include-interactive",
+                "--refresh-ms",
+                "60000",
+            ]);
+        })
+    }
+
+    fn spawn_configured(
+        columns: u16,
+        rows: u16,
+        configure: impl FnOnce(&mut Command, &TempDir),
+    ) -> Self {
         let (master, slave) = open_pty(columns, rows).expect("create PTY");
         let master = unsafe { File::from_raw_fd(master) };
         set_nonblocking(&master).expect("make PTY master nonblocking");
@@ -51,23 +73,13 @@ impl PtyApp {
         let stdout = duplicate_file(slave).expect("duplicate slave for stdout");
         let stderr = unsafe { File::from_raw_fd(slave) };
         let home = tempfile::tempdir().expect("create isolated home");
-        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("fixtures")
-            .join(fixture_name);
         let mut command = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
         command
-            .args([
-                "--fixture",
-                fixture.to_str().expect("UTF-8 fixture path"),
-                "--no-host-claude",
-                "--no-host-codex",
-                "--include-interactive",
-                "--refresh-ms",
-                "60000",
-            ])
             .env("TERM", "xterm-256color")
             .env("HOME", home.path())
-            .env("XDG_STATE_HOME", home.path().join("state"))
+            .env("XDG_STATE_HOME", home.path().join("state"));
+        configure(&mut command, &home);
+        command
             .stdin(Stdio::from(stdin))
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
@@ -80,6 +92,10 @@ impl PtyApp {
             raw: Vec::new(),
             _home: home,
         }
+    }
+
+    fn home_path(&self) -> &Path {
+        self._home.path()
     }
 
     fn send(&mut self, bytes: &[u8]) {
@@ -276,11 +292,105 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
 }
 
 #[test]
+fn slow_provider_refresh_does_not_block_arrow_navigation_or_exit() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(100, 28, |command, home| {
+        let fake_claude = home.path().join("fake-claude");
+        fs::write(
+            &fake_claude,
+            r#"#!/bin/sh
+if [ -f "$OAV_FAKE_CLAUDE_STATE" ]; then
+  : > "$OAV_FAKE_CLAUDE_STALL"
+  sleep 2
+else
+  : > "$OAV_FAKE_CLAUDE_STATE"
+fi
+printf '%s\n' '[{"id":"first","cwd":"/workspace/one","kind":"background","sessionId":"11111111-1111-4111-8111-111111111111","name":"first-agent","status":"busy","state":"working"},{"id":"second","cwd":"/workspace/two","kind":"background","sessionId":"22222222-2222-4222-8222-222222222222","name":"second-agent","status":"busy","state":"working"}]'
+"#,
+        )
+        .expect("write slow fake Claude executable");
+        fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o755))
+            .expect("make fake Claude executable");
+        command
+            .args([
+                "--claude-bin",
+                fake_claude.to_str().expect("UTF-8 fake Claude path"),
+                "--no-host-codex",
+                "--no-host-pi",
+                "--no-host-opencode",
+                "--no-host-copilot",
+                "--no-host-cursor",
+                "--no-host-antigravity",
+                "--refresh-ms",
+                "1000",
+            ])
+            .env("OAV_FAKE_CLAUDE_STATE", home.path().join("claude-state"))
+            .env("OAV_FAKE_CLAUDE_STALL", home.path().join("claude-stall"));
+    });
+
+    app.wait_for("initial fast Claude snapshot", |screen| {
+        screen.contains("first-agent") && screen.contains("second-agent")
+    });
+    thread::sleep(Duration::from_millis(50));
+    app.screen();
+    let idle_output = app.raw.len();
+    thread::sleep(Duration::from_millis(200));
+    app.screen();
+    assert_eq!(
+        app.raw.len(),
+        idle_output,
+        "an unchanged dashboard emitted an idle repaint"
+    );
+    let first_navigation_output = app.raw.len();
+    app.send(DOWN);
+    app.wait_for_output_after(first_navigation_output, "first arrow-key selection repaint");
+    assert!(
+        contains_bytes(&app.raw[first_navigation_output..], b"first-agent"),
+        "first arrow key did not repaint the first session row"
+    );
+
+    let stall_marker = app.home_path().join("claude-stall");
+    let stall_deadline = Instant::now() + Duration::from_secs(2);
+    while !stall_marker.exists() {
+        assert!(
+            Instant::now() < stall_deadline,
+            "slow provider refresh never began"
+        );
+        app.screen();
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let navigation_started = Instant::now();
+    app.screen();
+    let second_navigation_output = app.raw.len();
+    app.send(DOWN);
+    app.wait_for_output_after(
+        second_navigation_output,
+        "second arrow-key selection repaint during stalled refresh",
+    );
+    assert!(
+        navigation_started.elapsed() < Duration::from_millis(750),
+        "arrow navigation waited for the provider refresh"
+    );
+    assert!(
+        contains_bytes(&app.raw[second_navigation_output..], b"second-agent"),
+        "second arrow key did not repaint the second session row"
+    );
+
+    let exit_started = Instant::now();
+    app.exit_cleanly();
+    assert!(
+        exit_started.elapsed() < Duration::from_millis(750),
+        "dashboard exit waited for the provider refresh"
+    );
+}
+
+#[test]
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.2")
+        screen.contains("Open Agent View v0.1.3")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -609,7 +719,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.2")
+        screen.contains("Open Agent View v0.1.3")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

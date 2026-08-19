@@ -13,7 +13,7 @@ use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
 use crate::opencode_supervisor::{ManagedOpenCodeSession, OpenCodeSupervisor};
-use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
+use crate::process::{CancellableProcessRunner, CommandRequest, CommandRunner};
 
 // `opencode session list` is workspace-scoped in OpenCode 1.18.18 despite its
 // generic help text. The official read-only `db` command is the only current
@@ -227,7 +227,7 @@ impl OpenCodeSource {
             label: "OpenCode (host)".into(),
             invocation: OpenCodeInvocation::host(executable),
             runtime: Runtime::Host,
-            runner: Arc::new(ProcessRunner),
+            runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: None,
         }
     }
@@ -237,7 +237,7 @@ impl OpenCodeSource {
             label: "OpenCode (host)".into(),
             invocation: OpenCodeInvocation::host(executable),
             runtime: Runtime::Host,
-            runner: Arc::new(ProcessRunner),
+            runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: Some(supervisor),
         }
     }
@@ -257,7 +257,7 @@ impl OpenCodeSource {
                 container_name,
                 image: image.into(),
             },
-            runner: Arc::new(ProcessRunner),
+            runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: None,
         }
     }
@@ -366,6 +366,10 @@ impl SessionSource for OpenCodeSource {
             }
         }
         Ok(sessions.into_values().collect())
+    }
+
+    fn cancel(&self) {
+        self.runner.cancel();
     }
 }
 

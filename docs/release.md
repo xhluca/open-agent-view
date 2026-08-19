@@ -6,12 +6,13 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.2 is the initial private preview release. The unpublished `v0.1.0`
-and `v0.1.1` build tags were retained rather than moved after their native
-release gates exposed, respectively, a macOS portability error and an
-incremental terminal-repaint race in the test harness. The repository is
-private, so preview installation requires an authenticated GitHub account
-until the project is made public. A version tag alone is not sufficient:
+Version 0.1.3 is the current private preview release; version 0.1.2 was the
+initial published preview. The unpublished `v0.1.0` and `v0.1.1` build tags
+were retained rather than moved after their native release gates exposed,
+respectively, a macOS portability error and an incremental terminal-repaint
+race in the test harness. The repository is private, so preview installation
+requires an authenticated GitHub account until the project is made public. A
+version tag alone is not sufficient:
 present the one-line installer as usable only after its GitHub release contains
 the archive and checksum for every supported target:
 

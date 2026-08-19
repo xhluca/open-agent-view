@@ -74,7 +74,7 @@ checks; the guide also contains release gates that are not yet complete.
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
   targets, then repeats tests and release builds on Rust 1.75.0 and stable.
-- `scripts/real-tui-tests.sh` runs six serialized tests against real Unix PTYs
+- `scripts/real-tui-tests.sh` runs seven serialized tests against real Unix PTYs
   with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, filter
   apply/cancel/clear, multiline new-task launch/cancellation, peek, rename
@@ -84,6 +84,12 @@ checks; the guide also contains release gates that are not yet complete.
   and collapses/expands a group. The 55×18 and 31×7 cases verify the bounded
   narrow layout and explicit too-small fallback. Every case asserts alternate
   screen and cursor restoration from the raw PTY stream.
+- A provider-enabled PTY regression returns two Claude rows, deliberately
+  stalls the next provider refresh for two seconds, and verifies that both
+  exact selected-row arrow repaints and dashboard exit still finish within 750
+  milliseconds. It also asserts that an unchanged frame emits no idle terminal
+  output and that cancellation leaves no fake provider child behind. This
+  catches accidental provider I/O or unconditional redraws on the input thread.
 
 ## Runtime checks
 
