@@ -137,9 +137,10 @@ fn owned_server_survives_dashboard_reconnect_and_rejects_external_sessions() {
 }
 
 #[test]
-#[ignore = "set OAV_REAL_OPENCODE_BIN and run in a credential-free environment"]
+#[ignore = "set OAV_REAL_OPENCODE_BIN; OAV_REAL_OPENCODE_MODEL is optional"]
 fn real_opencode_server_contract_without_model_credentials() {
     let executable = std::env::var("OAV_REAL_OPENCODE_BIN").unwrap();
+    let model = std::env::var("OAV_REAL_OPENCODE_MODEL").ok();
     let directory = tempdir().unwrap();
     let supervisor = Arc::new(
         OpenCodeSupervisor::with_state_dir(executable, directory.path().join("state")).unwrap(),
@@ -147,7 +148,11 @@ fn real_opencode_server_contract_without_model_credentials() {
     let _shutdown = ShutdownGuard(supervisor.clone());
 
     let launched = supervisor
-        .launch("OAV isolated server contract probe", directory.path())
+        .launch_with_model(
+            "OAV isolated server contract probe",
+            directory.path(),
+            model.as_deref(),
+        )
         .unwrap();
     assert!(launched.id.starts_with("ses_"));
     let sessions = supervisor.list().unwrap();
