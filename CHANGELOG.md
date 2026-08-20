@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-08-20
+
 ### Added
 
 - `/completed [show|hide]` changes completed-history discovery from inside the
