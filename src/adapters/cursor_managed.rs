@@ -882,6 +882,7 @@ while :; do sleep 1; done
             include_completed: true,
             include_interactive: true,
             cwd: None,
+            ..DiscoveryRequest::default()
         };
         let session = wait_for_session(&supervisor, &request, SessionState::Working);
         assert!(session.pid.is_some());

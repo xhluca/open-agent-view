@@ -633,6 +633,10 @@ impl CodexSupervisor {
             let Some(owned) = record.threads.get_mut(&session.provider_session_id) else {
                 continue;
             };
+            if session.state == SessionState::Unknown && owned.active_turn_id.is_none() {
+                session.state = SessionState::Completed;
+                session.raw_state = Some("owned_idle_not_loaded".into());
+            }
             session.capabilities.insert(Capability::Inspect);
             let pending = pending_requests.iter().find(|request| {
                 request.thread_id == session.provider_session_id
@@ -692,6 +696,13 @@ impl CodexSupervisor {
         if changed {
             let _ = self.replace_record_if_same_server(&record);
         }
+    }
+
+    /// Exact thread IDs created through this durable App Server process.
+    /// Discovery uses this to avoid confusing other persisted Codex history
+    /// with sessions that Open Agent View can actually control.
+    pub fn owned_thread_ids(&self) -> Result<Vec<String>> {
+        Ok(self.live_record()?.threads.into_keys().collect())
     }
 
     pub fn remote_url_if_owned(&self, session: &AgentSession) -> Option<String> {
@@ -785,7 +796,7 @@ impl CodexSupervisor {
                 );
             }
             let live = verify_process(&record)?;
-            if record.codex_bin != self.codex_bin && live {
+            if !record_uses_executable(&record, &self.codex_bin) && live {
                 bail!(
                     "a verified Codex supervisor is already running with executable {}; configured executable is {}",
                     record.codex_bin,
@@ -1498,6 +1509,28 @@ fn verify_process(record: &SupervisorRecord) -> Result<bool> {
     Ok(start == record.process_start_token && cmdline == record.process_cmdline)
 }
 
+fn record_uses_executable(record: &SupervisorRecord, configured: &str) -> bool {
+    if record.codex_bin == configured {
+        return true;
+    }
+    let Ok(configured) = fs::canonicalize(configured) else {
+        return false;
+    };
+    // npm-style launchers replace the requested shim with an interpreter and
+    // an absolute script path. The verified live cmdline is immutable for the
+    // lifetime of this record, so accept a newly resolved path only when it
+    // canonicalizes to argv[0] (standalone binary) or argv[1] (interpreter
+    // script). A changed symlink target remains a hard mismatch.
+    record
+        .process_cmdline
+        .split(|byte| *byte == 0)
+        .filter(|argument| !argument.is_empty())
+        .take(2)
+        .filter_map(|argument| std::str::from_utf8(argument).ok())
+        .filter_map(|argument| fs::canonicalize(argument).ok())
+        .any(|argument| argument == configured)
+}
+
 fn is_missing_process(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<std::io::Error>()
@@ -1725,6 +1758,38 @@ mod tests {
         };
 
         assert!(!verify_process(&record).unwrap());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn resolved_npm_shim_reconnects_only_to_the_same_verified_script() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempdir().unwrap();
+        let script = directory.path().join("codex.js");
+        let changed_script = directory.path().join("changed-codex.js");
+        let shim = directory.path().join("codex");
+        fs::write(&script, b"original").unwrap();
+        fs::write(&changed_script, b"changed").unwrap();
+        symlink(&script, &shim).unwrap();
+        let process_cmdline = format!("node\0{}\0app-server\0", script.display()).into_bytes();
+        let record = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid: std::process::id(),
+            process_start_token: "test".into(),
+            process_cmdline,
+            codex_bin: "codex".into(),
+            socket_path: directory.path().join("server.sock"),
+            created_at_ms: 1,
+            threads: BTreeMap::new(),
+        };
+
+        assert!(record_uses_executable(&record, shim.to_str().unwrap()));
+        assert!(record_uses_executable(&record, "codex"));
+
+        fs::remove_file(&shim).unwrap();
+        symlink(&changed_script, &shim).unwrap();
+        assert!(!record_uses_executable(&record, shim.to_str().unwrap()));
     }
 
     #[test]
@@ -1963,6 +2028,7 @@ mod tests {
                 include_completed: true,
                 include_interactive: true,
                 cwd: None,
+                ..DiscoveryRequest::default()
             })
             .unwrap();
         let mut snapshot = SessionSnapshot {
@@ -2093,12 +2159,13 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     fn discover_owned(supervisor: &Arc<CodexSupervisor>, thread_id: &str) -> AgentSession {
-        let source = CodexSource::managed(supervisor.clone());
+        let source = CodexSource::managed_owned(supervisor.clone());
         let sessions = source
             .discover(&DiscoveryRequest {
                 include_completed: true,
                 include_interactive: true,
                 cwd: None,
+                ..DiscoveryRequest::default()
             })
             .unwrap();
         let mut snapshot = SessionSnapshot {
@@ -2254,7 +2321,11 @@ if args[:2] == ["app-server", "--listen"]:
                     stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "not active"}})+"\n").encode()); stream.flush(); continue
                 state["active"] = False; result = {}
             elif method == "thread/read":
-                result = {"thread": {"id": state["thread"], "turns": [{"items": [
+                result = {"thread": {
+                    "id": state["thread"], "cwd": "/tmp", "createdAt": 1,
+                    "updatedAt": 2, "preview": "Implement the test", "name": None,
+                    "status": {"type": "active" if state["active"] else "idle", "activeFlags": []},
+                    "source": "appServer", "turns": [{"items": [
                     {"type": "userMessage", "content": [{"type": "text", "text": "Implement the test"}]},
                     {"type": "agentMessage", "text": "Working on it"}
                 ]}]}}

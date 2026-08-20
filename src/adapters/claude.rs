@@ -288,6 +288,7 @@ mod tests {
                 include_completed: true,
                 include_interactive: false,
                 cwd: Some(PathBuf::from("/work")),
+                ..DiscoveryRequest::default()
             })
             .unwrap();
 

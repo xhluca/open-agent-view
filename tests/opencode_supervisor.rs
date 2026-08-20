@@ -225,6 +225,8 @@ from urllib.parse import parse_qs, urlparse
 if len(sys.argv) < 2 or sys.argv[1] != "serve":
     if len(sys.argv) > 1 and sys.argv[1] == "export":
         print('{"messages":[]}')
+    elif len(sys.argv) > 1 and sys.argv[1] == "db":
+        print("record")
     else:
         print('[]')
     raise SystemExit(0)

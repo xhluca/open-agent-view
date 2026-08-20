@@ -7,7 +7,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
-use super::{DiscoveryRequest, SessionSource};
+use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
 use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
@@ -18,7 +18,10 @@ use crate::process::{CancellableProcessRunner, CommandRequest, CommandRunner};
 // `opencode session list` is workspace-scoped in OpenCode 1.18.18 despite its
 // generic help text. The official read-only `db` command is the only current
 // CLI surface that projects every root and child session across workspaces.
-const GLOBAL_SESSION_QUERY: &str = "SELECT id, title, time_created AS created, time_updated AS updated, project_id AS projectId, directory FROM session ORDER BY time_updated DESC";
+// Ask SQLite to encode each row separately. OpenCode 1.17 truncates a large
+// JSON-array result when stdout is a pipe, while TSV rows stream completely.
+// json_object also preserves tabs/newlines in user titles and paths safely.
+const GLOBAL_SESSION_ROWS: &str = "SELECT json_object('id', id, 'title', title, 'created', time_created, 'updated', time_updated, 'projectId', project_id, 'directory', directory) AS record FROM session";
 const MAX_MODEL_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 
 /// A command prefix for an OpenCode installation on the host or in Docker.
@@ -338,7 +341,12 @@ impl SessionSource for OpenCodeSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        Ok(self.discover_with_warnings(request)?.sessions)
+    }
+
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
         let mut sessions = BTreeMap::new();
+        let mut warnings = Vec::new();
         // Persisted OpenCode history has no live-state signal and every record
         // normalizes as Completed. Avoid starting the potentially enormous
         // global database query when completed sessions were not requested.
@@ -346,13 +354,17 @@ impl SessionSource for OpenCodeSource {
             let mut args = self.invocation.prefix_args.clone();
             args.extend([
                 "db".into(),
-                GLOBAL_SESSION_QUERY.into(),
+                global_session_query(
+                    request.history_limit.max(1).saturating_add(1),
+                    request.history_oldest_first,
+                ),
                 "--format".into(),
-                "json".into(),
+                "tsv".into(),
             ]);
             let mut command = CommandRequest::new(self.invocation.program.clone(), args);
             command.timeout = Duration::from_secs(8);
             let mut output = self.runner.run(&command)?;
+            let mut used_global_query = output.status == 0;
             if output.status != 0 {
                 // Older OpenCode builds do not have `db`; retain their supported,
                 // though potentially workspace-scoped, session-list behavior.
@@ -366,6 +378,7 @@ impl SessionSource for OpenCodeSource {
                 let mut fallback = CommandRequest::new(self.invocation.program.clone(), args);
                 fallback.timeout = Duration::from_secs(8);
                 output = self.runner.run(&fallback)?;
+                used_global_query = false;
                 if output.status != 0 {
                     bail!(
                         "OpenCode global discovery and session-list fallback failed with status {}: {}",
@@ -375,8 +388,21 @@ impl SessionSource for OpenCodeSource {
                 }
             }
 
-            sessions.extend(
+            let mut history = if used_global_query {
+                parse_opencode_db_rows(output.stdout_text()?, self.runtime.clone())?
+            } else {
                 parse_opencode_session_list(output.stdout_text()?, self.runtime.clone())?
+            };
+            let history_limit = request.history_limit.max(1);
+            if history.len() > history_limit {
+                history.truncate(history_limit);
+                warnings.push(format!(
+                    "OpenCode history is limited to {} records for this refresh; increase --history-limit to load more",
+                    history_limit
+                ));
+            }
+            sessions.extend(
+                history
                     .into_iter()
                     .filter(|session| {
                         request
@@ -402,12 +428,42 @@ impl SessionSource for OpenCodeSource {
                 }
             }
         }
-        Ok(sessions.into_values().collect())
+        Ok(SourceDiscovery {
+            sessions: sessions.into_values().collect(),
+            warnings,
+        })
     }
 
     fn cancel(&self) {
         self.runner.cancel();
     }
+}
+
+fn global_session_query(limit: usize, oldest_first: bool) -> String {
+    format!(
+        "{GLOBAL_SESSION_ROWS} ORDER BY time_updated {} LIMIT {}",
+        if oldest_first { "ASC" } else { "DESC" },
+        limit.max(1)
+    )
+}
+
+fn parse_opencode_db_rows(input: &str, runtime: Runtime) -> Result<Vec<AgentSession>> {
+    let mut lines = input.lines();
+    let Some(header) = lines.next() else {
+        return Ok(Vec::new());
+    };
+    if header.trim_end_matches('\r') != "record" {
+        bail!("invalid OpenCode db TSV header");
+    }
+    lines
+        .filter(|line| !line.trim().is_empty())
+        .enumerate()
+        .map(|(index, line)| {
+            let record: OpenCodeRecord = serde_json::from_str(line)
+                .with_context(|| format!("invalid OpenCode db record on row {}", index + 2))?;
+            Ok(normalize_record(record, runtime.clone()))
+        })
+        .collect()
 }
 
 fn agent_session_from_managed(managed: &ManagedOpenCodeSession) -> AgentSession {
@@ -714,14 +770,14 @@ mod tests {
     }
 
     #[test]
-    fn source_uses_documented_json_session_command_and_filters_cwd() {
+    fn source_uses_bounded_streaming_db_rows_and_filters_cwd() {
         let mut expected = CommandRequest::new(
             "opencode",
             vec![
                 "db".into(),
-                GLOBAL_SESSION_QUERY.into(),
+                global_session_query(101, false),
                 "--format".into(),
-                "json".into(),
+                "tsv".into(),
             ],
         );
         expected.timeout = Duration::from_secs(8);
@@ -729,7 +785,7 @@ mod tests {
             expected,
             output: Mutex::new(Some(CommandOutput {
                 status: 0,
-                stdout: br#"[{"id":"ses_1","title":"one","updated":2,"created":1,"projectId":"global","directory":"/work/one"},{"id":"ses_2","title":"two","updated":2,"created":1,"projectId":"global","directory":"/else"}]"#.to_vec(),
+                stdout: b"record\n{\"id\":\"ses_1\",\"title\":\"one\",\"updated\":2,\"created\":1,\"projectId\":\"global\",\"directory\":\"/work/one\"}\n{\"id\":\"ses_2\",\"title\":\"two\",\"updated\":2,\"created\":1,\"projectId\":\"global\",\"directory\":\"/else\"}\n".to_vec(),
                 stderr: vec![],
             })),
         });
@@ -745,11 +801,60 @@ mod tests {
                 include_completed: true,
                 include_interactive: false,
                 cwd: Some(PathBuf::from("/work")),
+                ..DiscoveryRequest::default()
             })
             .unwrap();
 
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].provider_session_id, "ses_1");
+    }
+
+    #[test]
+    fn source_returns_a_nonfatal_warning_when_more_history_exists() {
+        let mut expected = CommandRequest::new(
+            "opencode",
+            vec![
+                "db".into(),
+                global_session_query(3, false),
+                "--format".into(),
+                "tsv".into(),
+            ],
+        );
+        expected.timeout = Duration::from_secs(8);
+        let rows = (1..=3)
+            .map(|id| {
+                format!(
+                    "{{\"id\":\"ses_{id}\",\"title\":\"row {id}\",\"updated\":{id},\"created\":1,\"projectId\":\"global\",\"directory\":\"/work\"}}"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let runner = Arc::new(FakeRunner {
+            expected,
+            output: Mutex::new(Some(CommandOutput {
+                status: 0,
+                stdout: format!("record\n{rows}\n").into_bytes(),
+                stderr: vec![],
+            })),
+        });
+        let source = OpenCodeSource::with_runner(
+            "test",
+            OpenCodeInvocation::host("opencode"),
+            Runtime::Host,
+            runner,
+        );
+
+        let result = source
+            .discover_with_warnings(&DiscoveryRequest {
+                include_completed: true,
+                history_limit: 2,
+                ..DiscoveryRequest::default()
+            })
+            .unwrap();
+
+        assert_eq!(result.sessions.len(), 2);
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("limited to 2 records"));
     }
 
     #[test]
@@ -816,9 +921,9 @@ mod tests {
             "opencode",
             vec![
                 "db".into(),
-                GLOBAL_SESSION_QUERY.into(),
+                global_session_query(101, false),
                 "--format".into(),
-                "json".into(),
+                "tsv".into(),
             ],
         );
         expected.timeout = Duration::from_secs(8);

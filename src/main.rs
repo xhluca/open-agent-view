@@ -153,6 +153,10 @@ struct Cli {
     #[arg(long)]
     include_interactive: bool,
 
+    /// Maximum persisted-history records read from each provider per refresh.
+    #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=10_000))]
+    history_limit: u64,
+
     /// Show only sessions started under this working directory.
     #[arg(long, value_name = "PATH")]
     cwd: Option<PathBuf>,
@@ -262,7 +266,8 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    resolve_default_provider_bins(&mut cli);
     if let Some(command) = cli.command.as_ref() {
         match command {
             Commands::Doctor => {
@@ -507,6 +512,8 @@ fn discovery_request(cli: &Cli) -> DiscoveryRequest {
         include_completed: cli.all,
         include_interactive: cli.include_interactive,
         cwd: cli.cwd.clone(),
+        history_limit: cli.history_limit as usize,
+        history_oldest_first: false,
     }
 }
 
@@ -639,11 +646,13 @@ fn run_completed_archive(
         .codex_supervisor()
         .context("Codex supervisor was not initialized")?;
     let mut engine = DiscoveryEngine::new();
-    engine.add_source(CodexSource::managed(supervisor));
+    engine.add_source(CodexSource::managed_owned(supervisor));
     let mut snapshot = engine.discover(&DiscoveryRequest {
         include_completed: true,
         include_interactive: true,
         cwd: None,
+        history_limit: (cli.history_limit as usize).max(limit),
+        history_oldest_first: true,
     });
     if !snapshot.warnings.is_empty() {
         bail!(
@@ -736,17 +745,67 @@ fn sanitize_cli_text(value: &str) -> String {
 }
 
 fn executable_available(program: &str) -> bool {
+    executable_file(std::path::Path::new(program))
+        || resolve_executable(program).is_some_and(|path| executable_file(&path))
+}
+
+fn resolve_default_provider_bins(cli: &mut Cli) {
+    for executable in [
+        &mut cli.claude_bin,
+        &mut cli.codex_bin,
+        &mut cli.pi_bin,
+        &mut cli.opencode_bin,
+        &mut cli.copilot_bin,
+        &mut cli.cursor_bin,
+        &mut cli.antigravity_bin,
+    ] {
+        if let Some(path) = resolve_executable(executable) {
+            *executable = path.to_string_lossy().into_owned();
+        }
+    }
+}
+
+fn resolve_executable(program: &str) -> Option<PathBuf> {
+    resolve_executable_from(
+        program,
+        std::env::var_os("PATH").as_deref(),
+        std::env::var_os("HOME").as_deref(),
+    )
+}
+
+fn resolve_executable_from(
+    program: &str,
+    search_path: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
     let candidate = std::path::Path::new(program);
     if candidate.components().count() > 1 {
-        return executable_file(candidate);
+        return executable_file(candidate).then(|| candidate.to_path_buf());
     }
-    std::env::var_os("PATH")
-        .map(|path| {
-            std::env::split_paths(&path)
-                .map(|directory| directory.join(program))
-                .any(|candidate| executable_file(&candidate))
-        })
-        .unwrap_or(false)
+    if let Some(candidate) = search_path.and_then(|path| {
+        std::env::split_paths(path)
+            .map(|directory| directory.join(program))
+            .find(|candidate| executable_file(candidate))
+    }) {
+        return Some(candidate);
+    }
+
+    let home = PathBuf::from(home?);
+    provider_fallback_directories(program)
+        .iter()
+        .map(|directory| home.join(directory).join(program))
+        .find(|candidate| executable_file(candidate))
+}
+
+fn provider_fallback_directories(program: &str) -> &'static [&'static str] {
+    match program {
+        "codex" | "copilot" => &[".local/bin", ".npm-global/bin"],
+        "opencode" => &[".local/bin", ".opencode/bin", ".bun/bin"],
+        "cursor-agent" => &[".local/bin", ".cursor/bin"],
+        "agy" => &[".local/bin", ".antigravity/bin"],
+        "claude" | "pi" => &[".local/bin", ".npm-global/bin"],
+        _ => &[],
+    }
 }
 
 fn executable_file(path: &std::path::Path) -> bool {
@@ -1151,6 +1210,8 @@ mod tests {
             "--no-host-antigravity",
             "--all",
             "--include-interactive",
+            "--history-limit",
+            "250",
             "--cwd",
             "/project",
             "--launch-provider",
@@ -1175,6 +1236,7 @@ mod tests {
         assert!(cli.no_host_antigravity);
         assert!(cli.all);
         assert!(cli.include_interactive);
+        assert_eq!(cli.history_limit, 250);
         assert_eq!(cli.cwd, Some(PathBuf::from("/project")));
         assert_eq!(cli.launch_provider, LaunchProvider::Codex);
         assert_eq!(cli.launch_cwd, Some(PathBuf::from("/launch")));
@@ -1211,6 +1273,8 @@ mod tests {
     #[test]
     fn refresh_interval_below_the_supported_floor_is_rejected() {
         assert!(Cli::try_parse_from(["coding-agents", "--refresh-ms", "249"]).is_err());
+        assert!(Cli::try_parse_from(["coding-agents", "--history-limit", "0"]).is_err());
+        assert!(Cli::try_parse_from(["coding-agents", "--history-limit", "10001"]).is_err());
     }
 
     #[cfg(unix)]
@@ -1231,5 +1295,53 @@ mod tests {
             directory.path().join("missing").to_str().unwrap()
         ));
         assert!(!executable_available(directory.path().to_str().unwrap()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn provider_executables_resolve_path_before_supported_user_install_locations() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path_bin = directory.path().join("path-bin");
+        let npm_bin = directory.path().join(".npm-global/bin");
+        let opencode_bin = directory.path().join(".opencode/bin");
+        fs::create_dir_all(&path_bin).unwrap();
+        fs::create_dir_all(&npm_bin).unwrap();
+        fs::create_dir_all(&opencode_bin).unwrap();
+
+        let path_codex = path_bin.join("codex");
+        let fallback_codex = npm_bin.join("codex");
+        let fallback_opencode = opencode_bin.join("opencode");
+        for executable in [&path_codex, &fallback_codex, &fallback_opencode] {
+            fs::write(executable, b"#!/bin/sh\n").unwrap();
+            fs::set_permissions(executable, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+
+        assert_eq!(
+            resolve_executable_from(
+                "codex",
+                Some(path_bin.as_os_str()),
+                Some(directory.path().as_os_str()),
+            ),
+            Some(path_codex.clone())
+        );
+        assert_eq!(
+            resolve_executable_from("codex", None, Some(directory.path().as_os_str()),),
+            Some(fallback_codex)
+        );
+        assert_eq!(
+            resolve_executable_from("opencode", None, Some(directory.path().as_os_str()),),
+            Some(fallback_opencode)
+        );
+        assert_eq!(
+            resolve_executable_from("unknown-agent", None, Some(directory.path().as_os_str()),),
+            None
+        );
+        assert_eq!(
+            resolve_executable_from(path_codex.to_str().unwrap(), None, None),
+            Some(path_codex)
+        );
     }
 }

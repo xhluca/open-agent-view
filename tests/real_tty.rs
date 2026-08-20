@@ -759,6 +759,8 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
             "--fixture",
             fixture.to_str().expect("UTF-8 completed fixture path"),
             "--no-host-providers",
+            "--history-limit",
+            "1000",
             "--refresh-ms",
             "60000",
         ]);
@@ -794,6 +796,161 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
     app.wait_for("in-dashboard completed history disable", |screen| {
         screen.contains("completed hidden (/completed show)")
             && !screen.contains("completed-session-0000")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+fn opencode_history_budget_stays_responsive_and_reports_more_rows() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
+        let executable = home.path().join("opencode");
+        fs::write(
+            &executable,
+            r#"#!/usr/bin/env python3
+import json, sys
+if len(sys.argv) > 1 and sys.argv[1] == "db":
+    print("record")
+    for index in range(11):
+        print(json.dumps({
+            "id": "ses_" + str(index),
+            "title": "bounded history " + str(index),
+            "created": index,
+            "updated": index,
+            "projectId": "global",
+            "directory": "/work",
+        }))
+elif "models" in sys.argv:
+    print("openai/test-model")
+"#,
+        )
+        .expect("write fake OpenCode");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake OpenCode executable");
+        command.args([
+            "--opencode-bin",
+            executable.to_str().expect("UTF-8 fake OpenCode path"),
+            "--history-limit",
+            "10",
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("active-only OpenCode startup", |screen| {
+        screen.contains("completed hidden") && screen.contains("Hidden by default")
+    });
+    let started = Instant::now();
+    app.send(b"/completed show");
+    app.send(ENTER);
+    let shown = app.wait_for("bounded OpenCode history", |screen| {
+        screen.contains("10 completed (/completed hide)")
+            && screen.contains("bounded history")
+            && screen.contains("history capped")
+    });
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "bounded OpenCode history blocked the terminal"
+    );
+    assert_lines_fit(&shown, 120);
+
+    app.send(DOWN);
+    app.wait_for("nonfatal bounded-history warning", |screen| {
+        screen.contains("history is limited to 10 records")
+    });
+    app.send(UP);
+    app.send(b"draft");
+    app.wait_for("contextual composer footer over warning", |screen| {
+        screen.contains("draft") && screen.contains("tab harness · shift+tab model")
+    });
+    app.send(ESC);
+    app.wait_for("composer closes before dashboard exit", |screen| {
+        screen.contains("describe a task · /help for commands") && !screen.contains("draft")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+#[ignore = "set OAV_REAL_HOST_HOME for a read-only installed-provider PTY probe"]
+fn real_host_auto_resolves_harnesses_models_and_bounded_history() {
+    let _serial = serialize_real_tty_test();
+    let real_home = std::env::var("OAV_REAL_HOST_HOME")
+        .expect("OAV_REAL_HOST_HOME must identify the existing provider home");
+    let real_state = std::env::var("OAV_REAL_XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(&real_home).join(".local/state"));
+    let mut app = PtyApp::spawn_configured(120, 34, |command, _| {
+        command
+            .env("HOME", &real_home)
+            .env("XDG_STATE_HOME", &real_state)
+            .args(["--refresh-ms", "60000"]);
+    });
+
+    app.wait_for("real host startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"read-only host draft");
+    app.wait_for("real host composer", |screen| {
+        screen.contains("read-only host draft")
+    });
+    app.send(b"\t");
+    app.wait_for("real host harness palette", |screen| {
+        screen.contains("choose harness · 1/6")
+            && screen.contains("Claude")
+            && screen.contains("Codex")
+            && screen.contains("Pi")
+            && screen.contains("OpenCode")
+            && screen.contains("Cursor")
+            && screen.contains("GitHub Copilot")
+    });
+    for expected in 2..=4 {
+        app.send(DOWN);
+        app.wait_for("real host harness arrow navigation", |screen| {
+            screen.contains(&format!("choose harness · {expected}/6"))
+        });
+    }
+    app.send(ENTER);
+    app.wait_for("real host OpenCode selection", |screen| {
+        screen.contains("new task · harness OpenCode · model default")
+            && screen.contains("read-only host draft")
+    });
+    app.send(b"\x1b[Z");
+    app.wait_for("real host OpenCode model catalog", |screen| {
+        screen.contains("choose OpenCode model")
+            && screen.contains("Default")
+            && !screen.contains("loading models")
+    });
+    app.send(ESC);
+    app.wait_for("real model picker cancellation", |screen| {
+        screen.contains("new task · harness OpenCode · model default")
+    });
+    app.send(ESC);
+    app.wait_for("real composer cancellation", |screen| {
+        screen.contains("describe a task · /help for commands")
+    });
+
+    let started = Instant::now();
+    app.send(b"/completed show");
+    app.send(ENTER);
+    app.wait_for("real bounded completed history", |screen| {
+        screen.contains("completed (/completed hide)") && screen.contains("history capped")
+    });
+    assert!(started.elapsed() < Duration::from_secs(4));
+    app.send(DOWN);
+    app.send(UP);
+    app.send(b"still responsive");
+    app.wait_for("real host responsive typing", |screen| {
+        screen.contains("still responsive") && screen.contains("tab harness")
+    });
+    app.send(ESC);
+    app.wait_for("real host draft cancellation", |screen| {
+        screen.contains("describe a task · /help for commands")
     });
     app.exit_cleanly();
 }

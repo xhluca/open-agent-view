@@ -89,11 +89,20 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let working =
         app.session_count(SessionState::ReadyForReview) + app.session_count(SessionState::Working);
     let completed = app.session_count(SessionState::Completed);
-    let completed_status = if app.includes_completed {
+    let mut completed_status = if app.includes_completed {
         format!("{completed} completed (/completed hide)")
     } else {
         "completed hidden (/completed show)".into()
     };
+    if app.includes_completed
+        && app
+            .snapshot
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("history is limited"))
+    {
+        completed_status.push_str(" · history capped");
+    }
     let providers = provider_summary(app);
     let title = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
     let mode = match app.view_mode {
@@ -566,6 +575,8 @@ fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let footer = if let Some(notice) = &app.notice {
         sanitize_inline(notice)
+    } else if app.overlay != Overlay::None {
+        contextual_footer(app, area.width)
     } else if let Some(warning) = app.snapshot.warnings.first() {
         format!("warning: {}", sanitize_inline(warning))
     } else {
@@ -1422,6 +1433,23 @@ mod tests {
         assert_eq!(truncated, "部署…");
         assert_eq!(display_width(&truncated), 5);
         assert_eq!(display_width(&pad_to_width(truncate("部署", 8), 8)), 8);
+    }
+
+    #[test]
+    fn active_composer_keeps_contextual_keys_visible_over_history_warnings() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: Vec::new(),
+            warnings: vec!["history is bounded".into()],
+        });
+        app.overlay = Overlay::Composer(ComposerMode::NewSession);
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("tab harness · shift+tab model"));
+        assert!(!rendered.contains("warning: history is bounded"));
     }
 
     #[test]

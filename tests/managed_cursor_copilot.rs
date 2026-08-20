@@ -213,6 +213,7 @@ fn wait_for_cursor(source: &CursorSource, expected: SessionState) -> AgentSessio
                 include_completed: true,
                 include_interactive: true,
                 cwd: None,
+                ..DiscoveryRequest::default()
             })
             .unwrap();
         if let Some(session) = sessions.pop().filter(|session| session.state == expected) {

@@ -1855,6 +1855,7 @@ mod tests {
             include_completed: false,
             include_interactive: false,
             cwd: None,
+            ..DiscoveryRequest::default()
         };
         schedule_refresh(&sender, &request, &mut in_flight).unwrap();
         assert!(!receiver.recv().unwrap().include_completed);

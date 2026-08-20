@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::{DiscoveryRequest, SessionSource};
+use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
 use crate::codex_rpc::{AppServerClient, AppServerInvocation};
 use crate::codex_supervisor::CodexSupervisor;
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionState};
@@ -34,6 +34,7 @@ pub struct CodexSource {
     label: String,
     factory: ConnectionFactory,
     runtime: Runtime,
+    owned_only: bool,
     connection: Mutex<Option<AppServerClient>>,
 }
 
@@ -43,6 +44,7 @@ impl CodexSource {
             label: "Codex (host)".into(),
             factory: ConnectionFactory::Direct(AppServerInvocation::direct(executable)),
             runtime: Runtime::Host,
+            owned_only: false,
             connection: Mutex::new(None),
         }
     }
@@ -52,6 +54,18 @@ impl CodexSource {
             label: "Codex (managed host)".into(),
             factory: ConnectionFactory::Managed(supervisor),
             runtime: Runtime::Host,
+            owned_only: false,
+            connection: Mutex::new(None),
+        }
+    }
+
+    /// Maintenance inventory restricted to exact durable-supervisor records.
+    pub fn managed_owned(supervisor: Arc<CodexSupervisor>) -> Self {
+        Self {
+            label: "Codex (owned host maintenance)".into(),
+            factory: ConnectionFactory::Managed(supervisor),
+            runtime: Runtime::Host,
+            owned_only: true,
             connection: Mutex::new(None),
         }
     }
@@ -71,6 +85,7 @@ impl CodexSource {
                 container_name,
                 image: image.into(),
             },
+            owned_only: false,
             connection: Mutex::new(None),
         }
     }
@@ -82,6 +97,10 @@ impl SessionSource for CodexSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        Ok(self.discover_with_warnings(request)?.sessions)
+    }
+
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
         let mut connection = self
             .connection
             .lock()
@@ -94,17 +113,62 @@ impl SessionSource for CodexSource {
         }
         let transport = connection.as_mut().expect("connection initialized");
 
+        if self.owned_only {
+            let ConnectionFactory::Managed(supervisor) = &self.factory else {
+                unreachable!("owned-only Codex discovery requires a supervisor")
+            };
+            let sessions = read_threads(
+                transport,
+                supervisor.owned_thread_ids()?,
+                self.runtime.clone(),
+            )?;
+            return Ok(SourceDiscovery {
+                sessions,
+                warnings: Vec::new(),
+            });
+        }
+
+        if !request.include_completed {
+            let loaded =
+                parse_loaded_thread_ids(&transport.request("thread/loaded/list", json!({}))?)?;
+            let owned = match &self.factory {
+                ConnectionFactory::Managed(supervisor) => Some(
+                    supervisor
+                        .owned_thread_ids()?
+                        .into_iter()
+                        .collect::<BTreeSet<_>>(),
+                ),
+                ConnectionFactory::Direct(_) => None,
+            };
+            let loaded = loaded
+                .into_iter()
+                .filter(|thread_id| {
+                    owned
+                        .as_ref()
+                        .map(|owned| owned.contains(thread_id))
+                        .unwrap_or(true)
+                })
+                .collect();
+            let sessions = read_threads(transport, loaded, self.runtime.clone())?;
+            return Ok(SourceDiscovery {
+                sessions,
+                warnings: Vec::new(),
+            });
+        }
+
         let mut cursor: Option<String> = None;
         let mut records = Vec::new();
-        for _ in 0..=10 {
+        let history_limit = request.history_limit.max(1);
+        while records.len() < history_limit {
+            let page_limit = (history_limit - records.len()).min(100);
             let response = transport.request(
                 "thread/list",
                 json!({
                     "archived": false,
                     "cursor": cursor,
-                    "limit": 100,
+                    "limit": page_limit,
                     "sortKey": "updated_at",
-                    "sortDirection": "desc",
+                    "sortDirection": if request.history_oldest_first { "asc" } else { "desc" },
                     "sourceKinds": SOURCE_KINDS,
                     "useStateDbOnly": false
                 }),
@@ -116,9 +180,6 @@ impl SessionSource for CodexSource {
                 break;
             }
         }
-        if cursor.is_some() {
-            bail!("Codex thread list exceeded the 1,100-session safety cap");
-        }
 
         records.retain(|session| {
             (request.include_completed || session.state != SessionState::Completed)
@@ -128,8 +189,38 @@ impl SessionSource for CodexSource {
                     .map(|cwd| session.cwd.starts_with(cwd))
                     .unwrap_or(true)
         });
-        Ok(records)
+        let warnings = cursor
+            .is_some()
+            .then(|| {
+                format!(
+                    "Codex history is limited to {} records for this refresh; increase --history-limit to load more",
+                    history_limit
+                )
+            })
+            .into_iter()
+            .collect();
+        Ok(SourceDiscovery {
+            sessions: records,
+            warnings,
+        })
     }
+}
+
+fn read_threads(
+    transport: &mut AppServerClient,
+    thread_ids: Vec<String>,
+    runtime: Runtime,
+) -> Result<Vec<AgentSession>> {
+    thread_ids
+        .into_iter()
+        .map(|thread_id| {
+            let response = transport.request(
+                "thread/read",
+                json!({"threadId": thread_id, "includeTurns": false}),
+            )?;
+            parse_codex_thread_read(&response, runtime.clone())
+        })
+        .collect()
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +228,16 @@ impl SessionSource for CodexSource {
 struct ThreadListResponse {
     data: Vec<CodexThread>,
     next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoadedThreadListResponse {
+    data: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ThreadReadResponse {
+    thread: CodexThread,
 }
 
 #[derive(Debug, Deserialize)]
@@ -168,6 +269,18 @@ pub fn parse_codex_thread_list(input: &Value, runtime: Runtime) -> Result<CodexT
             .collect(),
         next_cursor: response.next_cursor,
     })
+}
+
+fn parse_loaded_thread_ids(input: &Value) -> Result<Vec<String>> {
+    let response: LoadedThreadListResponse = serde_json::from_value(input.clone())
+        .context("invalid Codex thread/loaded/list response")?;
+    Ok(response.data)
+}
+
+fn parse_codex_thread_read(input: &Value, runtime: Runtime) -> Result<AgentSession> {
+    let response: ThreadReadResponse =
+        serde_json::from_value(input.clone()).context("invalid Codex thread/read response")?;
+    Ok(normalize_thread(response.thread, runtime))
 }
 
 fn normalize_thread(thread: CodexThread, runtime: Runtime) -> AgentSession {
@@ -285,6 +398,57 @@ fn truncate_words(input: &str, max_chars: usize) -> String {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
+    fn mock_app_server() -> tempfile::TempDir {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("mock-codex");
+        fs::write(
+            &executable,
+            r#"#!/usr/bin/env python3
+import json, sys
+
+def thread(identifier, status):
+    return {
+        "id": identifier,
+        "cwd": "/work/codex",
+        "createdAt": 1700000000,
+        "updatedAt": 1700000100,
+        "preview": "Bounded Codex discovery",
+        "name": "bounded-codex",
+        "status": status,
+        "source": {"type": "appServer"},
+    }
+
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    ident = message.get("id")
+    if ident is None:
+        continue
+    if method == "initialize":
+        result = {"userAgent": "mock/1"}
+    elif method == "thread/loaded/list":
+        result = {"data": ["loaded-thread"]}
+    elif method == "thread/read":
+        result = {"thread": thread(message["params"]["threadId"], {"type": "active", "activeFlags": []})}
+    elif method == "thread/list":
+        limit = message["params"]["limit"]
+        result = {"data": [thread("history-" + str(index), {"type": "idle"}) for index in range(limit)], "nextCursor": "more"}
+    else:
+        result = {}
+    print(json.dumps({"id": ident, "result": result}), flush=True)
+"#,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable, permissions).unwrap();
+        directory
+    }
+
     #[test]
     fn parses_thread_list_and_maps_waiting_state() {
         let response = json!({
@@ -319,5 +483,37 @@ mod tests {
             map_status(&json!({"type": "notLoaded"})),
             SessionState::Unknown
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn active_discovery_reads_only_the_loaded_inventory() {
+        let directory = mock_app_server();
+        let source = CodexSource::host(directory.path().join("mock-codex").display().to_string());
+
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].provider_session_id, "loaded-thread");
+        assert_eq!(sessions[0].state, SessionState::Working);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn large_history_returns_the_budget_and_a_nonfatal_warning() {
+        let directory = mock_app_server();
+        let source = CodexSource::host(directory.path().join("mock-codex").display().to_string());
+
+        let result = source
+            .discover_with_warnings(&DiscoveryRequest {
+                include_completed: true,
+                history_limit: 3,
+                ..DiscoveryRequest::default()
+            })
+            .unwrap();
+
+        assert_eq!(result.sessions.len(), 3);
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("limited to 3 records"));
     }
 }

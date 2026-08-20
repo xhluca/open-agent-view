@@ -55,16 +55,47 @@ pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
 
 use crate::domain::{AgentSession, SessionKind, SessionSnapshot, SessionState};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub const DEFAULT_HISTORY_LIMIT: usize = 100;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DiscoveryRequest {
     pub include_completed: bool,
     pub include_interactive: bool,
     pub cwd: Option<PathBuf>,
+    /// Maximum persisted-history records a provider may read in one refresh.
+    /// Live/owned session inventories are not constrained by this limit.
+    pub history_limit: usize,
+    /// Maintenance can ask providers to start with their oldest records.
+    pub history_oldest_first: bool,
+}
+
+impl Default for DiscoveryRequest {
+    fn default() -> Self {
+        Self {
+            include_completed: false,
+            include_interactive: false,
+            cwd: None,
+            history_limit: DEFAULT_HISTORY_LIMIT,
+            history_oldest_first: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SourceDiscovery {
+    pub sessions: Vec<AgentSession>,
+    pub warnings: Vec<String>,
 }
 
 pub trait SessionSource: Send + Sync {
     fn label(&self) -> &str;
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>>;
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
+        Ok(SourceDiscovery {
+            sessions: self.discover(request)?,
+            warnings: Vec::new(),
+        })
+    }
     fn cancel(&self) {}
 }
 
@@ -78,6 +109,10 @@ where
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
         (**self).discover(request)
+    }
+
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
+        (**self).discover_with_warnings(request)
     }
 
     fn cancel(&self) {
@@ -121,7 +156,8 @@ impl DiscoveryEngine {
                 let sender = sender.clone();
                 let label = source.label().to_owned();
                 scope.spawn(move || {
-                    let result = catch_unwind(AssertUnwindSafe(|| source.discover(request)));
+                    let result =
+                        catch_unwind(AssertUnwindSafe(|| source.discover_with_warnings(request)));
                     let _ = sender.send((label, result));
                 });
             }
@@ -135,13 +171,22 @@ impl DiscoveryEngine {
                     break;
                 };
                 match result {
-                    Ok(Ok(mut sessions)) => {
+                    Ok(Ok(mut discovered)) => {
                         // Provider CLIs are not consistent about honoring their
                         // own active-only and cwd filters. Enforce the public
                         // discovery contract before a large history can enter
                         // the dashboard model or any progressive update.
-                        sessions.retain(|session| session_matches_request(session, request));
-                        snapshot.sessions.append(&mut sessions);
+                        discovered
+                            .sessions
+                            .retain(|session| session_matches_request(session, request));
+                        if bound_completed_history(&mut discovered.sessions, request) {
+                            discovered.warnings.push(format!(
+                                "{label} completed history is limited to {} records for this refresh; increase --history-limit to load more",
+                                request.history_limit.max(1)
+                            ));
+                        }
+                        snapshot.sessions.append(&mut discovered.sessions);
+                        snapshot.warnings.append(&mut discovered.warnings);
                     }
                     Ok(Err(error)) => snapshot.warnings.push(format!("{label}: {error:#}")),
                     Err(_) => snapshot
@@ -157,6 +202,7 @@ impl DiscoveryEngine {
         });
         snapshot.sort_for_display();
         snapshot.warnings.sort();
+        snapshot.warnings.dedup();
         snapshot
     }
 
@@ -165,6 +211,44 @@ impl DiscoveryEngine {
             source.cancel();
         }
     }
+}
+
+fn bound_completed_history(sessions: &mut Vec<AgentSession>, request: &DiscoveryRequest) -> bool {
+    if !request.include_completed {
+        return false;
+    }
+    let limit = request.history_limit.max(1);
+    let mut completed = sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, session)| session.state == SessionState::Completed)
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if completed.len() <= limit {
+        return false;
+    }
+    completed.sort_by(|left, right| {
+        let left = &sessions[*left];
+        let right = &sessions[*right];
+        let order = left
+            .updated_at
+            .cmp(&right.updated_at)
+            .then_with(|| left.id.cmp(&right.id));
+        if request.history_oldest_first {
+            order
+        } else {
+            order.reverse()
+        }
+    });
+    completed.truncate(limit);
+    let retained = completed
+        .into_iter()
+        .map(|index| sessions[index].id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    sessions.retain(|session| {
+        session.state != SessionState::Completed || retained.contains(&session.id)
+    });
+    true
 }
 
 fn session_matches_request(session: &AgentSession, request: &DiscoveryRequest) -> bool {
@@ -204,6 +288,8 @@ mod tests {
     }
 
     struct UnfilteredSource;
+
+    struct CompletedHistorySource;
 
     impl SessionSource for BrokenSource {
         fn label(&self) -> &str {
@@ -324,6 +410,36 @@ mod tests {
         }
     }
 
+    impl SessionSource for CompletedHistorySource {
+        fn label(&self) -> &str {
+            "large-history"
+        }
+
+        fn discover(&self, _: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+            Ok((0..5)
+                .map(|index| AgentSession {
+                    id: format!("history:host:{index}"),
+                    provider_session_id: index.to_string(),
+                    provider: Provider::Other("history".into()),
+                    runtime: Runtime::Host,
+                    kind: SessionKind::Background,
+                    name: index.to_string(),
+                    cwd: PathBuf::from("/workspace"),
+                    state: SessionState::Completed,
+                    summary: String::new(),
+                    raw_state: None,
+                    pid: None,
+                    started_at: None,
+                    updated_at: Some(
+                        std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(index),
+                    ),
+                    pull_requests: None,
+                    capabilities: BTreeSet::new(),
+                })
+                .collect())
+        }
+    }
+
     #[test]
     fn one_source_failure_becomes_a_warning() {
         let mut engine = DiscoveryEngine::new();
@@ -426,6 +542,7 @@ mod tests {
             include_completed: false,
             include_interactive: false,
             cwd: Some(PathBuf::from("/workspace")),
+            ..DiscoveryRequest::default()
         });
 
         assert_eq!(
@@ -447,8 +564,32 @@ mod tests {
             include_completed: true,
             include_interactive: true,
             cwd: None,
+            ..DiscoveryRequest::default()
         });
 
         assert_eq!(snapshot.sessions.len(), 4);
+    }
+
+    #[test]
+    fn engine_bounds_a_provider_that_ignores_the_history_budget() {
+        let mut engine = DiscoveryEngine::new();
+        engine.add_source(CompletedHistorySource);
+
+        let snapshot = engine.discover(&DiscoveryRequest {
+            include_completed: true,
+            history_limit: 2,
+            ..DiscoveryRequest::default()
+        });
+
+        assert_eq!(
+            snapshot
+                .sessions
+                .iter()
+                .map(|session| session.provider_session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["4", "3"]
+        );
+        assert_eq!(snapshot.warnings.len(), 1);
+        assert!(snapshot.warnings[0].contains("limited to 2 records"));
     }
 }

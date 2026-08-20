@@ -90,6 +90,7 @@ fn pi_opencode_claude_and_codex_coexist_without_collisions() {
         include_completed: true,
         include_interactive: true,
         cwd: None,
+        ..DiscoveryRequest::default()
     });
 
     assert!(snapshot.warnings.is_empty());
@@ -125,6 +126,7 @@ fn canonical_visual_fixture_contains_every_supported_provider_without_id_collisi
         include_completed: true,
         include_interactive: true,
         cwd: None,
+        ..DiscoveryRequest::default()
     });
 
     assert!(snapshot.warnings.is_empty());
