@@ -588,7 +588,9 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.send(b"/help");
     app.send(ENTER);
     app.wait_for("dashboard slash-command help", |screen| {
-        screen.contains("commands: /harness [NAME] · /model NAME|default · /filter TEXT")
+        screen.contains("commands: /harness [NAME] · /model [NAME|default]")
+            && screen.contains("/completed [show|hide]")
+            && screen.contains("/filter TEXT")
     });
     assert!(
         command_started.elapsed() < Duration::from_millis(750),
@@ -753,7 +755,7 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
 
     let screen = app.wait_for("default completed-history filter", |screen| {
         screen.contains("completed hidden")
-            && screen.contains("start with --all to include them")
+            && screen.contains("use /completed show (or start with --all)")
             && !screen.contains("loading provider sessions")
             && !screen.contains("completed-session-0000")
     });
@@ -1010,7 +1012,7 @@ fn default_dashboard_never_starts_opencode_completed_history_query() {
 
     app.wait_for("OpenCode history-free default startup", |screen| {
         screen.contains("completed hidden")
-            && screen.contains("start with --all to include them")
+            && screen.contains("use /completed show (or start with --all)")
             && !screen.contains("loading provider sessions")
     });
 
@@ -1036,7 +1038,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
             && screen.contains("schema-migration")
             && screen.contains("release-reviewer")
             && screen.contains("Unknown")
-            && screen.contains("2 awaiting input · 4 working · 2 completed · status view")
+            && screen.contains("2 awaiting input · 4 working · 2 completed (/completed hide) · status view")
     });
     assert_lines_fit(&startup, 120);
     assert!(startup.contains("release-reviewer"));
@@ -1167,10 +1169,10 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     assert!(!launch_refused.contains("launch-should-stay-in-fixture"));
 
     app.send(CTRL_F);
-    app.send(b"owned-codex-worker");
+    app.send(b"documentation-pass");
     app.send(ENTER);
-    app.wait_for("owned Codex fixture row", |screen| {
-        screen.contains("owned-codex-worker") && screen.contains("Working")
+    app.wait_for("read-only Codex fixture row", |screen| {
+        screen.contains("documentation-pass") && !screen.contains("owned-codex-worker")
     });
 
     let alternate_enters_before_open = count_bytes(&app.raw, b"\x1b[?1049h");
@@ -1178,7 +1180,7 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     let open_refused = app.wait_for("fixture-fenced native open", |screen| {
         screen.contains("failed to open session:")
             && screen.contains("provider actions are disabled while reading a fixture")
-            && screen.contains("owned-codex-worker")
+            && screen.contains("documentation-pass")
     });
     assert_lines_fit(&open_refused, 105);
     assert!(
@@ -1189,6 +1191,14 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
         count_bytes(&app.raw, b"\x1b[?1049l") >= 1,
         "native open did not suspend the dashboard before dispatch"
     );
+
+    app.send(CTRL_F);
+    app.send(&[0x7f; 64]);
+    app.send(b"owned-codex-worker");
+    app.send(ENTER);
+    app.wait_for("owned Codex fixture row", |screen| {
+        screen.contains("owned-codex-worker") && screen.contains("Working")
+    });
 
     app.send(b" ");
     app.wait_for("writable reply peek", |screen| {
