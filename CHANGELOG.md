@@ -8,6 +8,18 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.12] - 2026-08-20
+
+### Fixed
+
+- Fresh homes now secure the shared Open Agent View state root before any
+  provider supervisor creates a child directory. This prevents a conventional
+  `0022` umask from leaving the parent at `0755` and blocking startup.
+- Real-PTY tests force the release runner's `0022` umask, so the permission
+  ordering is covered deterministically on every platform. The failed
+  `v0.1.11` tag remains immutable and unpublished; v0.1.12 includes all changes
+  documented below.
+
 ## [0.1.11] - 2026-08-20
 
 ### Added

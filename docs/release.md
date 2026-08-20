@@ -6,12 +6,15 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.11 is the current private preview release; version 0.1.2 was the
+Version 0.1.12 is the current private preview release; version 0.1.2 was the
 initial published preview. The unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
 terminal-repaint race, and a Linux-only managed-Pi assumption in a macOS PTY
-test. The repository is private, so preview installation requires an
+test. The unpublished `v0.1.11` tag is likewise retained after its ARM Linux
+runner exposed an insecure shared-state initialization order under a `0022`
+umask; v0.1.12 fixes it and tests that umask explicitly. The repository is
+private, so preview installation requires an
 authenticated GitHub account until the project is made public. A version tag
 alone is not sufficient:
 present the one-line installer as usable only after its GitHub release contains
