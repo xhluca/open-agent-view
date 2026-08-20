@@ -3,7 +3,7 @@ use std::sync::mpsc::{self, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::execute;
 use crossterm::terminal::{
@@ -16,6 +16,7 @@ use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay};
 use crate::control::{ControlHub, ControlOutcome};
 use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot};
+use crate::hidden::HiddenSessions;
 use crate::ui;
 
 // Apply a burst of already-buffered terminal input before drawing. Holding an
@@ -23,27 +24,48 @@ use crate::ui;
 // would repaint a frame that the user will never see and can saturate a remote
 // terminal or tmux pane.
 const MAX_READY_EVENTS_PER_TICK: usize = 256;
+const LAUNCH_DISCOVERY_RETRY_INTERVAL: Duration = Duration::from_millis(250);
+const LAUNCH_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PendingLaunch {
+    provider: Provider,
+    provider_session_id: String,
+    deadline: Instant,
+}
+
+#[derive(Debug, Default)]
+struct ActionEffect {
+    refresh: bool,
+    pending_launch: Option<(Provider, String)>,
+    completed_visibility: Option<bool>,
+    load_models: Option<Provider>,
+    hide_session_ids: Vec<String>,
+}
 
 pub fn run_dashboard(
     engine: &DiscoveryEngine,
     request: &DiscoveryRequest,
     refresh_interval: Duration,
     control: &ControlHub,
+    hidden_sessions: HiddenSessions,
 ) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
+    let (models_tx, models_rx) = mpsc::channel::<(Provider, Result<Vec<String>, String>)>();
     let worker_engine = (*engine).clone();
-    let worker_request = request.clone();
     let worker_control = control.clone();
+    let worker_hidden_sessions = hidden_sessions.clone();
     let _refresh_worker = thread::spawn(move || {
         let mut first_refresh = true;
-        while refresh_rx.recv().is_ok() {
+        while let Ok(worker_request) = refresh_rx.recv() {
             let partial_sender = snapshot_tx.clone();
             let mut snapshot = if first_refresh {
                 worker_engine.discover_progressively(
                     &worker_request,
                     |partial, completed, total| {
                         let mut partial = partial.clone();
+                        worker_hidden_sessions.filter_snapshot(&mut partial);
                         partial.warnings.push(format!(
                             "loading remaining providers… ({completed}/{total})"
                         ));
@@ -54,6 +76,7 @@ pub fn run_dashboard(
                 worker_engine.discover(&worker_request)
             };
             worker_control.enrich(&mut snapshot);
+            worker_hidden_sessions.filter_snapshot(&mut snapshot);
             if snapshot_tx.send((snapshot, true)).is_err() {
                 break;
             }
@@ -71,10 +94,17 @@ pub fn run_dashboard(
     );
     let mut terminal = TerminalSession::enter()?;
     let mut last_refresh = Instant::now();
+    let mut current_request = request.clone();
     let mut refresh_in_flight = false;
     let mut refresh_after_current = false;
+    let mut pending_launch: Option<PendingLaunch> = None;
+    let mut pending_launch_retry_at: Option<Instant> = None;
     let mut needs_draw = true;
-    schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+    schedule_refresh(
+        &refresh_tx,
+        &current_request,
+        &mut refresh_in_flight,
+    )?;
 
     let result = 'dashboard: loop {
         loop {
@@ -82,9 +112,26 @@ pub fn run_dashboard(
                 Ok((snapshot, complete)) => {
                     let changed = snapshot != app.snapshot;
                     app.replace_snapshot(snapshot);
+                    if select_pending_launch(&mut app, pending_launch.as_ref()) {
+                        pending_launch = None;
+                        pending_launch_retry_at = None;
+                    }
                     if complete {
                         refresh_in_flight = false;
                         last_refresh = Instant::now();
+                        if let Some(pending) = pending_launch.as_ref() {
+                            if Instant::now() < pending.deadline {
+                                pending_launch_retry_at = Some(
+                                    Instant::now() + LAUNCH_DISCOVERY_RETRY_INTERVAL,
+                                );
+                            } else {
+                                app.set_notice(
+                                    "task launched, but its provider record is not visible yet; press ctrl+l to retry",
+                                );
+                                pending_launch = None;
+                                pending_launch_retry_at = None;
+                            }
+                        }
                     }
                     needs_draw |= changed;
                 }
@@ -94,8 +141,22 @@ pub fn run_dashboard(
                 }
             }
         }
+        loop {
+            match models_rx.try_recv() {
+                Ok((provider, result)) => {
+                    app.set_available_models(provider, result);
+                    needs_draw = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
         if refresh_after_current && !refresh_in_flight {
-            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+            schedule_refresh(
+                &refresh_tx,
+                &current_request,
+                &mut refresh_in_flight,
+            )?;
             refresh_after_current = false;
             last_refresh = Instant::now();
         }
@@ -118,13 +179,54 @@ pub fn run_dashboard(
                 match event::read()? {
                     Event::Key(key) => {
                         let action = handle_key(&mut app, key);
-                        let refresh = handle_action(&mut terminal, &mut app, action, control);
+                        let effect = dispatch_action(&mut terminal, &mut app, action, control);
+                        if let Some(include_completed) = effect.completed_visibility {
+                            current_request.include_completed = include_completed;
+                            app.set_completed_visibility(include_completed);
+                            if !include_completed {
+                                let mut snapshot = app.snapshot.clone();
+                                snapshot.sessions.retain(|session| {
+                                    session.state != crate::domain::SessionState::Completed
+                                });
+                                app.replace_snapshot(snapshot);
+                            }
+                        }
+                        if let Some(provider) = effect.load_models {
+                            schedule_model_load(control.clone(), provider, models_tx.clone());
+                        }
+                        if let Some((provider, provider_session_id)) = effect.pending_launch {
+                            pending_launch = Some(PendingLaunch {
+                                provider,
+                                provider_session_id,
+                                deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
+                            });
+                            pending_launch_retry_at = None;
+                        }
+                        if !effect.hide_session_ids.is_empty() {
+                            match hide_sessions_from_app(
+                                &mut app,
+                                &hidden_sessions,
+                                &effect.hide_session_ids,
+                            ) {
+                                Ok(count) => app.set_notice(format!(
+                                    "hid {count} session{} locally; provider history was retained",
+                                    if count == 1 { "" } else { "s" }
+                                )),
+                                Err(error) => {
+                                    app.set_notice(format!("failed to hide session: {error:#}"))
+                                }
+                            }
+                        }
                         needs_draw = true;
-                        if refresh {
+                        if effect.refresh {
                             if refresh_in_flight {
                                 refresh_after_current = true;
                             } else {
-                                schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+                                schedule_refresh(
+                                    &refresh_tx,
+                                    &current_request,
+                                    &mut refresh_in_flight,
+                                )?;
                                 last_refresh = Instant::now();
                             }
                         }
@@ -140,8 +242,23 @@ pub fn run_dashboard(
                 }
             }
         }
+        if !refresh_in_flight
+            && pending_launch_retry_at.is_some_and(|retry_at| Instant::now() >= retry_at)
+        {
+            schedule_refresh(
+                &refresh_tx,
+                &current_request,
+                &mut refresh_in_flight,
+            )?;
+            pending_launch_retry_at = None;
+            last_refresh = Instant::now();
+        }
         if !refresh_in_flight && last_refresh.elapsed() >= refresh_interval {
-            schedule_refresh(&refresh_tx, &mut refresh_in_flight)?;
+            schedule_refresh(
+                &refresh_tx,
+                &current_request,
+                &mut refresh_in_flight,
+            )?;
             last_refresh = Instant::now();
         }
     };
@@ -151,16 +268,70 @@ pub fn run_dashboard(
     result
 }
 
-fn schedule_refresh(sender: &SyncSender<()>, refresh_in_flight: &mut bool) -> Result<()> {
-    match sender.try_send(()) {
-        Ok(()) | Err(TrySendError::Full(())) => {
+fn schedule_refresh(
+    sender: &SyncSender<DiscoveryRequest>,
+    request: &DiscoveryRequest,
+    refresh_in_flight: &mut bool,
+) -> Result<()> {
+    match sender.try_send(request.clone()) {
+        Ok(()) | Err(TrySendError::Full(_)) => {
             *refresh_in_flight = true;
             Ok(())
         }
-        Err(TrySendError::Disconnected(())) => {
+        Err(TrySendError::Disconnected(_)) => {
             Err(anyhow!("provider refresh worker stopped unexpectedly"))
         }
     }
+}
+
+fn schedule_model_load(
+    control: ControlHub,
+    provider: Provider,
+    sender: mpsc::Sender<(Provider, Result<Vec<String>, String>)>,
+) {
+    let _model_worker = thread::spawn(move || {
+        let result = control
+            .available_models(&provider)
+            .map_err(|error| format!("{error:#}"));
+        let _ = sender.send((provider, result));
+    });
+}
+
+fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> bool {
+    let Some(pending) = pending else {
+        return false;
+    };
+    let Some(session) = app.snapshot.sessions.iter().find(|session| {
+        session.provider == pending.provider
+            && session.provider_session_id == pending.provider_session_id
+    }) else {
+        return false;
+    };
+    app.selection = Some(crate::app::SelectionKey::Session(session.id.clone()));
+    true
+}
+
+fn hide_sessions_from_app(
+    app: &mut App,
+    hidden_sessions: &HiddenSessions,
+    session_ids: &[String],
+) -> Result<usize> {
+    let sessions = session_ids
+        .iter()
+        .map(|id| {
+            app.snapshot
+                .sessions
+                .iter()
+                .find(|session| &session.id == id)
+                .cloned()
+        })
+        .collect::<Option<Vec<_>>>()
+        .context("a selected session disappeared during refresh")?;
+    let count = hidden_sessions.hide_sessions(&sessions)?;
+    let mut snapshot = app.snapshot.clone();
+    hidden_sessions.filter_snapshot(&mut snapshot);
+    app.replace_snapshot(snapshot);
+    Ok(count)
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
@@ -184,7 +355,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             KeyCode::Char('l') if app.overlay == Overlay::None => AppAction::Refresh,
             KeyCode::Char('x') => match app.overlay.clone() {
                 Overlay::Confirm(_) => app.activate(),
-                Overlay::None => {
+                Overlay::None | Overlay::Peek => {
                     app.start_confirm();
                     AppAction::None
                 }
@@ -222,6 +393,22 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
         }
         KeyCode::Char('?') if app.overlay == Overlay::None || app.overlay == Overlay::Help => {
             app.toggle_help();
+            AppAction::None
+        }
+        KeyCode::Up if app.overlay == Overlay::ModelPicker => {
+            app.move_model_selection(-1);
+            AppAction::None
+        }
+        KeyCode::Down if app.overlay == Overlay::ModelPicker => {
+            app.move_model_selection(1);
+            AppAction::None
+        }
+        KeyCode::PageUp if app.overlay == Overlay::ModelPicker => {
+            app.move_model_page(-1);
+            AppAction::None
+        }
+        KeyCode::PageDown if app.overlay == Overlay::ModelPicker => {
+            app.move_model_page(1);
             AppAction::None
         }
         KeyCode::Up | KeyCode::Left if app.overlay == Overlay::HarnessPicker => {
@@ -269,8 +456,16 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.move_harness_selection(1);
             AppAction::None
         }
+        KeyCode::Tab if app.overlay == Overlay::ModelPicker => {
+            app.move_model_selection(1);
+            AppAction::None
+        }
         KeyCode::BackTab if app.overlay == Overlay::HarnessPicker => {
             app.move_harness_selection(-1);
+            AppAction::None
+        }
+        KeyCode::BackTab if app.overlay == Overlay::ModelPicker => {
+            app.move_model_selection(-1);
             AppAction::None
         }
         KeyCode::Char(digit) if app.overlay == Overlay::HarnessPicker && digit.is_ascii_digit() => {
@@ -377,14 +572,81 @@ impl DashboardControl for ControlHub {
     }
 }
 
+fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
+    terminal: &mut T,
+    app: &mut App,
+    action: AppAction,
+    control: &C,
+) -> ActionEffect {
+    match action {
+        AppAction::SetCompletedVisibility { include_completed } => ActionEffect {
+            refresh: true,
+            completed_visibility: Some(include_completed),
+            ..ActionEffect::default()
+        },
+        AppAction::LoadModels { provider } => ActionEffect {
+            load_models: Some(provider),
+            ..ActionEffect::default()
+        },
+        AppAction::Hide { session_ids } => ActionEffect {
+            hide_session_ids: session_ids,
+            ..ActionEffect::default()
+        },
+        AppAction::Launch {
+            provider,
+            model,
+            prompt,
+        } => {
+            let result = control.launch_session(provider.clone(), model, prompt);
+            match result {
+                Ok(outcome) => {
+                    app.set_notice(outcome.message);
+                    ActionEffect {
+                        refresh: true,
+                        pending_launch: outcome
+                            .provider_session_hint
+                            .map(|provider_session_id| (provider, provider_session_id)),
+                        ..ActionEffect::default()
+                    }
+                }
+                Err(error) => {
+                    app.set_notice(format!("launch failed: {error:#}"));
+                    ActionEffect {
+                        refresh: true,
+                        ..ActionEffect::default()
+                    }
+                }
+            }
+        }
+        other => ActionEffect {
+            refresh: handle_action_legacy(terminal, app, other, control),
+            ..ActionEffect::default()
+        },
+    }
+}
+
+#[cfg(test)]
 fn handle_action<T: DashboardTerminal, C: DashboardControl>(
     terminal: &mut T,
     app: &mut App,
     action: AppAction,
     control: &C,
 ) -> bool {
+    dispatch_action(terminal, app, action, control).refresh
+}
+
+fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
+    terminal: &mut T,
+    app: &mut App,
+    action: AppAction,
+    control: &C,
+) -> bool {
     match action {
-        AppAction::None | AppAction::Quit => false,
+        AppAction::None
+        | AppAction::Quit
+        | AppAction::SetCompletedVisibility { .. }
+        | AppAction::LoadModels { .. }
+        | AppAction::Hide { .. } => false,
         AppAction::Refresh => {
             app.set_notice("refreshing provider sessions…");
             true
@@ -434,17 +696,7 @@ fn handle_action<T: DashboardTerminal, C: DashboardControl>(
             }
             true
         }
-        AppAction::Launch {
-            provider,
-            model,
-            prompt,
-        } => {
-            match control.launch_session(provider, model, prompt) {
-                Ok(outcome) => app.set_notice(outcome.message),
-                Err(error) => app.set_notice(format!("launch failed: {error:#}")),
-            }
-            true
-        }
+        AppAction::Launch { .. } => unreachable!("launch actions are dispatched with effects"),
         AppAction::Reply { session_id, prompt } => {
             let Some(session) = app
                 .snapshot
@@ -864,6 +1116,30 @@ mod tests {
     }
 
     #[test]
+    fn control_x_starts_the_same_exact_stop_confirmation_from_peek() {
+        let mut app = app();
+        app.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Interrupt);
+        app.toggle_peek();
+
+        assert_eq!(handle_key(&mut app, control_key('x')), AppAction::None);
+        assert!(matches!(
+            app.overlay,
+            Overlay::Confirm(crate::app::ConfirmTarget::Session {
+                ref id,
+                running: true
+            }) if id == "worker"
+        ));
+        assert_eq!(
+            handle_key(&mut app, control_key('x')),
+            AppAction::Interrupt {
+                session_id: "worker".into()
+            }
+        );
+    }
+
+    #[test]
     fn control_a_refuses_active_and_unowned_completed_sessions() {
         let mut app = app();
         handle_key(&mut app, control_key('a'));
@@ -1062,6 +1338,44 @@ mod tests {
         assert_eq!(app.input, "x");
     }
 
+    #[test]
+    fn model_picker_keys_filter_page_select_and_cancel_without_editing_the_draft() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Pi,
+            vec![LaunchTarget {
+                provider: Provider::Pi,
+                supports_model: true,
+            }],
+        );
+        app.start_new_session(Some('x'));
+        assert_eq!(app.open_model_picker(), AppAction::LoadModels { provider: Provider::Pi });
+        app.set_available_models(
+            Provider::Pi,
+            Ok((0..25).map(|index| format!("provider/model-{index:02}")).collect()),
+        );
+
+        handle_key(&mut app, key(KeyCode::Down));
+        assert_eq!(app.model_selection, 1);
+        handle_key(&mut app, key(KeyCode::PageDown));
+        assert_eq!(app.model_selection, 11);
+        handle_key(&mut app, key(KeyCode::PageUp));
+        assert_eq!(app.model_selection, 1);
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.model_selection, 2);
+        handle_key(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.model_selection, 1);
+        handle_key(&mut app, key(KeyCode::Char('2')));
+        assert_eq!(app.model_filter, "2");
+        handle_key(&mut app, key(KeyCode::Backspace));
+        assert!(app.model_filter.is_empty());
+        assert_eq!(app.input, "x");
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "x");
+    }
+
     #[derive(Default)]
     struct FakeTerminal {
         calls: Vec<&'static str>,
@@ -1091,6 +1405,7 @@ mod tests {
     struct FakeControl {
         calls: Mutex<Vec<String>>,
         fail_on: Option<&'static str>,
+        launch_hint: Option<&'static str>,
     }
 
     impl FakeControl {
@@ -1125,7 +1440,9 @@ mod tests {
             _model: Option<String>,
             prompt: String,
         ) -> Result<ControlOutcome> {
-            self.invoke("launch", prompt)
+            let mut outcome = self.invoke("launch", prompt)?;
+            outcome.provider_session_hint = self.launch_hint.map(str::to_owned);
+            Ok(outcome)
         }
 
         fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
@@ -1273,6 +1590,109 @@ mod tests {
     }
 
     #[test]
+    fn launch_effect_carries_exact_provider_hint_for_post_launch_selection() {
+        let mut app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl {
+            launch_hint: Some("provider-id"),
+            ..FakeControl::default()
+        };
+
+        let effect = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Launch {
+                provider: Provider::Pi,
+                model: Some("openai/gpt-5".into()),
+                prompt: "build".into(),
+            },
+            &control,
+        );
+
+        assert!(effect.refresh);
+        assert_eq!(
+            effect.pending_launch,
+            Some((Provider::Pi, "provider-id".into()))
+        );
+        assert_eq!(*control.calls.lock().unwrap(), vec!["launch:build"]);
+    }
+
+    #[test]
+    fn pending_launch_selection_requires_both_provider_and_provider_session_id() {
+        let mut app = app();
+        app.snapshot.sessions[0].provider = Provider::Claude;
+        app.snapshot.sessions[0].provider_session_id = "same".into();
+        let mut pi = app.snapshot.sessions[0].clone();
+        pi.id = "pi:host:same".into();
+        pi.provider = Provider::Pi;
+        app.snapshot.sessions.push(pi);
+        let pending = PendingLaunch {
+            provider: Provider::Pi,
+            provider_session_id: "same".into(),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+
+        assert!(select_pending_launch(&mut app, Some(&pending)));
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("pi:host:same".into()))
+        );
+        let missing = PendingLaunch {
+            provider: Provider::Codex,
+            ..pending
+        };
+        assert!(!select_pending_launch(&mut app, Some(&missing)));
+    }
+
+    #[test]
+    fn completed_and_model_actions_are_returned_as_nonblocking_loop_effects() {
+        let mut app = app();
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl::default();
+        let completed = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::SetCompletedVisibility {
+                include_completed: true,
+            },
+            &control,
+        );
+        assert!(completed.refresh);
+        assert_eq!(completed.completed_visibility, Some(true));
+
+        let models = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::LoadModels {
+                provider: Provider::OpenCode,
+            },
+            &control,
+        );
+        assert!(!models.refresh);
+        assert_eq!(models.load_models, Some(Provider::OpenCode));
+        assert!(control.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn refresh_queue_carries_the_latest_discovery_request() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut in_flight = false;
+        let mut request = DiscoveryRequest {
+            include_completed: false,
+            include_interactive: false,
+            cwd: None,
+        };
+        schedule_refresh(&sender, &request, &mut in_flight).unwrap();
+        assert!(!receiver.recv().unwrap().include_completed);
+
+        in_flight = false;
+        request.include_completed = true;
+        schedule_refresh(&sender, &request, &mut in_flight).unwrap();
+        assert!(receiver.recv().unwrap().include_completed);
+        assert!(in_flight);
+    }
+
+    #[test]
     fn action_dispatch_rejects_every_stale_session_id_without_side_effects() {
         let actions = vec![
             AppAction::Inspect {
@@ -1375,6 +1795,7 @@ mod tests {
             let control = FakeControl {
                 calls: Mutex::default(),
                 fail_on: Some(operation),
+                launch_hint: None,
             };
             assert!(handle_action(&mut terminal, &mut app, action, &control));
             assert!(app.notice.as_deref().unwrap().contains(expected));
@@ -1389,6 +1810,7 @@ mod tests {
         let control = FakeControl {
             calls: Mutex::default(),
             fail_on: Some("inspect"),
+            launch_hint: None,
         };
 
         assert!(!handle_action(
@@ -1425,6 +1847,7 @@ mod tests {
         let control = FakeControl {
             calls: Mutex::default(),
             fail_on: Some("open"),
+            launch_hint: None,
         };
         assert!(handle_action(
             &mut terminal,
@@ -1489,6 +1912,7 @@ mod tests {
         let control = FakeControl {
             calls: Mutex::default(),
             fail_on: Some("delete"),
+            launch_hint: None,
         };
 
         assert!(handle_action(

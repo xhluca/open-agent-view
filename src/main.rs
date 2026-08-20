@@ -18,6 +18,7 @@ use open_agent_view::adapters::{CursorSource, CursorSupervisor};
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
+use open_agent_view::hidden::{HiddenSessionRecord, HiddenSessions};
 use open_agent_view::maintenance::{
     execute_completed_archive, plan_completed_archive, BulkArchiveReport,
 };
@@ -79,6 +80,19 @@ enum SessionCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// Hide one exact normalized session ID locally without changing provider history.
+    Hide {
+        /// Stable ID from the dashboard Peek view or `coding-agents --json`.
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
+    },
+    /// Reveal one locally hidden session ID again.
+    Unhide {
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
+    },
+    /// List session IDs hidden only from Open Agent View.
+    Hidden,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -455,9 +469,11 @@ fn main() -> Result<()> {
             engine.add_source(CodexSource::docker(target.name, target.id, display_image));
         }
     }
+    let hidden_sessions = HiddenSessions::load_default()?;
     if cli.json {
         let mut snapshot = engine.discover(&request);
         control.enrich(&mut snapshot);
+        hidden_sessions.filter_snapshot(&mut snapshot);
         serde_json::to_writer_pretty(io::stdout().lock(), &snapshot)?;
         println!();
         return Ok(());
@@ -472,6 +488,7 @@ fn main() -> Result<()> {
         &request,
         Duration::from_millis(cli.refresh_ms),
         &control,
+        hidden_sessions,
     )?;
 
     Ok(())
@@ -497,7 +514,77 @@ fn run_session_command(command: &SessionCommand, cli: &Cli) -> Result<()> {
             limit,
             yes,
         } => run_completed_archive(cli, cwd.as_deref(), *older_than_days, *limit as usize, *yes),
+        SessionCommand::Hide { session_id } => {
+            let registry = HiddenSessions::load_default()?;
+            let inserted = registry.hide_id(session_id)?;
+            if cli.json {
+                serde_json::to_writer_pretty(io::stdout().lock(), &registry.list())?;
+                println!();
+            } else if inserted {
+                println!(
+                    "Hidden {} from Open Agent View. Provider history was not changed.",
+                    sanitize_cli_text(session_id)
+                );
+            } else {
+                println!(
+                    "{} is already hidden. Provider history was not changed.",
+                    sanitize_cli_text(session_id)
+                );
+            }
+            Ok(())
+        }
+        SessionCommand::Unhide { session_id } => {
+            let registry = HiddenSessions::load_default()?;
+            let removed = registry.unhide(session_id)?;
+            if cli.json {
+                serde_json::to_writer_pretty(io::stdout().lock(), &removed)?;
+                println!();
+            } else if removed.is_some() {
+                println!(
+                    "Unhid {}. It will return if provider discovery still reports it.",
+                    sanitize_cli_text(session_id)
+                );
+            } else {
+                println!("{} was not hidden.", sanitize_cli_text(session_id));
+            }
+            Ok(())
+        }
+        SessionCommand::Hidden => {
+            let registry = HiddenSessions::load_default()?;
+            print_hidden_sessions(&registry.list(), cli.json)
+        }
     }
+}
+
+fn print_hidden_sessions(records: &[HiddenSessionRecord], json: bool) -> Result<()> {
+    if json {
+        serde_json::to_writer_pretty(io::stdout().lock(), records)?;
+        println!();
+        return Ok(());
+    }
+    if records.is_empty() {
+        println!("No sessions are hidden from Open Agent View.");
+        return Ok(());
+    }
+    println!(
+        "Locally hidden sessions (provider history is retained): {}",
+        records.len()
+    );
+    for record in records {
+        let provider = record
+            .provider
+            .as_ref()
+            .map(Provider::label)
+            .unwrap_or("unknown provider");
+        let name = record.name.as_deref().unwrap_or("unknown name");
+        println!(
+            "  {}  {}  {}",
+            sanitize_cli_text(&record.id),
+            sanitize_cli_text(provider),
+            sanitize_cli_text(name)
+        );
+    }
+    Ok(())
 }
 
 fn run_completed_archive(

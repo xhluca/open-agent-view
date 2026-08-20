@@ -52,6 +52,9 @@ pub enum ConfirmTarget {
     Archive {
         id: String,
     },
+    Hide {
+        session_ids: Vec<String>,
+    },
     Group {
         key: String,
         session_ids: Vec<String>,
@@ -103,6 +106,9 @@ pub enum AppAction {
         session_id: String,
     },
     Delete {
+        session_ids: Vec<String>,
+    },
+    Hide {
         session_ids: Vec<String>,
     },
 }
@@ -639,10 +645,10 @@ impl App {
                 Capability::Delete
             };
             if !session.capabilities.contains(&required) {
-                self.set_notice(format!(
-                    "{} is observe-only; {:?} authority was not granted",
-                    session.name, required
-                ));
+                self.overlay = Overlay::Confirm(ConfirmTarget::Hide {
+                    session_ids: vec![session.id.clone()],
+                });
+                self.notice = None;
                 return;
             }
             self.overlay = Overlay::Confirm(ConfirmTarget::Session {
@@ -659,13 +665,21 @@ impl App {
                 self.set_notice("bulk stop is unavailable; select one running session");
                 return;
             }
-            let deletable = group.sessions.iter().all(|index| {
-                self.snapshot.sessions[*index]
-                    .capabilities
-                    .contains(&Capability::Delete)
-            });
-            if !deletable {
-                self.set_notice("this group includes observe-only sessions");
+            let undeletable = group
+                .sessions
+                .iter()
+                .filter(|index| {
+                    !self.snapshot.sessions[**index]
+                        .capabilities
+                        .contains(&Capability::Delete)
+                })
+                .map(|index| self.snapshot.sessions[*index].id.clone())
+                .collect::<Vec<_>>();
+            if !undeletable.is_empty() {
+                self.overlay = Overlay::Confirm(ConfirmTarget::Hide {
+                    session_ids: undeletable,
+                });
+                self.notice = None;
                 return;
             }
             self.overlay = Overlay::Confirm(ConfirmTarget::Group {
@@ -811,6 +825,7 @@ impl App {
                 session_ids: vec![id],
             },
             ConfirmTarget::Archive { id } => AppAction::Archive { session_id: id },
+            ConfirmTarget::Hide { session_ids } => AppAction::Hide { session_ids },
             ConfirmTarget::Group { session_ids, .. } => AppAction::Delete { session_ids },
         }
     }
@@ -1756,13 +1771,17 @@ mod tests {
     }
 
     #[test]
-    fn active_and_idle_session_confirmations_require_exact_authority() {
+    fn active_and_idle_session_confirmations_mutate_only_with_authority_or_hide_locally() {
         let mut active = session("active", SessionState::ReadyForReview);
         active.capabilities.clear();
         let mut app = app_with(vec![active]);
         app.start_confirm();
-        assert_eq!(app.overlay, Overlay::None);
-        assert!(app.notice.as_deref().unwrap().contains("Interrupt"));
+        assert_eq!(
+            app.activate(),
+            AppAction::Hide {
+                session_ids: vec!["active".into()]
+            }
+        );
 
         grant(&mut app.snapshot.sessions[0], &[Capability::Interrupt]);
         app.start_confirm();
@@ -1776,7 +1795,12 @@ mod tests {
         app.snapshot.sessions[0].state = SessionState::Completed;
         app.snapshot.sessions[0].capabilities.clear();
         app.start_confirm();
-        assert!(app.notice.as_deref().unwrap().contains("Delete"));
+        assert_eq!(
+            app.activate(),
+            AppAction::Hide {
+                session_ids: vec!["active".into()]
+            }
+        );
         grant(&mut app.snapshot.sessions[0], &[Capability::Delete]);
         app.start_confirm();
         assert_eq!(
@@ -1788,7 +1812,7 @@ mod tests {
     }
 
     #[test]
-    fn completed_group_delete_is_all_or_nothing_and_preserves_order() {
+    fn completed_group_never_mixes_provider_deletion_with_local_hiding() {
         let mut one = session("one", SessionState::Completed);
         let two = session("two", SessionState::Completed);
         grant(&mut one, &[Capability::Delete]);
@@ -1796,10 +1820,11 @@ mod tests {
         app.selection = Some(SelectionKey::Group("state:Completed".into()));
 
         app.start_confirm();
-        assert_eq!(app.overlay, Overlay::None);
         assert_eq!(
-            app.notice.as_deref(),
-            Some("this group includes observe-only sessions")
+            app.activate(),
+            AppAction::Hide {
+                session_ids: vec!["two".into()]
+            }
         );
 
         grant(&mut app.snapshot.sessions[1], &[Capability::Delete]);

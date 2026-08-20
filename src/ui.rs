@@ -715,7 +715,7 @@ fn session_control_suffix(session: &AgentSession) -> &'static str {
         if session.capabilities.contains(&Capability::Interrupt) {
             " · ctrl+x to stop"
         } else {
-            " · observe-only"
+            " · ctrl+x hide locally"
         }
     } else if session.capabilities.contains(&Capability::Delete)
         && session.capabilities.contains(&Capability::Archive)
@@ -724,7 +724,7 @@ fn session_control_suffix(session: &AgentSession) -> &'static str {
     } else if session.capabilities.contains(&Capability::Delete) {
         " · ctrl+x delete"
     } else {
-        " · observe-only"
+        " · ctrl+x hide locally"
     }
 }
 
@@ -786,7 +786,7 @@ fn help_actions(app: &App) -> Vec<String> {
         {
             Some("ctrl+x to delete")
         } else {
-            None
+            Some("ctrl+x to hide locally")
         };
         if let Some(action) = action {
             actions.push(action.into());
@@ -1043,6 +1043,13 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
         ConfirmTarget::Archive { id } => {
             format!("Archive the exact session?\n\n{id}\n\nEnter confirms; escape keeps it.")
         }
+        ConfirmTarget::Hide { session_ids } => format!(
+            "Hide {} session{} only from Open Agent View?{}\n\nProvider history and live processes are retained. Use `coding-agents sessions hidden` and `coding-agents sessions unhide SESSION_ID` to reverse this.\n\nEnter hides locally; escape keeps {} visible.",
+            session_ids.len(),
+            if session_ids.len() == 1 { "" } else { "s" },
+            if session_ids.len() == 1 { format!("\n\n{}", session_ids[0]) } else { String::new() },
+            if session_ids.len() == 1 { "it" } else { "them" }
+        ),
         ConfirmTarget::Group { key, session_ids } => format!(
             "Delete all {} sessions in {key}?\n\nEnter confirms; escape keeps them.",
             session_ids.len()
@@ -1557,6 +1564,7 @@ mod tests {
         assert!(rendered.contains("ctrl+s to switch views"));
         assert!(rendered.contains("describe a task · /help for commands"));
         assert!(!rendered.contains("ctrl+x to stop"));
+        assert!(rendered.contains("ctrl+x to hide locally"));
         assert!(!rendered.contains("j/k"));
     }
 
