@@ -142,19 +142,24 @@ impl AppServerClient {
     }
 
     fn connect_process(program: &str, args: &[String]) -> Result<ProcessTransport> {
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "failed to start App Server transport {} {}",
-                    program,
-                    args.join(" ")
-                )
-            })?;
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to start App Server transport {} {}",
+                program,
+                args.join(" ")
+            )
+        })?;
         let stdin = child
             .stdin
             .take()
@@ -364,8 +369,7 @@ impl Drop for AppServerClient {
     fn drop(&mut self) {
         match &mut self.transport {
             ClientTransport::Process(process) => {
-                let _ = process.child.kill();
-                let _ = process.child.wait();
+                terminate_process_transport(process);
                 if let Some(reader) = process.stdout_reader.take() {
                     let _ = reader.join();
                 }
@@ -378,6 +382,37 @@ impl Drop for AppServerClient {
                 let _ = socket.close(None);
             }
         }
+    }
+}
+
+fn terminate_process_transport(process: &mut ProcessTransport) {
+    #[cfg(unix)]
+    {
+        let process_group = process.child.id() as i32;
+        // connect_process created this exact child as a new process-group
+        // leader. Signal the group so npm/shell wrappers cannot leave the
+        // native App Server holding our stdout/stderr pipes forever.
+        let _ = unsafe { libc::kill(-process_group, libc::SIGTERM) };
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            let _ = process.child.try_wait();
+            let group_exists = unsafe { libc::kill(-process_group, 0) } == 0
+                || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+            if !group_exists {
+                break;
+            }
+            if Instant::now() >= deadline {
+                let _ = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        let _ = process.child.wait();
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = process.child.kill();
+        let _ = process.child.wait();
     }
 }
 

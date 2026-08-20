@@ -53,6 +53,8 @@ struct ControlConnection {
     server: Option<SupervisorRecord>,
     client: Option<AppServerClient>,
     pending_requests: Vec<PendingRequest>,
+    terminal_turns: Vec<(String, String)>,
+    deleted_threads: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -97,13 +99,16 @@ struct PendingQuestion {
 /// The server listens on a user-private Unix socket and intentionally outlives
 /// the dashboard process. Each dashboard connection speaks the App Server's
 /// WebSocket protocol directly over that socket.
-/// Persisted PID identity is verified before reuse; this type never signals a
-/// PID loaded from disk.
+/// Persisted PID identity is verified before reuse. Normal dashboard lifecycle
+/// never signals a PID loaded from disk; explicit [`Self::shutdown_server`]
+/// cleanup uses a Linux pidfd and revalidates the exact recorded process before
+/// signaling it.
 pub struct CodexSupervisor {
     codex_bin: String,
     state_dir: PathBuf,
     record_path: PathBuf,
     lock_path: PathBuf,
+    recovery_lock_path: PathBuf,
     client_transport: SupervisorClientTransport,
     response_lease: Option<ResponseLease>,
     control: Mutex<ControlConnection>,
@@ -138,6 +143,21 @@ impl CodexSupervisor {
         )
     }
 
+    /// Construct a supervisor rooted in an explicit private state directory.
+    ///
+    /// This is intended for isolated integration tests and operator-managed
+    /// sandboxes. Normal dashboards should use [`Self::host`].
+    pub fn with_isolated_state_dir(
+        codex_bin: impl Into<String>,
+        state_dir: PathBuf,
+    ) -> Result<Self> {
+        Self::with_state_dir_and_transport(
+            codex_bin,
+            state_dir,
+            SupervisorClientTransport::UnixWebSocket,
+        )
+    }
+
     #[cfg(all(test, target_os = "linux"))]
     fn with_state_dir(codex_bin: impl Into<String>, state_dir: PathBuf) -> Result<Self> {
         Self::with_state_dir_and_transport(
@@ -158,6 +178,7 @@ impl CodexSupervisor {
             codex_bin: codex_bin.into(),
             record_path: state_dir.join("supervisor.json"),
             lock_path: state_dir.join("supervisor.lock"),
+            recovery_lock_path: state_dir.join("recovery.lock"),
             state_dir,
             client_transport,
             response_lease,
@@ -349,15 +370,18 @@ impl CodexSupervisor {
                 "includeTurns": true
             }),
         )?;
-        self.refresh_pending_locked(&mut control, &server)?;
+        let terminal_turns = self.refresh_pending_locked(&mut control, &server)?;
         let mut transcript = format_thread_transcript(&response)?;
-        if let Some(request) = control
+        let pending = control
             .pending_requests
             .iter()
             .find(|request| request.thread_id == session.provider_session_id)
-        {
+            .cloned();
+        drop(control);
+        self.apply_terminal_turns(&server, &terminal_turns)?;
+        if let Some(request) = pending {
             transcript.push_str("\n\n");
-            transcript.push_str(&format_pending_request(request));
+            transcript.push_str(&format_pending_request(&request));
         }
         Ok(limit_transcript(transcript))
     }
@@ -431,7 +455,15 @@ impl CodexSupervisor {
             .control
             .lock()
             .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
-        self.refresh_pending_locked(&mut control, &server)?;
+        let terminal_turns = self.refresh_pending_locked(&mut control, &server)?;
+        if !terminal_turns.is_empty() {
+            drop(control);
+            self.apply_terminal_turns(&server, &terminal_turns)?;
+            control = self
+                .control
+                .lock()
+                .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        }
         let position = control
             .pending_requests
             .iter()
@@ -493,7 +525,15 @@ impl CodexSupervisor {
             .control
             .lock()
             .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
-        self.refresh_pending_locked(&mut control, &server)?;
+        let terminal_turns = self.refresh_pending_locked(&mut control, &server)?;
+        if !terminal_turns.is_empty() {
+            drop(control);
+            self.apply_terminal_turns(&server, &terminal_turns)?;
+            control = self
+                .control
+                .lock()
+                .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        }
         let position = control
             .pending_requests
             .iter()
@@ -584,48 +624,262 @@ impl CodexSupervisor {
             .control
             .lock()
             .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
-        self.control_client(&mut control, &server)?.request(
-            "thread/delete",
-            json!({"threadId": session.provider_session_id}),
-        )?;
-        self.update_record_for_server(&server, |record| {
+        // Unload the idle runtime before destructive deletion. Current Codex
+        // App Servers can otherwise apply deletion while indefinitely
+        // withholding the response from the connection that still owns the
+        // loaded thread. Archive is recoverable if the later delete fails.
+        self.control_client(&mut control, &server)?
+            .request_with_timeout(
+                "thread/archive",
+                json!({"threadId": session.provider_session_id}),
+                Duration::from_secs(10),
+            )?;
+        let params = json!({"threadId": session.provider_session_id});
+        let first = self
+            .control_client(&mut control, &server)?
+            .request_with_timeout("thread/delete", params, Duration::from_secs(5));
+        if let Err(first_error) = first {
+            let terminal_turns = self
+                .refresh_pending_locked(&mut control, &server)
+                .unwrap_or_default();
+            let deleted = control.deleted_threads.remove(&session.provider_session_id);
+            drop(control);
+            self.apply_terminal_turns(&server, &terminal_turns)?;
+            if deleted {
+                return self.remove_owned_thread_after_delete(&server, session);
+            }
+            if !app_server_request_timed_out("thread/delete", &first_error) {
+                return Err(first_error);
+            }
+            return self.recover_idle_server_after_delete_timeout(
+                &server,
+                &session.provider_session_id,
+                &first_error,
+            );
+        }
+        self.remove_owned_thread_after_delete(&server, session)
+    }
+
+    fn remove_owned_thread_after_delete(
+        &self,
+        server: &SupervisorRecord,
+        session: &AgentSession,
+    ) -> Result<()> {
+        self.update_record_for_server(server, |record| {
             record.threads.remove(&session.provider_session_id);
             Ok(())
+        })
+    }
+
+    fn recover_idle_server_after_delete_timeout(
+        &self,
+        server: &SupervisorRecord,
+        thread_id: &str,
+        delete_error: &anyhow::Error,
+    ) -> Result<()> {
+        let active = server
+            .threads
+            .iter()
+            .filter(|(_, thread)| thread.active_turn_id.is_some())
+            .map(|(thread_id, _)| thread_id.as_str())
+            .take(3)
+            .collect::<Vec<_>>();
+        if !active.is_empty() {
+            bail!(
+                "Codex applied no confirmable delete response and the owning server still has active work ({}); refusing to restart it: {delete_error:#}",
+                active.join(", ")
+            );
+        }
+
+        let _recovery = RecoveryLock::acquire_exclusive(&self.recovery_lock_path)?;
+        self.shutdown_server_inner()
+            .context("failed to stop the exact idle Codex App Server after a timed-out deletion")?;
+        let verification =
+            match codex_thread_is_missing_from_fresh_process(&self.codex_bin, thread_id) {
+                Ok(false) => delete_codex_thread_from_fresh_process(&self.codex_bin, thread_id)
+                    .map(|()| true),
+                result => result,
+            };
+
+        // Restore durable ownership on a fresh server whether verification
+        // succeeds or fails. Only the exact confirmed-deleted target is
+        // omitted; all other idle owned tasks remain reconnectable.
+        let replacement = self.ensure_endpoint_inner()?;
+        let missing = matches!(&verification, Ok(true));
+        self.update_record_for_server(&replacement, |record| {
+            record.threads = server.threads.clone();
+            if missing {
+                record.threads.remove(thread_id);
+            }
+            Ok(())
         })?;
-        Ok(())
+
+        match verification {
+            Ok(true) => Ok(()),
+            Ok(false) => bail!(
+                "Codex thread {thread_id} still exists after the idle server recovered from a timed-out delete: {delete_error:#}"
+            ),
+            Err(error) => Err(error).context(format!(
+                "failed to verify Codex thread {thread_id} after idle server recovery; original delete: {delete_error:#}"
+            )),
+        }
+    }
+
+    /// Stop the exact verified App Server process.
+    ///
+    /// Normal dashboard exit deliberately leaves the server running for
+    /// reconnect. This explicit operation is reserved for isolated tests and
+    /// operator cleanup. It requires this process to hold the controller lease,
+    /// opens a stable kernel pidfd, then revalidates the complete persisted
+    /// process identity before sending SIGTERM through that descriptor.
+    pub fn shutdown_server(&self) -> Result<()> {
+        let _recovery = RecoveryLock::acquire_exclusive(&self.recovery_lock_path)?;
+        self.shutdown_server_inner()
+    }
+
+    fn shutdown_server_inner(&self) -> Result<()> {
+        if self.response_lease.is_none() {
+            bail!(
+                "another Open Agent View process holds Codex control authority; refusing to stop its App Server"
+            );
+        }
+        let _lock = StateLock::acquire(&self.lock_path)?;
+        let Some(record) = load_record(&self.record_path, &self.state_dir)? else {
+            return Ok(());
+        };
+        if record.version != RECORD_VERSION {
+            bail!(
+                "unsupported Codex supervisor record version {}",
+                record.version
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::fd::{AsRawFd, FromRawFd};
+
+            let raw_fd =
+                unsafe { libc::syscall(libc::SYS_pidfd_open, record.pid as libc::pid_t, 0_u32) };
+            if raw_fd < 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() == Some(libc::ESRCH) {
+                    return Ok(());
+                }
+                return Err(error).context("failed to open exact Codex App Server pidfd");
+            }
+            let pidfd = unsafe { File::from_raw_fd(raw_fd as i32) };
+            if !verify_process(&record)? {
+                bail!("Codex App Server identity changed before shutdown");
+            }
+
+            // Drop the local protocol connection before asking the server to
+            // exit. The pidfd remains a stable reference even if the numeric
+            // PID is concurrently recycled after termination.
+            let mut control = self
+                .control
+                .lock()
+                .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+            *control = ControlConnection::default();
+            drop(control);
+
+            let sent = unsafe {
+                libc::syscall(
+                    libc::SYS_pidfd_send_signal,
+                    pidfd.as_raw_fd(),
+                    libc::SIGTERM,
+                    std::ptr::null::<libc::siginfo_t>(),
+                    0_u32,
+                )
+            };
+            if sent != 0 {
+                return Err(std::io::Error::last_os_error())
+                    .context("failed to stop exact Codex App Server through pidfd");
+            }
+            let mut descriptor = libc::pollfd {
+                fd: pidfd.as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let polled = unsafe { libc::poll(&mut descriptor, 1, 5_000) };
+            if polled < 0 {
+                return Err(std::io::Error::last_os_error())
+                    .context("failed while waiting for exact Codex App Server exit");
+            }
+            if polled == 0 {
+                let killed = unsafe {
+                    libc::syscall(
+                        libc::SYS_pidfd_send_signal,
+                        pidfd.as_raw_fd(),
+                        libc::SIGKILL,
+                        std::ptr::null::<libc::siginfo_t>(),
+                        0_u32,
+                    )
+                };
+                if killed != 0 {
+                    return Err(std::io::Error::last_os_error())
+                        .context("failed to force-stop exact Codex App Server through pidfd");
+                }
+                descriptor.revents = 0;
+                let killed_poll = unsafe { libc::poll(&mut descriptor, 1, 2_000) };
+                if killed_poll < 0 {
+                    return Err(std::io::Error::last_os_error())
+                        .context("failed while waiting for force-stopped Codex App Server exit");
+                }
+                if killed_poll == 0 {
+                    bail!("timed out waiting for force-stopped exact Codex App Server to exit");
+                }
+            }
+
+            // Reap only when this dashboard is still the process parent. A
+            // reconnected dashboard receives ECHILD and safely ignores it.
+            let mut status = 0;
+            let _ = unsafe { libc::waitpid(record.pid as i32, &mut status, libc::WNOHANG) };
+            remove_record_if_same_server(&self.record_path, &self.state_dir, &record)?;
+            Ok(())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = record;
+            bail!("durable Codex App Server shutdown currently requires Linux")
+        }
     }
 
     pub fn enrich(&self, snapshot: &mut SessionSnapshot) {
         let Ok(mut record) = self.live_record() else {
             return;
         };
-        let pending_requests = match self.control.lock() {
+        let (pending_requests, terminal_turns) = match self.control.lock() {
             Ok(mut control) => {
+                let mut terminal_turns = Vec::new();
                 if self.response_lease.is_some()
                     && record
                         .threads
                         .values()
                         .any(|thread| thread.active_turn_id.is_some())
                 {
-                    if let Err(error) = self.refresh_pending_locked(&mut control, &record) {
-                        control.client = None;
-                        control.server = None;
-                        control.pending_requests.clear();
-                        snapshot.warnings.push(format!(
-                            "Codex control request synchronization failed: {error:#}"
-                        ));
+                    match self.refresh_pending_locked(&mut control, &record) {
+                        Ok(observed) => terminal_turns = observed,
+                        Err(error) => {
+                            control.client = None;
+                            control.server = None;
+                            control.pending_requests.clear();
+                            control.terminal_turns.clear();
+                            snapshot.warnings.push(format!(
+                                "Codex control request synchronization failed: {error:#}"
+                            ));
+                        }
                     }
                 }
-                control.pending_requests.clone()
+                (control.pending_requests.clone(), terminal_turns)
             }
             Err(_) => {
                 snapshot
                     .warnings
                     .push("Codex supervisor connection lock was poisoned".into());
-                Vec::new()
+                (Vec::new(), Vec::new())
             }
         };
-        let mut changed = false;
+        let changed = clear_terminal_turns(&mut record, &terminal_turns);
         for session in &mut snapshot.sessions {
             if session.provider != Provider::Codex || session.runtime != Runtime::Host {
                 continue;
@@ -673,6 +927,14 @@ impl CodexSupervisor {
                     _ => {}
                 }
             }
+            // A just-started turn can briefly race a stale idle thread/read
+            // snapshot. Keep the exact owned turn authoritative until its
+            // matching turn/completed notification (or resume payload) is
+            // observed, so interrupt/reply authority cannot disappear.
+            if session.state == SessionState::Completed && owned.active_turn_id.is_some() {
+                session.state = SessionState::Working;
+                session.raw_state = Some("owned_active_turn_awaiting_terminal_event".into());
+            }
             if matches!(
                 session.state,
                 SessionState::Working | SessionState::NeedsInput
@@ -682,10 +944,6 @@ impl CodexSupervisor {
                 if session.state == SessionState::Working {
                     session.capabilities.insert(Capability::Reply);
                 }
-            } else if session.state == SessionState::Completed
-                && owned.active_turn_id.take().is_some()
-            {
-                changed = true;
             }
             if session.state == SessionState::Completed && owned.active_turn_id.is_none() {
                 session.capabilities.insert(Capability::Reply);
@@ -729,10 +987,10 @@ impl CodexSupervisor {
         if !current_matches || control.client.is_none() {
             let mut client = AppServerClient::connect(&self.client_invocation(server))?;
             for (thread_id, thread) in &server.threads {
-                if thread.active_turn_id.is_none() {
+                let Some(active_turn_id) = thread.active_turn_id.as_deref() else {
                     continue;
-                }
-                client.request(
+                };
+                let resumed = client.request(
                     "thread/resume",
                     json!({
                         "threadId": thread_id,
@@ -741,6 +999,11 @@ impl CodexSupervisor {
                         "sandbox": "workspace-write"
                     }),
                 )?;
+                if resume_reports_terminal_turn(&resumed, active_turn_id) {
+                    control
+                        .terminal_turns
+                        .push((thread_id.clone(), active_turn_id.to_owned()));
+                }
             }
             control.pending_requests.clear();
             control.client = Some(client);
@@ -753,12 +1016,35 @@ impl CodexSupervisor {
         &self,
         control: &mut ControlConnection,
         server: &SupervisorRecord,
-    ) -> Result<()> {
+    ) -> Result<Vec<(String, String)>> {
         let events = self.control_client(control, server)?.drain_events()?;
         for event in events {
+            if let Some(terminal) = terminal_turn_from_event(server, &event) {
+                control.pending_requests.retain(|request| {
+                    request.thread_id != terminal.0 || request.turn_id != terminal.1
+                });
+                control.terminal_turns.push(terminal);
+            }
+            if let Some(thread_id) = deleted_thread_from_event(server, &event) {
+                control.deleted_threads.insert(thread_id);
+            }
             reconcile_pending_event(&mut control.pending_requests, server, event)?;
         }
-        Ok(())
+        Ok(std::mem::take(&mut control.terminal_turns))
+    }
+
+    fn apply_terminal_turns(
+        &self,
+        server: &SupervisorRecord,
+        terminal_turns: &[(String, String)],
+    ) -> Result<()> {
+        if terminal_turns.is_empty() {
+            return Ok(());
+        }
+        self.update_record_for_server(server, |record| {
+            clear_terminal_turns(record, terminal_turns);
+            Ok(())
+        })
     }
 
     fn client_invocation(&self, server: &SupervisorRecord) -> AppServerInvocation {
@@ -787,6 +1073,11 @@ impl CodexSupervisor {
     }
 
     fn ensure_endpoint(&self) -> Result<SupervisorRecord> {
+        let _recovery = RecoveryLock::acquire_shared(&self.recovery_lock_path)?;
+        self.ensure_endpoint_inner()
+    }
+
+    fn ensure_endpoint_inner(&self) -> Result<SupervisorRecord> {
         let _lock = StateLock::acquire(&self.lock_path)?;
         if let Some(record) = load_record(&self.record_path, &self.state_dir)? {
             if record.version != RECORD_VERSION {
@@ -877,11 +1168,22 @@ impl CodexSupervisor {
             let _ = child.wait();
             return Err(error).context("new Codex App Server never opened its socket");
         }
-        // Read identity only after the executable has opened the socket. This
-        // avoids persisting the transient pre-exec command line of shebang or
-        // npm launcher processes.
-        let process_start_token = process_start_token(pid)?;
-        let process_cmdline = process_cmdline(pid)?;
+        // npm launchers may remain as a signal-forwarding parent while a native
+        // child owns the actual listener. Persist the exact process holding the
+        // listening Unix socket, not merely Command::spawn's wrapper PID.
+        let server_pid = match unix_socket_listener_owner(
+            &socket_path,
+            deadline.saturating_duration_since(Instant::now()),
+        ) {
+            Ok(owner) => owner,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error).context("could not identify the Codex App Server listener");
+            }
+        };
+        let process_start_token = process_start_token(server_pid)?;
+        let process_cmdline = process_cmdline(server_pid)?;
         if process_cmdline.is_empty() {
             let _ = child.kill();
             let _ = child.wait();
@@ -890,7 +1192,7 @@ impl CodexSupervisor {
 
         let record = SupervisorRecord {
             version: RECORD_VERSION,
-            pid,
+            pid: server_pid,
             process_start_token,
             process_cmdline,
             codex_bin: self.codex_bin.clone(),
@@ -939,6 +1241,167 @@ impl CodexSupervisor {
         }
         save_record(&self.record_path, replacement)
     }
+}
+
+fn terminal_turn_from_event(server: &SupervisorRecord, event: &Value) -> Option<(String, String)> {
+    if event.get("method").and_then(Value::as_str) != Some("turn/completed") {
+        return None;
+    }
+    let thread_id = event.pointer("/params/threadId")?.as_str()?;
+    let turn_id = event.pointer("/params/turn/id")?.as_str()?;
+    let status = event.pointer("/params/turn/status")?.as_str()?;
+    if !turn_status_is_terminal(status)
+        || server
+            .threads
+            .get(thread_id)
+            .and_then(|thread| thread.active_turn_id.as_deref())
+            != Some(turn_id)
+    {
+        return None;
+    }
+    Some((thread_id.to_owned(), turn_id.to_owned()))
+}
+
+fn resume_reports_terminal_turn(response: &Value, active_turn_id: &str) -> bool {
+    response
+        .pointer("/thread/turns")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|turn| {
+            turn.get("id").and_then(Value::as_str) == Some(active_turn_id)
+                && turn
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .is_some_and(turn_status_is_terminal)
+        })
+}
+
+fn turn_status_is_terminal(status: &str) -> bool {
+    matches!(status, "completed" | "interrupted" | "failed")
+}
+
+fn deleted_thread_from_event(server: &SupervisorRecord, event: &Value) -> Option<String> {
+    if event.get("method").and_then(Value::as_str) != Some("thread/deleted") {
+        return None;
+    }
+    let thread_id = event.pointer("/params/threadId")?.as_str()?;
+    server
+        .threads
+        .contains_key(thread_id)
+        .then(|| thread_id.to_owned())
+}
+
+fn app_server_request_timed_out(method: &str, error: &anyhow::Error) -> bool {
+    let message = format!("{error:#}").to_ascii_lowercase();
+    message.contains(&format!("waiting for {method}"))
+        && (message.contains("timed out") || message.contains("resource temporarily unavailable"))
+}
+
+fn codex_thread_is_missing(client: &mut AppServerClient, thread_id: &str) -> Result<bool> {
+    const PAGE_SIZE: u64 = 100;
+    const MAX_PAGES: usize = 100;
+    for archived in [false, true] {
+        let mut cursor: Option<String> = None;
+        for _ in 0..MAX_PAGES {
+            let response = client.request_with_timeout(
+                "thread/list",
+                json!({
+                    "archived": archived,
+                    "cursor": cursor,
+                    "limit": PAGE_SIZE,
+                    "sortKey": "updated_at",
+                    "sortDirection": "desc"
+                }),
+                Duration::from_secs(15),
+            )?;
+            let data = response
+                .get("data")
+                .and_then(Value::as_array)
+                .context("thread/list deletion check omitted data")?;
+            if data
+                .iter()
+                .any(|thread| thread.get("id").and_then(Value::as_str) == Some(thread_id))
+            {
+                return Ok(false);
+            }
+            cursor = response
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        if cursor.is_some() {
+            bail!(
+                "Codex {} thread inventory exceeded the 10,000-record deletion verification cap",
+                if archived { "archived" } else { "ordinary" }
+            );
+        }
+    }
+    Ok(true)
+}
+
+fn codex_thread_is_missing_from_fresh_process(codex_bin: &str, thread_id: &str) -> Result<bool> {
+    let mut last_error = None;
+    for attempt in 0..3 {
+        if attempt > 0 {
+            thread::sleep(Duration::from_millis(250 * attempt as u64));
+        }
+        let result = AppServerClient::connect(&AppServerInvocation::direct(codex_bin))
+            .context("failed to start an independent Codex deletion observer")
+            .and_then(|mut observer| codex_thread_is_missing(&mut observer, thread_id));
+        match result {
+            Ok(missing) => return Ok(missing),
+            Err(error) => last_error = Some(error),
+        }
+    }
+    Err(last_error.expect("fresh Codex observer attempted at least once"))
+        .context("Codex deletion observer did not recover after three isolated attempts")
+}
+
+fn delete_codex_thread_from_fresh_process(codex_bin: &str, thread_id: &str) -> Result<()> {
+    let mut client = AppServerClient::connect(&AppServerInvocation::direct(codex_bin))
+        .context("failed to start an independent Codex deletion worker")?;
+    let result = client.request_with_timeout(
+        "thread/delete",
+        json!({"threadId": thread_id}),
+        Duration::from_secs(15),
+    );
+    if result.is_ok() {
+        return Ok(());
+    }
+    let notification = client
+        .drain_events()
+        .unwrap_or_default()
+        .into_iter()
+        .any(|event| {
+            event.get("method").and_then(Value::as_str) == Some("thread/deleted")
+                && event.pointer("/params/threadId").and_then(Value::as_str) == Some(thread_id)
+        });
+    if notification {
+        Ok(())
+    } else {
+        Err(result.expect_err("failed deletion result checked above"))
+            .context("fresh Codex deletion worker did not confirm the exact thread")
+    }
+}
+
+fn clear_terminal_turns(
+    record: &mut SupervisorRecord,
+    terminal_turns: &[(String, String)],
+) -> bool {
+    let mut changed = false;
+    for (thread_id, turn_id) in terminal_turns {
+        if let Some(thread) = record.threads.get_mut(thread_id) {
+            if thread.active_turn_id.as_deref() == Some(turn_id) {
+                thread.active_turn_id = None;
+                changed = true;
+            }
+        }
+    }
+    changed
 }
 
 fn reconcile_pending_event(
@@ -1495,6 +1958,44 @@ fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
     fs::rename(&temporary, path).with_context(|| format!("failed to replace {}", path.display()))
 }
 
+fn remove_record_if_same_server(
+    record_path: &Path,
+    state_dir: &Path,
+    stopped: &SupervisorRecord,
+) -> Result<()> {
+    let Some(current) = load_record(record_path, state_dir)? else {
+        return Ok(());
+    };
+    if !current.same_process(stopped) {
+        bail!("Codex supervisor identity changed before shutdown cleanup");
+    }
+    if let Ok(metadata) = fs::symlink_metadata(&current.socket_path) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileTypeExt;
+            if !metadata.file_type().is_socket() {
+                bail!("refusing to remove a non-socket Codex endpoint during cleanup");
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = metadata;
+        }
+        fs::remove_file(&current.socket_path).with_context(|| {
+            format!(
+                "failed to remove stopped Codex socket {}",
+                current.socket_path.display()
+            )
+        })?;
+    }
+    fs::remove_file(record_path).with_context(|| {
+        format!(
+            "failed to remove stopped Codex record {}",
+            record_path.display()
+        )
+    })
+}
+
 fn verify_process(record: &SupervisorRecord) -> Result<bool> {
     let start = match process_start_token(record.pid) {
         Ok(start) => start,
@@ -1568,6 +2069,71 @@ fn process_cmdline(_: u32) -> Result<Vec<u8>> {
     bail!("process command-line verification is unavailable on this platform")
 }
 
+#[cfg(target_os = "linux")]
+fn unix_socket_listener_owner(path: &Path, timeout: Duration) -> Result<u32> {
+    use std::os::unix::fs::MetadataExt;
+
+    let deadline = Instant::now() + timeout;
+    let expected_path = path.to_string_lossy();
+    let expected_listen = format!("unix://{expected_path}");
+    loop {
+        let table = fs::read_to_string("/proc/net/unix")?;
+        let inode = table.lines().skip(1).find_map(|line| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            (fields.len() >= 8 && fields[7..].join(" ") == expected_path)
+                .then(|| fields[6].to_owned())
+        });
+        if let Some(inode) = inode {
+            let descriptor = PathBuf::from(format!("socket:[{inode}]"));
+            for entry in fs::read_dir("/proc")? {
+                let entry = entry?;
+                let Some(pid) = entry
+                    .file_name()
+                    .to_str()
+                    .and_then(|value| value.parse::<u32>().ok())
+                else {
+                    continue;
+                };
+                let Ok(metadata) = entry.metadata() else {
+                    continue;
+                };
+                if metadata.uid() != effective_uid()? {
+                    continue;
+                }
+                let Ok(fds) = fs::read_dir(entry.path().join("fd")) else {
+                    continue;
+                };
+                let owns_descriptor = fds
+                    .filter_map(Result::ok)
+                    .any(|fd| fs::read_link(fd.path()).ok().as_ref() == Some(&descriptor));
+                if !owns_descriptor {
+                    continue;
+                }
+                let cmdline = process_cmdline(pid)?;
+                let exact_listener = cmdline
+                    .split(|byte| *byte == 0)
+                    .filter_map(|argument| std::str::from_utf8(argument).ok())
+                    .any(|argument| argument == expected_listen);
+                if exact_listener {
+                    return Ok(pid);
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "timed out resolving the process that owns Unix socket {}",
+                path.display()
+            );
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn unix_socket_listener_owner(_: &Path, _: Duration) -> Result<u32> {
+    bail!("Unix socket listener ownership verification is unavailable on this platform")
+}
+
 fn wait_for_socket(path: &Path, timeout: Duration) -> Result<()> {
     #[cfg(not(unix))]
     {
@@ -1596,6 +2162,10 @@ fn wait_for_socket(path: &Path, timeout: Duration) -> Result<()> {
 }
 
 struct StateLock {
+    file: File,
+}
+
+struct RecoveryLock {
     file: File,
 }
 
@@ -1663,6 +2233,46 @@ impl StateLock {
     }
 }
 
+impl RecoveryLock {
+    fn acquire_shared(path: &Path) -> Result<Self> {
+        Self::acquire(path, false)
+    }
+
+    fn acquire_exclusive(path: &Path) -> Result<Self> {
+        Self::acquire(path, true)
+    }
+
+    fn acquire(path: &Path, exclusive: bool) -> Result<Self> {
+        reject_unsafe_existing_file(path, "Codex recovery lock")?;
+        let mut options = OpenOptions::new();
+        options.create(true).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        }
+        let file = options
+            .open(path)
+            .with_context(|| format!("failed to open recovery lock {}", path.display()))?;
+        verify_private_file(&file, "Codex recovery lock")?;
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let operation = if exclusive {
+                libc::LOCK_EX
+            } else {
+                libc::LOCK_SH
+            };
+            let result = unsafe { libc::flock(file.as_raw_fd(), operation) };
+            if result != 0 {
+                return Err(std::io::Error::last_os_error())
+                    .context("failed to coordinate Codex server recovery");
+            }
+        }
+        Ok(Self { file })
+    }
+}
+
 fn reject_unsafe_existing_file(path: &Path, label: &str) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
@@ -1687,6 +2297,16 @@ fn verify_private_file(file: &File, label: &str) -> Result<()> {
 }
 
 impl Drop for StateLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+        }
+    }
+}
+
+impl Drop for RecoveryLock {
     fn drop(&mut self) {
         #[cfg(unix)]
         {
@@ -1966,6 +2586,81 @@ mod tests {
         assert!(format_pending_request(&pending[0]).contains("deadline has passed"));
     }
 
+    #[test]
+    fn terminal_reconciliation_requires_the_exact_owned_thread_and_turn() {
+        let mut threads = BTreeMap::new();
+        threads.insert(
+            "owned-thread".into(),
+            OwnedThread {
+                cwd: PathBuf::from("/tmp"),
+                created_at_ms: 1,
+                active_turn_id: Some("owned-turn".into()),
+            },
+        );
+        let mut server = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid: std::process::id(),
+            process_start_token: "test".into(),
+            process_cmdline: vec![1],
+            codex_bin: "codex".into(),
+            socket_path: PathBuf::from("/tmp/test.sock"),
+            created_at_ms: 1,
+            threads,
+        };
+        let wrong = json!({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "owned-thread",
+                "turn": {"id": "other-turn", "status": "completed", "items": []}
+            }
+        });
+        assert_eq!(terminal_turn_from_event(&server, &wrong), None);
+
+        let exact = json!({
+            "method": "turn/completed",
+            "params": {
+                "threadId": "owned-thread",
+                "turn": {"id": "owned-turn", "status": "completed", "items": []}
+            }
+        });
+        let terminal = terminal_turn_from_event(&server, &exact).unwrap();
+        assert!(clear_terminal_turns(&mut server, &[terminal]));
+        assert_eq!(server.threads["owned-thread"].active_turn_id, None);
+
+        assert!(resume_reports_terminal_turn(
+            &json!({"thread": {"turns": [
+                {"id": "owned-turn", "status": "interrupted", "items": []}
+            ]}}),
+            "owned-turn"
+        ));
+        assert!(!resume_reports_terminal_turn(
+            &json!({"thread": {"turns": [
+                {"id": "owned-turn", "status": "inProgress", "items": []}
+            ]}}),
+            "owned-turn"
+        ));
+        assert_eq!(
+            deleted_thread_from_event(
+                &server,
+                &json!({
+                    "method": "thread/deleted",
+                    "params": {"threadId": "owned-thread"}
+                })
+            ),
+            Some("owned-thread".into())
+        );
+        assert_eq!(
+            deleted_thread_from_event(
+                &server,
+                &json!({
+                    "method": "thread/deleted",
+                    "params": {"threadId": "external-thread"}
+                })
+            ),
+            None
+        );
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn only_one_process_instance_holds_inline_response_authority() {
@@ -1980,6 +2675,38 @@ mod tests {
 
         let third = CodexSupervisor::with_state_dir("codex", state).unwrap();
         assert!(third.response_lease.is_some());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn explicit_shutdown_requires_authority_and_exact_process_identity() {
+        let directory = tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let mock = directory.path().join("mock-codex.py");
+        fs::write(&mock, MOCK_CODEX).unwrap();
+        fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let first =
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir.clone()).unwrap();
+        first.available_models().unwrap();
+        let original = first.live_record().unwrap();
+        let _process_guard = VerifiedTestProcess(original.clone());
+
+        let second =
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir.clone()).unwrap();
+        assert!(second.shutdown_server().is_err());
+        assert!(verify_process(&original).unwrap());
+
+        let mut tampered = original.clone();
+        tampered.process_cmdline.push(b'x');
+        save_record(&first.record_path, &tampered).unwrap();
+        assert!(first.shutdown_server().is_err());
+        assert!(verify_process(&original).unwrap());
+
+        save_record(&first.record_path, &original).unwrap();
+        first.shutdown_server().unwrap();
+        assert!(!verify_process(&original).unwrap());
+        assert!(!first.record_path.exists());
     }
 
     #[cfg(target_os = "linux")]

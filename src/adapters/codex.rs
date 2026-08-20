@@ -89,18 +89,8 @@ impl CodexSource {
             connection: Mutex::new(None),
         }
     }
-}
 
-impl SessionSource for CodexSource {
-    fn label(&self) -> &str {
-        &self.label
-    }
-
-    fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        Ok(self.discover_with_warnings(request)?.sessions)
-    }
-
-    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
+    fn discover_once(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
         let mut connection = self
             .connection
             .lock()
@@ -203,6 +193,34 @@ impl SessionSource for CodexSource {
             sessions: records,
             warnings,
         })
+    }
+}
+
+impl SessionSource for CodexSource {
+    fn label(&self) -> &str {
+        &self.label
+    }
+
+    fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        Ok(self.discover_with_warnings(request)?.sessions)
+    }
+
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
+        for attempt in 0..2 {
+            match self.discover_once(request) {
+                Ok(discovery) => return Ok(discovery),
+                Err(_) if attempt == 0 => {
+                    let mut connection = self
+                        .connection
+                        .lock()
+                        .map_err(|_| anyhow!("Codex connection lock was poisoned"))?;
+                    *connection = None;
+                    drop(connection);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("Codex discovery has exactly two attempts")
     }
 }
 
@@ -496,6 +514,53 @@ for line in sys.stdin:
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].provider_session_id, "loaded-thread");
         assert_eq!(sessions[0].state, SessionState::Working);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discovery_reconnects_once_after_a_stale_process_transport() {
+        use std::fs;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("flaky-codex");
+        let counter = directory.path().join("starts");
+        fs::write(
+            &executable,
+            format!(
+                r#"#!/usr/bin/env python3
+import json, pathlib, sys
+counter = pathlib.Path({counter:?})
+attempt = int(counter.read_text()) + 1 if counter.exists() else 1
+counter.write_text(str(attempt))
+for line in sys.stdin:
+    message = json.loads(line)
+    method = message.get("method")
+    ident = message.get("id")
+    if ident is None:
+        continue
+    if method == "initialize":
+        result = {{"userAgent": "flaky/1"}}
+    elif method == "thread/loaded/list" and attempt == 1:
+        raise SystemExit(0)
+    elif method == "thread/loaded/list":
+        result = {{"data": []}}
+    else:
+        result = {{}}
+    print(json.dumps({{"id": ident, "result": result}}), flush=True)
+"#,
+                counter = counter.display().to_string()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let source = CodexSource::host(executable.display().to_string());
+
+        assert!(source
+            .discover(&DiscoveryRequest::default())
+            .unwrap()
+            .is_empty());
+        assert_eq!(fs::read_to_string(counter).unwrap(), "2");
     }
 
     #[cfg(unix)]
