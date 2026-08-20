@@ -24,7 +24,7 @@ Install the coding-agents binary from a verified GitHub release.
 Usage: install.sh [OPTIONS]
 
 Options:
-  --version VERSION      Install a specific version (for example, 0.1.9)
+  --version VERSION      Install a specific version (for example, 0.1.10)
   --install-dir DIR      Install directory (default: ~/.local/bin)
   --repo OWNER/REPO      GitHub repository (default: xhluca/open-agent-view)
   -h, --help             Show this help

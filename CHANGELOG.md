@@ -8,6 +8,17 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-08-20
+
+### Fixed
+
+- The native release matrix now runs the managed-Pi two-harness process probe
+  only on Linux, matching Pi's documented durable-supervisor support. Portable
+  state, input-routing, and render tests continue to cover the harness picker
+  on macOS.
+- The failed `v0.1.9` build tag remains immutable and unpublished; no partial
+  release assets were presented as installable.
+
 ## [0.1.9] - 2026-08-20
 
 ### Added

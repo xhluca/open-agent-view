@@ -101,7 +101,7 @@ cancels the pre-attach confirmation.
 
 ## Slash opens the wrong mode or harness selection is unclear
 
-On 0.1.9, `ctrl+f` is the filter. `/` starts a task command: `/help`,
+On 0.1.10, `ctrl+f` is the filter. `/` starts a task command: `/help`,
 `/harness`, `/harness NAME`, `/model NAME`, `/model default`, or `/filter TEXT`;
 `/provider` remains an alias. The composer border always displays the chosen
 harness and model. Press `tab` while composing to open the complete available

@@ -619,6 +619,7 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.exit_cleanly();
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     let _serial = serialize_real_tty_test();
@@ -696,6 +697,7 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     app.send(ESC);
     app.wait_for("slash picker returns to composer", |screen| {
         screen.contains("new task · harness Claude · model default")
+            && !screen.contains("┌ choose harness")
     });
     app.send(ESC);
     app.wait_for("slash harness composer close", |screen| {
@@ -1028,7 +1030,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.9")
+        screen.contains("Open Agent View v0.1.10")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -1357,7 +1359,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.9")
+        screen.contains("Open Agent View v0.1.10")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")
