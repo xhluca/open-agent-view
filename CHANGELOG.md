@@ -8,6 +8,25 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-20
+
+### Fixed
+
+- Existing Pi supervisors created with a bare `pi` executable now reconnect
+  when the configured executable resolves to that same canonical file. A
+  genuinely different executable remains a hard refusal, and no live Pi work
+  is stopped during the migration.
+- Claude background launch no longer kills a slow provider bootstrap after 15
+  seconds. OAV preassigns an exact session ID, records it before starting a
+  detached provider process, and reaps the launcher only after it exits.
+- Exact OAV-owned Codex App Server threads are treated as managed background
+  tasks even when Codex labels their source `cli`, so the default foreground
+  filter cannot hide a newly launched thread.
+- Post-launch refresh temporarily queries completed and interactive results
+  until the exact returned provider ID appears, reveals its group/page, and
+  selects it. A task that finishes before the first refresh explicitly switches
+  the dashboard to completed visibility instead of disappearing.
+
 ## [0.1.13] - 2026-08-20
 
 ### Added

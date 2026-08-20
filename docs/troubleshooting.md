@@ -173,6 +173,13 @@ asynchronously are retried every 250 ms for up to five seconds. If the footer
 eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
 provider in `coding-agents --json --all`.
 
+Version 0.1.14 also handles two fast-completion edge cases: OAV-owned Codex
+threads stay visible even when Codex reports their source as `cli`, and a task
+that is already completed at the first refresh automatically reveals completed
+sessions and selects the exact returned ID. Claude launch preassigns an exact
+session UUID and detaches its documented `--background` bootstrap; a slow cold
+start is no longer killed at a fixed 15-second deadline.
+
 If Codex is missing only inside Open Agent View, confirm `coding-agents doctor`
 and `codex --version` succeed in the same shell. A nonstandard executable can be
 selected with `--codex-bin /absolute/path/to/codex`. Do the equivalent with
@@ -285,6 +292,12 @@ exact daemon to shut down, verifies its exit, and starts the upgraded daemon. If
 any owned work is active, it refuses the upgrade and names up to three active
 sessions; finish or interrupt those exact sessions, then retry. It never kills
 an older daemon or abandons live Pi work just to apply a model selection.
+
+Version 0.1.14 accepts the common upgrade case where an older verified record
+stores `pi` and the current launcher resolves that same file to an absolute
+path such as `~/.local/bin/pi`. Both names must resolve to the same canonical
+executable. The client still refuses a different file, and it does not restart
+or signal the live daemon merely to migrate the spelling of its path.
 
 ## OpenCode supervisor cannot reconnect
 

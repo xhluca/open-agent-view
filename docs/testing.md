@@ -108,7 +108,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.13, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.14, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -191,6 +191,11 @@ checks; the guide also contains release gates that are not yet complete.
   terminal. Both used the same network-disabled, read-only, non-root,
   capability-dropped container profile, and both `--rm` containers were gone
   afterward.
+- The v0.1.14 candidate adds a real slow-subprocess regression for detached
+  Claude launch, canonical executable-resolution tests for legacy Pi
+  supervisors, and an exact read-only probe against the existing managed Codex
+  App Server showing that a newly launched thread remains visible without
+  `--include-interactive`.
 - After the managed-Codex lifecycle fixes, release binary SHA-256
   `efb0a8d8f62f878fc5bb09c6b67da73a871c26f30e7a2dd56d10922a186cbec9`
   was staged mode `0755` and rerun in the same immutable image at a real

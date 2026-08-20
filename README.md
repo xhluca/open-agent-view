@@ -12,13 +12,13 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. The manually published v0.1.13
+> Open Agent View is an early private preview. The manually published v0.1.14
 > binary currently covers Linux x86-64; collaborators authenticate with GitHub
 > to install it. The source remains portable, but macOS and ARM64 artifacts are
 > not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> v0.1.13 was packaged, checksummed, smoke-tested, and published manually after
+> v0.1.14 was packaged, checksummed, smoke-tested, and published manually after
 > the repository's hosted build service remained unavailable. The release page
 > and installer state the exact Linux x86-64 scope.
 
@@ -67,7 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 
 The installer selects a release asset for the current host, verifies its
 SHA-256 checksum, and installs `coding-agents` under `~/.local/bin`. The current
-manual v0.1.13 release is Linux x86-64 only. See the
+manual v0.1.14 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
