@@ -43,6 +43,13 @@ struct ActionEffect {
     hide_session_ids: Vec<String>,
 }
 
+#[derive(Debug)]
+struct LaunchWorkerResult {
+    sequence: u64,
+    provider: Provider,
+    result: Result<ControlOutcome, String>,
+}
+
 pub fn run_dashboard(
     engine: &DiscoveryEngine,
     request: &DiscoveryRequest,
@@ -53,6 +60,7 @@ pub fn run_dashboard(
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
     let (models_tx, models_rx) = mpsc::channel::<(Provider, Result<Vec<String>, String>)>();
+    let (launch_tx, launch_rx) = mpsc::channel::<LaunchWorkerResult>();
     let worker_engine = (*engine).clone();
     let worker_control = control.clone();
     let worker_hidden_sessions = hidden_sessions.clone();
@@ -99,6 +107,7 @@ pub fn run_dashboard(
     let mut refresh_after_current = false;
     let mut pending_launch: Option<PendingLaunch> = None;
     let mut pending_launch_retry_at: Option<Instant> = None;
+    let mut latest_launch_sequence = 0u64;
     let mut needs_draw = true;
     schedule_refresh(
         &refresh_tx,
@@ -151,6 +160,45 @@ pub fn run_dashboard(
                 Err(TryRecvError::Disconnected) => break,
             }
         }
+        let mut completed_launch_needs_refresh = false;
+        loop {
+            match launch_rx.try_recv() {
+                Ok(completed) => {
+                    completed_launch_needs_refresh = true;
+                    if completed.sequence == latest_launch_sequence {
+                        match completed.result {
+                            Ok(outcome) => {
+                                app.set_notice(outcome.message);
+                                pending_launch = outcome.provider_session_hint.map(
+                                    |provider_session_id| PendingLaunch {
+                                        provider: completed.provider,
+                                        provider_session_id,
+                                        deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
+                                    },
+                                );
+                                pending_launch_retry_at = None;
+                            }
+                            Err(error) => app.set_notice(format!("launch failed: {error}")),
+                        }
+                    }
+                    needs_draw = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        if completed_launch_needs_refresh {
+            if refresh_in_flight {
+                refresh_after_current = true;
+            } else {
+                schedule_refresh(
+                    &refresh_tx,
+                    &current_request,
+                    &mut refresh_in_flight,
+                )?;
+                last_refresh = Instant::now();
+            }
+        }
         if refresh_after_current && !refresh_in_flight {
             schedule_refresh(
                 &refresh_tx,
@@ -179,7 +227,28 @@ pub fn run_dashboard(
                 match event::read()? {
                     Event::Key(key) => {
                         let action = handle_key(&mut app, key);
-                        let effect = dispatch_action(&mut terminal, &mut app, action, control);
+                        let effect = match action {
+                            AppAction::Launch {
+                                provider,
+                                model,
+                                prompt,
+                            } => {
+                                latest_launch_sequence = latest_launch_sequence.wrapping_add(1);
+                                app.set_notice(format!("launching {}…", provider.label()));
+                                schedule_launch(
+                                    control.clone(),
+                                    latest_launch_sequence,
+                                    provider,
+                                    model,
+                                    prompt,
+                                    launch_tx.clone(),
+                                );
+                                ActionEffect::default()
+                            }
+                            other => {
+                                dispatch_action(&mut terminal, &mut app, other, control)
+                            }
+                        };
                         if let Some(include_completed) = effect.completed_visibility {
                             current_request.include_completed = include_completed;
                             app.set_completed_visibility(include_completed);
@@ -294,6 +363,35 @@ fn schedule_model_load(
             .available_models(&provider)
             .map_err(|error| format!("{error:#}"));
         let _ = sender.send((provider, result));
+    });
+}
+
+fn schedule_launch(
+    control: ControlHub,
+    sequence: u64,
+    provider: Provider,
+    model: Option<String>,
+    prompt: String,
+    sender: mpsc::Sender<LaunchWorkerResult>,
+) {
+    schedule_launch_job(sequence, provider.clone(), sender, move || {
+        control.launch_with(provider, model, prompt)
+    });
+}
+
+fn schedule_launch_job(
+    sequence: u64,
+    provider: Provider,
+    sender: mpsc::Sender<LaunchWorkerResult>,
+    operation: impl FnOnce() -> Result<ControlOutcome> + Send + 'static,
+) {
+    let _launch_worker = thread::spawn(move || {
+        let result = operation().map_err(|error| format!("{error:#}"));
+        let _ = sender.send(LaunchWorkerResult {
+            sequence,
+            provider,
+            result,
+        });
     });
 }
 
@@ -1618,6 +1716,32 @@ mod tests {
     }
 
     #[test]
+    fn slow_launch_job_does_not_block_keyboard_state_changes() {
+        let (sender, receiver) = mpsc::channel();
+        schedule_launch_job(7, Provider::Pi, sender, || {
+            thread::sleep(Duration::from_millis(100));
+            Ok(ControlOutcome {
+                message: "launched".into(),
+                provider_session_hint: Some("pi-id".into()),
+            })
+        });
+
+        assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
+        let mut app = app();
+        assert_eq!(handle_key(&mut app, key(KeyCode::Char('x'))), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "x");
+
+        let completed = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(completed.sequence, 7);
+        assert_eq!(completed.provider, Provider::Pi);
+        assert_eq!(
+            completed.result.unwrap().provider_session_hint.as_deref(),
+            Some("pi-id")
+        );
+    }
+
+    #[test]
     fn pending_launch_selection_requires_both_provider_and_provider_session_id() {
         let mut app = app();
         app.snapshot.sessions[0].provider = Provider::Claude;
@@ -1671,6 +1795,43 @@ mod tests {
         assert!(!models.refresh);
         assert_eq!(models.load_models, Some(Provider::OpenCode));
         assert!(control.calls.lock().unwrap().is_empty());
+
+        let hide = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Hide {
+                session_ids: vec!["worker".into()],
+            },
+            &control,
+        );
+        assert_eq!(hide.hide_session_ids, vec!["worker"]);
+        assert!(!hide.refresh);
+    }
+
+    #[test]
+    fn local_hide_is_persisted_and_removes_the_row_without_provider_calls() {
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(
+                directory.path(),
+                std::fs::Permissions::from_mode(0o700),
+            )
+            .unwrap();
+        }
+        let hidden = HiddenSessions::load(directory.path().join("hidden.json")).unwrap();
+        let mut app = app();
+
+        assert_eq!(
+            hide_sessions_from_app(&mut app, &hidden, &["worker".into()]).unwrap(),
+            1
+        );
+        assert!(app.snapshot.sessions.is_empty());
+        assert!(hidden.contains("worker"));
+        assert!(HiddenSessions::load(directory.path().join("hidden.json"))
+            .unwrap()
+            .contains("worker"));
     }
 
     #[test]
