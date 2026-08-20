@@ -25,10 +25,13 @@ checks; the guide also contains release gates that are not yet complete.
   mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
 - A disposable mock Pi RPC executable covers managed launch, live discovery,
   transcript inspection, active steer, confirmation, structured text input,
-  interrupt, exact unowned-ID refusal, and shutdown. A second dashboard client
-  reconnects through the same verified daemon while its Pi child remains live.
-  Panic-safe cleanup stops the exact test daemon; separate tests reject
-  symlinked state and permissive/replaced authority records.
+  interrupt, exact unowned-ID refusal, modeled launch, and shutdown. A second
+  dashboard client reconnects through the same verified daemon while its Pi
+  child remains live. Compatibility tests prove an old daemon advertises no
+  model feature, refuses replacement while it owns active work, and can be
+  safely replaced only after exact owned sessions are completed. Panic-safe
+  cleanup stops the exact test daemon; separate tests reject symlinked state
+  and permissive/replaced authority records.
 - A disposable authenticated OpenCode loopback fixture covers durable managed
   launch, dashboard reconnect, discovery, transcript inspection, active/idle
   reply, interrupt, exact unowned-ID refusal, and panic-safe pidfd shutdown. It
@@ -54,6 +57,12 @@ checks; the guide also contains release gates that are not yet complete.
   verify that `thread/resume` replays an unresolved approval with the same ID,
   a decision remains resolving until `serverRequest/resolved`, and a second
   dashboard cannot acquire the process-held controller lease.
+- Model-catalog tests cover Claude's installed-help alias parser, cursor-paged
+  visible Codex `model/list`, Pi's bounded offline table, and OpenCode's exact
+  `provider/model` output. Managed Pi argv and OpenCode `prompt_async` payload
+  tests prove the selected identifier reaches the provider-native launch
+  surface; Shift+Tab preserves the composer draft, catalog workers ignore
+  stale-provider results, and picker search stays separate from task input.
 - Request-reducer/UI tests reject unowned or wrong-turn requests, incomplete
   command context, duplicate/malformed structured questions, stale deadlines,
   and blind file acceptance. Sequential input tests verify exact option
@@ -61,17 +70,30 @@ checks; the guide also contains release gates that are not yet complete.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
   context-sensitive `?`, `ctrl+f` filtering, task slash commands, the visible
-  harness palette and model selection, Claude attach-return guidance, selection
-  reconciliation after filtering, Claude
+  harness palette, searchable/paged model picker, live completed toggle, local
+  hide confirmation, Claude attach-return guidance, selection reconciliation
+  after filtering, Claude
   worktree grouping, aggregate review/working counts, capability-aware help,
   and the narrow footer's retained help affordance. Focused rendering tests
   sanitize terminal-control characters from every provider-derived or dynamic
   surface and use terminal display width for CJK/grapheme-aware row truncation,
-  padding, and editable cursor placement.
+  padding, and editable cursor placement. The composer render test asserts the
+  cursor immediately follows its typed cells with no phantom left-border
+  column.
 - Safety-focused state tests verify that ready-for-review and needs-input
   sessions are treated as live (and therefore require interrupt authority),
-  completed sessions use delete language, and active groups cannot enter a
-  bulk-delete confirmation path.
+  completed sessions use delete language, active groups cannot enter a
+  bulk-delete confirmation path, and observe-only rows use reversible local
+  hiding without mixing it with provider deletion.
+- Private hidden-session registry tests cover idempotent hide/unhide, atomic
+  `0600` persistence in a `0700` directory, symlink/wrong-mode/control-character
+  refusal, and stable-order filtering of a 70,000-session snapshot. A separate
+  70,000-row application regression proves 2,000 navigation/draw queries reuse
+  one grouping cache and only a filter change rebuilds it.
+- Terminal-loop tests prove model loads and completed-visibility changes return
+  nonblocking effects, a deliberately slow managed launch does not block typed
+  input, and post-launch selection requires both the exact provider and exact
+  provider session ID.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
@@ -100,9 +122,10 @@ checks; the guide also contains release gates that are not yet complete.
   milliseconds. It also asserts that an unchanged frame emits no idle terminal
   output and that cancellation leaves no fake provider child behind. This
   catches accidental provider I/O or unconditional redraws on the input thread.
-- A 500-session real-PTY stress case verifies that only 25 rows are initially
-  present, selects `Show 25 more · 475 hidden` with real arrow keys, reveals the
-  second page, then sends 200 down-arrow events in one burst. It requires the
+- A 500-session real-PTY stress case verifies that only the terminal-sized page
+  (capped at 25 rows) is initially present, selects the matching Show-more row
+  with real arrow keys, reveals the second page, then sends 200 down-arrow
+  events in one burst. It requires the
   exact destination to appear within 750 ms while emitting less than 24 KiB,
   guarding bounded rendering, input coalescing, and page-aligned scrolling. It
   also submits `/help` and a 200-character typing burst, requiring each within
@@ -112,9 +135,12 @@ checks; the guide also contains release gates that are not yet complete.
   that the first screen is not gated on the slowest provider.
 - A separate default-mode PTY supplies 1,000 completed fixture records without
   `--all`, requires a usable `completed hidden` screen within 750 ms, and
-  proves that no completed row enters navigation. A second real-PTY test points
-  OpenCode at a marker-writing, two-second executable and proves it is never
-  started; the adapter test independently retains an unused runner response.
+  proves that no completed row enters navigation. The same PTY submits
+  `/completed show`, verifies a bounded Completed page and Show-more control,
+  then submits `/completed hide` and verifies immediate removal. A second
+  real-PTY test points OpenCode at a marker-writing, two-second executable and
+  proves it is never started; the adapter test independently retains an unused
+  runner response.
 
 ## Runtime checks
 
@@ -195,8 +221,9 @@ checks; the guide also contains release gates that are not yet complete.
   that distinction before suspending its alternate screen.
 - Three opt-in real-host `openpty` regressions now preserve those reproductions:
   nested Pi resume/return, completed Claude attach/Ctrl+Z return, and a
-  mutation-free composer route through Pi/Claude provider cycling, Claude model
-  selection, the dedicated filter, and manual refresh. They are ignored in
+  mutation-free composer route through Pi/Claude provider cycling,
+  draft-preserving Shift+Tab Claude model selection, the dedicated filter, and
+  manual refresh. They are ignored in
   ordinary CI because they require installed provider binaries or private host
   history paths.
 - Codex App Server discovery was refreshed repeatedly inside a disposable,
@@ -231,10 +258,13 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
 | Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Twelve-test Linux / eleven-test macOS `real_tty` harness using canonical and generated fixtures | Verified |
 | Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
+| 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
+| Searchable async model catalogs and exact modeled launch | Claude/Codex/Pi/OpenCode parsers, mock App Server/RPC/HTTP payload assertions, stale-result and isolated-search UI tests | Verified deterministically |
+| Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
-| Pi durable RPC launch/reconnect/reply/request/interrupt ownership | Disposable mock RPC plus isolated real non-model protocol/TUI probes | Verified on Linux |
-| OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt ownership | Disposable managed-server fixture plus isolated real credential-empty server probe | Verified on Linux |
+| Pi durable RPC launch/reconnect/reply/request/interrupt/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
+| OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |
 | Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
 | Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
 | Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |

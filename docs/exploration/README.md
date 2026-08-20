@@ -15,6 +15,8 @@ as stable contracts.
   boundaries.
 - [`opencode-integration.md`](opencode-integration.md) — OpenCode history and
   managed-server API boundaries.
+- [`provider-model-selection.md`](provider-model-selection.md) — exact Claude,
+  Codex, Pi, and OpenCode catalog/launch surfaces plus picker safety limits.
 - [`cursor-integration.md`](cursor-integration.md) — Cursor's TTY-only history
   picker, owned NDJSON runs, and native-resume boundary.
 - [`github-copilot-integration.md`](github-copilot-integration.md) — verified

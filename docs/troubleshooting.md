@@ -44,22 +44,33 @@ be running. Open Agent View will not start it during discovery. Check it with
 ordinary read-only Docker inspection, or remove the `--docker-container`
 option.
 
-## The dashboard is sluggish or completed rows appear while hidden
+## Completed is hidden, or the dashboard is sluggish
 
-Upgrade to version 0.1.8 or newer and run plain `coding-agents`. Completed,
-interactive, and cwd filtering is enforced centrally even when a provider CLI
-returns rows that violate its own flags. OpenCode's global history query is
-skipped entirely. The header should say `completed hidden`, and no Completed
-section should render. Do not add `--all` unless you deliberately want to load
-the history.
+This is intentional: plain `coding-agents` starts with completed history
+excluded before discovery because one reported environment contained roughly
+70,000 persisted rows. The header says `completed hidden` rather than a
+misleading zero. To review finished work, type `/completed show` in the
+new-task bar. Use `/completed hide` to remove those rows immediately, or start
+with `coding-agents --all` when completed history should be visible from the
+first refresh. JSON follows the same opt-in rule: use `coding-agents --json
+--all`.
+
+Completed, interactive, and cwd filtering is enforced centrally even when a
+provider CLI returns rows that violate its own flags. OpenCode's global history
+query is skipped entirely while completed rows are hidden. When history is
+shown, each group still renders only a terminal-sized page capped at 25 rows
+behind a selectable **Show more** row; Enter reveals another page. Filtering
+searches the complete discovered set, including rows not yet revealed. Grouping
+is cached until the snapshot, filter, or view actually changes, so arrow
+movement and ordinary redraws do not rescan all 70,000 rows.
 
 The default refresh is 15 seconds because repeatedly starting several provider
 CLIs can cause substantial CPU and memory churn. Use `ctrl+l` for an immediate
 refresh; use `--refresh-ms` only when you have measured a reason to poll more
-often. Groups render 25 sessions at a time behind Show more. Filtering still
-searches every discovered row. If typing or arrows remain slow on 0.1.8,
-capture the provider count, `--all`/`--include-interactive` flags, terminal/tmux
-context, and an isolated real-PTY reproduction.
+often. Provider refreshes, model-catalog loads, and managed launches stay off
+the input thread. If typing or arrows remain slow on a release containing these
+fixes, capture the provider count, `--all`/`--include-interactive` flags,
+terminal/tmux context, and an isolated real-PTY reproduction.
 
 For exact OAV-owned completed Codex threads, preview bounded provider-native
 archiving before changing anything:
@@ -72,6 +83,28 @@ Review every candidate, then repeat with `--yes` if the scope is correct.
 External Codex, Claude, Pi, OpenCode, Cursor, Copilot, and Antigravity history
 does not gain archive authority merely because it is visible; keep it hidden or
 use that provider's documented native maintenance interface.
+
+## I did not create a row and cannot delete it
+
+Discovery intentionally shows external provider history but does not pretend
+that Open Agent View owns it. Select the row (or open Peek) and press `ctrl+x`.
+When provider Interrupt/Delete authority is absent, the confirmation explicitly
+offers a reversible **local hide** and states that provider history and live
+processes are retained. Confirm with Enter or a second `ctrl+x`.
+
+For a scriptable equivalent, copy the exact normalized ID from Peek or
+`coding-agents --json --all`:
+
+```console
+coding-agents sessions hide 'PROVIDER:RUNTIME:EXACT_ID'
+coding-agents sessions hidden
+coding-agents sessions unhide 'PROVIDER:RUNTIME:EXACT_ID'
+```
+
+Unhiding does not recreate anything; the row returns only when the provider
+still reports it. Use provider-native delete/archive only when you actually
+intend to mutate provider history. Do not remove a JSONL file or edit an OAV
+ownership registry to make an old row disappear.
 
 ## Pi says `No session found matching ...`
 
@@ -99,16 +132,54 @@ View now shows a confirmation before attachment. Press `ctrl+z` inside Claude
 to return to the dashboard; the background session keeps running. Escape only
 cancels the pre-attach confirmation.
 
-## Slash opens the wrong mode or harness selection is unclear
+## Slash opens the wrong mode or harness/model selection is unclear
 
-On 0.1.10, `ctrl+f` is the filter. `/` starts a task command: `/help`,
-`/harness`, `/harness NAME`, `/model NAME`, `/model default`, or `/filter TEXT`;
-`/provider` remains an alias. The composer border always displays the chosen
-harness and model. Press `tab` while composing to open the complete available
-harness palette; `/harness` opens it too. Preview with arrows or `tab`, confirm with `enter` or a number,
-and use `esc` to return without switching or losing the draft. Model selection
-is currently exposed for Claude and Codex; other harnesses use their default
-and refuse `/model` locally.
+`ctrl+f` is the session filter. `/` starts a local dashboard command: `/help`,
+`/harness`, `/harness NAME`, `/model`, `/model NAME`, `/model default`,
+`/completed show|hide`, or `/filter TEXT`; `/provider` remains an alias. These
+commands are never forwarded as task prompts. The composer border always
+displays the chosen harness and model.
+
+Press `tab` while composing to open the complete available harness palette;
+`/harness` opens it too. Preview with arrows or `tab`, confirm with `enter` or a
+number, and use `esc` to return without switching or losing the draft.
+For Claude, Codex, Pi, and OpenCode, press `shift+tab` from the task composer to
+load a searchable model picker without losing the current draft. `/model` with
+no argument opens the same picker as a command. Type to filter, navigate with
+arrows/Tab/Page Up/Page Down, then Enter; Escape preserves the prior model and
+draft. `/model NAME` remains the escape hatch for an exact valid custom
+identifier that the catalog does not show. Cursor and Copilot currently use
+their provider default and refuse model selection locally.
+
+If the picker reports a catalog error, run the provider surface directly in the
+same shell: `claude --help`, a healthy managed Codex App Server, `pi --offline
+--list-models`, or `opencode models`. Pi/OpenCode entries normally use
+`provider/model` form. A listed model can still fail later because the account,
+credentials, region, or provider configuration does not authorize it.
+
+## A newly launched task does not appear
+
+Managed task submission runs in a worker so the composer, arrows, and Escape
+remain responsive. When launch completes, Open Agent View refreshes immediately
+and selects the exact new provider/session ID. Providers that persist
+asynchronously are retried every 250 ms for up to five seconds. If the footer
+eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
+provider in `coding-agents --json --all`.
+
+If Codex is missing only inside Open Agent View, confirm `coding-agents doctor`
+and `codex --version` succeed in the same shell. A nonstandard executable can be
+selected with `--codex-bin /absolute/path/to/codex`. Do the equivalent with
+`--pi-bin` or `--opencode-bin`; do not assume a desktop-launched process has the
+same `PATH` as an interactive shell.
+
+## The text cursor is one column to the right
+
+Upgrade to a release containing the composer cursor fix. The bottom composer
+has top and bottom borders but no left border; older builds incorrectly added a
+phantom border column. The current render path places the cursor immediately
+after the prompt prefix and typed display cells, including wide Unicode text.
+If it remains shifted, record the terminal name, font, tmux/SSH layer, exact
+input, and a screenshot with the cursor visible.
 
 ## A session is visible but a control is unavailable
 
@@ -182,6 +253,14 @@ A live managed Pi session also refuses native open to prevent two writers; use
 peek/reply controls, interrupt it, or wait for it to finish. On macOS, all Pi
 sessions use the history/native-open path because durable supervision currently
 depends on Linux `/proc` identity.
+
+Supervisors started by version 0.1.10 or earlier do not understand modeled
+launches. The current client probes the verified daemon's feature list before a
+non-default-model launch. If every owned Pi session is completed, it asks that
+exact daemon to shut down, verifies its exit, and starts the upgraded daemon. If
+any owned work is active, it refuses the upgrade and names up to three active
+sessions; finish or interrupt those exact sessions, then retry. It never kills
+an older daemon or abandons live Pi work just to apply a model selection.
 
 ## OpenCode supervisor cannot reconnect
 

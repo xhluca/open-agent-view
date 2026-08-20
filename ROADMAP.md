@@ -17,6 +17,10 @@ authenticated fresh-container end-to-end run.
   Codex sessions.
 - [x] Render grouped status sections with responsive terminal layouts.
 - [x] Add navigation, details, help, filtering, and JSON output.
+- [x] Keep completed discovery opt-in at startup and allow a live
+  `/completed show|hide` transition without restarting the dashboard.
+- [x] Provide reversible local hide/unhide for observe-only provider history,
+  distinct from provider-native archive/delete.
 - [x] Cover parsers and layout with deterministic tests.
 - [ ] Enrich Claude rows with supported latest-message metadata when available.
 - [x] Retain one reconnectable host Codex App Server across dashboard restarts.
@@ -26,6 +30,9 @@ authenticated fresh-container end-to-end run.
 - [x] Launch host Claude tasks from the composer.
 - [x] Select every configured launch-capable harness from a visible,
   draft-preserving keyboard palette, with explicit model state.
+- [x] Load searchable provider-native model catalogs asynchronously for Claude,
+  Codex, Pi, and OpenCode through a draft-preserving Shift+Tab route while
+  retaining exact custom model identifiers.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
   exposes an exact resume command.
@@ -34,11 +41,12 @@ authenticated fresh-container end-to-end run.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
   reconnectable App Server supervisor.
 - [x] Own Linux Pi launch, reconnect, reply/steer, exact dialog response, and
-  interrupt through a durable stdio-RPC supervisor; retain history-only support
+  interrupt through a durable stdio-RPC supervisor, including exact selected
+  models and safe upgrade of idle older daemons; retain history-only support
   elsewhere.
 - [x] Own Linux OpenCode launch, reconnect, live discovery, inspection, reply,
-  and interrupt through an authenticated loopback server; keep external history
-  inspect/native-open only.
+  and interrupt through an authenticated loopback server, including documented
+  model selectors; keep external history inspect/native-open only.
 - [x] Own Linux Cursor launch, rediscovery, bounded inspection, idle reply, and
   exact verified-process interrupt without scraping its external TTY picker.
 - [x] Own process-local Copilot ACP launch, prompt/reply, inspection, cancel,

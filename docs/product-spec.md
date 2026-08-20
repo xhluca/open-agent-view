@@ -22,13 +22,16 @@ delete, filter, and refresh.
 ## Initial interface scope
 
 - A compact header with runtime context and state counts.
-- Sections for ready-for-review, needs-input, working, and, when `--all` is
-  explicit, completed sessions.
+- Sections for ready-for-review, needs-input, working, and, when `--all` or the
+  live `/completed show` command is explicit, completed sessions.
 - Rows with status, provider/runtime, name, latest useful summary, age, and
   optional repository metadata.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,
   confirmation dialogs, filters, and a new-session composer with a visible,
-  draft-preserving harness picker.
+  draft-preserving harness picker and draft-preserving searchable provider
+  model picker.
+- A live completed-history toggle, 25-row progressive reveal, and reversible
+  local hiding for rows that Open Agent View can observe but does not own.
 - Graceful behavior in narrow terminals and over SSH/tmux.
 - Machine-readable JSON output for scripting and diagnostics.
 

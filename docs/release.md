@@ -54,8 +54,31 @@ Before creating a tag:
 cargo fmt --all -- --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
+scripts/real-tui-tests.sh
 scripts/test-installer.sh
 ```
+
+For a release containing the completed/model/lifecycle changes, retain evidence
+for these focused gates in addition to the aggregate commands:
+
+- the 70,000-session grouping and local-hide tests complete without rebuilding
+  groups during navigation;
+- real-PTY exercise covers `/completed show|hide`, draft-preserving Shift+Tab
+  model selection, Ctrl+X local-hide wording from list and Peek, exact composer
+  cursor placement, and nonblocking post-launch refresh/selection;
+- isolated Pi proves selected `--model` propagation and refuses to replace an
+  old daemon with active owned work;
+- isolated OpenCode proves the exact documented model object is present in the
+  asynchronous prompt body;
+- Claude and Codex catalog tests consume their provider-native surfaces and
+  reject malformed/pagination-overflow results; and
+- `coding-agents sessions hide`, `hidden`, and `unhide` are smoke-tested with an
+  isolated `HOME`/`XDG_STATE_HOME`, including JSON output and private file modes.
+
+Do not describe authenticated model availability as verified merely because a
+credential-free catalog or mock launch passed. Record any real provider model
+turn separately with provider version, selected identifier, isolated state,
+and cleanup result.
 
 Then:
 

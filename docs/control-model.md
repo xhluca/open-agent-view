@@ -3,6 +3,22 @@
 The dashboard separates **visibility** from **authority**. Finding a session is
 not permission to interrupt or delete it.
 
+## Local visibility controls are not provider mutations
+
+When a selected row does not carry the exact Interrupt or Delete capability,
+`ctrl+x` offers to hide it only from Open Agent View. The normalized ID is
+stored in the private `hidden-sessions.json` registry and removed from later
+dashboard and JSON snapshots. Provider history, conversation state, and live
+processes remain unchanged. `coding-agents sessions hidden` audits that local
+list; `sessions unhide SESSION_ID` removes the suppression without recreating
+or resuming anything.
+
+This is intentionally distinct from provider-native deletion and archive.
+Those actions remain available only where the tables below grant exact
+authority and retain their own confirmations/revalidation. An observe-only row
+is never deleted merely because it can be hidden, and a local hidden record is
+never presented as an archive.
+
 ## Claude and Codex capability matrix
 
 | Operation | Host Claude | Managed host Codex | External host Codex | Explicit Docker target |
@@ -141,7 +157,7 @@ JSONL history and unrelated live Pi processes never acquire control authority.
 | Discover | Supervisor live state plus its private JSONL store | Documented JSONL store |
 | Inspect | Bounded `get_messages` transcript | Bounded persisted transcript |
 | Open | Refused while RPC is live to prevent concurrent writers | `pi --session ID --session-dir DIR` |
-| Launch/reply | `prompt`; active work uses exact `steer` behavior | Disabled |
+| Launch/reply | `prompt`; launch may pass an exact catalog/custom `--model`, and active work uses exact `steer` behavior | Disabled |
 | Interrupt | `abort` on the exact owned live process | Disabled |
 | Confirmation/input | Exact pending extension request ID; selections require an exact option | Disabled |
 | Delete/archive | Disabled | Disabled |
@@ -160,6 +176,11 @@ not an operating-system sandbox. Built-in tools still run with the managed Pi
 process's user permissions. Use a separate OS/container boundary when the task
 requires one. Durable Pi control currently requires Linux; macOS keeps
 history inspection and native resume only.
+
+A modeled launch additionally requires the daemon to advertise the
+`launch_with_model` protocol feature. An older verified daemon is replaced only
+after its own session list proves every owned session completed; active work
+causes an actionable refusal instead of a shutdown.
 
 ## OpenCode ownership boundary
 
@@ -185,7 +206,7 @@ never grants authority.
 | Discover | Exact owned IDs plus authenticated server status | Read-only global CLI projection |
 | Inspect | Bounded server message transcript | Bounded `opencode export` transcript |
 | Open | Refused while owned by the managed server | `opencode --session ID` |
-| Launch/reply | Create through the owned server; `prompt_async` for new work | Disabled |
+| Launch/reply | Create through the owned server; `prompt_async` for new work, with an optional exact `providerID`/`modelID` selector | Disabled |
 | Interrupt | Authenticated abort only for an owned working session | Disabled |
 | Permission/input | Not yet exposed by the dashboard | Disabled |
 | Archive/delete | Disabled | Disabled |

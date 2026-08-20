@@ -56,17 +56,31 @@ coding-agents doctor --docker-container exact-name-or-id
 ```
 
 `--harness` chooses the initial composer harness; `--launch-provider` remains
-an alias. In the new-task composer, `tab` opens a palette containing
-only configured launch-capable harnesses. Arrow keys or `tab` preview, `1`–`9`
+an alias. In the new-task composer, `tab` opens a palette containing only
+configured launch-capable harnesses. Arrow keys or `tab` preview, `1`–`9`
 select directly, `enter` confirms, and `esc` returns without changing the
 harness or losing the draft. `/harness NAME` selects explicitly;
-`/provider NAME` remains a compatibility alias. Claude and Codex also accept
-`/model NAME` or `/model default`; the selected harness/model is always
-displayed in the composer border before submission. Pi, OpenCode, Cursor, and
-Copilot currently use their provider default model. Copilot retains one process-local ACP control
-connection for sessions launched by the current dashboard. A later dashboard
-may still list a persisted Copilot session, but that row is
-observe/native-open rather than silently inheriting control.
+`/provider NAME` remains a compatibility alias.
+
+For Claude, Codex, Pi, and OpenCode, `shift+tab` from the new-task composer
+opens an asynchronous searchable picker while preserving the current draft;
+`/model` opens the same picker as a command. Type to filter, use arrows or `tab`
+to move, `page up`/`page down` to move ten choices, `enter` to select, and
+`esc` to keep the previous selection and draft. **Default** is always
+available. `/model NAME` accepts an exact custom
+identifier without loading the catalog, and `/model default` resets the
+selection. The selected harness/model is always displayed in the composer
+border before submission. Catalog sources are provider-native: Claude parses
+aliases advertised beside `--model` in `claude --help`; Codex requests all
+visible pages of App Server `model/list`; Pi parses `pi --offline
+--list-models`; and OpenCode parses `opencode models`. A catalog is informative,
+not proof that the current account can successfully invoke every listed model.
+Cursor and Copilot currently use their provider default model.
+
+Copilot retains one process-local ACP control connection for sessions launched
+by the current dashboard. A later dashboard may still list a persisted Copilot
+session, but that row is observe/native-open rather than silently inheriting
+control.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -81,8 +95,42 @@ boundary: Claude is queried without `--all`, OpenCode's global
 persisted-history query is not started at all, and rows returned in violation
 of a provider's active-only/cwd/interactive contract are removed before a
 partial snapshot reaches the UI. The header shows `completed hidden` rather
-than a misleading zero. Use `coding-agents --all` or `coding-agents --json
---all` only when completed history is needed.
+than a misleading zero. Use `/completed show` to opt the running dashboard into
+completed discovery, `/completed hide` to remove completed rows immediately
+and return future refreshes to active-only discovery, or `/completed` to
+toggle. `coding-agents --all` starts the dashboard in shown mode;
+`coding-agents --json --all` includes completed rows in one-shot output.
+
+### Local hide, provider delete, and provider archive
+
+A row can be removed from Open Agent View without claiming authority over the
+provider. Select a row and press `ctrl+x`. When exact Interrupt or Delete
+authority exists, the confirmation names that provider mutation. Otherwise it
+offers **Hide locally**, which retains provider history and any live process.
+The same rule applies from Peek. On a completed group, `ctrl+x` never relabels
+provider deletion as hiding: it deletes only when every row grants Delete;
+otherwise it offers to hide the undeletable rows locally. Bulk stop for an
+active group remains unavailable.
+
+The local hidden-ID registry can also be managed without opening the TUI:
+
+```console
+# Obtain the stable normalized ID from Peek or JSON output.
+coding-agents --json --all
+
+coding-agents sessions hide 'pi:host:EXACT_ID'
+coding-agents sessions hidden
+coding-agents sessions unhide 'pi:host:EXACT_ID'
+
+# Each maintenance command also supports machine-readable output.
+coding-agents --json sessions hidden
+```
+
+`sessions hide` is idempotent and accepts an exact normalized ID even if its
+provider row is not currently discoverable. `sessions unhide` only removes the
+local suppression; the row returns on the next discovery only if its provider
+still reports it. Neither command opens, stops, deletes, archives, or edits a
+provider session.
 
 Provider-native bulk archive is currently available for exact OAV-owned,
 completed host Codex threads. The first command is always a read-only preview:
@@ -197,30 +245,35 @@ label.
 | Context | Key | Result |
 | --- | --- | --- |
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
-| Show more row | `enter` | Reveal the next 25 matching sessions in that group. |
+| Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
-| Session row | `enter` | Suspend the dashboard and open the provider-native interface. Claude first explains that `ctrl+z`, not `←`, returns to Open Agent View. |
+| Session row | `enter` | Open a managed row that advertises Reply/Approve/Decline/Respond in inline Peek; otherwise suspend the dashboard and open its provider-native interface. Claude first explains that `ctrl+z`, not `←`, returns to Open Agent View. |
 | Session row | `space` | Inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
 | Inspect peek | `y` / `n` | Allow once / deny only when the exact capability is advertised. |
-| Inspect peek | `enter` with no text | Open the provider-native interface. |
+| Inspect peek | `enter` with no text | Open the provider-native interface when that managed/live boundary allows a second client. |
 | Session list | `ctrl+s` | Toggle status and working-directory grouping. |
 | Session list | `ctrl+f` | Edit the case-insensitive name/summary/path/provider filter. |
 | Session list | `ctrl+l` | Request an immediate provider refresh. |
 | Session list | `tab`, `/`, or printable text | Compose a new host task. `/` begins a dashboard command rather than a filter. |
 | New-task composer | `tab` | Open the visible harness picker. |
+| New-task composer | `shift+tab` | Open the selected harness's model picker without changing the task draft. |
 | Harness picker | `↑` / `↓`, `←` / `→`, or `tab` / `shift+tab` | Preview configured launch-capable harnesses with wraparound. |
 | Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
 | Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
 | New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available; `/provider` is an alias. |
-| New-task composer | `/model NAME` / `/model default` | Select or reset a Claude/Codex model; unsupported providers refuse locally. |
+| New-task composer | `/model` | Asynchronously load the selected Claude, Codex, Pi, or OpenCode catalog and open a searchable picker. |
+| Model picker | type, `backspace`, `↑` / `↓`, `tab` / `shift+tab`, `page up` / `page down` | Filter and navigate catalog results; provider discovery stays off the input thread. |
+| Model picker | `enter` / `esc` | Select the highlighted model, or return with the previous model and draft unchanged. |
+| New-task composer | `/model NAME` / `/model default` | Select an exact custom model identifier or reset to the provider default. Cursor/Copilot model selection refuses locally. |
+| New-task composer | `/completed [show\|hide]` | Toggle completed discovery, or set it explicitly. `show` refreshes providers; `hide` immediately removes completed rows and keeps later refreshes active-only. |
 | New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |
 | Writable composer | `backspace` | Remove the last character. |
 | Session row | `ctrl+r` | Enter rename composition; submission currently reports unsupported. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
-| Owned row | `ctrl+x`, then `enter` or `ctrl+x` | Confirm exact interrupt when active or delete when completed. |
-| Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete. |
+| Session row or Peek | `ctrl+x`, then `enter` or `ctrl+x` | Confirm exact interrupt when active, delete when completed, or reversible local hiding when provider mutation authority is absent. |
+| Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete; otherwise offer to hide the undeletable rows locally. |
 | Any ordinary view | `?` | Open contextual help; `?`, `enter`, or `esc` closes it. |
 | Any overlay/composer | `esc` | Cancel that mode and discard its unsubmitted input. |
 | Session list | `esc` | Quit immediately and restore the terminal. |
@@ -233,9 +286,20 @@ correlated diff, expanded permissions, or unknown request form. See the
 [control model](control-model.md) for the exact boundary.
 
 Paging affects only the interactive list. Counts, filtering, JSON output, and
-group-level safety checks always use the complete discovered session set. The
+group-level safety checks always use the complete discovered session set. Each
+status or directory group initially shows a terminal-sized page of at most 25
+session rows, followed by a selectable `Show N more · M hidden` row when more
+match. Each Enter reveals at most one more page and moves selection to the first
+newly visible row. The
 revealed count is remembered across ordinary provider refreshes and reset when
 switching views or applying a filter, keeping a newly narrowed queue bounded.
+
+After a successful managed launch, the dashboard refreshes immediately and
+uses the exact provider/session hint to select the new row. If the provider
+persists its record after the launch response, Open Agent View retries discovery
+every 250 ms for up to five seconds. The UI remains interactive during those
+retries and reports a manual `ctrl+l` recovery only if the exact row still has
+not appeared.
 
 For active host Claude background rows, Interrupt is provider-native rather
 than registry-owned: immediately before `claude stop`, Open Agent View reruns
@@ -268,6 +332,7 @@ when `XDG_STATE_HOME` is unset, the current implementation stores:
 | `pi/` | Detached Linux RPC supervisor record, socket, locks/logs, and OAV-owned Pi session history. |
 | `opencode/` | Private authenticated-loopback server record, lock, log, and exact OAV-owned OpenCode session IDs. |
 | `cursor/` | Linux ownership registry, process identities, locks, and bounded logs for OAV-owned Cursor runs. |
+| `hidden-sessions.json` | Reversible local suppression records; provider history and live processes are not changed. |
 | `managed-docker/owners.json` | Exact external proof for managed-container lifecycle. |
 
 These files contain authority metadata and should not be shared between users.

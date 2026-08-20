@@ -21,9 +21,10 @@ open, provider-neutral project.
 
 - **All sessions, one queue.** Enabled providers refresh concurrently and one
   slow or unavailable provider does not hide results from the others.
-- **Responsive large queues.** Each group initially shows 25 sessions behind a
-  selectable Show more row, and completed history is excluded unless `--all`
-  is explicit—even when a provider ignores its own active-only flag. Buffered
+- **Responsive large queues.** Each group initially shows a terminal-sized page
+  of at most 25 sessions behind a selectable Show more row, and completed
+  history is excluded unless `--all` is explicit—even when a provider ignores
+  its own active-only flag. Buffered
   key repeats and typed bursts are coalesced so large histories do not flood
   SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
@@ -75,7 +76,7 @@ Useful examples:
 # Focus on the current project.
 coding-agents --cwd "$PWD"
 
-# Review completed sessions too.
+# Start with completed sessions visible (they are hidden by default).
 coding-agents --all
 
 # Include persisted interactive history in machine-readable output.
@@ -93,6 +94,9 @@ coding-agents --harness opencode
 # Preview a bounded archive batch; add --yes only after reviewing it.
 coding-agents sessions archive --older-than-days 30 --limit 100
 coding-agents sessions archive --older-than-days 30 --limit 100 --yes
+
+# Review rows hidden only from Open Agent View.
+coding-agents sessions hidden
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
@@ -101,12 +105,18 @@ new task, then press `tab` for a visible harness picker. Use arrows or `tab` to
 preview Claude, Codex, Pi, OpenCode, Cursor, or Copilot; `enter` selects and
 `esc` returns without losing the draft. `/harness` opens the same picker,
 `/harness NAME` selects directly, and `/model` changes supported models
-(`/provider` remains an alias). Every row spells out its
-provider name; open Peek to see whether it runs on the host or in Docker. Groups with
-more than 25 matches end in a selectable **Show more** row; filtering always
+(`/provider` remains an alias). From the task composer, `shift+tab` opens the
+searchable model picker without losing the draft; the installed provider's
+catalog loads without blocking typing or navigation. Every row
+spells out its provider name; open Peek to see whether it runs on the host or in
+Docker. Groups with more matches than the current page end in a selectable
+**Show more** row; filtering always
 searches the complete discovered set, including rows that have not been
-revealed. Completed history is hidden before discovery by default; start with
-`--all` when you intend to load and review it.
+revealed. Completed history is hidden before discovery by default; use
+`/completed show` inside the dashboard or start with `--all`, then use
+`/completed hide` to return to the active queue. `ctrl+x` stops or deletes only
+when exact provider authority exists; otherwise it offers a reversible local
+hide instead of changing provider history.
 
 ## Provider support
 
@@ -116,10 +126,10 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch with model selection; interrupt an exact host background session only after live provider revalidation |
-| OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; owned launch, reply/steer, request handling, interrupt, archive, and delete |
-| Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; owned launch, reply/steer, request handling, and interrupt |
-| OpenCode | Persisted host history, plus durable OAV-managed authenticated loopback sessions on Linux | External history inspect/native resume; owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
+| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch with a catalog-backed model picker; interrupt an exact host background session only after live provider revalidation |
+| OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
+| Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; catalog-backed owned launch, reply/steer, request handling, and interrupt |
+| OpenCode | Persisted host history, plus durable OAV-managed authenticated loopback sessions on Linux | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
 | GitHub Copilot CLI | Persisted host sessions from ACP `session/list`, plus process-local OAV-owned ACP sessions | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
 | Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |

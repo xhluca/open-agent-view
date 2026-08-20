@@ -8,6 +8,50 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `/completed [show|hide]` changes completed-history discovery from inside the
+  running dashboard; `--all` remains the initial CLI opt-in.
+- `coding-agents sessions hide`, `unhide`, and `hidden` provide reversible
+  local suppression for external/observe-only rows without modifying provider
+  history or live processes. Ctrl+X offers the same confirmed fallback from a
+  session row or Peek when provider stop/delete authority is absent.
+- Shift+Tab from the task composer opens a draft-preserving, searchable,
+  asynchronous catalog picker for Claude, Codex, Pi, and OpenCode; `/model`
+  opens the same picker as a command. Exact custom `/model NAME` and
+  provider-default selection remain available.
+
+### Changed
+
+- Pi modeled launch passes the selected identifier to its RPC child; OpenCode
+  sends the documented `providerID`/`modelID` object. Claude derives aliases
+  from the installed CLI help and Codex pages visible models from the owning
+  App Server rather than relying on a hard-coded catalog.
+- Successful managed launches trigger immediate discovery and exact new-row
+  selection, with bounded retries for providers that persist a record after the
+  launch response. Launch and model-list I/O stay off the terminal-input thread.
+- Snapshot indices, counts, labels, and groups are cached until the snapshot,
+  filter, or view changes, keeping navigation bounded even with 70,000 rows.
+- The Show-more page is now sized to the current terminal height and capped at
+  25, so the pagination control remains reachable instead of starting below a
+  short viewport.
+
+### Fixed
+
+- The bottom composer cursor no longer includes a nonexistent left-border
+  column, removing the one-cell offset.
+- Pi and OpenCode no longer incorrectly report that their managed launch paths
+  lack model selection.
+- A verified pre-model Pi daemon is upgraded only when all of its owned work is
+  completed; active work now produces an actionable refusal instead of being
+  abandoned.
+
+### Security
+
+- Local hiding is stored in a private, atomic, symlink-refusing registry and is
+  never presented as provider deletion or archive. Provider mutations retain
+  their exact capability checks and confirmations.
+
 ## [0.1.10] - 2026-08-20
 
 ### Fixed

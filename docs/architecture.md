@@ -54,9 +54,15 @@ The control layer separately exposes a normalized `LaunchTarget` inventory.
 The task composer renders only those launch-capable targets in its harness
 picker. Moving through the picker changes UI selection only; confirmation
 switches the harness and resets incompatible model state, while cancellation
-preserves both the current harness and draft. `/harness`, `/model`, and the
-other dashboard slash commands are reduced locally and never forwarded as a
-provider prompt.
+preserves both the current harness and draft. Selectable-model controllers also
+expose a read-only catalog method. `shift+tab` from the task composer loads that
+catalog on a worker and opens a separately filtered, ten-row-page picker
+without changing the draft; `/model` opens the same picker as a command, while
+`/model NAME` preserves an exact custom-identifier path. The catalog contract is
+implemented by Claude CLI help aliases, Codex App Server `model/list`, Pi's
+offline list, and OpenCode's configured-model list. `/harness`, `/model`,
+`/completed`, and the other dashboard slash commands are reduced locally and
+never forwarded as a provider prompt.
 
 ## Process model
 
@@ -71,11 +77,18 @@ publishes completed provider results incrementally instead of waiting for the
 slowest CLI; the final snapshot is then enriched with ownership-gated control
 capabilities. Later refreshes replace the queue atomically and remain entirely
 off the input thread. Terminal input is drained in bounded bursts before a
-draw. Each group initially contributes at most 25 session rows plus a
-selectable Show more control; revealed rows use page-aligned viewports.
+draw. Each group initially contributes a terminal-sized page capped at 25
+session rows plus a selectable Show more control; revealed rows use
+page-aligned viewports.
 Filtering and counts still operate over the full snapshot. Together these
 rules bound render work and prevent key-repeat frame backlogs while preserving
 exact selection movement.
+
+The application caches normalized ID indices, status counts, provider labels,
+and current-view groups when a snapshot/filter/view changes. Navigation and
+draw queries reuse those caches instead of rebuilding a 70,000-row grouping on
+each arrow event. Local hidden-session filtering uses a hash set and preserves
+source order, so a large snapshot is filtered in one pass.
 
 The default refresh period is 15 seconds because starting several provider
 CLIs—especially Claude—can consume substantial CPU and memory even for a small
@@ -89,9 +102,23 @@ work: Claude does not receive its `--all` flag, and OpenCode does not run its
 global persisted-session database query. Because provider versions can violate
 those flags, the discovery engine independently enforces completed,
 interactive, and cwd filters before every partial snapshot is published.
-`--all` opts into both discovery and display. Bulk Codex archive is a separate
-bounded maintenance path with a read-only plan, explicit `--yes`, and the same
-per-session ownership checks as the TUI.
+`--all` opts into both discovery and display at startup. `/completed show` and
+`/completed hide` update the refresh worker's current discovery request; hide
+also removes completed rows from the in-memory snapshot immediately. Bulk
+Codex archive is a separate bounded maintenance path with a read-only plan,
+explicit `--yes`, and the same per-session ownership checks as the TUI.
+
+Launch I/O also runs off the terminal-input thread. A successful controller
+outcome includes an exact provider session hint when available; the dashboard
+refreshes immediately, selects the matching normalized row, and retries delayed
+provider persistence at a bounded interval and deadline.
+
+Local hiding is deliberately outside the provider capability model. The
+private `hidden-sessions.json` registry stores exact normalized IDs, and every
+snapshot is filtered before it reaches the application. Hiding retains
+provider history and live processes; unhide removes only the local record.
+Provider Interrupt/Delete/Archive remain separately capability-gated operations
+with their existing revalidation rules.
 
 The implemented Claude path uses Claude's own background service. The
 dashboard persists only a provider/runtime/session ownership record and invokes
