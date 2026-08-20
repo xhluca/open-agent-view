@@ -113,7 +113,7 @@ paths as applicable:
 ```console
 OAV_VERSION=MAJOR.MINOR.PATCH ./install.sh
 coding-agents --version
-coding-agents --json --no-host-claude --no-host-codex
+coding-agents --json --no-host-providers
 ```
 
 For a public release, repeat the command from fresh Linux x86_64, Linux ARM64,

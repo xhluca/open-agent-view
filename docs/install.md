@@ -68,7 +68,7 @@ Start with checks that do not contact an agent provider:
 ```console
 coding-agents --version
 coding-agents --help
-coding-agents --json --no-host-claude --no-host-codex
+coding-agents --json --no-host-providers
 ```
 
 The JSON command should report empty `sessions` and `warnings` arrays. It does

@@ -123,7 +123,7 @@ jobs:
           binary="smoke/${STEM}/coding-agents"
           test "$("${binary}" --version)" = "coding-agents ${VERSION}"
           "${binary}" --help | grep -F "Open terminal dashboard" >/dev/null
-          "${binary}" --json --no-host-claude --no-host-codex |
+          "${binary}" --json --no-host-providers |
             jq -e '.sessions == [] and .warnings == []' >/dev/null
 
       - name: Test installer against the packaged assets

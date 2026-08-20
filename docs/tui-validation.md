@@ -195,7 +195,7 @@ docker run --rm --interactive --tty \
   --workdir /tmp \
   --volume "$OAV_BINARY:/usr/local/bin/coding-agents:ro" \
   --entrypoint /usr/local/bin/coding-agents \
-  "$OAV_PROBE_IMAGE" --no-host-claude --no-host-codex
+  "$OAV_PROBE_IMAGE" --no-host-providers
 ```
 
 Compare the same empty-state landmarks with the Claude capture. Exercise help,
