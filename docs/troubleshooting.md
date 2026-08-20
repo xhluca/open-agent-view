@@ -25,10 +25,11 @@ relevant SSH/container option.
 ## One provider is unavailable
 
 `doctor` reports missing host provider executables as warnings because a
-single-provider or Docker-only setup is valid. Confirm that the same shell can
-run the provider's `--version` command or `docker version` as applicable. If
-the executable has a nonstandard location, pass its `--*-bin` option
-explicitly.
+single-provider or Docker-only setup is valid. Open Agent View searches `PATH`
+and conventional user installs such as `~/.npm-global/bin/codex` and
+`~/.opencode/bin/opencode`; confirm that the resolved command's `--version`
+works. If the executable has another nonstandard location, pass its `--*-bin`
+option explicitly.
 
 Use a temporary adapter exclusion to regain the dashboard while investigating:
 
@@ -58,11 +59,13 @@ first refresh. JSON follows the same opt-in rule: use `coding-agents --json
 Completed, interactive, and cwd filtering is enforced centrally even when a
 provider CLI returns rows that violate its own flags. OpenCode's global history
 query is skipped entirely while completed rows are hidden. When history is
-shown, each group still renders only a terminal-sized page capped at 25 rows
+shown, at most 100 persisted rows per provider are loaded by default. A warning
+indicates a partial history window; restart with `--history-limit N` to choose a
+larger bounded window. Each group still renders only a terminal-sized page capped at 25 rows
 behind a selectable **Show more** row; Enter reveals another page. Filtering
-searches the complete discovered set, including rows not yet revealed. Grouping
+searches the bounded discovered set, including rows not yet revealed. Grouping
 is cached until the snapshot, filter, or view actually changes, so arrow
-movement and ordinary redraws do not rescan all 70,000 rows.
+movement and ordinary redraws do not rescan the history window.
 
 The default refresh is 15 seconds because repeatedly starting several provider
 CLIs can cause substantial CPU and memory churn. Use `ctrl+l` for an immediate

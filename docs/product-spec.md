@@ -32,6 +32,8 @@ delete, filter, and refresh.
   model picker.
 - A live completed-history toggle, 25-row progressive reveal, and reversible
   local hiding for rows that Open Agent View can observe but does not own.
+- A bounded provider-history window with an explicit CLI override; ordinary
+  active-session refreshes must never scan an unbounded persisted store.
 - Graceful behavior in narrow terminals and over SSH/tmux.
 - Machine-readable JSON output for scripting and diagnostics.
 

@@ -44,7 +44,7 @@ On Linux, the tested isolated store was an SQLite database below `$XDG_DATA_HOME
 opencode session list --format json
 ```
 
-Real mixed-provider validation then exposed an important 1.18.18 behavior: that command returned only the current workspace's sessions, so a dashboard launched elsewhere silently missed them. The adapter now uses OpenCode's official, read-only `db` command to project the session table globally, including child sessions, and falls back to `session list` for older releases that do not provide `db`. This deliberately couples the global path to the current table columns; a schema change becomes a visible source warning instead of silently reading the SQLite file itself.
+Real mixed-provider validation then exposed an important 1.18.18 behavior: that command returned only the current workspace's sessions, so a dashboard launched elsewhere silently missed them. The adapter now uses OpenCode's official, read-only `db` command to project the session table globally, including child sessions, and falls back to `session list` for older releases that do not provide `db`. The query has an explicit newest/oldest limit and asks SQLite to emit one `json_object` per TSV row. This avoids OpenCode 1.17's observed truncation of a large JSON array when stdout is a pipe. The adapter requests one sentinel row beyond the configured history budget, returns the bounded records, and emits a nonfatal warning when more exist. This deliberately couples the global path to the current table columns; a schema change becomes a visible source warning instead of silently reading the SQLite file itself.
 
 OpenCode 1.18.18 prints **zero bytes**, not `[]`, when the store is empty. With a session it returns records with:
 

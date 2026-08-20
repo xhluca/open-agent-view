@@ -15,6 +15,7 @@ coding-agents [OPTIONS]
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
 | `--all` | Include completed sessions in the dashboard or JSON output. They are excluded by default. |
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
+| `--history-limit N` | Read at most `N` persisted-history records per provider per refresh; default 100, range 1–10,000. Live/owned inventories are separate. |
 | `--cwd PATH` | Keep sessions whose working directory starts with `PATH`. |
 | `--fixture FILE` | Read a normalized snapshot/session array instead of probing providers; all provider operations are fenced. |
 | `--no-host-providers` | Disable every host provider while retaining explicit Docker targets. |
@@ -38,6 +39,12 @@ The `--managed-docker-registry PATH` global option applies to the managed
 Docker subcommands described below. Provider discovery warnings appear in the
 snapshot rather than hiding healthy sessions from another adapter.
 
+Bare provider command defaults are resolved from `PATH` first, then from the
+provider's conventional user-local install directories. This includes
+`~/.local/bin`, `~/.npm-global/bin` for Codex/Copilot,
+`~/.opencode/bin`/`~/.bun/bin` for OpenCode, `~/.cursor/bin`, and
+`~/.antigravity/bin`. An explicit path is never replaced by a guessed one.
+
 Fixture mode is intentionally non-operational even when the JSON advertises
 synthetic capabilities: launch, inspect, open, reply, approve/decline,
 structured response, interrupt, archive, and delete all refuse before provider
@@ -48,6 +55,7 @@ Useful read-only invocations:
 ```console
 coding-agents --json --all
 coding-agents --all
+coding-agents --all --history-limit 500
 coding-agents --json --no-host-claude --no-host-codex
 coding-agents --json --cwd /absolute/project
 coding-agents doctor
@@ -99,7 +107,11 @@ than a misleading zero. Use `/completed show` to opt the running dashboard into
 completed discovery, `/completed hide` to remove completed rows immediately
 and return future refreshes to active-only discovery, or `/completed` to
 toggle. `coding-agents --all` starts the dashboard in shown mode;
-`coding-agents --json --all` includes completed rows in one-shot output.
+`coding-agents --json --all` includes completed rows in one-shot output. The
+persisted-history window is 100 records per provider by default. A nonfatal
+warning says when more provider history exists; increase `--history-limit`
+deliberately instead of making every refresh scan an unbounded store. The
+Show-more row pages only the already discovered window.
 
 ### Local hide, provider delete, and provider archive
 
@@ -150,8 +162,7 @@ apply the reviewed batch, repeat the exact command with `--yes`:
 coding-agents sessions archive --cwd /absolute/project --older-than-days 30 --limit 100 --yes
 ```
 
-The default batch limit is 100 and the maximum is 1,100, matching the guarded
-Codex discovery ceiling. Every archive is independently revalidated against
+The default batch limit is 100 and the maximum is 1,100. Every archive is independently revalidated against
 the live owning App Server; one refusal is reported without granting authority
 to or silently skipping the remaining selected records. Fixture mode, disabled
 host Codex, missing Codex, active threads, external threads, Docker threads,

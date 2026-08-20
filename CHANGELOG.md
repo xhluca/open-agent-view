@@ -8,6 +8,27 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Completed history now has a 100-record per-provider refresh budget with an
+  explicit `--history-limit` override. Codex returns a useful partial page
+  instead of dropping every Codex row after a hard cap, and OpenCode pushes the
+  limit into a streaming read-only query instead of materializing roughly
+  70,000 rows.
+- Default Codex discovery uses the owning App Server's loaded inventory and
+  exact thread reads, avoiding persisted-rollout scans on every active refresh.
+- Conventional user-local provider installs are resolved after `PATH`, so
+  Codex in `~/.npm-global/bin` and OpenCode in `~/.opencode/bin` work without
+  manual flags while explicit executable paths remain exact.
+
+### Fixed
+
+- A resolved npm shim can reconnect to the same verified durable Codex script
+  without weakening process-identity checks; a changed symlink target still
+  refuses.
+- History warnings no longer replace model/harness/composer contextual keys
+  while an overlay is active.
+
 ## [0.1.12] - 2026-08-20
 
 ### Fixed

@@ -18,12 +18,12 @@ open, provider-neutral project.
 > evolve before a public stable release.
 
 > [!IMPORTANT]
-> The fixes documented below are in the tagged v0.1.12 release candidate. The
-> latest published private release remains v0.1.10 because GitHub Actions
-> rejected v0.1.12's native packaging jobs at the account billing/spending
-> gate, before any build ran. The repository owner must resolve that GitHub
-> setting and rerun the existing immutable tag before the installer can deliver
-> v0.1.12; no partial platform release is being presented as complete.
+> The latest published private release remains v0.1.10. GitHub Actions rejected
+> v0.1.12's native packaging jobs at the account billing/spending gate before
+> any build ran; the current checkout is the unreleased v0.1.13 candidate with
+> the large-history and executable-discovery fixes below. The repository owner
+> must resolve that GitHub setting before the installer can deliver a newer
+> complete platform matrix; no partial release is presented as complete.
 
 ## Why Open Agent View?
 
@@ -31,8 +31,9 @@ open, provider-neutral project.
   slow or unavailable provider does not hide results from the others.
 - **Responsive large queues.** Each group initially shows a terminal-sized page
   of at most 25 sessions behind a selectable Show more row, and completed
-  history is excluded unless `--all` is explicit—even when a provider ignores
-  its own active-only flag. Buffered
+  history is excluded unless `--all` is explicit. When history is requested,
+  each provider reads at most 100 persisted records per refresh by default;
+  `--history-limit` changes that explicit budget. Buffered
   key repeats and typed bursts are coalesced so large histories do not flood
   SSH, tmux, or the terminal renderer.
 - **Attention first.** Sessions are grouped by ready for review, needs input,
@@ -78,6 +79,10 @@ Open the dashboard from any project:
 coding-agents
 ```
 
+Common user-local installs are found automatically, including Codex under
+`~/.npm-global/bin` and OpenCode under `~/.opencode/bin`; use the corresponding
+`--*-bin` option only for another custom location.
+
 Useful examples:
 
 ```console
@@ -86,6 +91,9 @@ coding-agents --cwd "$PWD"
 
 # Start with completed sessions visible (they are hidden by default).
 coding-agents --all
+
+# Load a larger persisted-history window when you actually need it.
+coding-agents --all --history-limit 500
 
 # Include persisted interactive history in machine-readable output.
 coding-agents --json --all --include-interactive
@@ -118,9 +126,8 @@ searchable model picker without losing the draft; the installed provider's
 catalog loads without blocking typing or navigation. Every row
 spells out its provider name; open Peek to see whether it runs on the host or in
 Docker. Groups with more matches than the current page end in a selectable
-**Show more** row; filtering always
-searches the complete discovered set, including rows that have not been
-revealed. Completed history is hidden before discovery by default; use
+**Show more** row; filtering searches the complete bounded snapshot, including
+rows that have not been revealed. Completed history is hidden before discovery by default; use
 `/completed show` inside the dashboard or start with `--all`, then use
 `/completed hide` to return to the active queue. `ctrl+x` stops or deletes only
 when exact provider authority exists; otherwise it offers a reversible local

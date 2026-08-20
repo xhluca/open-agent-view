@@ -104,7 +104,12 @@ those flags, the discovery engine independently enforces completed,
 interactive, and cwd filters before every partial snapshot is published.
 `--all` opts into both discovery and display at startup. `/completed show` and
 `/completed hide` update the refresh worker's current discovery request; hide
-also removes completed rows from the in-memory snapshot immediately. Bulk
+also removes completed rows from the in-memory snapshot immediately. Persisted
+history is capped per provider (100 records by default), and a partial result
+is returned with a warning instead of discarding the whole provider. Codex's
+default active path uses `thread/loaded/list` plus exact reads rather than
+scanning rollouts; OpenCode pushes the limit into its read-only SQL query and
+streams one JSON-encoded TSV row at a time. Bulk
 Codex archive is a separate bounded maintenance path with a read-only plan,
 explicit `--yes`, and the same per-session ownership checks as the TUI.
 

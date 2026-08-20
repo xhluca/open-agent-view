@@ -172,6 +172,13 @@ checks; the guide also contains release gates that are not yet complete.
   the same sizes: wide help/exit, narrow startup/exit, and tiny intro-only
   degradation/exit. The exhaustive action matrix ran against the actual binary
   in host `openpty`; it was not redundantly repeated inside Docker.
+- The v0.1.13 candidate repeated that fresh-container comparison after the
+  history changes: the populated OAV binary rendered both provider columns,
+  help, directory grouping, and clean alternate-screen restoration; Claude
+  2.1.209 independently rendered its empty dashboard/help and restored the
+  terminal. Both used the same network-disabled, read-only, non-root,
+  capability-dropped container profile, and both `--rm` containers were gone
+  afterward.
 - Host Claude discovery was compared with `claude agents --json --all`.
 - On the reported host environment, Claude 2.1.236 returned completed rows even
   without `--all`; a current-binary JSON probe centrally reduced that result to
@@ -179,6 +186,27 @@ checks; the guide also contains release gates that are not yet complete.
   Three warm probes completed in 0.44–0.47 seconds. The Claude CLI process
   itself peaked near 369 MiB, motivating the 15-second default refresh plus
   `ctrl+l` manual refresh.
+- The reported mixed store contained more than 1,100 Codex threads and 70,915
+  OpenCode history rows. Before the bounded adapters, Codex spent about six
+  seconds paging and then discarded all of its rows, while OpenCode admitted
+  the full store. With Codex 0.147.0 and OpenCode 1.17.20 resolved from their
+  conventional user installs, active-only discovery completed in 1.55 seconds
+  without warnings. `--all --history-limit 100` returned 197 total rows (81
+  Codex, 100 OpenCode, 10 Claude, and 6 Pi) in 1.48 seconds with explicit
+  partial-history warnings. The default 100-record budget repeated in 1.42
+  seconds. No task was launched and no history was changed.
+- OpenCode 1.17.20 was also probed directly against 501 read-only database
+  rows. Its JSON-array output truncated at line 1,851 when stdout was a pipe;
+  the bounded `json_object`-per-TSV-row query returned all 501 rows (502 lines
+  including the header) and parsed successfully. This is why history discovery
+  uses streaming TSV rather than a large JSON array.
+- A read-only real-host `openpty` run then used the release binary with the
+  reported provider home. It automatically found six launch-capable harnesses,
+  moved from Claude to OpenCode with three real Down-arrow events, loaded 467
+  OpenCode model choices through Shift+Tab, cancelled without losing the draft,
+  enabled bounded completed history, exercised Down/Up and typing, and restored
+  the alternate screen on exit. No task was submitted and no provider session
+  was modified.
 - Cursor `2026.03.20-44cb435`, GitHub Copilot CLI `1.0.80`, and Antigravity
   `1.1.14` were probed with disposable homes/configuration roots and no copied
   credentials. Cursor and Antigravity empty-state interfaces were exercised in
@@ -219,11 +247,12 @@ checks; the guide also contains release gates that are not yet complete.
   session: left arrow entered Claude's agent view, while Ctrl+Z exited the
   attachment and returned control to the caller. The dashboard now presents
   that distinction before suspending its alternate screen.
-- Three opt-in real-host `openpty` regressions now preserve those reproductions:
+- Four opt-in real-host `openpty` regressions now preserve those reproductions:
   nested Pi resume/return, completed Claude attach/Ctrl+Z return, and a
   mutation-free composer route through Pi/Claude provider cycling,
-  draft-preserving Shift+Tab Claude model selection, the dedicated filter, and
-  manual refresh. They are ignored in
+  draft-preserving Shift+Tab Pi/Claude model selection, the dedicated filter,
+  manual refresh, plus the six-harness/OpenCode/bounded-history route described
+  above. They are ignored in
   ordinary CI because they require installed provider binaries or private host
   history paths.
 - Codex App Server discovery was refreshed repeatedly inside a disposable,
