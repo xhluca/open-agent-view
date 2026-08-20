@@ -6,12 +6,19 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.10 is the current published private preview release; v0.1.12 is a
-tagged release candidate whose native packaging is waiting on the repository
-owner to resolve GitHub Actions billing/spending-limit enforcement. Rerun the
-existing v0.1.12 workflow after that account setting is fixed; do not move the
-tag or publish a partial target set. Version 0.1.2 was the initial published
-preview. The unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
+Version 0.1.13 is the current published private preview. Hosted jobs were
+unavailable, so the maintainer explicitly authorized a manual Linux x86-64
+release. Its release page contains only:
+
+```text
+open-agent-view-0.1.13-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.13-x86_64-unknown-linux-gnu.tar.gz.sha256
+```
+
+The archive was built, tested, packaged, checksum-verified, installer-tested,
+and smoke-tested on the native Linux x86-64 host. No ARM64 or macOS artifact is
+claimed for v0.1.13. Version 0.1.2 was the initial published preview. The
+unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
 terminal-repaint race, and a Linux-only managed-Pi assumption in a macOS PTY
@@ -21,8 +28,8 @@ umask; v0.1.12 fixes it and tests that umask explicitly. The repository is
 private, so preview installation requires an
 authenticated GitHub account until the project is made public. A version tag
 alone is not sufficient:
-present the one-line installer as usable only after its GitHub release contains
-the archive and checksum for every supported target:
+For future complete native releases, publish the archive and checksum for every
+advertised target:
 
 ```text
 open-agent-view-VERSION-x86_64-unknown-linux-gnu.tar.gz
@@ -34,6 +41,29 @@ open-agent-view-VERSION-x86_64-apple-darwin.tar.gz.sha256
 open-agent-view-VERSION-aarch64-apple-darwin.tar.gz
 open-agent-view-VERSION-aarch64-apple-darwin.tar.gz.sha256
 ```
+
+## Manual Linux x86-64 release procedure
+
+After the full local gate below, create the same deterministic package shape as
+the native workflow:
+
+```console
+version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "open-agent-view") | .version')"
+target=x86_64-unknown-linux-gnu
+stem="open-agent-view-${version}-${target}"
+install -d "dist/${stem}"
+install -m 0755 target/release/coding-agents "dist/${stem}/coding-agents"
+install -m 0644 LICENSE README.md "dist/${stem}/"
+source_date_epoch="$(git show -s --format=%ct HEAD)"
+tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 \
+  --numeric-owner -C dist -czf "dist/${stem}.tar.gz" "${stem}"
+(cd dist && sha256sum "${stem}.tar.gz" >"${stem}.tar.gz.sha256")
+```
+
+Extract and smoke-test the archive, test `install.sh` against a temporary local
+release root, create and push an annotated version tag, then publish exactly the
+verified archive and checksum with `gh release create --verify-tag`. Never
+upload an untested cross-compiled artifact merely to fill the matrix.
 
 ## Automated release contract
 
@@ -110,9 +140,9 @@ verification path; do not claim a signature when those prerequisites are absent.
 
 ## Verify a published release
 
-Confirm the workflow is green and the GitHub release contains the original
-archive and checksum. Then exercise both authenticated and public installation
-paths as applicable:
+Confirm the GitHub release contains the original verified archive and checksum.
+For an automated release also confirm the workflow is green. Then exercise both
+authenticated and public installation paths as applicable:
 
 ```console
 OAV_VERSION=MAJOR.MINOR.PATCH ./install.sh

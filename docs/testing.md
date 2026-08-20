@@ -77,8 +77,9 @@ checks; the guide also contains release gates that are not yet complete.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
   context-sensitive `?`, `ctrl+f` filtering, task slash commands, the visible
-  harness palette, searchable/paged model picker, live completed toggle, local
-  hide confirmation, Claude attach-return guidance, selection reconciliation
+  harness palette, searchable/paged model picker, live completed toggle, direct
+  idle local removal plus active-hide confirmation, direct Enter/Right open, Left-from-Peek return, Claude
+  attach-return guidance, selection reconciliation
   after filtering, Claude
   worktree grouping, aggregate review/working counts, capability-aware help,
   and the narrow footer's retained help affordance. Focused rendering tests
@@ -89,7 +90,8 @@ checks; the guide also contains release gates that are not yet complete.
   column.
 - Safety-focused state tests verify that ready-for-review and needs-input
   sessions are treated as live (and therefore require interrupt authority),
-  completed sessions use delete language, active groups cannot enter a
+  Ctrl+X emits exact stop for an active owned row and exact delete only after
+  the refreshed row is idle, completed sessions use delete language, active groups cannot enter a
   bulk-delete confirmation path, and observe-only rows use reversible local
   hiding without mixing it with provider deletion.
 - Private hidden-session registry tests cover idempotent hide/unhide, atomic
@@ -103,16 +105,18 @@ checks; the guide also contains release gates that are not yet complete.
   provider session ID.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
-- GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
-  targets, then repeats tests and release builds on Rust 1.75.0 and stable.
+- Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
+  all targets, real PTYs, release mode, and the installer. The checked-in
+  workflow encodes the wider native-platform contract but was unavailable for
+  v0.1.13, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, `ctrl+f`
   filter apply/cancel/clear, slash commands, the harness palette, multiline
   new-task launch/cancellation, peek, rename
-  cancellation/submission, native-open suspend/restore, reply, interrupt,
-  approval `y`/`n`, single/bulk delete and archive confirmation, structured
+  cancellation/submission, native-open suspend/restore, reply, direct
+  selected-row interrupt/delete, approval `y`/`n`, bulk delete and archive confirmation, structured
   input, and fixture-fenced refusals. A 90×24 case sends real arrow sequences
   and collapses/expands a group. The 55×18 and 31×7 cases verify the bounded
   narrow layout and explicit too-small fallback. Every case asserts alternate
@@ -145,9 +149,10 @@ checks; the guide also contains release gates that are not yet complete.
   proves that no completed row enters navigation. The same PTY submits
   `/completed show`, verifies a bounded Completed page and Show-more control,
   then submits `/completed hide` and verifies immediate removal. A second
-  real-PTY test points OpenCode at a marker-writing, two-second executable and
-  proves it is never started; the adapter test independently retains an unused
-  runner response.
+  real-PTY test points OpenCode at a marker-writing, two-second executable,
+  enables `/completed show`, and proves the external-history command is still
+  never started without `--include-external`; the adapter test independently
+  retains an unused runner response.
 
 ## Runtime checks
 

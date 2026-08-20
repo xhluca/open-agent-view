@@ -19,6 +19,8 @@ authenticated fresh-container end-to-end run.
 - [x] Add navigation, details, help, filtering, and JSON output.
 - [x] Keep completed discovery opt-in at startup and allow a live
   `/completed show|hide` transition without restarting the dashboard.
+- [x] Keep ordinary discovery restricted to OAV-created/managed sessions, with
+  explicit bounded `--include-external` provider-history review.
 - [x] Provide reversible local hide/unhide for observe-only provider history,
   distinct from provider-native archive/delete.
 - [x] Cover parsers and layout with deterministic tests.
@@ -35,7 +37,8 @@ authenticated fresh-container end-to-end run.
   retaining exact custom model identifiers.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
-  exposes an exact resume command.
+  exposes an exact resume command, using Enter or Right; Left returns from
+  inline Peek and Claude documents Ctrl+Z return.
 - [x] Stop only exact provider-listed active host Claude background sessions,
   with a fresh full-UUID/state/kind revalidation immediately before mutation.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
@@ -53,7 +56,7 @@ authenticated fresh-container end-to-end run.
   and exact one-shot permission response; keep persisted list rows
   observe/native-open.
 - [x] Reply/steer, archive, and delete owned Codex threads with explicit
-  capability checks and confirmations.
+  capability checks and lifecycle-state revalidation.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.
 - [x] Surface supported Claude logs and provider errors without leaking
   credentials.
@@ -98,6 +101,10 @@ authenticated fresh-container end-to-end run.
 - [ ] Validate and record SSH, additional terminal/theme combinations, and any
   supported non-Linux read-only behavior.
 - [x] Push version-matching private-preview tags and verify the complete native
-  archive/checksum set through the published installer workflow.
+  archive/checksum set through the published installer workflow (through
+  v0.1.10).
+- [x] Manually publish the fully gated v0.1.13 Linux x86-64 archive/checksum
+  after hosted jobs became unavailable, with unsupported platforms stated
+  explicitly rather than filled with untested artifacts.
 - [ ] Decide public-repository/package publication only after the private
   release gates and security review pass.

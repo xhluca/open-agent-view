@@ -117,6 +117,10 @@ version="${tag#v}"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   fail "release version must have the form MAJOR.MINOR.PATCH (received: ${tag})"
 
+if [[ "$version" == "0.1.13" && "$target" != "x86_64-unknown-linux-gnu" ]]; then
+  fail "v0.1.13 was manually published only for Linux x86_64; use a source build on ${target} or install a release that provides that target"
+fi
+
 stem="open-agent-view-${version}-${target}"
 archive="${stem}.tar.gz"
 checksum="${archive}.sha256"

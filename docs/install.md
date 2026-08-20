@@ -12,16 +12,21 @@ prerequisites.
 
 ## Supported platforms
 
-Prepared release targets cover:
+The manually published v0.1.13 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
+
+The installer and checked-in native release contract also define these targets,
+but v0.1.13 does not claim artifacts for them because they were not built and
+tested on native machines:
+
 - Linux ARM64 with glibc 2.35 or newer
 - macOS x86_64
 - macOS Apple silicon
 
-The release workflow builds and exercises each artifact on a native
-GitHub-hosted runner. The installer detects the host and stops with an
-explanation on unsupported systems.
+The installer stops with an explicit explanation when v0.1.13 is requested on
+one of those hosts. Use a source build there until a complete native release is
+published; do not reuse the Linux binary.
 
 The dashboard needs an interactive terminal. `--json` works without a TTY.
 All provider CLIs and Docker are optional; install only the providers you

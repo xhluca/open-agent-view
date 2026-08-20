@@ -96,18 +96,25 @@ JSON response. `ctrl+l` requests an immediate refresh. Status grouping is
 computed in one snapshot pass, provider labels are deduplicated without sorting
 the full history, and ready key/typing bursts produce one final frame.
 
-Completed sessions are excluded from the default discovery request rather than
-merely hidden after rendering. This lets providers avoid expensive history
-work: Claude does not receive its `--all` flag, and OpenCode does not run its
-global persisted-session database query. Because provider versions can violate
-those flags, the discovery engine independently enforces completed,
-interactive, and cwd filters before every partial snapshot is published.
-`--all` opts into both discovery and display at startup. `/completed show` and
-`/completed hide` update the refresh worker's current discovery request; hide
-also removes completed rows from the in-memory snapshot immediately. Persisted
-history is capped per provider (100 records by default), and a partial result
-is returned with a warning instead of discarding the whole provider. Codex's
-default active path uses `thread/loaded/list` plus exact reads rather than
+Default discovery is both ownership-scoped and active-only. Claude rows are
+filtered against OAV's private launch registry; Codex, Pi, OpenCode, Cursor, and
+Copilot contribute only exact supervisor-owned records; Antigravity has no
+managed inventory and therefore contributes nothing by default. Explicit
+Docker targets remain visible because naming them on the command line is an
+intentional enrollment action.
+
+`--include-external` adds provider-wide read-only history. Completed sessions
+remain a separate opt-in: `--all` selects completed display at startup, while
+`/completed show` and `/completed hide` update the refresh worker without
+changing the ownership scope. This lets providers avoid expensive history
+work: Claude does not receive its `--all` flag while completed is hidden, and
+OpenCode never runs its global persisted-session database query unless both
+external and completed scopes are enabled. Because provider versions can
+violate filters, the discovery engine independently enforces completed,
+interactive, and cwd rules before every partial snapshot is published.
+External history is capped per provider (100 records by default), and a partial
+result is returned with a warning instead of discarding the whole provider.
+Codex's default active path uses `thread/loaded/list` plus exact reads rather than
 scanning rollouts; OpenCode pushes the limit into its read-only SQL query and
 streams one JSON-encoded TSV row at a time. Bulk
 Codex archive is a separate bounded maintenance path with a read-only plan,
@@ -141,16 +148,17 @@ transport is stdio-only. The supervisor retains the child pipes, correlates
 JSONL responses, reduces lifecycle/dialog events, and exposes a private Unix
 socket to later dashboard clients. Exact Linux process identity protects the
 supervisor endpoint; canonical Pi session UUIDs protect every child operation.
-The same adapter also reads Pi's documented JSONL store. Those external history
-records remain inspect/open-only and are never promoted based on timestamps or
-PIDs.
+With `--include-external`, the same adapter also reads Pi's documented JSONL
+store. Those external history records remain inspect/open-only and are never
+promoted based on timestamps or PIDs.
 
 Managed OpenCode on Linux owns one durable authenticated `opencode serve`
 process on an ephemeral loopback port. Its private record contains the random
 Basic-auth secret, exact Linux process/listener identity, and only the canonical
 session IDs created through that server. Later dashboards revalidate all of
-those facts before reconnecting. The ordinary CLI history/export path remains
-inspect/native-open only and is never promoted from a matching ID.
+those facts before reconnecting. With `--include-external`, the ordinary CLI
+history/export path remains inspect/native-open only and is never promoted from
+a matching ID.
 
 Managed Cursor on Linux creates chats through the documented CLI and runs each
 turn as a detached stream-JSON process. A private registry stores the exact
@@ -159,8 +167,9 @@ only OAV-owned runs. Cursor's external TTY-only picker is not scraped, so there
 is no global Cursor list. Reply begins a new process only after the prior turn
 is idle; interrupt revalidates the exact Linux process identity first.
 
-GitHub Copilot uses two ACP authority tiers. A discovery connection calls
-`session/list`; its persisted results remain observe/native-open only. A
+GitHub Copilot uses two ACP authority tiers. With `--include-external`, a
+discovery connection calls `session/list`; its persisted results remain
+observe/native-open only. A
 separate retained control connection owns only the sessions it creates during
 the current dashboard process, carries their live events, and enables prompt,
 inspect, cancel, and exact one-shot permission choices. That managed authority

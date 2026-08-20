@@ -15,6 +15,7 @@ coding-agents [OPTIONS]
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
 | `--all` | Include completed sessions in the dashboard or JSON output. They are excluded by default. |
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
+| `--include-external` | Include provider sessions not created or managed by Open Agent View. External history is excluded by default. |
 | `--history-limit N` | Read at most `N` persisted-history records per provider per refresh; default 100, range 1–10,000. Live/owned inventories are separate. |
 | `--cwd PATH` | Keep sessions whose working directory starts with `PATH`. |
 | `--fixture FILE` | Read a normalized snapshot/session array instead of probing providers; all provider operations are fenced. |
@@ -55,7 +56,7 @@ Useful read-only invocations:
 ```console
 coding-agents --json --all
 coding-agents --all
-coding-agents --all --history-limit 500
+coding-agents --include-external --all --history-limit 500
 coding-agents --json --no-host-claude --no-host-codex
 coding-agents --json --cwd /absolute/project
 coding-agents doctor
@@ -97,38 +98,46 @@ container is an error and produces a nonzero exit status.
 
 ## Completed history and bulk archive
 
-The default dashboard and default JSON snapshot exclude completed sessions.
-This filter is applied both by adapters and again at the central discovery
-boundary: Claude is queried without `--all`, OpenCode's global
-persisted-history query is not started at all, and rows returned in violation
-of a provider's active-only/cwd/interactive contract are removed before a
-partial snapshot reaches the UI. The header shows `completed hidden` rather
-than a misleading zero. Use `/completed show` to opt the running dashboard into
-completed discovery, `/completed hide` to remove completed rows immediately
-and return future refreshes to active-only discovery, or `/completed` to
-toggle. `coding-agents --all` starts the dashboard in shown mode;
-`coding-agents --json --all` includes completed rows in one-shot output. The
-persisted-history window is 100 records per provider by default. A nonfatal
-warning says when more provider history exists; increase `--history-limit`
-deliberately instead of making every refresh scan an unbounded store. The
-Show-more row pages only the already discovered window.
+The default dashboard and JSON snapshot include only exact OAV-managed
+sessions, and exclude completed managed sessions. The two scopes are separate:
+`/completed show` and `--all` reveal completed sessions inside the current
+owned-only scope; they do not read unrelated provider history. Add
+`--include-external` when provider-wide history is actually wanted. For
+example, `coding-agents --include-external --all --history-limit 500` opts into
+a bounded completed-history review.
+
+Completed filtering is applied by adapters and again at the central discovery
+boundary. Claude is queried without `--all` when completed is hidden, and
+OpenCode's global persisted-history query is never started without both
+`--include-external` and completed visibility. Rows returned in violation of a
+provider's completed/cwd/interactive contract are removed before a partial
+snapshot reaches the UI. The header shows `completed hidden` rather than a
+misleading zero. `/completed show`, `/completed hide`, and `/completed` update
+the running dashboard; `--all` selects the initial state. External history is
+limited to 100 records per provider by default, with a warning when more exist.
+The Show-more row pages only the already discovered window.
 
 ### Local hide, provider delete, and provider archive
 
-A row can be removed from Open Agent View without claiming authority over the
-provider. Select a row and press `ctrl+x`. When exact Interrupt or Delete
-authority exists, the confirmation names that provider mutation. Otherwise it
-offers **Hide locally**, which retains provider history and any live process.
-The same rule applies from Peek. On a completed group, `ctrl+x` never relabels
-provider deletion as hiding: it deletes only when every row grants Delete;
-otherwise it offers to hide the undeletable rows locally. Bulk stop for an
-active group remains unavailable.
+Ctrl+X follows the selected row's current lifecycle. On an active row with
+exact Interrupt authority, the first press stops that exact session. Discovery
+refreshes immediately; when the same row becomes idle, the next press deletes
+it if the provider grants exact Delete authority. Providers without a safe
+delete surface instead remove the idle row locally and reversibly, retaining
+provider history. An active row without Interrupt authority still requires an
+explicit local-hide confirmation because its live process will continue. The
+same rule applies from Peek.
+
+Completed-group deletion remains confirmed. It deletes only when every row
+grants Delete; otherwise it offers to hide only the undeletable rows locally.
+Bulk stop for an active group remains unavailable.
 
 The local hidden-ID registry can also be managed without opening the TUI:
 
 ```console
-# Obtain the stable normalized ID from Peek or JSON output.
-coding-agents --json --all
+# Obtain the stable normalized ID from Peek or JSON output. Add
+# --include-external when the target is not OAV-managed.
+coding-agents --json --include-external --all
 
 coding-agents sessions hide 'pi:host:EXACT_ID'
 coding-agents sessions hidden
@@ -258,7 +267,8 @@ label.
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
 | Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
-| Session row | `enter` | Open a managed row that advertises Reply/Approve/Decline/Respond in inline Peek; otherwise suspend the dashboard and open its provider-native interface. Claude first explains that `ctrl+z`, not `←`, returns to Open Agent View. |
+| Session row | `enter` or `→` | Open a managed row that advertises Reply/Approve/Decline/Respond in inline Peek; otherwise suspend the dashboard and open its provider-native interface. Claude attaches directly; `ctrl+z`, not `←`, returns to Open Agent View. |
+| Inline Peek | `←` | Return to the session list without opening the native provider interface. |
 | Session row | `space` | Inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
 | Inspect peek | `y` / `n` | Allow once / deny only when the exact capability is advertised. |
@@ -283,7 +293,7 @@ label.
 | Writable composer | `backspace` | Remove the last character. |
 | Session row | `ctrl+r` | Enter rename composition; submission currently reports unsupported. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
-| Session row or Peek | `ctrl+x`, then `enter` or `ctrl+x` | Confirm exact interrupt when active, delete when completed, or reversible local hiding when provider mutation authority is absent. |
+| Session row or Peek | `ctrl+x` | Stop an exact active owned session; after refresh reports it idle, press again to delete it or remove it reversibly from OAV's view. Active rows without stop authority require a local-hide confirmation. |
 | Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete; otherwise offer to hide the undeletable rows locally. |
 | Any ordinary view | `?` | Open contextual help; `?`, `enter`, or `esc` closes it. |
 | Any overlay/composer | `esc` | Cancel that mode and discard its unsubmitted input. |
@@ -312,11 +322,12 @@ every 250 ms for up to five seconds. The UI remains interactive during those
 retries and reports a manual `ctrl+l` recovery only if the exact row still has
 not appeared.
 
-For active host Claude background rows, Interrupt is provider-native rather
-than registry-owned: immediately before `claude stop`, Open Agent View reruns
-`claude agents --json` and requires the exact full UUID to remain a host
-background session in an active state. Interactive, completed, Docker,
-missing, or changed rows are refused. Ctrl+X remains a two-step confirmation.
+Only host Claude background rows recorded in OAV's ownership registry receive
+Interrupt. Immediately before `claude stop`, Open Agent View reruns `claude
+agents --json` and requires the exact full UUID to remain a host background
+session in an active state. Interactive, completed, Docker, external, missing,
+or changed rows are refused. Ctrl+X dispatches the stop directly for the exact
+owned row; its next use can remove the row only after refresh reports it idle.
 
 Managed Cursor rows on Linux expose Inspect and either Interrupt while the
 verified owned process is active or Reply after it becomes idle. Managed

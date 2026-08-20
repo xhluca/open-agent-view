@@ -47,19 +47,21 @@ option.
 
 ## Completed is hidden, or the dashboard is sluggish
 
-This is intentional: plain `coding-agents` starts with completed history
-excluded before discovery because one reported environment contained roughly
-70,000 persisted rows. The header says `completed hidden` rather than a
-misleading zero. To review finished work, type `/completed show` in the
-new-task bar. Use `/completed hide` to remove those rows immediately, or start
-with `coding-agents --all` when completed history should be visible from the
-first refresh. JSON follows the same opt-in rule: use `coding-agents --json
---all`.
+Plain `coding-agents` now has two independent safety scopes: it shows only
+OAV-managed sessions, and it initially hides completed managed sessions. The
+roughly 70,000 rows reported by an earlier build were provider-wide OpenCode
+history, not OAV-created work. That global store is no longer queried by
+default—even after `/completed show`.
+
+Type `/completed show` or start with `--all` to see completed sessions inside
+the managed scope. Add `--include-external` only when provider-wide history is
+actually wanted; combine it with `--all` to include external completed rows.
+JSON uses the same independent flags.
 
 Completed, interactive, and cwd filtering is enforced centrally even when a
 provider CLI returns rows that violate its own flags. OpenCode's global history
-query is skipped entirely while completed rows are hidden. When history is
-shown, at most 100 persisted rows per provider are loaded by default. A warning
+query runs only with both `--include-external` and completed visibility. When
+external history is shown, at most 100 persisted rows per provider are loaded by default. A warning
 indicates a partial history window; restart with `--history-limit N` to choose a
 larger bounded window. Each group still renders only a terminal-sized page capped at 25 rows
 behind a selectable **Show more** row; Enter reveals another page. Filtering
@@ -72,7 +74,7 @@ CLIs can cause substantial CPU and memory churn. Use `ctrl+l` for an immediate
 refresh; use `--refresh-ms` only when you have measured a reason to poll more
 often. Provider refreshes, model-catalog loads, and managed launches stay off
 the input thread. If typing or arrows remain slow on a release containing these
-fixes, capture the provider count, `--all`/`--include-interactive` flags,
+fixes, capture the provider count, `--all`/`--include-external`/`--include-interactive` flags,
 terminal/tmux context, and an isolated real-PTY reproduction.
 
 For exact OAV-owned completed Codex threads, preview bounded provider-native
@@ -89,14 +91,16 @@ use that provider's documented native maintenance interface.
 
 ## I did not create a row and cannot delete it
 
-Discovery intentionally shows external provider history but does not pretend
-that Open Agent View owns it. Select the row (or open Peek) and press `ctrl+x`.
-When provider Interrupt/Delete authority is absent, the confirmation explicitly
-offers a reversible **local hide** and states that provider history and live
-processes are retained. Confirm with Enter or a second `ctrl+x`.
+External provider history is excluded by default. If an unexpected row still
+appears without `--include-external`, it must correspond to an OAV ownership
+record; report the normalized ID and provider without deleting registry files.
+If an idle row was shown with `--include-external`, select it and press `ctrl+x`
+to remove it reversibly from OAV's view. For an active row without stop
+authority, confirm the **local hide** warning; provider history and the live
+process are retained.
 
 For a scriptable equivalent, copy the exact normalized ID from Peek or
-`coding-agents --json --all`:
+`coding-agents --json --include-external --all`:
 
 ```console
 coding-agents sessions hide 'PROVIDER:RUNTIME:EXACT_ID'
@@ -115,7 +119,7 @@ Pi's default history store is recursive: a session file can live in a
 per-workspace child directory, while `pi --session` searches only the exact
 `--session-dir` it receives. Version 0.1.8 resolves the UUID to the JSONL file
 and passes that file's parent directory. Upgrade and retry. If it persists,
-confirm `coding-agents --json --all` reports the exact UUID and that the JSONL
+confirm `coding-agents --json --include-external --all` reports the exact UUID and that the JSONL
 file still exists under the configured `--pi-session-dir`; do not move or edit
 provider history as a recovery step.
 
@@ -130,10 +134,10 @@ Antigravity's native interface if needed.
 
 ## Claude left arrow does not return to Open Agent View
 
-This is Claude's own keymap: left arrow enters Claude's agent view. Open Agent
-View now shows a confirmation before attachment. Press `ctrl+z` inside Claude
-to return to the dashboard; the background session keeps running. Escape only
-cancels the pre-attach confirmation.
+This is Claude's own keymap: left arrow enters Claude's agent view. Enter or
+Right attaches directly from Open Agent View, and the selected-row footer says
+`ctrl+z returns`. Press `ctrl+z` inside Claude to return to the dashboard; the
+background session keeps running. Left returns only from OAV's inline Peek.
 
 ## Slash opens the wrong mode or harness/model selection is unclear
 

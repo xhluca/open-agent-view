@@ -23,7 +23,7 @@ delete, filter, and refresh.
 
 - A compact header with runtime context and state counts.
 - Sections for ready-for-review, needs-input, working, and, when `--all` or the
-  live `/completed show` command is explicit, completed sessions.
+  live `/completed show` command is explicit, completed managed sessions.
 - Rows with status, provider/runtime, name, latest useful summary, age, and
   optional repository metadata.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,
@@ -34,6 +34,8 @@ delete, filter, and refresh.
   local hiding for rows that Open Agent View can observe but does not own.
 - A bounded provider-history window with an explicit CLI override; ordinary
   active-session refreshes must never scan an unbounded persisted store.
+- An owned-only default inventory; provider-wide external history requires the
+  explicit `--include-external` flag and never inherits mutation authority.
 - Graceful behavior in narrow terminals and over SSH/tmux.
 - Machine-readable JSON output for scripting and diagnostics.
 

@@ -8,7 +8,27 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.13] - 2026-08-20
+
+### Added
+
+- `--include-external` explicitly opts the dashboard or JSON output into
+  provider sessions that Open Agent View did not create or manage.
+
 ### Changed
+
+- Default discovery is ownership-scoped. Claude is filtered through the exact
+  launch registry; Codex, Pi, OpenCode, Cursor, and Copilot use their managed
+  inventories; Antigravity appears only in external-history mode. `/completed
+  show` and `--all` reveal completed owned work without querying unrelated
+  provider history.
+- Enter and Right open the selected session. Left returns from inline Peek;
+  Claude attaches directly and the footer identifies Ctrl+Z as the return key.
+- Ctrl+X is lifecycle-based for an exact selected row: an active owned session
+  is stopped on the first press, and after refresh reports it idle the next
+  press deletes it where provider deletion exists. Safe local hiding and bulk
+  deletion remain capability-distinct; idle local removal is immediate and
+  reversible, while hiding an active uninterruptible row remains confirmed.
 
 - Managed Codex completion now follows exact `turn/completed` IDs instead of
   clearing interrupt authority from a briefly stale idle snapshot. Process

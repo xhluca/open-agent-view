@@ -1,12 +1,15 @@
 # Control and ownership model
 
-The dashboard separates **visibility** from **authority**. Finding a session is
-not permission to interrupt or delete it.
+The dashboard separates **visibility** from **authority**. Its default inventory
+contains only sessions Open Agent View created or explicitly manages. The
+`--include-external` flag adds provider-wide history for review, but finding an
+external session is never permission to interrupt or delete it.
 
 ## Local visibility controls are not provider mutations
 
-When a selected row does not carry the exact Interrupt or Delete capability,
-`ctrl+x` offers to hide it only from Open Agent View. The normalized ID is
+When an idle selected row does not carry exact Delete capability, `ctrl+x`
+hides it only from Open Agent View. An active row without Interrupt authority
+requires an explicit hide confirmation because hiding will not stop it. The normalized ID is
 stored in the private `hidden-sessions.json` registry and removed from later
 dashboard and JSON snapshots. Provider history, conversation state, and live
 processes remain unchanged. `coding-agents sessions hidden` audits that local
@@ -15,7 +18,7 @@ or resuming anything.
 
 This is intentionally distinct from provider-native deletion and archive.
 Those actions remain available only where the tables below grant exact
-authority and retain their own confirmations/revalidation. An observe-only row
+authority and retain their own revalidation. An observe-only row
 is never deleted merely because it can be hidden, and a local hidden record is
 never presented as an archive.
 
@@ -33,9 +36,10 @@ never presented as an archive.
 
 Opening a session temporarily suspends the dashboard's alternate screen and
 runs the provider's native interactive client with inherited terminal I/O.
-Returning restores raw mode and refreshes the dashboard. Claude's left arrow
-opens Claude's own agent view; `ctrl+z` is Claude's documented return key and
-is shown in a confirmation before attachment.
+Returning restores raw mode and refreshes the dashboard. Enter or Right opens
+the selected row directly. Claude's left arrow opens Claude's own agent view;
+the dashboard footer therefore says that `ctrl+z` returns to Open Agent View.
+Left returns from OAV's inline Peek without starting a provider CLI.
 
 ## Claude ownership registry
 
@@ -53,12 +57,12 @@ or, when `XDG_STATE_HOME` is unset:
 ```
 
 The file is written atomically with user-only permissions on Unix and records
-which sessions Open Agent View launched. Interrupt does not trust this record
-or a stale dashboard row as current authority: any active host Claude
-background row may advertise Ctrl+X, but immediately before stopping it the
-controller reruns `claude agents --json` and requires the exact full UUID,
-host runtime, background kind, and active state to still match. Interactive,
-completed, Docker, missing, or changed sessions are refused.
+which sessions Open Agent View launched. Only a matching owned record may
+advertise Ctrl+X. Interrupt still does not trust that record or a stale row as
+current authority: immediately before stopping, the controller reruns `claude
+agents --json` and requires the exact full UUID, host runtime, background kind,
+and active state to still match. Interactive, completed, Docker, external,
+missing, or changed sessions are refused.
 
 The registry grants provider-session authority only. It never grants authority
 to stop or remove a Docker container.

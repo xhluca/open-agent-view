@@ -12,23 +12,22 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. Prebuilt releases cover Linux
-> and macOS on x86-64 and ARM64; collaborators authenticate with GitHub to
-> install them. Provider capabilities and compatibility boundaries may still
-> evolve before a public stable release.
+> Open Agent View is an early private preview. The manually published v0.1.13
+> binary currently covers Linux x86-64; collaborators authenticate with GitHub
+> to install it. The source remains portable, but macOS and ARM64 artifacts are
+> not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> The latest published private release remains v0.1.10. GitHub Actions rejected
-> v0.1.12's native packaging jobs at the account billing/spending gate before
-> any build ran; the current checkout is the unreleased v0.1.13 candidate with
-> the large-history and executable-discovery fixes below. The repository owner
-> must resolve that GitHub setting before the installer can deliver a newer
-> complete platform matrix; no partial release is presented as complete.
+> v0.1.13 was packaged, checksummed, smoke-tested, and published manually after
+> the repository's hosted build service remained unavailable. The release page
+> and installer state the exact Linux x86-64 scope.
 
 ## Why Open Agent View?
 
-- **All sessions, one queue.** Enabled providers refresh concurrently and one
-  slow or unavailable provider does not hide results from the others.
+- **Your managed sessions, one queue.** The default view contains only sessions
+  created or explicitly managed by Open Agent View. Provider-wide history is a
+  deliberate `--include-external` opt-in, and enabled providers refresh
+  concurrently so one slow provider does not hide the others.
 - **Responsive large queues.** Each group initially shows a terminal-sized page
   of at most 25 sessions behind a selectable Show more row, and completed
   history is excluded unless `--all` is explicit. When history is requested,
@@ -66,8 +65,9 @@ After the repository and release are public, installation becomes:
 curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install.sh | bash
 ```
 
-The installer selects a native Linux or macOS binary, verifies its SHA-256
-checksum, and installs `coding-agents` under `~/.local/bin`. See the
+The installer selects a release asset for the current host, verifies its
+SHA-256 checksum, and installs `coding-agents` under `~/.local/bin`. The current
+manual v0.1.13 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
@@ -92,11 +92,11 @@ coding-agents --cwd "$PWD"
 # Start with completed sessions visible (they are hidden by default).
 coding-agents --all
 
-# Load a larger persisted-history window when you actually need it.
-coding-agents --all --history-limit 500
+# Review bounded provider-wide history only when you explicitly need it.
+coding-agents --include-external --all --history-limit 500
 
-# Include persisted interactive history in machine-readable output.
-coding-agents --json --all --include-interactive
+# Include external and interactive history in machine-readable output.
+coding-agents --json --include-external --all --include-interactive
 
 # Add one explicitly selected running container.
 coding-agents --docker-container my-agent-container
@@ -115,7 +115,7 @@ coding-agents sessions archive --older-than-days 30 --limit 100 --yes
 coding-agents sessions hidden
 ```
 
-Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
+Inside the dashboard, use `↑`/`↓` to move, `enter` or `→` to open, `space` to inspect,
 `ctrl+f` to filter, and `?` for contextual shortcuts. Start typing to hand off a
 new task, then press `tab` for a visible harness picker. Use arrows or `tab` to
 preview Claude, Codex, Pi, OpenCode, Cursor, or Copilot; `enter` selects and
@@ -127,11 +127,13 @@ catalog loads without blocking typing or navigation. Every row
 spells out its provider name; open Peek to see whether it runs on the host or in
 Docker. Groups with more matches than the current page end in a selectable
 **Show more** row; filtering searches the complete bounded snapshot, including
-rows that have not been revealed. Completed history is hidden before discovery by default; use
-`/completed show` inside the dashboard or start with `--all`, then use
-`/completed hide` to return to the active queue. `ctrl+x` stops or deletes only
-when exact provider authority exists; otherwise it offers a reversible local
-hide instead of changing provider history.
+rows that have not been revealed. Completed managed sessions are hidden before
+discovery by default; use `/completed show` inside the dashboard or start with
+`--all`, then use `/completed hide` to return to the active queue. These controls
+do not opt into unrelated provider history; add `--include-external` explicitly
+for that. On an active owned row, `ctrl+x` stops it immediately. After refresh
+shows the same row idle, the next `ctrl+x` deletes it when the provider supports
+exact deletion, or removes it reversibly from OAV's view otherwise.
 
 ## Provider support
 
@@ -141,13 +143,13 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | Live host/background sessions and explicit Docker targets | Inspect and native open; launch with a catalog-backed model picker; interrupt an exact host background session only after live provider revalidation |
+| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Inspect and native open; launch with a catalog-backed model picker; interrupt an exact OAV-owned host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
-| Pi | Documented host JSONL history plus durable OAV-managed RPC sessions on Linux | Inspect/native resume for history; catalog-backed owned launch, reply/steer, request handling, and interrupt |
-| OpenCode | Persisted host history, plus durable OAV-managed authenticated loopback sessions on Linux | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
+| Pi | Durable OAV-managed RPC sessions on Linux by default; documented host JSONL history with `--include-external` | Inspect/native resume for history; catalog-backed owned launch, reply/steer, request handling, and interrupt |
+| OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
-| GitHub Copilot CLI | Persisted host sessions from ACP `session/list`, plus process-local OAV-owned ACP sessions | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
-| Antigravity CLI | The documented most-recent conversation for each host workspace | Native resume; cache entries remain observe-only |
+| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
+| Antigravity CLI | The documented most-recent conversation for each host workspace, only with `--include-external` | Native resume; cache entries remain observe-only |
 
 Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
 OAV-owned Cursor control. Copilot control lasts for the dashboard process's
@@ -158,10 +160,11 @@ for tested versions, isolation setup, protocol observations, and boundaries.
 
 ## Safety model
 
-Open Agent View separates **visibility** from **authority**. Existing sessions
-and explicitly selected containers are observe-only unless the installation can
-prove it created and still owns the exact target. Destructive actions are
-capability-gated and confirmed; credentials are never copied into the project.
+Open Agent View separates **visibility** from **authority**. External sessions
+are hidden unless explicitly requested and remain observe-only when shown.
+Explicitly selected containers are also observe-only unless the installation
+can prove it created and still owns the exact target. Credentials are never
+copied into the project.
 
 The [control and ownership model](docs/control-model.md) documents the exact
 rules. Managed Docker additionally requires an immutable container ID,
