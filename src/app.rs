@@ -140,6 +140,7 @@ pub struct App {
     pub models_provider: Option<Provider>,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
+    session_page_size: usize,
     group_cache: Vec<Group>,
     session_indices: HashMap<String, usize>,
     session_counts: BTreeMap<SessionState, usize>,
@@ -204,6 +205,7 @@ impl App {
             models_provider: None,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
+            session_page_size: SESSION_PAGE_SIZE,
             group_cache: Vec::new(),
             session_indices: HashMap::new(),
             session_counts: BTreeMap::new(),
@@ -263,8 +265,22 @@ impl App {
         self.visible_limits
             .get(&group.key)
             .copied()
-            .unwrap_or(SESSION_PAGE_SIZE)
+            .unwrap_or(self.session_page_size)
             .min(group.sessions.len())
+    }
+
+    pub fn session_page_size(&self) -> usize {
+        self.session_page_size
+    }
+
+    pub fn set_session_page_size(&mut self, page_size: usize) {
+        let page_size = page_size.clamp(1, SESSION_PAGE_SIZE);
+        if self.session_page_size == page_size {
+            return;
+        }
+        self.session_page_size = page_size;
+        self.visible_limits.clear();
+        self.reconcile_selection();
     }
 
     pub fn hidden_session_count(&self, group: &Group) -> usize {
@@ -324,7 +340,10 @@ impl App {
         let SelectionKey::Group(key) = self.selection.as_ref()? else {
             return None;
         };
-        self.groups().iter().find(|group| &group.key == key).cloned()
+        self.groups()
+            .iter()
+            .find(|group| &group.key == key)
+            .cloned()
     }
 
     pub fn activate(&mut self) -> AppAction {
@@ -572,7 +591,10 @@ impl App {
             Err(error) => {
                 self.available_models.clear();
                 self.model_selection = 0;
-                self.set_notice(format!("failed to list {} models: {error}", provider.label()));
+                self.set_notice(format!(
+                    "failed to list {} models: {error}",
+                    provider.label()
+                ));
             }
         }
     }
@@ -598,8 +620,8 @@ impl App {
             self.model_selection = 0;
             return;
         }
-        self.model_selection = (self.model_selection as isize + delta)
-            .rem_euclid(len as isize) as usize;
+        self.model_selection =
+            (self.model_selection as isize + delta).rem_euclid(len as isize) as usize;
     }
 
     pub fn move_model_page(&mut self, delta: isize) {
@@ -974,9 +996,7 @@ impl App {
         } else if opens_inline {
             self.overlay = Overlay::Peek;
             self.notice = None;
-            AppAction::Inspect {
-                session_id: id,
-            }
+            AppAction::Inspect { session_id: id }
         } else {
             AppAction::Open { session_id: id }
         }
@@ -1111,18 +1131,13 @@ impl App {
     }
 
     fn show_more(&mut self, key: &str) {
-        let Some(group) = self
-            .groups()
-            .iter()
-            .find(|group| group.key == key)
-            .cloned()
-        else {
+        let Some(group) = self.groups().iter().find(|group| group.key == key).cloned() else {
             self.reconcile_selection();
             return;
         };
         let previously_visible = self.visible_session_count(&group);
         let newly_visible = previously_visible
-            .saturating_add(SESSION_PAGE_SIZE)
+            .saturating_add(self.session_page_size)
             .min(group.sessions.len());
         let first_revealed = group
             .sessions
@@ -1134,7 +1149,6 @@ impl App {
         self.notice = None;
         self.reconcile_selection();
     }
-
 }
 
 pub(crate) fn is_active_session_state(state: SessionState) -> bool {
@@ -1245,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn large_groups_reveal_twenty_five_sessions_at_a_time() {
+    fn large_groups_reveal_one_bounded_page_at_a_time() {
         let sessions = (0..61)
             .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
             .collect();
@@ -1288,6 +1302,33 @@ mod tests {
             .selectable_keys()
             .iter()
             .any(|key| matches!(key, SelectionKey::ShowMore(_))));
+    }
+
+    #[test]
+    fn visible_page_size_tracks_the_viewport_and_remains_bounded() {
+        let sessions = (0..61)
+            .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
+            .collect();
+        let mut app = app_with(sessions);
+
+        app.set_session_page_size(10);
+        assert_eq!(app.session_page_size(), 10);
+        assert_eq!(app.visible_session_count(&app.groups()[0]), 10);
+
+        app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.visible_session_count(&app.groups()[0]), 20);
+
+        app.set_session_page_size(0);
+        assert_eq!(app.session_page_size(), 1);
+        assert_eq!(app.visible_session_count(&app.groups()[0]), 1);
+
+        app.set_session_page_size(usize::MAX);
+        assert_eq!(app.session_page_size(), SESSION_PAGE_SIZE);
+        assert_eq!(
+            app.visible_session_count(&app.groups()[0]),
+            SESSION_PAGE_SIZE
+        );
     }
 
     #[test]
@@ -2280,11 +2321,7 @@ mod tests {
         app.start_new_session(None);
         app.input = "/completed sometimes".into();
         assert_eq!(app.activate(), AppAction::None);
-        assert!(app
-            .notice
-            .as_deref()
-            .unwrap()
-            .contains("/completed show"));
+        assert!(app.notice.as_deref().unwrap().contains("/completed show"));
     }
 
     #[test]
@@ -2324,11 +2361,7 @@ mod tests {
         assert!(!app.models_loading);
         assert_eq!(
             app.model_choices(),
-            vec![
-                None,
-                Some("openai/gpt-5"),
-                Some("anthropic/claude-sonnet")
-            ]
+            vec![None, Some("openai/gpt-5"), Some("anthropic/claude-sonnet")]
         );
 
         app.push_input('g');

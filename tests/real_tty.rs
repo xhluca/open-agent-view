@@ -494,7 +494,9 @@ printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessio
 #[test]
 fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     let _serial = serialize_real_tty_test();
-    let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
+    // The 36-row viewport admits the maximum 25-row page. A separate test
+    // verifies adaptive smaller pages keep Show-more visible in 34 rows.
+    let mut app = PtyApp::spawn_configured(120, 36, |command, home| {
         let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("fixtures")
             .join("all-providers-sessions.json");
@@ -553,8 +555,8 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.send(ENTER);
     app.wait_for("second bounded session page", |screen| {
         screen.contains("session-0025")
-            && screen.contains("session-0049")
-            && screen.contains("Show 25 more · 450 hidden")
+            && screen.contains("session-0026")
+            && !screen.contains("session-0050")
     });
 
     app.screen();
@@ -765,6 +767,24 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
         "hidden completed history delayed first usable screen"
     );
     assert_lines_fit(&screen, 120);
+
+    app.send(b"/completed show");
+    app.send(ENTER);
+    let shown = app.wait_for("in-dashboard completed history enable", |screen| {
+        screen.contains("1000 completed (/completed hide)")
+            && screen.contains("completed-session-0000")
+            && screen.contains("completed-session-0022")
+            && screen.contains("Show 23 more · 977 hidden")
+            && !screen.contains("completed-session-0023")
+    });
+    assert_lines_fit(&shown, 120);
+
+    app.send(b"/completed hide");
+    app.send(ENTER);
+    app.wait_for("in-dashboard completed history disable", |screen| {
+        screen.contains("completed hidden (/completed show)")
+            && !screen.contains("completed-session-0000")
+    });
     app.exit_cleanly();
 }
 
@@ -932,6 +952,14 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
     app.wait_for("Pi composer title", |screen| {
         screen.contains("new task · harness Pi · model default")
     });
+    app.send(b"\x1b[Z");
+    app.wait_for("account-visible Pi model picker", |screen| {
+        screen.contains("choose Pi model") && screen.contains("openai/gpt-4")
+    });
+    app.send(ESC);
+    app.wait_for("Pi draft survives model picker", |screen| {
+        screen.contains("new task · harness Pi · model default") && screen.contains("❯ x")
+    });
     app.send(b"\t");
     app.wait_for("visible harness picker", |screen| {
         screen.contains("choose harness · 2/2")
@@ -943,18 +971,17 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
     app.wait_for("selected Claude composer title", |screen| {
         screen.contains("new task · harness Claude · model default")
     });
-    app.send(ESC);
-    app.wait_for("harness composer close", |screen| {
-        !screen.contains("new task · harness Claude · model default")
+    app.send(b"\x1b[Z");
+    app.wait_for("account-visible Claude model picker", |screen| {
+        screen.contains("choose Claude model") && screen.contains("opus")
     });
-
-    app.send(b"/model opus\r");
-    app.wait_for("Claude model command", |screen| {
-        screen.contains("new Claude tasks will use model opus")
+    app.send(b"opus");
+    app.wait_for("filtered Claude model picker", |screen| {
+        screen.contains("choose Claude model · 1 result") && screen.contains("opus")
     });
-    app.send(b"x");
+    app.send(ENTER);
     app.wait_for("Claude model composer title", |screen| {
-        screen.contains("new task · harness Claude · model opus")
+        screen.contains("new task · harness Claude · model opus") && screen.contains("❯ x")
     });
     app.send(ESC);
     app.wait_for("model composer close", |screen| {
@@ -1031,14 +1058,17 @@ fn default_dashboard_never_starts_opencode_completed_history_query() {
 fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
+    let expected_version = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.10")
+        screen.contains(&expected_version)
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
             && screen.contains("release-reviewer")
             && screen.contains("Unknown")
-            && screen.contains("2 awaiting input · 4 working · 2 completed (/completed hide) · status view")
+            && screen.contains(
+                "2 awaiting input · 4 working · 2 completed (/completed hide) · status view",
+            )
     });
     assert_lines_fit(&startup, 120);
     assert!(startup.contains("release-reviewer"));
@@ -1368,8 +1398,9 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
 fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
+    let expected_version = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.10")
+        screen.contains(&expected_version)
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

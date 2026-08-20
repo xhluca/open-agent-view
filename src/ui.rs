@@ -7,7 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
-    SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE, SESSION_PAGE_SIZE,
+    SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE,
 };
 use crate::domain::{AgentSession, Capability, SessionState};
 
@@ -86,8 +86,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let cwd = header_directory(app);
     let awaiting = app.session_count(SessionState::NeedsInput);
-    let working = app.session_count(SessionState::ReadyForReview)
-        + app.session_count(SessionState::Working);
+    let working =
+        app.session_count(SessionState::ReadyForReview) + app.session_count(SessionState::Working);
     let completed = app.session_count(SessionState::Completed);
     let completed_status = if app.includes_completed {
         format!("{completed} completed (/completed hide)")
@@ -209,7 +209,11 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
             if is_selected {
                 selected_line = Some(lines.len());
             }
-            lines.push(render_show_more_row(hidden, is_selected));
+            lines.push(render_show_more_row(
+                hidden,
+                app.session_page_size(),
+                is_selected,
+            ));
         }
     }
 
@@ -245,8 +249,8 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     );
 }
 
-fn render_show_more_row(hidden: usize, selected: bool) -> Line<'static> {
-    let next = hidden.min(SESSION_PAGE_SIZE);
+fn render_show_more_row(hidden: usize, page_size: usize, selected: bool) -> Line<'static> {
+    let next = hidden.min(page_size);
     styled_line(
         vec![
             Span::styled("  ↓ ", Style::default().fg(ACCENT)),
@@ -374,9 +378,7 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .style(Style::default().bg(BG));
     if matches!(
         app.overlay,
-        Overlay::Composer(ComposerMode::NewSession)
-            | Overlay::HarnessPicker
-            | Overlay::ModelPicker
+        Overlay::Composer(ComposerMode::NewSession) | Overlay::HarnessPicker | Overlay::ModelPicker
     ) {
         let model = app.launch_model.as_deref().unwrap_or("default");
         block = block.title(format!(
@@ -582,11 +584,10 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
         Overlay::Composer(ComposerMode::Rename { .. }) => "enter to save · esc to cancel".into(),
         Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
-            "enter to create · tab choose harness · /harness · /model · ctrl+j newline · esc cancel"
-                .into()
+            "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
         }
         Overlay::Composer(ComposerMode::NewSession) if width >= 70 => {
-            "enter to create · tab choose harness · ctrl+j newline · /help · esc cancel".into()
+            "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
         }
         Overlay::Composer(ComposerMode::NewSession) if width >= 55 => {
             "enter to create · tab harness · /help · esc cancel".into()
@@ -686,9 +687,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
             "type to create · ↑/↓ select · ctrl+f filter · /completed show|hide · ? shortcuts"
                 .into()
         }
-        _ if width >= 70 => {
-            "type to create · ↑/↓ to select · /completed · ? for shortcuts".into()
-        }
+        _ if width >= 70 => "type to create · ↑/↓ to select · /completed · ? for shortcuts".into(),
         _ => "↑/↓ to select · ? for shortcuts".into(),
     }
 }
@@ -1629,9 +1628,8 @@ mod tests {
         let rendered = buffer_text(terminal.backend().buffer());
 
         assert!(rendered.contains("new task · harness Claude · model opus"));
-        assert!(rendered.contains("tab choose harness"));
-        assert!(rendered.contains("/harness"));
-        assert!(rendered.contains("/model"));
+        assert!(rendered.contains("tab harness"));
+        assert!(rendered.contains("shift+tab model"));
     }
 
     #[test]
@@ -1665,7 +1663,9 @@ mod tests {
         app.open_model_picker();
         app.set_available_models(
             Provider::Pi,
-            Ok((0..25).map(|index| format!("provider/model-{index:02}")).collect()),
+            Ok((0..25)
+                .map(|index| format!("provider/model-{index:02}"))
+                .collect()),
         );
         app.model_selection = 13;
         let backend = TestBackend::new(100, 30);

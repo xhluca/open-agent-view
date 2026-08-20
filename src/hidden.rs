@@ -162,10 +162,7 @@ impl HiddenSessions {
             if records.contains_key(&session_id) {
                 return Ok(false);
             }
-            records.insert(
-                session_id.clone(),
-                HiddenSessionRecord::from_id(session_id),
-            );
+            records.insert(session_id.clone(), HiddenSessionRecord::from_id(session_id));
             Ok(true)
         })
     }
@@ -381,10 +378,7 @@ fn temporary_path(path: &Path) -> Result<PathBuf> {
         .context("hidden-session registry path has no file name")?
         .to_string_lossy();
     let sequence = TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    Ok(path.with_file_name(format!(
-        ".{name}.tmp-{}-{sequence}",
-        std::process::id()
-    )))
+    Ok(path.with_file_name(format!(".{name}.tmp-{}-{sequence}", std::process::id())))
 }
 
 fn now_millis() -> u64 {
@@ -478,9 +472,7 @@ mod tests {
         let directory = private_tempdir();
         let registry = HiddenSessions::load(directory.path().join("hidden.json")).unwrap();
         for index in (0..70_000).step_by(7_000) {
-            registry
-                .hide_id(&format!("pi:host:{index:05}"))
-                .unwrap();
+            registry.hide_id(&format!("pi:host:{index:05}")).unwrap();
         }
         let mut snapshot = SessionSnapshot {
             sessions: (0..70_000)

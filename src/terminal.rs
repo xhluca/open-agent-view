@@ -13,7 +13,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
-use crate::app::{App, AppAction, Overlay};
+use crate::app::{App, AppAction, Overlay, SESSION_PAGE_SIZE};
 use crate::control::{ControlHub, ControlOutcome};
 use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot};
 use crate::hidden::HiddenSessions;
@@ -101,6 +101,8 @@ pub fn run_dashboard(
         control.launch_targets(),
     );
     let mut terminal = TerminalSession::enter()?;
+    let initial_size = terminal.terminal.size()?;
+    app.set_session_page_size(session_page_size_for_terminal(initial_size.height));
     let mut last_refresh = Instant::now();
     let mut current_request = request.clone();
     let mut refresh_in_flight = false;
@@ -109,11 +111,7 @@ pub fn run_dashboard(
     let mut pending_launch_retry_at: Option<Instant> = None;
     let mut latest_launch_sequence = 0u64;
     let mut needs_draw = true;
-    schedule_refresh(
-        &refresh_tx,
-        &current_request,
-        &mut refresh_in_flight,
-    )?;
+    schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
 
     let result = 'dashboard: loop {
         loop {
@@ -130,9 +128,8 @@ pub fn run_dashboard(
                         last_refresh = Instant::now();
                         if let Some(pending) = pending_launch.as_ref() {
                             if Instant::now() < pending.deadline {
-                                pending_launch_retry_at = Some(
-                                    Instant::now() + LAUNCH_DISCOVERY_RETRY_INTERVAL,
-                                );
+                                pending_launch_retry_at =
+                                    Some(Instant::now() + LAUNCH_DISCOVERY_RETRY_INTERVAL);
                             } else {
                                 app.set_notice(
                                     "task launched, but its provider record is not visible yet; press ctrl+l to retry",
@@ -169,13 +166,14 @@ pub fn run_dashboard(
                         match completed.result {
                             Ok(outcome) => {
                                 app.set_notice(outcome.message);
-                                pending_launch = outcome.provider_session_hint.map(
-                                    |provider_session_id| PendingLaunch {
-                                        provider: completed.provider,
-                                        provider_session_id,
-                                        deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
-                                    },
-                                );
+                                pending_launch =
+                                    outcome.provider_session_hint.map(|provider_session_id| {
+                                        PendingLaunch {
+                                            provider: completed.provider,
+                                            provider_session_id,
+                                            deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
+                                        }
+                                    });
                                 pending_launch_retry_at = None;
                             }
                             Err(error) => app.set_notice(format!("launch failed: {error}")),
@@ -191,20 +189,12 @@ pub fn run_dashboard(
             if refresh_in_flight {
                 refresh_after_current = true;
             } else {
-                schedule_refresh(
-                    &refresh_tx,
-                    &current_request,
-                    &mut refresh_in_flight,
-                )?;
+                schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
                 last_refresh = Instant::now();
             }
         }
         if refresh_after_current && !refresh_in_flight {
-            schedule_refresh(
-                &refresh_tx,
-                &current_request,
-                &mut refresh_in_flight,
-            )?;
+            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
             refresh_after_current = false;
             last_refresh = Instant::now();
         }
@@ -245,9 +235,7 @@ pub fn run_dashboard(
                                 );
                                 ActionEffect::default()
                             }
-                            other => {
-                                dispatch_action(&mut terminal, &mut app, other, control)
-                            }
+                            other => dispatch_action(&mut terminal, &mut app, other, control),
                         };
                         if let Some(include_completed) = effect.completed_visibility {
                             current_request.include_completed = include_completed;
@@ -300,7 +288,10 @@ pub fn run_dashboard(
                             }
                         }
                     }
-                    Event::Resize(_, _) => needs_draw = true,
+                    Event::Resize(_, height) => {
+                        app.set_session_page_size(session_page_size_for_terminal(height));
+                        needs_draw = true;
+                    }
                     _ => {}
                 }
                 if app.should_quit
@@ -314,20 +305,12 @@ pub fn run_dashboard(
         if !refresh_in_flight
             && pending_launch_retry_at.is_some_and(|retry_at| Instant::now() >= retry_at)
         {
-            schedule_refresh(
-                &refresh_tx,
-                &current_request,
-                &mut refresh_in_flight,
-            )?;
+            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
             pending_launch_retry_at = None;
             last_refresh = Instant::now();
         }
         if !refresh_in_flight && last_refresh.elapsed() >= refresh_interval {
-            schedule_refresh(
-                &refresh_tx,
-                &current_request,
-                &mut refresh_in_flight,
-            )?;
+            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
             last_refresh = Instant::now();
         }
     };
@@ -335,6 +318,14 @@ pub fn run_dashboard(
     engine.cancel();
     drop(refresh_tx);
     result
+}
+
+fn session_page_size_for_terminal(height: u16) -> usize {
+    let header_height = if height < 16 { 2 } else { 4 };
+    let list_height = height.saturating_sub(header_height + 3 + 1);
+    // Reserve a heading, a Show-more row, and a little separation so the
+    // pagination control does not start just below the viewport.
+    usize::from(list_height.saturating_sub(3).max(1)).min(SESSION_PAGE_SIZE)
 }
 
 fn schedule_refresh(
@@ -549,6 +540,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
         KeyCode::Tab if app.overlay == Overlay::Composer(crate::app::ComposerMode::NewSession) => {
             app.open_harness_picker();
             AppAction::None
+        }
+        KeyCode::BackTab
+            if app.overlay == Overlay::Composer(crate::app::ComposerMode::NewSession) =>
+        {
+            app.open_model_picker()
         }
         KeyCode::Tab if app.overlay == Overlay::HarnessPicker => {
             app.move_harness_selection(1);
@@ -1010,6 +1006,16 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn terminal_height_keeps_the_show_more_control_in_view() {
+        assert_eq!(session_page_size_for_terminal(8), 1);
+        assert_eq!(session_page_size_for_terminal(18), 7);
+        assert_eq!(session_page_size_for_terminal(28), 17);
+        assert_eq!(session_page_size_for_terminal(34), 23);
+        assert_eq!(session_page_size_for_terminal(36), SESSION_PAGE_SIZE);
+        assert_eq!(session_page_size_for_terminal(u16::MAX), SESSION_PAGE_SIZE);
+    }
+
     fn app() -> App {
         App::new(SessionSnapshot {
             sessions: vec![AgentSession {
@@ -1448,10 +1454,17 @@ mod tests {
             }],
         );
         app.start_new_session(Some('x'));
-        assert_eq!(app.open_model_picker(), AppAction::LoadModels { provider: Provider::Pi });
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::BackTab)),
+            AppAction::LoadModels {
+                provider: Provider::Pi
+            }
+        );
         app.set_available_models(
             Provider::Pi,
-            Ok((0..25).map(|index| format!("provider/model-{index:02}")).collect()),
+            Ok((0..25)
+                .map(|index| format!("provider/model-{index:02}"))
+                .collect()),
         );
 
         handle_key(&mut app, key(KeyCode::Down));
@@ -1728,7 +1741,10 @@ mod tests {
 
         assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
         let mut app = app();
-        assert_eq!(handle_key(&mut app, key(KeyCode::Char('x'))), AppAction::None);
+        assert_eq!(
+            handle_key(&mut app, key(KeyCode::Char('x'))),
+            AppAction::None
+        );
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
         assert_eq!(app.input, "x");
 
@@ -1814,11 +1830,8 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(
-                directory.path(),
-                std::fs::Permissions::from_mode(0o700),
-            )
-            .unwrap();
+            std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
+                .unwrap();
         }
         let hidden = HiddenSessions::load(directory.path().join("hidden.json")).unwrap();
         let mut app = app();
