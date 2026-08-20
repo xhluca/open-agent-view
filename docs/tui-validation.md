@@ -61,8 +61,9 @@ scripts/real-tui-tests.sh
 
 This runs `cargo test --locked --test real_tty -- --test-threads=1`. It uses
 `libc::openpty`, feeds real key bytes, parses output with VT100 semantics, and
-isolates `HOME` and `XDG_STATE_HOME`. Twelve tests create PTYs at 120×34, 105×30,
-100×28, 90×24, 55×18, and 31×7 (the narrow/fallback test creates two PTYs).
+isolates `HOME` and `XDG_STATE_HOME`. Thirteen Linux tests (twelve on macOS)
+create PTYs at 120×34, 105×30, 100×28, 90×24, 55×18, and 31×7 (the
+narrow/fallback test creates two PTYs).
 They cover startup/sections, help, status/directory grouping, `ctrl+f` filter
 apply/cancel/clear, slash commands, harness/model composer state, multiline
 launch/cancellation, inspect peek, rename
@@ -279,6 +280,28 @@ fresh-container tests prove real-TTY rendering, empty interaction, and
 credential-free synthetic startup; deterministic mocks prove lifecycle
 protocol behavior. They do not prove a real authenticated task in a fresh
 container.
+
+The reported Linux host also has explicit opt-in lifecycle coverage using the
+installed authenticated CLIs with temporary OAV supervisor/session state:
+
+```console
+OAV_REAL_CODEX_BIN="$HOME/.npm-global/bin/codex" \
+  cargo test --locked --test real_managed_launch \
+  real_codex_launch_interrupt_delete_and_server_cleanup \
+  -- --ignored --exact --nocapture
+
+OAV_REAL_PI_BIN="$HOME/.local/bin/pi" \
+  cargo test --locked --test real_managed_launch \
+  real_pi_launch_interrupt_and_daemon_cleanup \
+  -- --ignored --exact --nocapture
+```
+
+Those tests dispatch disposable marker prompts and can use provider quota, so
+they remain ignored by default. They verify exact launch/inspect/reply,
+interrupt or an authoritative completion race, provider deletion/shutdown, and
+process cleanup. This is host lifecycle evidence, not a claim that credentials
+were mounted into the fresh Docker probes above; the dedicated authenticated
+container gate remains outstanding.
 
 ## Evidence record template
 

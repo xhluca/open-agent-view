@@ -23,6 +23,13 @@ checks; the guide also contains release gates that are not yet complete.
   exact active-turn steer, idle reply, archive, and delete. It also asserts
   mode `0700` for the state directory and `0600` for the ownership record. The
   mock PID is re-verified, terminated, and reaped by a panic-safe test guard.
+- Codex reducer tests require an exact owned `turn/completed` thread/turn pair
+  before releasing active-turn authority, reject external deletion events, and
+  prove a stale idle snapshot remains interruptible. Shutdown tests hold a
+  stable Linux pidfd, reject a second controller and tampered command line, and
+  remove only the exact stopped server record. Process transports run in a new
+  process group so npm wrappers and their native App Server children are both
+  bounded during teardown.
 - A disposable mock Pi RPC executable covers managed launch, live discovery,
   transcript inspection, active steer, confirmation, structured text input,
   interrupt, exact unowned-ID refusal, modeled launch, and shutdown. A second
@@ -98,7 +105,7 @@ checks; the guide also contains release gates that are not yet complete.
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
   targets, then repeats tests and release builds on Rust 1.75.0 and stable.
-- `scripts/real-tui-tests.sh` runs twelve serialized tests on Linux and eleven
+- `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, `ctrl+f`
@@ -179,6 +186,17 @@ checks; the guide also contains release gates that are not yet complete.
   terminal. Both used the same network-disabled, read-only, non-root,
   capability-dropped container profile, and both `--rm` containers were gone
   afterward.
+- After the managed-Codex lifecycle fixes, release binary SHA-256
+  `efb0a8d8f62f878fc5bb09c6b67da73a871c26f30e7a2dd56d10922a186cbec9`
+  was staged mode `0755` and rerun in the same immutable image at a real
+  80×24 PTY with the populated fixture. It rendered all state sections and
+  explicit Claude/Codex provider columns, opened/closed help, exited through
+  Escape, and restored the alternate screen. The seven-provider fixture then
+  rendered its full provider header and representative rows at 150×36. Claude
+  Code 2.1.209 independently rendered its reference empty dashboard at 120×34,
+  opened/closed shortcuts, and exited cleanly under the same
+  network-disabled/read-only/non-root controls. All named `--rm` containers
+  were absent afterward and the exact staging directories were removed.
 - Host Claude discovery was compared with `claude agents --json --all`.
 - On the reported host environment, Claude 2.1.236 returned completed rows even
   without `--all`; a current-binary JSON probe centrally reduced that result to
@@ -219,8 +237,25 @@ checks; the guide also contains release gates that are not yet complete.
   offline startup, and no credentials. Strict RPC JSONL, canonical session
   identity, state/name commands, a built-in bash-tool event path that did not
   invoke a model, clean EOF, and exact native TUI resume/terminal restoration
-  were verified. The managed model-prompt lifecycle uses the isolated mock
-  above; no authenticated model call is claimed.
+  were verified.
+- `tests/real_managed_launch.rs` adds explicit ignored, credentialed host
+  lifecycles without reusing the ordinary OAV supervisor state. Pi 0.84.2 used
+  a temporary daemon and session directory: it launched an exact-response
+  prompt, inspected the assistant transcript, started a second turn,
+  interrupted it, stopped the daemon, and proved the exact provider PID exited
+  in 3.60 seconds. Codex 0.147.0 used a temporary durable App Server: it
+  launched and inspected an exact-response task, exercised a controlled
+  `sleep 30` turn and one-time approval when presented, sent exact-turn
+  interrupt (or accepted only Codex's precise completion race), archived and
+  deleted the exact thread, recovered the idle owner when Codex withheld its
+  delete response, restored no test ownership, and removed the exact native
+  listener. The final isolated run passed in 37.13 seconds.
+- Failed Codex probe iterations were not left as mystery jobs. Nine exact
+  `OAV-CODEX-SMOKE` ordinary/archived IDs were enumerated, deleted through
+  independent App Servers, and re-listed as absent; the final passing probe
+  deleted its own ID. No prompt used a project workspace or modified a file,
+  and post-test process scans found no temporary App Server, stdio observer,
+  Pi daemon, or Pi RPC child.
 - Pi 0.80.6 was additionally resumed from the reported host's real recursive
   per-workspace JSONL directory by exact UUID and exact file-parent
   `--session-dir`; it opened under a PTY and exited with Ctrl+D without the
@@ -285,7 +320,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Normalization, key routing, responsive layout, capability gates | Locked Rust test suite with Ratatui test backend | Verified |
 | Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
-| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Twelve-test Linux / eleven-test macOS `real_tty` harness using canonical and generated fixtures | Verified |
+| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Thirteen-test Linux / twelve-test macOS `real_tty` harness using canonical and generated fixtures | Verified |
 | Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
 | Searchable async model catalogs and exact modeled launch | Claude/Codex/Pi/OpenCode parsers, mock App Server/RPC/HTTP payload assertions, stale-result and isolated-search UI tests | Verified deterministically |
@@ -298,7 +333,8 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
 | Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
 | Managed-Docker command construction and authority failures | Injected command runner; no Docker daemon | Verified |
-| Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated credentials, network, and disposable tasks required | Not run |
+| Authenticated managed Codex/Pi host lifecycle in isolated temporary state | Opt-in exact-response launch, inspect, reply, approval race, interrupt, delete/shutdown and PID cleanup | Verified on the reported host |
+| Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated container credentials, network, and disposable tasks required | Not run |
 | SSH portability and broad terminal/theme matrix | Environment-specific real-TTY runs required | Not yet claimed |
 
 “Verified manually” records observed behavior but is not a pixel-diff or
@@ -354,8 +390,11 @@ examples.
 - An existing session has no stop capability unless its provider/runtime key is
   present in the local ownership registry written at launch time.
 - The durable Codex record stores PID start time and exact command-line bytes;
-  both must match `/proc` before reuse. Runtime code never signals a persisted
-  PID, and stale sockets are not unlinked automatically.
+  both must match `/proc` before reuse. Explicit idle recovery opens a pidfd and
+  revalidates the complete identity before signaling that exact process; normal
+  dashboard exit never signals it, and stale sockets are not unlinked
+  automatically. Shared/exclusive private recovery locking keeps other
+  dashboards from attaching during the bounded replacement window.
 - Managed Codex launches use `on-request` approvals and `workspace-write`, with
   no danger-full-access or approval-bypass fallback.
 - Managed Pi reconnect requires an exact Linux PID start token and command

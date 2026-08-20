@@ -78,12 +78,15 @@ $XDG_STATE_HOME/open-agent-view/codex-supervisor/
 or `~/.local/state/open-agent-view/codex-supervisor/`. The directory is
 current-user-owned and mode `0700`; its lock, log, and JSON record are regular
 current-user-owned files with no group/other access. The record contains the
-server PID, Linux `/proc` start token, exact command line, socket path, and
-owned thread/turn IDs.
+PID of the native process that owns the listening socket (not merely an npm
+wrapper), Linux `/proc` start token, exact command line, socket path, and owned
+thread/turn IDs.
 
 Before reconnecting or changing an ownership record, the supervisor verifies
-both the persisted start token and exact command line. It never signals a PID
-loaded from disk. A dead or mismatched record causes a new uniquely named
+both the persisted start token and exact command line. Normal discovery and
+dashboard shutdown never signal a PID loaded from disk. Explicit idle-delete
+recovery opens a pidfd first, revalidates the full identity, and signals only
+through that stable kernel handle. A dead or mismatched record causes a new uniquely named
 socket to be created; a verified live process with an unavailable socket is
 reported as an error and is not replaced. This deliberately favors avoiding
 the wrong process over automatic cleanup.
@@ -102,6 +105,18 @@ represent an approval or structured input request. Instead, the controller
 tracks each server request by its opaque string/integer ID plus exact owned
 thread and active-turn ID. Transcript rendering keeps only a bounded recent
 tail.
+
+The active-turn record is released only by the matching terminal
+`turn/completed` event or a resume payload containing that exact terminal turn.
+A briefly stale idle `thread/read` after `turn/start` is presented as owned
+working state, preserving Ctrl+X until Codex resolves the turn. Deletion first
+archives the exact idle thread. If Codex 0.147 wedges without a response or
+exact deletion notification, OAV restarts the owner only when every recorded
+turn is idle, completes the same ID through an isolated App Server, and restores
+all other ownership records. Active work makes this recovery a refusal.
+Ordinary discovery holds a shared private recovery lock; the bounded
+stop/delete/restart sequence holds it exclusively, so a second dashboard waits
+instead of starting or attaching to an intermediate owner.
 
 `coding-agents sessions archive` uses the same boundary in bulk. It discovers
 only ordinary non-archived host Codex threads, enriches them through the owning

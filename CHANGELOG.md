@@ -10,6 +10,15 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Changed
 
+- Managed Codex completion now follows exact `turn/completed` IDs instead of
+  clearing interrupt authority from a briefly stale idle snapshot. Process
+  transports own and stop their whole wrapper/native process group, and the
+  durable supervisor records the native process that owns its Unix listener.
+- Deleting an idle OAV-owned Codex thread archives it first. Codex 0.147 can
+  wedge its owning App Server during `thread/delete`; OAV accepts only an exact
+  response/`thread/deleted` notification, otherwise restarts only an entirely
+  idle exact owner and completes deletion through an isolated App Server while
+  preserving all other ownership records.
 - Completed history now has a 100-record per-provider refresh budget with an
   explicit `--history-limit` override. Codex returns a useful partial page
   instead of dropping every Codex row after a hard cap, and OpenCode pushes the
@@ -23,6 +32,10 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Fixed
 
+- A newly started Codex turn can no longer lose Ctrl+X/reply authority when
+  `thread/read` briefly reports the previous idle state.
+- Dropping a Codex stdio/proxy client no longer kills only an npm wrapper and
+  hangs forever while its native child retains stdout/stderr.
 - A resolved npm shim can reconnect to the same verified durable Codex script
   without weakening process-identity checks; a changed symlink target still
   refuses.

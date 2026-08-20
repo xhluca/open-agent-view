@@ -231,6 +231,23 @@ preserve a private copy of the entire `codex-supervisor` directory for
 diagnosis, and report the redacted error plus binary/provider versions. Manual
 process cleanup is intentionally outside the supported pre-alpha workflow.
 
+### An owned Codex delete takes longer than expected
+
+Codex 0.147 can withhold `thread/delete` responses for a thread still loaded by
+its owning App Server. OAV first archives the exact idle thread. It never calls
+a timeout “deleted”: success requires the normal response or the exact
+`thread/deleted` notification. If the owner wedges and every OAV-owned turn is
+idle, OAV can stop the exact listener through a revalidated pidfd, finish the
+same ID through an isolated App Server, restart the durable owner, and restore
+the remaining ownership records. A private recovery lock makes other dashboard
+connections wait across that replacement. This recovery can take tens of
+seconds.
+
+OAV refuses that restart while any owned Codex turn is active. Finish or
+interrupt the named work and retry. Do not remove the supervisor record or kill
+an App Server by a copied PID; doing so discards the evidence used to keep the
+recovery scoped.
+
 ## Pi supervisor cannot reconnect
 
 Managed Linux Pi state is under:

@@ -313,6 +313,41 @@ Verified behavior:
   thread only as `notLoaded`, returned no loaded threads, and rejected an
   interrupt with `thread not found`.
 
+## 0.147.0 authenticated host lifecycle
+
+An opt-in host probe later exercised the installed Codex 0.147.0 with the
+user's existing authentication but an isolated temporary OAV supervisor
+directory. It created only marker-named disposable threads under `/tmp` and
+used no file-changing prompt.
+
+The probe exposed three integration details that synthetic protocol fixtures
+could not:
+
+- `thread/read` can briefly report the previous idle state immediately after a
+  successful `turn/start`. OAV must retain the exact recorded active turn until
+  the matching `turn/completed` notification or terminal resume payload
+  arrives; clearing on the idle snapshot makes a later Ctrl+X fail locally.
+- The npm entry point remains a Node signal-forwarding parent while its native
+  child owns the Unix listener. Durable identity therefore follows the exact
+  current-user process holding the listener inode. Stdio/proxy clients run in
+  their own process group so dropping the wrapper cannot strand the native
+  child with inherited pipes.
+- On this version, `thread/delete` for an App-Server-owned idle thread can
+  archive/apply without returning its response and can wedge the owning server.
+  OAV never treats a timeout alone as success. It accepts only a normal response
+  or exact `thread/deleted {threadId}` notification. If every owned turn is
+  idle, it may stop the exact listener through a revalidated pidfd, verify or
+  complete deletion through a fresh isolated App Server, restart the durable
+  owner, and restore every other ownership record. Active owned work forbids
+  that restart.
+
+The final lifecycle passed launch, exact assistant transcript, a second turn,
+one-time approval when presented, exact-turn interrupt/completion-race
+handling, deletion, server recovery, and process cleanup in 37.13 seconds.
+Nine exact marker threads produced while developing the provider-version
+workaround were subsequently enumerated across ordinary and archived history,
+deleted by ID, and independently confirmed absent.
+
 Authenticated model completion was intentionally not tested. The offline test
 did verify retryable `error` notifications and cancellation during retry.
 
