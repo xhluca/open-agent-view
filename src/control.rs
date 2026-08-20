@@ -590,7 +590,7 @@ impl ProviderController for ClaudeController {
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        let mut command = match &session.runtime {
+        let command = match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.invocation.program);
                 command
@@ -611,7 +611,7 @@ impl ProviderController for ClaudeController {
                 command
             }
         };
-        run_interactive(&mut command, session)
+        run_interactive(command, session)
     }
 }
 
@@ -753,7 +753,7 @@ impl ProviderController for CodexController {
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         let remote = self.supervisor.remote_url_if_owned(session);
-        let mut command = match &session.runtime {
+        let command = match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.codex_bin);
                 if let Some(remote) = remote.as_deref() {
@@ -777,24 +777,26 @@ impl ProviderController for CodexController {
                 command
             }
         };
-        run_interactive(&mut command, session)
+        run_interactive(command, session)
     }
 }
 
-fn run_interactive(command: &mut Command, session: &AgentSession) -> Result<ControlOutcome> {
-    let status = command
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .context("failed to open provider session")?;
-    if !status.success() {
-        bail!("provider session exited with status {status}");
+fn run_interactive(command: Command, session: &AgentSession) -> Result<ControlOutcome> {
+    match crate::native_session::run(command, &session.id)? {
+        crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+            message: format!("backgrounded {}; Enter/Right resumes it", session.name),
+            provider_session_hint: Some(session.provider_session_id.clone()),
+        }),
+        crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+            Ok(ControlOutcome {
+                message: format!("returned from {}", session.name),
+                provider_session_hint: None,
+            })
+        }
+        crate::native_session::NativeSessionExit::Exited(status) => {
+            bail!("provider session exited with status {status}")
+        }
     }
-    Ok(ControlOutcome {
-        message: format!("returned from {}", session.name),
-        provider_session_hint: None,
-    })
 }
 
 struct ControlInvocation {

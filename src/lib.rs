@@ -9,6 +9,7 @@ pub mod doctor;
 pub mod domain;
 pub mod hidden;
 pub mod maintenance;
+pub mod native_session;
 pub mod opencode_supervisor;
 pub mod pi_supervisor;
 pub mod process;

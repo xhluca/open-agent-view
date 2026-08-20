@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -275,22 +275,29 @@ impl ProviderController for PiController {
             .source
             .session_directory_for(&session.provider_session_id)?
             .context("the Pi session file is no longer present")?;
-        let status = Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        command
             .args(["--session", &session.provider_session_id, "--session-dir"])
             .arg(session_dir)
-            .current_dir(&session.cwd)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to open the Pi session")?;
-        if !status.success() {
-            bail!("Pi session exited with status {status}");
+            .current_dir(&session.cwd);
+        match crate::native_session::run(command, &session.id)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!(
+                    "backgrounded Pi session {}; Enter/Right resumes it",
+                    session.name
+                ),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("returned from Pi session {}", session.name),
+                    provider_session_hint: Some(session.provider_session_id.clone()),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Pi session exited with status {status}")
+            }
         }
-        Ok(ControlOutcome {
-            message: format!("returned from Pi session {}", session.name),
-            provider_session_hint: Some(session.provider_session_id.clone()),
-        })
     }
 }
 

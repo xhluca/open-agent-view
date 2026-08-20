@@ -16,8 +16,9 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 #[cfg(target_os = "linux")]
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 #[cfg(target_os = "linux")]
 use std::thread;
 #[cfg(target_os = "linux")]
@@ -241,6 +242,20 @@ impl OpenCodeSupervisor {
         self.request_empty(&record, "POST", &path, Some(&json!({})))
     }
 
+    /// Build a native TUI client attached to the exact authenticated server
+    /// that owns this session. The password stays in the child environment;
+    /// it is never placed in argv, logs, or a dashboard notice.
+    pub fn native_attach_command(&self, session_id: &str) -> Result<Command> {
+        let _lock = StateLock::acquire(&self.lock_path)?;
+        let record = self.required_live_record_locked()?;
+        let owned = require_owned(&record, session_id)?;
+        Ok(build_native_attach_command(
+            &self.executable,
+            &record,
+            owned,
+        ))
+    }
+
     /// Stop the exact verified test/development server. Normal dashboard exit
     /// deliberately leaves it running for reconnect.
     pub fn shutdown_server(&self) -> Result<()> {
@@ -311,7 +326,7 @@ impl OpenCodeSupervisor {
                 );
             }
             if verify_server(record)? {
-                if record.executable != self.executable {
+                if !record_uses_executable(record, &self.executable) {
                     bail!(
                         "a verified OpenCode server is already running with executable {}; configured executable is {}",
                         record.executable,
@@ -503,6 +518,23 @@ fn require_owned<'a>(record: &'a ServerRecord, session_id: &str) -> Result<&'a O
         .sessions
         .get(session_id)
         .context("refusing to control an OpenCode session not created by this supervisor")
+}
+
+fn build_native_attach_command(
+    executable: &str,
+    record: &ServerRecord,
+    owned: &OwnedSession,
+) -> Command {
+    let mut command = Command::new(executable);
+    command
+        .arg("attach")
+        .arg(format!("http://127.0.0.1:{}", record.port))
+        .args(["--session", &owned.id, "--dir"])
+        .arg(&owned.cwd)
+        .env("OPENCODE_SERVER_USERNAME", &record.username)
+        .env("OPENCODE_SERVER_PASSWORD", &record.password)
+        .current_dir(&owned.cwd);
+    command
 }
 
 #[derive(Debug)]
@@ -978,6 +1010,42 @@ fn verify_server(record: &ServerRecord) -> Result<bool> {
     Ok(start == record.process_start_token && cmdline == record.process_cmdline)
 }
 
+fn record_uses_executable(record: &ServerRecord, configured: &str) -> bool {
+    if record.executable == configured {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let actual = fs::read_link(format!("/proc/{}/exe", record.pid))
+            .ok()
+            .and_then(|path| fs::canonicalize(path).ok());
+        actual.is_some() && actual == resolve_host_executable(configured)
+    }
+    #[cfg(not(target_os = "linux"))]
+    false
+}
+
+#[cfg(target_os = "linux")]
+fn resolve_host_executable(executable: &str) -> Option<PathBuf> {
+    let path = Path::new(executable);
+    if path.components().count() > 1 {
+        return fs::canonicalize(path).ok();
+    }
+    if let Some(found) = std::env::var_os("PATH").and_then(|search| {
+        std::env::split_paths(&search)
+            .map(|directory| directory.join(executable))
+            .find(|candidate| candidate.is_file())
+    }) {
+        return fs::canonicalize(found).ok();
+    }
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    [".local/bin", ".opencode/bin", ".bun/bin"]
+        .iter()
+        .map(|directory| home.join(directory).join(executable))
+        .find(|candidate| candidate.is_file())
+        .and_then(|candidate| fs::canonicalize(candidate).ok())
+}
+
 #[cfg(target_os = "linux")]
 fn process_state(pid: u32) -> Result<Option<String>> {
     let stat = match fs::read_to_string(format!("/proc/{pid}/stat")) {
@@ -1200,5 +1268,76 @@ mod tests {
             )]),
         };
         assert!(validate_record(&record).is_err());
+    }
+
+    #[test]
+    fn native_attach_keeps_the_server_secret_out_of_argv() {
+        let owned = OwnedSession {
+            id: "ses_owned".into(),
+            cwd: PathBuf::from("/work/project"),
+            title: "task".into(),
+            summary: String::new(),
+            created_at_ms: 1,
+            updated_at_ms: 1,
+        };
+        let record = ServerRecord {
+            version: RECORD_VERSION,
+            pid: 1,
+            process_start_token: "start".into(),
+            process_cmdline: b"command".to_vec(),
+            executable: "opencode".into(),
+            port: 4242,
+            username: "private-user".into(),
+            password: "private-password".into(),
+            created_at_ms: 1,
+            sessions: BTreeMap::from([(owned.id.clone(), owned.clone())]),
+        };
+
+        let command = build_native_attach_command("/bin/opencode", &record, &owned);
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            vec![
+                "attach",
+                "http://127.0.0.1:4242",
+                "--session",
+                "ses_owned",
+                "--dir",
+                "/work/project"
+            ]
+        );
+        assert!(!arguments.iter().any(|value| value.contains("private")));
+        assert_eq!(command.get_current_dir(), Some(Path::new("/work/project")));
+        assert!(command.get_envs().any(|(name, value)| {
+            name == "OPENCODE_SERVER_PASSWORD"
+                && value == Some(std::ffi::OsStr::new("private-password"))
+        }));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_bare_recorded_name_matches_the_same_canonical_running_executable() {
+        let pid = std::process::id();
+        let record = ServerRecord {
+            version: RECORD_VERSION,
+            pid,
+            process_start_token: process_start_token(pid).unwrap(),
+            process_cmdline: process_cmdline(pid).unwrap(),
+            executable: "opencode".into(),
+            port: 4242,
+            username: "opencode".into(),
+            password: "x".repeat(64),
+            created_at_ms: 1,
+            sessions: BTreeMap::new(),
+        };
+
+        assert!(record_uses_executable(
+            &record,
+            std::env::current_exe().unwrap().to_str().unwrap()
+        ));
+        assert!(!record_uses_executable(&record, "/bin/sh"));
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -197,24 +197,36 @@ impl ProviderController for OpenCodeController {
         if session.provider != Provider::OpenCode || session.runtime != Runtime::Host {
             bail!("the host OpenCode controller does not own this runtime");
         }
-        if self.owned_session(session)?.is_some() {
-            bail!("a live managed OpenCode session cannot be opened through a second server; use inline controls");
+        let command = if self.owned_session(session)?.is_some() {
+            self.supervisor
+                .as_ref()
+                .context("managed OpenCode control is not configured")?
+                .native_attach_command(&session.provider_session_id)?
+        } else {
+            let mut command = Command::new(&self.executable);
+            command
+                .args(["--session", &session.provider_session_id])
+                .current_dir(&session.cwd);
+            command
+        };
+        match crate::native_session::run(command, &session.id)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!(
+                    "backgrounded OpenCode session {}; Enter/Right resumes it",
+                    session.name
+                ),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("returned from OpenCode session {}", session.name),
+                    provider_session_hint: Some(session.provider_session_id.clone()),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("OpenCode session exited with status {status}")
+            }
         }
-        let status = Command::new(&self.executable)
-            .args(["--session", &session.provider_session_id])
-            .current_dir(&session.cwd)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to open the OpenCode session")?;
-        if !status.success() {
-            bail!("OpenCode session exited with status {status}");
-        }
-        Ok(ControlOutcome {
-            message: format!("returned from OpenCode session {}", session.name),
-            provider_session_hint: Some(session.provider_session_id.clone()),
-        })
     }
 }
 

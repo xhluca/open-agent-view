@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
@@ -188,20 +188,21 @@ impl ProviderController for AntigravityController {
         let spec = self
             .invocation
             .resume(&session.provider_session_id, &session.cwd)?;
-        let status = spec
-            .command()
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to open Antigravity conversation")?;
-        if !status.success() {
-            bail!("Antigravity conversation exited with status {status}");
+        match crate::native_session::run(spec.command(), &session.id)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!("backgrounded {}; Enter/Right resumes it", session.name),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("returned from {}", session.name),
+                    provider_session_hint: None,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Antigravity conversation exited with status {status}")
+            }
         }
-        Ok(ControlOutcome {
-            message: format!("returned from {}", session.name),
-            provider_session_hint: None,
-        })
     }
 }
 

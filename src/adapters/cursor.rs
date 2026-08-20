@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
@@ -263,20 +263,21 @@ impl ProviderController for CursorController {
         let spec = self
             .invocation
             .resume(&session.provider_session_id, &session.cwd)?;
-        let status = spec
-            .command()
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to open Cursor session")?;
-        if !status.success() {
-            bail!("Cursor session exited with status {status}");
+        match crate::native_session::run(spec.command(), &session.id)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!("backgrounded {}; Enter/Right resumes it", session.name),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("returned from {}", session.name),
+                    provider_session_hint: None,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Cursor session exited with status {status}")
+            }
         }
-        Ok(ControlOutcome {
-            message: format!("returned from {}", session.name),
-            provider_session_hint: None,
-        })
     }
 }
 

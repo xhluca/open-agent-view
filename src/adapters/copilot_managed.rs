@@ -71,7 +71,8 @@ impl CopilotSupervisor {
             .context("failed to request a new Copilot ACP session")?;
         let response = state
             .connection_mut()?
-            .wait_for_response(request_id, RESPONSE_TIMEOUT)?;
+            .wait_for_response(request_id, RESPONSE_TIMEOUT)
+            .map_err(|error| actionable_auth_error(error, &self.executable))?;
         let session_id = response
             .get("sessionId")
             .and_then(Value::as_str)
@@ -510,6 +511,16 @@ fn compact(value: &Value) -> String {
     tail_chars(&encoded, 300)
 }
 
+fn actionable_auth_error(error: anyhow::Error, executable: &str) -> anyhow::Error {
+    if format!("{error:#}").contains("Authentication required") {
+        anyhow!(
+            "GitHub Copilot is not authenticated for managed launch; run `{executable} login` once, or authenticate `gh` with an account that has Copilot access"
+        )
+    } else {
+        error
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -520,6 +531,18 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn authentication_failures_become_actionable_without_echoing_protocol_payloads() {
+        let error = actionable_auth_error(
+            anyhow!("Copilot ACP request failed: Authentication required"),
+            "/opt/copilot",
+        );
+        let message = error.to_string();
+        assert!(message.contains("/opt/copilot login"));
+        assert!(message.contains("authenticate `gh`"));
+        assert!(!message.contains("ACP request failed"));
+    }
 
     #[test]
     fn retained_connection_controls_only_sessions_it_created() {

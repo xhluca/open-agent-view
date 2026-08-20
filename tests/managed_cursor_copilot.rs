@@ -28,6 +28,10 @@ fn public_cursor_controller_owns_the_complete_safe_lifecycle() {
     write_executable(
         &executable,
         r##"#!/bin/sh
+if [ "${1:-}" = "models" ]; then
+  printf '%s\n' 'auto'
+  exit 0
+fi
 if [ "${1:-}" = "create-chat" ]; then
   printf '%s\n' 'cursor-controller-owned'
   exit 0

@@ -22,7 +22,8 @@ use crate::domain::{
 use crate::process::{CommandRunner, ProcessRunner};
 
 const REGISTRY_VERSION: u32 = 1;
-const CREATE_TIMEOUT: Duration = Duration::from_secs(15);
+const MODEL_PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(4);
+const CREATE_TIMEOUT: Duration = Duration::from_secs(8);
 const IDENTITY_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_LOG_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_TRANSCRIPT_CHARS: usize = 32 * 1024;
@@ -116,11 +117,17 @@ impl CursorSupervisor {
             bail!("the Cursor launch prompt cannot be empty");
         }
         require_absolute_workspace(cwd)?;
+        self.ensure_launch_ready()?;
         let spec = self.invocation.create_chat(cwd)?;
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
-        let output = self.run_command(&request)?;
+        let output = self.run_command(&request).with_context(|| {
+            format!(
+                "Cursor create-chat did not complete; run `{} login` and `{} models` to verify authentication before retrying",
+                self.executable, self.executable
+            )
+        })?;
         if output.status != 0 {
             bail!(
                 "Cursor create-chat exited with status {}: {}",
@@ -131,6 +138,42 @@ impl CursorSupervisor {
         let session_id = parse_cursor_chat_id(output.stdout_text()?)?;
         self.spawn_turn(&session_id, cwd, prompt, true)?;
         Ok(session_id)
+    }
+
+    fn ensure_launch_ready(&self) -> Result<()> {
+        let mut request =
+            crate::process::CommandRequest::new(self.executable.clone(), vec!["models".into()]);
+        request.timeout = MODEL_PREFLIGHT_TIMEOUT;
+        let output = self.run_command(&request).with_context(|| {
+            format!(
+                "Cursor model preflight did not complete; run `{} login` and retry",
+                self.executable
+            )
+        })?;
+        if output.status != 0 {
+            bail!(
+                "Cursor model preflight failed with status {}; run `{} login`: {}",
+                output.status,
+                self.executable,
+                output.stderr_lossy()
+            );
+        }
+        let stdout = output.stdout_text()?;
+        if stdout.contains("No models available for this account") {
+            bail!(
+                "Cursor has no models available for this account; run `{} login`, then verify with `{} models`",
+                self.executable,
+                self.executable
+            );
+        }
+        if !stdout.chars().any(|character| character.is_alphanumeric()) {
+            bail!(
+                "Cursor returned no model catalog; run `{} login`, then verify with `{} models`",
+                self.executable,
+                self.executable
+            );
+        }
+        Ok(())
     }
 
     pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<()> {
@@ -842,6 +885,10 @@ mod tests {
         fs::write(
             &executable,
             r##"#!/bin/sh
+if [ "${1:-}" = "models" ]; then
+  printf '%s\n' 'auto'
+  exit 0
+fi
 if [ "${1:-}" = "create-chat" ]; then
   printf '%s\n' 'mock-session-1'
   exit 0
@@ -913,6 +960,41 @@ while :; do sleep 1; done
                 & 0o777,
             0o700
         );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn launch_refuses_an_account_without_models_before_creating_a_chat() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("cursor-agent-mock");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+if [ "${1:-}" = "models" ]; then
+  printf '\033[2K\033[GNo models available for this account.\n'
+  exit 0
+fi
+printf '%s\n' create-chat-was-not-expected >&2
+exit 91
+"##,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable, permissions).unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let supervisor = CursorSupervisor::with_state_dir(
+            executable.display().to_string(),
+            directory.path().join("state"),
+        )
+        .unwrap();
+
+        let error = supervisor
+            .launch("must not create", &workspace)
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("no models available"));
+        assert!(!directory.path().join("state/sessions.json").exists());
     }
 
     #[test]

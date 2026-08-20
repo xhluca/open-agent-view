@@ -378,6 +378,7 @@ pub fn run_dashboard(
 
     engine.cancel();
     drop(refresh_tx);
+    crate::native_session::shutdown_all();
     result
 }
 
