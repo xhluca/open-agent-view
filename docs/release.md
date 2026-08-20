@@ -6,18 +6,18 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.14 is the current published private preview. Hosted jobs were
+Version 0.1.15 is the current published private preview. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
 release. Its release page contains only:
 
 ```text
-open-agent-view-0.1.14-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.14-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.15-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.15-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested on the native Linux x86-64 host. No ARM64 or macOS artifact is
-claimed for v0.1.14. Version 0.1.2 was the initial published preview. The
+claimed for v0.1.15. Version 0.1.2 was the initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
@@ -62,7 +62,7 @@ tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 \
 
 Extract and smoke-test the archive, test `install.sh` against a temporary local
 release root, create and push an annotated version tag, then publish exactly the
-verified archive and checksum with `gh release create --verify-tag`. Never
+verified archive and checksum with `gh release create`. Never
 upload an untested cross-compiled artifact merely to fill the matrix.
 
 ## Automated release contract

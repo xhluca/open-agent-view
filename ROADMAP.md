@@ -103,7 +103,7 @@ authenticated fresh-container end-to-end run.
 - [x] Push version-matching private-preview tags and verify the complete native
   archive/checksum set through the published installer workflow (through
   v0.1.10).
-- [x] Manually publish the fully gated v0.1.14 Linux x86-64 archive/checksum
+- [x] Manually publish the fully gated v0.1.15 Linux x86-64 archive/checksum
   after hosted jobs became unavailable, with unsupported platforms stated
   explicitly rather than filled with untested artifacts.
 - [ ] Decide public-repository/package publication only after the private

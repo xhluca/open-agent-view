@@ -267,9 +267,9 @@ label.
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
 | Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
-| Session row | `enter` or `→` | Open a managed row that advertises Reply/Approve/Decline/Respond in inline Peek; otherwise suspend the dashboard and open its provider-native interface. Claude attaches directly; `ctrl+z`, not `←`, returns to Open Agent View. |
+| Session row | `enter` or `→` | Suspend the dashboard and open the provider's full native interface. Claude attaches directly; `ctrl+z`, not `←`, returns to Open Agent View. |
 | Inline Peek | `←` | Return to the session list without opening the native provider interface. |
-| Session row | `space` | Inspect transcript/request details when capability is advertised. |
+| Session row | `space` | Open the inline Peek panel and inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
 | Inspect peek | `y` / `n` | Allow once / deny only when the exact capability is advertised. |
 | Inspect peek | `enter` with no text | Open the provider-native interface when that managed/live boundary allows a second client. |

@@ -1439,10 +1439,13 @@ mod tests {
             .insert(Capability::Reply);
         assert_eq!(
             handle_key(&mut managed, key(KeyCode::Right)),
-            AppAction::Inspect {
+            AppAction::Open {
                 session_id: "worker".into()
             }
         );
+        assert_eq!(managed.overlay, Overlay::None);
+
+        handle_key(&mut managed, key(KeyCode::Char(' ')));
         assert_eq!(managed.overlay, Overlay::Peek);
         assert_eq!(
             handle_key(&mut managed, key(KeyCode::Left)),

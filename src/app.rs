@@ -1006,23 +1006,8 @@ impl App {
         let Some(session) = self.selected_session() else {
             return AppAction::None;
         };
-        let id = session.id.clone();
-        let opens_inline = session.provider != Provider::Claude
-            && session.capabilities.contains(&Capability::Inspect)
-            && [
-                Capability::Reply,
-                Capability::Approve,
-                Capability::Decline,
-                Capability::Respond,
-            ]
-            .iter()
-            .any(|capability| session.capabilities.contains(capability));
-        if opens_inline {
-            self.overlay = Overlay::Peek;
-            self.notice = None;
-            AppAction::Inspect { session_id: id }
-        } else {
-            AppAction::Open { session_id: id }
+        AppAction::Open {
+            session_id: session.id.clone(),
         }
     }
 
@@ -1753,25 +1738,35 @@ mod tests {
     }
 
     #[test]
-    fn enter_uses_inline_peek_for_managed_non_claude_sessions_only() {
-        for inline_capability in [
-            Capability::Reply,
-            Capability::Approve,
-            Capability::Decline,
-            Capability::Respond,
+    fn enter_opens_every_provider_natively_even_when_inline_actions_exist() {
+        for provider in [
+            Provider::Claude,
+            Provider::Codex,
+            Provider::Pi,
+            Provider::OpenCode,
+            Provider::Cursor,
+            Provider::GitHubCopilot,
+            Provider::Antigravity,
         ] {
-            let mut item = session("managed", SessionState::Working);
-            item.provider = Provider::Pi;
-            item.capabilities = BTreeSet::from([Capability::Inspect, inline_capability]);
-            let mut app = app_with(vec![item]);
+            for inline_capability in [
+                Capability::Reply,
+                Capability::Approve,
+                Capability::Decline,
+                Capability::Respond,
+            ] {
+                let mut item = session("managed", SessionState::Working);
+                item.provider = provider.clone();
+                item.capabilities = BTreeSet::from([Capability::Inspect, inline_capability]);
+                let mut app = app_with(vec![item]);
 
-            assert_eq!(
-                app.activate(),
-                AppAction::Inspect {
-                    session_id: "managed".into()
-                }
-            );
-            assert_eq!(app.overlay, Overlay::Peek);
+                assert_eq!(
+                    app.activate(),
+                    AppAction::Open {
+                        session_id: "managed".into()
+                    }
+                );
+                assert_eq!(app.overlay, Overlay::None);
+            }
         }
 
         let mut read_only = session("external", SessionState::Completed);

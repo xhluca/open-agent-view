@@ -264,6 +264,26 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
     app.wait_for("managed Pi fixture row", |screen| {
         screen.contains("pi-refactor") && !screen.contains("cursor-owned-chat")
     });
+    let leaves_before_open = count_bytes(&app.raw, b"\x1b[?1049l");
+    let enters_before_open = count_bytes(&app.raw, b"\x1b[?1049h");
+    app.send(ENTER);
+    let native_open_refused = app.wait_for("managed Pi native-open route", |screen| {
+        screen.contains("failed to open session:")
+            && screen.contains("provider actions are disabled while reading a fixture")
+            && screen.contains("pi-refactor")
+            && !screen.contains("pi-refactor · Pi · host")
+    });
+    assert_lines_fit(&native_open_refused, 150);
+    assert!(
+        count_bytes(&app.raw, b"\x1b[?1049l") > leaves_before_open,
+        "Enter on managed Pi did not suspend the dashboard for native open"
+    );
+    assert!(
+        count_bytes(&app.raw, b"\x1b[?1049h") > enters_before_open,
+        "Enter on managed Pi did not restore the dashboard after native open"
+    );
+
+    // Space, and only Space, owns the bounded inline transcript/actions panel.
     app.send(b" ");
     app.wait_for("managed Pi reply affordance", |screen| {
         screen.contains("pi-refactor · Pi") && screen.contains("❯ reply")
@@ -973,6 +993,7 @@ fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
             "--no-host-cursor",
             "--no-host-antigravity",
             "--include-external",
+            "--all",
             "--refresh-ms",
             "60000",
         ]);

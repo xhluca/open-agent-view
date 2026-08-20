@@ -8,6 +8,18 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.15] - 2026-08-20
+
+### Fixed
+
+- Enter and Right now always suspend the dashboard and open the selected
+  provider's full native interface. Managed Pi, Codex, OpenCode, Cursor, and
+  Copilot action capabilities no longer divert those keys into the inline
+  panel; Space is the sole session-list key for Peek.
+- The ignored read-only Pi native-open PTY probe now requests completed history
+  explicitly, so it exercises the same completed managed session shown in the
+  dashboard instead of waiting behind the default completed-session filter.
+
 ## [0.1.14] - 2026-08-20
 
 ### Fixed
