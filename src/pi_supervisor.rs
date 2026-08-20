@@ -386,16 +386,31 @@ impl PiSupervisor {
     pub fn wait_until_stopped(&self, session_id: &str, timeout: Duration) -> Result<()> {
         let deadline = Instant::now() + timeout;
         loop {
-            let sessions = self.list()?;
-            if sessions
-                .iter()
-                .find(|session| session.id == session_id)
-                .map(|session| !session.alive)
-                .unwrap_or(true)
-            {
-                return Ok(());
-            }
+            let transport_error = match self.list() {
+                Ok(sessions) => {
+                    if sessions
+                        .iter()
+                        .find(|session| session.id == session_id)
+                        .map(|session| !session.alive)
+                        .unwrap_or(true)
+                    {
+                        return Ok(());
+                    }
+                    None
+                }
+                Err(error) => {
+                    if !self.verified_daemon_process_is_live()? {
+                        return Ok(());
+                    }
+                    Some(error)
+                }
+            };
             if Instant::now() >= deadline {
+                if let Some(error) = transport_error {
+                    return Err(error).context(
+                        "Pi supervisor transport disappeared while its verified process remained live",
+                    );
+                }
                 bail!("managed Pi RPC process did not stop before the deadline");
             }
             thread::sleep(Duration::from_millis(20));
@@ -510,6 +525,14 @@ impl PiSupervisor {
         }
         wait_for_socket(&record.socket_path, Duration::from_millis(500))?;
         Ok(Some(record))
+    }
+
+    fn verified_daemon_process_is_live(&self) -> Result<bool> {
+        let _lock = StateLock::acquire(&self.lock_path)?;
+        let Some(record) = load_record(&self.record_path, &self.state_dir)? else {
+            return Ok(false);
+        };
+        verify_process(&record)
     }
 
     fn required_live_record(&self) -> Result<SupervisorRecord> {
@@ -1742,6 +1765,36 @@ mod tests {
         assert!(format!("{error:#}").contains("predates model selection"));
         assert!(format!("{error:#}").contains("important active task"));
         server.join().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn wait_for_stop_tolerates_a_legacy_socket_disappearing_before_process_exit() {
+        let directory = tempfile::tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let supervisor = PiSupervisor::with_state_dir_and_exe(
+            "pi",
+            state_dir.clone(),
+            std::env::current_exe().unwrap(),
+        )
+        .unwrap();
+        let mut child = Command::new("sleep").arg("0.15").spawn().unwrap();
+        let pid = child.id();
+        let record = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid,
+            process_start_token: process_start_token(pid).unwrap(),
+            process_cmdline: process_cmdline(pid).unwrap(),
+            pi_bin: "pi".into(),
+            socket_path: state_dir.join("already-removed.sock"),
+            created_at_ms: 1,
+        };
+        save_record(&supervisor.record_path, &record).unwrap();
+
+        supervisor
+            .wait_until_stopped("legacy-id", Duration::from_secs(1))
+            .unwrap();
+        child.wait().unwrap();
     }
 
     #[test]

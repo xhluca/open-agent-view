@@ -8,6 +8,17 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.17] - 2026-08-20
+
+### Fixed
+
+- Completed Pi native handoff now tolerates an older verified supervisor
+  removing its Unix socket just before its process exits, instead of reporting
+  a one-time transport error during the safe upgrade.
+- Completed-but-attached managed Pi rows now label Ctrl+X as Stop in both the
+  footer and help. Delete is advertised only after refresh verifies that the
+  owned RPC transport has exited.
+
 ## [0.1.16] - 2026-08-20
 
 ### Fixed

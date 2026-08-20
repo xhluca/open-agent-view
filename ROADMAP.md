@@ -104,6 +104,7 @@ authenticated fresh-container end-to-end run.
   archive/checksum set through the published installer workflow (through
   v0.1.10).
 - [x] Manually publish the fully gated v0.1.16 Linux x86-64 archive/checksum
+- [x] Manually publish the v0.1.17 Pi legacy-handoff and Ctrl+X-label hotfix
   after hosted jobs became unavailable, with unsupported platforms stated
   explicitly rather than filled with untested artifacts.
 - [ ] Decide public-repository/package publication only after the private

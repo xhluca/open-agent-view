@@ -109,7 +109,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.16, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.17, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -208,6 +208,10 @@ checks; the guide also contains release gates that are not yet complete.
   directory, deletion revalidates the managed JSONL header/path, and external
   IDs remain refused. A real PTY also bounds completed-Pi Ctrl+X repaint below
   750 ms.
+- The v0.1.17 regression case removes the legacy supervisor socket before its
+  verified process exits and proves completed-Pi native handoff waits through
+  that transition. Render tests also prove an idle-but-attached completed Pi
+  row advertises Ctrl+X stop before deletion.
 - After the managed-Codex lifecycle fixes, release binary SHA-256
   `efb0a8d8f62f878fc5bb09c6b67da73a871c26f30e7a2dd56d10922a186cbec9`
   was staged mode `0755` and rerun in the same immutable image at a real

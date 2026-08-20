@@ -719,12 +719,8 @@ fn selected_group_can_delete(app: &App) -> bool {
 }
 
 fn session_control_suffix(session: &AgentSession) -> &'static str {
-    if is_active_session_state(session.state) {
-        if session.capabilities.contains(&Capability::Interrupt) {
-            " · ctrl+x to stop"
-        } else {
-            " · ctrl+x hide locally"
-        }
+    if session.capabilities.contains(&Capability::Interrupt) {
+        " · ctrl+x to stop"
     } else if session.capabilities.contains(&Capability::Delete)
         && session.capabilities.contains(&Capability::Archive)
     {
@@ -792,13 +788,9 @@ fn help_actions(app: &App) -> Vec<String> {
         } else if session.capabilities.contains(&Capability::Inspect) {
             actions.push("space to inspect".into());
         }
-        let action = if is_active_session_state(session.state)
-            && session.capabilities.contains(&Capability::Interrupt)
-        {
+        let action = if session.capabilities.contains(&Capability::Interrupt) {
             Some("ctrl+x to stop")
-        } else if !is_active_session_state(session.state)
-            && session.capabilities.contains(&Capability::Delete)
-        {
+        } else if session.capabilities.contains(&Capability::Delete) {
             Some("ctrl+x to delete")
         } else {
             Some("ctrl+x to hide locally")
@@ -1600,6 +1592,25 @@ mod tests {
 
         assert!(rendered.contains("ctrl+x to delete"));
         assert!(!rendered.contains("ctrl+x to stop"));
+    }
+
+    #[test]
+    fn completed_managed_transport_is_labeled_stop_before_delete() {
+        let mut item = session("done but attached", SessionState::Completed);
+        item.capabilities.insert(Capability::Interrupt);
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.toggle_help();
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("ctrl+x to stop"));
+        assert!(!rendered.contains("ctrl+x to hide locally"));
     }
 
     #[test]
