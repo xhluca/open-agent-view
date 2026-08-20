@@ -107,11 +107,11 @@ impl CodexSource {
             let ConnectionFactory::Managed(supervisor) = &self.factory else {
                 unreachable!("owned-only Codex discovery requires a supervisor")
             };
-            let sessions = read_threads(
+            let sessions = mark_managed_threads(read_threads(
                 transport,
                 supervisor.owned_thread_ids()?,
                 self.runtime.clone(),
-            )?;
+            )?);
             return Ok(SourceDiscovery {
                 sessions,
                 warnings: Vec::new(),
@@ -239,6 +239,19 @@ fn read_threads(
             parse_codex_thread_read(&response, runtime.clone())
         })
         .collect()
+}
+
+fn mark_managed_threads(mut sessions: Vec<AgentSession>) -> Vec<AgentSession> {
+    // Codex currently reports threads created through App Server as `cli` on
+    // some releases. These exact IDs came from OAV's durable ownership record,
+    // so their product semantics are managed background tasks regardless of
+    // that provider-side source label. Leaving them Interactive makes the
+    // dashboard's default foreground filter hide a task immediately after OAV
+    // launches it.
+    for session in &mut sessions {
+        session.kind = SessionKind::Background;
+    }
+    sessions
 }
 
 #[derive(Debug, Deserialize)]
@@ -501,6 +514,29 @@ for line in sys.stdin:
             map_status(&json!({"type": "notLoaded"})),
             SessionState::Unknown
         );
+    }
+
+    #[test]
+    fn exact_managed_threads_are_background_even_when_codex_labels_them_cli() {
+        let response = json!({
+            "thread": {
+                "id": "owned-thread",
+                "cwd": "/work",
+                "createdAt": 1,
+                "updatedAt": 2,
+                "preview": "managed task",
+                "name": null,
+                "status": {"type": "active", "activeFlags": []},
+                "source": {"type": "cli"}
+            }
+        });
+        let parsed = parse_codex_thread_read(&response, Runtime::Host).unwrap();
+        assert_eq!(parsed.kind, SessionKind::Interactive);
+
+        let managed = mark_managed_threads(vec![parsed]);
+
+        assert_eq!(managed[0].kind, SessionKind::Background);
+        assert_eq!(managed[0].provider_session_id, "owned-thread");
     }
 
     #[cfg(unix)]

@@ -329,6 +329,33 @@ impl App {
             .filter(|session| &session.id == id)
     }
 
+    pub fn select_and_reveal_session(&mut self, session_id: &str) -> bool {
+        let Some(index) = self.session_indices.get(session_id).copied() else {
+            return false;
+        };
+        let Some((group_key, position, group_len)) = self.groups().iter().find_map(|group| {
+            group
+                .sessions
+                .iter()
+                .position(|candidate| *candidate == index)
+                .map(|position| (group.key.clone(), position, group.sessions.len()))
+        }) else {
+            return false;
+        };
+        self.collapsed.remove(&group_key);
+        let required = position.saturating_add(1).min(group_len);
+        let current = self
+            .visible_limits
+            .get(&group_key)
+            .copied()
+            .unwrap_or(self.session_page_size);
+        if required > current {
+            self.visible_limits.insert(group_key, required);
+        }
+        self.selection = Some(SelectionKey::Session(session_id.to_owned()));
+        true
+    }
+
     pub fn selected_group(&self) -> Option<Group> {
         let SelectionKey::Group(key) = self.selection.as_ref()? else {
             return None;
@@ -652,6 +679,14 @@ impl App {
         } else {
             "completed sessions hidden".into()
         });
+        self.reconcile_selection();
+    }
+
+    pub fn reveal_completed_after_launch(&mut self) {
+        self.includes_completed = true;
+        self.visible_limits.clear();
+        self.notice =
+            Some("task finished before the first refresh; showing completed sessions".into());
         self.reconcile_selection();
     }
 
@@ -1291,6 +1326,32 @@ mod tests {
             .selectable_keys()
             .iter()
             .any(|key| matches!(key, SelectionKey::ShowMore(_))));
+    }
+
+    #[test]
+    fn post_launch_selection_expands_its_group_and_reveals_the_exact_row() {
+        let sessions = (0..40)
+            .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
+            .collect();
+        let mut app = App::new(SessionSnapshot {
+            sessions,
+            warnings: Vec::new(),
+        });
+        app.set_session_page_size(5);
+        let group_key = app.groups()[0].key.clone();
+        app.collapsed.insert(group_key.clone());
+
+        assert!(app.select_and_reveal_session("session-30"));
+
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("session-30".into()))
+        );
+        assert!(!app.collapsed.contains(&group_key));
+        assert!(app
+            .selectable_keys()
+            .contains(&SelectionKey::Session("session-30".into())));
+        assert!(!app.select_and_reveal_session("missing"));
     }
 
     #[test]

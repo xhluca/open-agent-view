@@ -337,7 +337,7 @@ impl PiSupervisor {
                 );
             }
             let live = verify_process(&record)?;
-            if live && record.pi_bin != self.pi_bin {
+            if live && !record_uses_pi_executable(&record, &self.pi_bin) {
                 bail!(
                     "a verified Pi supervisor is already running with executable {}; configured executable is {}",
                     record.pi_bin,
@@ -1196,6 +1196,112 @@ fn verify_process(record: &SupervisorRecord) -> Result<bool> {
     Ok(start == record.process_start_token && cmdline == record.process_cmdline)
 }
 
+fn record_uses_pi_executable(record: &SupervisorRecord, configured: &str) -> bool {
+    let (recorded_path, recorded_home) = recorded_process_environment(record);
+    let configured_path = std::env::var_os("PATH");
+    let configured_home = std::env::var_os("HOME");
+    pi_executables_match_from(
+        &record.pi_bin,
+        configured,
+        recorded_path.as_deref(),
+        recorded_home.as_deref(),
+        configured_path.as_deref(),
+        configured_home.as_deref(),
+    )
+}
+
+fn pi_executables_match_from(
+    recorded: &str,
+    configured: &str,
+    recorded_path: Option<&std::ffi::OsStr>,
+    recorded_home: Option<&std::ffi::OsStr>,
+    configured_path: Option<&std::ffi::OsStr>,
+    configured_home: Option<&std::ffi::OsStr>,
+) -> bool {
+    if recorded == configured {
+        return true;
+    }
+    let Some(recorded) = resolve_pi_executable(recorded, recorded_path, recorded_home) else {
+        return false;
+    };
+    let Some(configured) = resolve_pi_executable(configured, configured_path, configured_home)
+    else {
+        return false;
+    };
+    recorded == configured
+}
+
+#[cfg(target_os = "linux")]
+fn recorded_process_environment(
+    record: &SupervisorRecord,
+) -> (Option<std::ffi::OsString>, Option<std::ffi::OsString>) {
+    use std::os::unix::ffi::OsStringExt;
+
+    let Ok(environment) = fs::read(format!("/proc/{}/environ", record.pid)) else {
+        return (None, None);
+    };
+    let value = |name: &[u8]| {
+        environment.split(|byte| *byte == 0).find_map(|entry| {
+            let separator = entry.iter().position(|byte| *byte == b'=')?;
+            let (key, value) = entry.split_at(separator);
+            let value = value.get(1..)?;
+            (key == name).then(|| std::ffi::OsString::from_vec(value.to_vec()))
+        })
+    };
+    (value(b"PATH"), value(b"HOME"))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn recorded_process_environment(
+    _record: &SupervisorRecord,
+) -> (Option<std::ffi::OsString>, Option<std::ffi::OsString>) {
+    (std::env::var_os("PATH"), std::env::var_os("HOME"))
+}
+
+fn resolve_pi_executable(
+    program: &str,
+    search_path: Option<&std::ffi::OsStr>,
+    home: Option<&std::ffi::OsStr>,
+) -> Option<PathBuf> {
+    let path = Path::new(program);
+    let candidate = if path.components().count() > 1 {
+        executable_file(path).then(|| path.to_path_buf())
+    } else {
+        search_path
+            .and_then(|value| {
+                std::env::split_paths(value)
+                    .map(|directory| directory.join(program))
+                    .find(|candidate| executable_file(candidate))
+            })
+            .or_else(|| {
+                let home = PathBuf::from(home?);
+                [".local/bin", ".npm-global/bin"]
+                    .into_iter()
+                    .map(|directory| home.join(directory).join(program))
+                    .find(|candidate| executable_file(candidate))
+            })
+    }?;
+    fs::canonicalize(candidate).ok()
+}
+
+fn executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 fn supports_model_launch(capabilities: &Value) -> bool {
     capabilities
         .get("features")
@@ -1363,6 +1469,55 @@ mod tests {
             "version": 1,
             "features": ["launch_with_model"]
         })));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_bare_pi_name_matches_the_same_resolved_executable() {
+        let directory = tempfile::tempdir().unwrap();
+        let bin = directory.path().join(".local/bin");
+        fs::create_dir_all(&bin).unwrap();
+        let executable = bin.join("pi");
+        fs::write(&executable, b"#!/bin/sh\n").unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert_eq!(
+            resolve_pi_executable("pi", None, Some(directory.path().as_os_str())),
+            fs::canonicalize(&executable).ok()
+        );
+        assert!(pi_executables_match_from(
+            "pi",
+            executable.to_str().unwrap(),
+            None,
+            Some(directory.path().as_os_str()),
+            None,
+            Some(directory.path().as_os_str())
+        ));
+        assert_eq!(
+            resolve_pi_executable(
+                executable.to_str().unwrap(),
+                None,
+                Some(directory.path().as_os_str())
+            ),
+            fs::canonicalize(&executable).ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_resolution_does_not_equate_different_pi_binaries() {
+        let directory = tempfile::tempdir().unwrap();
+        let first = directory.path().join("first-pi");
+        let second = directory.path().join("second-pi");
+        for executable in [&first, &second] {
+            fs::write(executable, b"#!/bin/sh\n").unwrap();
+            fs::set_permissions(executable, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+
+        assert_ne!(
+            resolve_pi_executable(first.to_str().unwrap(), None, None),
+            resolve_pi_executable(second.to_str().unwrap(), None, None)
+        );
     }
 
     #[cfg(target_os = "linux")]

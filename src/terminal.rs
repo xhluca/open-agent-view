@@ -15,7 +15,7 @@ use ratatui::Terminal;
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay, SESSION_PAGE_SIZE};
 use crate::control::{ControlHub, ControlOutcome};
-use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot};
+use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot, SessionState};
 use crate::hidden::HiddenSessions;
 use crate::ui;
 
@@ -118,12 +118,44 @@ pub fn run_dashboard(
     let mut pending_launch_retry_at: Option<Instant> = None;
     let mut latest_launch_sequence = 0u64;
     let mut needs_draw = true;
-    schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
+    schedule_refresh(
+        &refresh_tx,
+        &discovery_request_for_pending_launch(&current_request, pending_launch.as_ref()),
+        &mut refresh_in_flight,
+    )?;
 
     let result = 'dashboard: loop {
         loop {
             match snapshot_rx.try_recv() {
-                Ok((snapshot, complete)) => {
+                Ok((mut snapshot, complete)) => {
+                    if let Some(pending) = pending_launch.as_ref() {
+                        if let Some(launched) = snapshot.sessions.iter().find(|session| {
+                            session.provider == pending.provider
+                                && session.provider_session_id == pending.provider_session_id
+                        }) {
+                            if launched.state == SessionState::Completed
+                                && !current_request.include_completed
+                            {
+                                current_request.include_completed = true;
+                                app.reveal_completed_after_launch();
+                            }
+                        }
+                    }
+                    if !current_request.include_completed {
+                        snapshot
+                            .sessions
+                            .retain(|session| session.state != SessionState::Completed);
+                    }
+                    if !current_request.include_interactive {
+                        snapshot.sessions.retain(|session| {
+                            session.kind != crate::domain::SessionKind::Interactive
+                                || pending_launch.as_ref().is_some_and(|pending| {
+                                    session.provider == pending.provider
+                                        && session.provider_session_id
+                                            == pending.provider_session_id
+                                })
+                        });
+                    }
                     let changed = snapshot != app.snapshot;
                     app.replace_snapshot(snapshot);
                     if select_pending_launch(&mut app, pending_launch.as_ref()) {
@@ -196,12 +228,23 @@ pub fn run_dashboard(
             if refresh_in_flight {
                 refresh_after_current = true;
             } else {
-                schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
+                schedule_refresh(
+                    &refresh_tx,
+                    &discovery_request_for_pending_launch(
+                        &current_request,
+                        pending_launch.as_ref(),
+                    ),
+                    &mut refresh_in_flight,
+                )?;
                 last_refresh = Instant::now();
             }
         }
         if refresh_after_current && !refresh_in_flight {
-            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
+            schedule_refresh(
+                &refresh_tx,
+                &discovery_request_for_pending_launch(&current_request, pending_launch.as_ref()),
+                &mut refresh_in_flight,
+            )?;
             refresh_after_current = false;
             last_refresh = Instant::now();
         }
@@ -288,7 +331,10 @@ pub fn run_dashboard(
                             } else {
                                 schedule_refresh(
                                     &refresh_tx,
-                                    &current_request,
+                                    &discovery_request_for_pending_launch(
+                                        &current_request,
+                                        pending_launch.as_ref(),
+                                    ),
                                     &mut refresh_in_flight,
                                 )?;
                                 last_refresh = Instant::now();
@@ -312,12 +358,20 @@ pub fn run_dashboard(
         if !refresh_in_flight
             && pending_launch_retry_at.is_some_and(|retry_at| Instant::now() >= retry_at)
         {
-            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
+            schedule_refresh(
+                &refresh_tx,
+                &discovery_request_for_pending_launch(&current_request, pending_launch.as_ref()),
+                &mut refresh_in_flight,
+            )?;
             pending_launch_retry_at = None;
             last_refresh = Instant::now();
         }
         if !refresh_in_flight && last_refresh.elapsed() >= refresh_interval {
-            schedule_refresh(&refresh_tx, &current_request, &mut refresh_in_flight)?;
+            schedule_refresh(
+                &refresh_tx,
+                &discovery_request_for_pending_launch(&current_request, pending_launch.as_ref()),
+                &mut refresh_in_flight,
+            )?;
             last_refresh = Instant::now();
         }
     };
@@ -333,6 +387,23 @@ fn session_page_size_for_terminal(height: u16) -> usize {
     // Reserve a heading, a Show-more row, and a little separation so the
     // pagination control does not start just below the viewport.
     usize::from(list_height.saturating_sub(3).max(1)).min(SESSION_PAGE_SIZE)
+}
+
+fn discovery_request_for_pending_launch(
+    request: &DiscoveryRequest,
+    pending: Option<&PendingLaunch>,
+) -> DiscoveryRequest {
+    let mut request = request.clone();
+    if pending.is_some() {
+        // A task can finish before the first post-launch refresh, and some
+        // providers temporarily classify newly created sessions as
+        // interactive. Query both sets while resolving the exact returned ID;
+        // the receiving side still applies the user's normal visibility until
+        // that exact task is found.
+        request.include_completed = true;
+        request.include_interactive = true;
+    }
+    request
 }
 
 fn schedule_refresh(
@@ -403,8 +474,8 @@ fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> bool
     }) else {
         return false;
     };
-    app.selection = Some(crate::app::SelectionKey::Session(session.id.clone()));
-    true
+    let session_id = session.id.clone();
+    app.select_and_reveal_session(&session_id)
 }
 
 fn hide_sessions_from_app(
@@ -1803,12 +1874,16 @@ mod tests {
     #[test]
     fn pending_launch_selection_requires_both_provider_and_provider_session_id() {
         let mut app = app();
-        app.snapshot.sessions[0].provider = Provider::Claude;
-        app.snapshot.sessions[0].provider_session_id = "same".into();
-        let mut pi = app.snapshot.sessions[0].clone();
+        let mut claude = app.snapshot.sessions[0].clone();
+        claude.provider = Provider::Claude;
+        claude.provider_session_id = "same".into();
+        let mut pi = claude.clone();
         pi.id = "pi:host:same".into();
         pi.provider = Provider::Pi;
-        app.snapshot.sessions.push(pi);
+        app.replace_snapshot(SessionSnapshot {
+            sessions: vec![claude, pi],
+            warnings: Vec::new(),
+        });
         let pending = PendingLaunch {
             provider: Provider::Pi,
             provider_session_id: "same".into(),
@@ -1825,6 +1900,25 @@ mod tests {
             ..pending
         };
         assert!(!select_pending_launch(&mut app, Some(&missing)));
+    }
+
+    #[test]
+    fn pending_launch_refresh_temporarily_queries_hidden_result_classes() {
+        let request = DiscoveryRequest::default();
+        let pending = PendingLaunch {
+            provider: Provider::Codex,
+            provider_session_id: "exact".into(),
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+
+        let regular = discovery_request_for_pending_launch(&request, None);
+        let resolving = discovery_request_for_pending_launch(&request, Some(&pending));
+
+        assert!(!regular.include_completed);
+        assert!(!regular.include_interactive);
+        assert!(resolving.include_completed);
+        assert!(resolving.include_interactive);
+        assert_eq!(resolving.include_external, request.include_external);
     }
 
     #[test]
