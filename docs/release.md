@@ -6,8 +6,12 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.12 is the current private preview release; version 0.1.2 was the
-initial published preview. The unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
+Version 0.1.10 is the current published private preview release; v0.1.12 is a
+tagged release candidate whose native packaging is waiting on the repository
+owner to resolve GitHub Actions billing/spending-limit enforcement. Rerun the
+existing v0.1.12 workflow after that account setting is fixed; do not move the
+tag or publish a partial target set. Version 0.1.2 was the initial published
+preview. The unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
 terminal-repaint race, and a Linux-only managed-Pi assumption in a macOS PTY

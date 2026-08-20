@@ -17,6 +17,14 @@ open, provider-neutral project.
 > install them. Provider capabilities and compatibility boundaries may still
 > evolve before a public stable release.
 
+> [!IMPORTANT]
+> The fixes documented below are in the tagged v0.1.12 release candidate. The
+> latest published private release remains v0.1.10 because GitHub Actions
+> rejected v0.1.12's native packaging jobs at the account billing/spending
+> gate, before any build ran. The repository owner must resolve that GitHub
+> setting and rerun the existing immutable tag before the installer can deliver
+> v0.1.12; no partial platform release is being presented as complete.
+
 ## Why Open Agent View?
 
 - **All sessions, one queue.** Enabled providers refresh concurrently and one
