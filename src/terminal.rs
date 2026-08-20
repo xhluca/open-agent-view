@@ -224,6 +224,14 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.toggle_help();
             AppAction::None
         }
+        KeyCode::Up | KeyCode::Left if app.overlay == Overlay::HarnessPicker => {
+            app.move_harness_selection(-1);
+            AppAction::None
+        }
+        KeyCode::Down | KeyCode::Right if app.overlay == Overlay::HarnessPicker => {
+            app.move_harness_selection(1);
+            AppAction::None
+        }
         KeyCode::Up if app.overlay == Overlay::None => {
             app.select_previous();
             AppAction::None
@@ -245,7 +253,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                 AppAction::None
             }
         }
-        KeyCode::Backspace => {
+        KeyCode::Backspace if app.overlay != Overlay::HarnessPicker => {
             app.pop_input();
             AppAction::None
         }
@@ -254,7 +262,21 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             AppAction::None
         }
         KeyCode::Tab if app.overlay == Overlay::Composer(crate::app::ComposerMode::NewSession) => {
-            app.cycle_launch_provider();
+            app.open_harness_picker();
+            AppAction::None
+        }
+        KeyCode::Tab if app.overlay == Overlay::HarnessPicker => {
+            app.move_harness_selection(1);
+            AppAction::None
+        }
+        KeyCode::BackTab if app.overlay == Overlay::HarnessPicker => {
+            app.move_harness_selection(-1);
+            AppAction::None
+        }
+        KeyCode::Char(digit) if app.overlay == Overlay::HarnessPicker && digit.is_ascii_digit() => {
+            if let Some(number) = digit.to_digit(10) {
+                app.choose_harness_number(number as usize);
+            }
             AppAction::None
         }
         KeyCode::Char('/') if app.overlay == Overlay::None => {
@@ -632,7 +654,8 @@ mod tests {
 
     use crate::app::{ComposerMode, SelectionKey};
     use crate::domain::{
-        AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
+        AgentSession, Capability, LaunchTarget, Provider, Runtime, SessionKind, SessionSnapshot,
+        SessionState,
     };
 
     use super::*;
@@ -979,6 +1002,10 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Backspace));
         assert!(app.input.is_empty());
         handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.overlay, Overlay::HarnessPicker);
+        handle_key(&mut app, key(KeyCode::Backspace));
+        assert!(app.input.is_empty());
+        handle_key(&mut app, key(KeyCode::Esc));
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
 
         app.escape();
@@ -992,6 +1019,47 @@ mod tests {
         handle_key(&mut app, key(KeyCode::Char('q')));
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
         assert_eq!(app.input, "q");
+    }
+
+    #[test]
+    fn harness_picker_keys_preview_cancel_and_select_without_editing_the_draft() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Codex,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+            ],
+        );
+        app.start_new_session(Some('x'));
+        handle_key(&mut app, key(KeyCode::Tab));
+        assert_eq!(app.overlay, Overlay::HarnessPicker);
+        handle_key(&mut app, key(KeyCode::Right));
+        assert_eq!(app.harness_selection, 1);
+        handle_key(&mut app, key(KeyCode::BackTab));
+        assert_eq!(app.harness_selection, 0);
+        handle_key(&mut app, key(KeyCode::Char('z')));
+        assert_eq!(app.input, "x");
+        handle_key(&mut app, key(KeyCode::Esc));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.launch_provider, Provider::Claude);
+
+        handle_key(&mut app, key(KeyCode::Tab));
+        handle_key(&mut app, key(KeyCode::Char('3')));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.launch_provider, Provider::Pi);
+        assert_eq!(app.input, "x");
     }
 
     #[derive(Default)]

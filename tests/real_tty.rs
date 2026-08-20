@@ -588,7 +588,7 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.send(b"/help");
     app.send(ENTER);
     app.wait_for("dashboard slash-command help", |screen| {
-        screen.contains("commands: /provider NAME · /model NAME|default · /filter TEXT")
+        screen.contains("commands: /harness [NAME] · /model NAME|default · /filter TEXT")
     });
     assert!(
         command_started.elapsed() < Duration::from_millis(750),
@@ -597,7 +597,7 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
 
     app.send(b"\t");
     app.wait_for("stress task composer", |screen| {
-        screen.contains("new task · Claude · model default")
+        screen.contains("new task · harness Claude · model default")
     });
     app.screen();
     let typing_output_before = app.raw.len();
@@ -614,7 +614,92 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     );
     app.send(ESC);
     app.wait_for("stress task composer close", |screen| {
-        !screen.contains("new task · Claude · model default")
+        !screen.contains("new task · harness Claude · model default")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+fn harness_picker_switches_visible_backends_without_losing_the_draft() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(100, 28, |command, home| {
+        let fake_claude = home.path().join("fake-claude");
+        fs::write(&fake_claude, "#!/bin/sh\nprintf '[]\\n'\n")
+            .expect("write fake Claude executable");
+        fs::set_permissions(&fake_claude, fs::Permissions::from_mode(0o755))
+            .expect("make fake Claude executable runnable");
+        let fake_pi = home.path().join("fake-pi");
+        fs::write(&fake_pi, "#!/bin/sh\nexit 1\n").expect("write fake Pi executable");
+        fs::set_permissions(&fake_pi, fs::Permissions::from_mode(0o755))
+            .expect("make fake Pi executable runnable");
+        command.args([
+            "--claude-bin",
+            fake_claude.to_str().expect("UTF-8 Claude path"),
+            "--pi-bin",
+            fake_pi.to_str().expect("UTF-8 Pi path"),
+            "--no-host-codex",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("isolated harness-picker startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading")
+    });
+    app.send(b"keep this draft");
+    app.wait_for("Claude draft composer", |screen| {
+        screen.contains("new task · harness Claude · model default")
+            && screen.contains("keep this draft")
+    });
+    app.send(b"\t");
+    app.wait_for("two-harness picker", |screen| {
+        screen.contains("choose harness · 1/2")
+            && screen.contains("1  Claude")
+            && screen.contains("2  Pi")
+    });
+    app.send(DOWN);
+    app.wait_for("Pi preview", |screen| {
+        screen.contains("choose harness · 2/2")
+    });
+    app.send(ESC);
+    app.wait_for("picker cancellation preserves Claude draft", |screen| {
+        screen.contains("new task · harness Claude · model default")
+            && screen.contains("keep this draft")
+    });
+
+    app.send(b"\t");
+    app.send(b"2");
+    app.wait_for("direct Pi harness selection", |screen| {
+        screen.contains("new task · harness Pi · model default")
+            && screen.contains("keep this draft")
+    });
+    app.send(b"\t");
+    app.send(UP);
+    app.send(ENTER);
+    app.wait_for("arrow and Enter Claude selection", |screen| {
+        screen.contains("new task · harness Claude · model default")
+            && screen.contains("keep this draft")
+    });
+    app.send(ESC);
+    app.wait_for("harness composer cancellation", |screen| {
+        screen.contains("describe a task · /help for commands")
+            && !screen.contains("keep this draft")
+    });
+    app.send(b"/harness\r");
+    app.wait_for("slash-opened harness picker", |screen| {
+        screen.contains("choose harness · 1/2")
+    });
+    app.send(ESC);
+    app.wait_for("slash picker returns to composer", |screen| {
+        screen.contains("new task · harness Claude · model default")
+    });
+    app.send(ESC);
+    app.wait_for("slash harness composer close", |screen| {
+        screen.contains("describe a task · /help for commands")
     });
     app.exit_cleanly();
 }
@@ -835,21 +920,28 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
         screen.contains("Open Agent View") && !screen.contains("loading")
     });
 
-    app.send(b"/provider pi\r");
-    app.wait_for("Pi provider command", |screen| {
-        screen.contains("new tasks will use Pi with its default model")
+    app.send(b"/harness pi\r");
+    app.wait_for("Pi harness command", |screen| {
+        screen.contains("new tasks will use the Pi harness with its default model")
     });
     app.send(b"x");
     app.wait_for("Pi composer title", |screen| {
-        screen.contains("new task · Pi · model default")
+        screen.contains("new task · harness Pi · model default")
     });
     app.send(b"\t");
-    app.wait_for("cycled Claude composer title", |screen| {
-        screen.contains("new task · Claude · model default")
+    app.wait_for("visible harness picker", |screen| {
+        screen.contains("choose harness · 2/2")
+            && screen.contains("1  Claude")
+            && screen.contains("2  Pi")
+    });
+    app.send(b"\t");
+    app.send(ENTER);
+    app.wait_for("selected Claude composer title", |screen| {
+        screen.contains("new task · harness Claude · model default")
     });
     app.send(ESC);
-    app.wait_for("provider composer close", |screen| {
-        !screen.contains("new task · Claude · model default")
+    app.wait_for("harness composer close", |screen| {
+        !screen.contains("new task · harness Claude · model default")
     });
 
     app.send(b"/model opus\r");
@@ -858,11 +950,11 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
     });
     app.send(b"x");
     app.wait_for("Claude model composer title", |screen| {
-        screen.contains("new task · Claude · model opus")
+        screen.contains("new task · harness Claude · model opus")
     });
     app.send(ESC);
     app.wait_for("model composer close", |screen| {
-        !screen.contains("new task · Claude · model opus")
+        !screen.contains("new task · harness Claude · model opus")
     });
 
     app.send(CTRL_F);
@@ -936,7 +1028,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(120, 34);
     let startup = app.wait_for("populated startup view", |screen| {
-        screen.contains("Open Agent View v0.1.8")
+        screen.contains("Open Agent View v0.1.9")
             && screen.contains("Ready for review")
             && screen.contains("approval-needed")
             && screen.contains("schema-migration")
@@ -1001,7 +1093,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
 
     app.send(b"\t");
     app.wait_for("new task composer", |screen| {
-        screen.contains('❯') && screen.contains("new task · Claude · model default")
+        screen.contains('❯') && screen.contains("new task · harness Claude · model default")
     });
     app.send(b"draft a release");
     app.send(CTRL_J);
@@ -1265,7 +1357,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
     let _serial = serialize_real_tty_test();
     let mut narrow = PtyApp::spawn(55, 18);
     let startup = narrow.wait_for("narrow startup", |screen| {
-        screen.contains("Open Agent View v0.1.8")
+        screen.contains("Open Agent View v0.1.9")
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
             && screen.contains("? for shortcuts")

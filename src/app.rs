@@ -26,6 +26,7 @@ pub enum Overlay {
     None,
     Help,
     Peek,
+    HarnessPicker,
     Composer(ComposerMode),
     Confirm(ConfirmTarget),
 }
@@ -117,6 +118,7 @@ pub struct App {
     pub launch_targets: Vec<LaunchTarget>,
     pub launch_provider: Provider,
     pub launch_model: Option<String>,
+    pub harness_selection: usize,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
     pub notice: Option<String>,
@@ -154,6 +156,10 @@ impl App {
             .map(|target| target.provider.clone())
             .or_else(|| launch_targets.first().map(|target| target.provider.clone()))
             .unwrap_or(default_provider);
+        let harness_selection = launch_targets
+            .iter()
+            .position(|target| target.provider == launch_provider)
+            .unwrap_or(0);
         let mut app = Self {
             snapshot,
             includes_completed,
@@ -165,6 +171,7 @@ impl App {
             launch_targets,
             launch_provider,
             launch_model: None,
+            harness_selection,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
             notice: None,
@@ -181,7 +188,11 @@ impl App {
         self.refreshed_at = SystemTime::now();
         let previous_selection = self.selection.clone();
         self.reconcile_selection();
-        if self.selection != previous_selection {
+        let selection_bound_overlay = matches!(
+            self.overlay,
+            Overlay::Peek | Overlay::Composer(ComposerMode::Rename { .. }) | Overlay::Confirm(_)
+        );
+        if self.selection != previous_selection && selection_bound_overlay {
             self.overlay = Overlay::None;
             self.input.clear();
         }
@@ -306,6 +317,10 @@ impl App {
                 self.input.clear();
                 action
             }
+            Overlay::HarnessPicker => {
+                self.confirm_harness_selection();
+                AppAction::None
+            }
             Overlay::Composer(mode) => self.submit_composer(mode),
             Overlay::Confirm(target) => self.confirm(target),
             Overlay::None => match self.selection.clone() {
@@ -330,6 +345,11 @@ impl App {
             Overlay::None => {
                 self.should_quit = true;
                 AppAction::Quit
+            }
+            Overlay::HarnessPicker => {
+                self.overlay = Overlay::Composer(ComposerMode::NewSession);
+                self.notice = None;
+                AppAction::None
             }
             _ => {
                 self.overlay = Overlay::None;
@@ -388,20 +408,50 @@ impl App {
         self.overlay = Overlay::Composer(ComposerMode::NewSession);
     }
 
-    pub fn cycle_launch_provider(&mut self) {
+    pub fn open_harness_picker(&mut self) {
         if self.launch_targets.is_empty() {
-            self.set_notice("no launch-capable provider is configured");
+            self.set_notice("no launch-capable harness is configured");
             return;
         }
-        let current = self
+        self.harness_selection = self
             .launch_targets
             .iter()
             .position(|target| target.provider == self.launch_provider)
             .unwrap_or(0);
-        let next = (current + 1) % self.launch_targets.len();
-        self.launch_provider = self.launch_targets[next].provider.clone();
-        self.launch_model = None;
         self.notice = None;
+        self.overlay = Overlay::HarnessPicker;
+    }
+
+    pub fn move_harness_selection(&mut self, delta: isize) {
+        if self.launch_targets.is_empty() {
+            return;
+        }
+        self.harness_selection = (self.harness_selection as isize + delta)
+            .rem_euclid(self.launch_targets.len() as isize)
+            as usize;
+    }
+
+    pub fn choose_harness_number(&mut self, number: usize) {
+        let Some(index) = number.checked_sub(1) else {
+            return;
+        };
+        if index < self.launch_targets.len() {
+            self.harness_selection = index;
+            self.confirm_harness_selection();
+        }
+    }
+
+    pub fn confirm_harness_selection(&mut self) {
+        let Some(target) = self.launch_targets.get(self.harness_selection) else {
+            self.overlay = Overlay::Composer(ComposerMode::NewSession);
+            return;
+        };
+        if self.launch_provider != target.provider {
+            self.launch_provider = target.provider.clone();
+            self.launch_model = None;
+        }
+        self.notice = None;
+        self.overlay = Overlay::Composer(ComposerMode::NewSession);
     }
 
     pub fn launch_target(&self) -> Option<&LaunchTarget> {
@@ -630,9 +680,10 @@ impl App {
             .unwrap_or((input.as_str(), ""));
         match command.to_ascii_lowercase().as_str() {
             "/help" => self.set_notice(
-                "commands: /provider NAME · /model NAME|default · /filter TEXT · ctrl+f filter",
+                "commands: /harness [NAME] · /model NAME|default · /filter TEXT · ctrl+f filter",
             ),
-            "/provider" => self.select_launch_provider(argument),
+            "/harness" | "/provider" if argument.is_empty() => self.open_harness_picker(),
+            "/harness" | "/provider" => self.select_launch_provider(argument),
             "/model" => self.select_launch_model(argument),
             "/filter" => {
                 self.filter = argument.to_owned();
@@ -658,9 +709,9 @@ impl App {
                 .collect::<Vec<_>>()
                 .join(", ");
             self.set_notice(if choices.is_empty() {
-                "no launch-capable provider is configured".into()
+                "no launch-capable harness is configured".into()
             } else {
-                format!("launch providers: {choices}")
+                format!("available harnesses: {choices}")
             });
             return;
         }
@@ -671,14 +722,19 @@ impl App {
         });
         if let Some(target) = selected {
             self.launch_provider = target.provider.clone();
+            self.harness_selection = self
+                .launch_targets
+                .iter()
+                .position(|candidate| candidate.provider == target.provider)
+                .unwrap_or(0);
             self.launch_model = None;
             self.set_notice(format!(
-                "new tasks will use {} with its default model",
+                "new tasks will use the {} harness with its default model",
                 target.provider.label()
             ));
         } else {
             self.set_notice(format!(
-                "{argument} is not an available launch provider; use /provider"
+                "{argument} is not an available harness; use /harness"
             ));
         }
     }
@@ -1672,7 +1728,14 @@ mod tests {
         );
 
         app.start_new_session(None);
-        app.input = "/provider pi".into();
+        app.input = "/harness".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::HarnessPicker);
+        assert_eq!(app.escape(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+
+        app.start_new_session(None);
+        app.input = "/harness pi".into();
         assert_eq!(app.activate(), AppAction::None);
         assert_eq!(app.launch_provider, Provider::Pi);
 
@@ -1708,7 +1771,87 @@ mod tests {
     }
 
     #[test]
-    fn task_command_validation_is_local_and_provider_cycle_resets_model() {
+    fn harness_picker_previews_wraps_confirms_and_preserves_the_draft() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Codex,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+            ],
+        );
+        app.start_new_session(None);
+        app.input = "keep this draft".into();
+        app.launch_model = Some("opus".into());
+
+        app.open_harness_picker();
+        assert_eq!(app.overlay, Overlay::HarnessPicker);
+        app.move_harness_selection(-1);
+        assert_eq!(app.harness_selection, 2);
+        assert_eq!(app.launch_provider, Provider::Claude);
+        assert_eq!(app.escape(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "keep this draft");
+        assert_eq!(app.launch_model.as_deref(), Some("opus"));
+
+        app.open_harness_picker();
+        app.move_harness_selection(1);
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.launch_provider, Provider::Codex);
+        assert!(app.launch_model.is_none());
+        assert_eq!(app.input, "keep this draft");
+
+        app.open_harness_picker();
+        app.choose_harness_number(3);
+        assert_eq!(app.launch_provider, Provider::Pi);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+    }
+
+    #[test]
+    fn provider_refresh_does_not_close_the_harness_picker_or_drop_its_draft() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+            ],
+        );
+        app.start_new_session(None);
+        app.input = "draft during discovery".into();
+        app.open_harness_picker();
+
+        app.replace_snapshot(SessionSnapshot {
+            sessions: vec![session("arrived", SessionState::Working)],
+            warnings: vec![],
+        });
+
+        assert_eq!(app.overlay, Overlay::HarnessPicker);
+        assert_eq!(app.input, "draft during discovery");
+        assert_eq!(app.selection, Some(SelectionKey::Session("arrived".into())));
+    }
+
+    #[test]
+    fn task_command_validation_is_local_and_harness_switch_resets_model() {
         let mut app = App::with_launch_targets(
             SessionSnapshot::default(),
             false,
@@ -1725,7 +1868,10 @@ mod tests {
             ],
         );
         app.launch_model = Some("opus".into());
-        app.cycle_launch_provider();
+        app.start_new_session(None);
+        app.open_harness_picker();
+        app.move_harness_selection(1);
+        app.activate();
         assert_eq!(app.launch_provider, Provider::Codex);
         assert!(app.launch_model.is_none());
 

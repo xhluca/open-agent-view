@@ -228,8 +228,14 @@ struct Cli {
     #[arg(long, value_name = "PATH", global = true)]
     managed_docker_registry: Option<PathBuf>,
 
-    /// Provider used by the new-session composer.
-    #[arg(long, value_enum, default_value_t = LaunchProvider::Claude)]
+    /// Initial coding-agent harness used by the new-session composer.
+    #[arg(
+        long = "harness",
+        visible_alias = "launch-provider",
+        value_name = "HARNESS",
+        value_enum,
+        default_value_t = LaunchProvider::Claude
+    )]
     launch_provider: LaunchProvider,
 
     /// Working directory used for newly launched sessions.
@@ -1107,6 +1113,8 @@ mod tests {
                 .unwrap();
             assert_eq!(cli.launch_provider, expected);
         }
+        let alias = Cli::try_parse_from(["coding-agents", "--json", "--harness", "codex"]).unwrap();
+        assert_eq!(alias.launch_provider, LaunchProvider::Codex);
     }
 
     #[test]

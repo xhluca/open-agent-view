@@ -50,6 +50,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
                     as u16;
             (3 + help_lines).min(area.height.saturating_sub(5))
         }
+        Overlay::HarnessPicker => (3 + input_line_count(&app.input).saturating_sub(1))
+            .min(7)
+            .min(area.height.saturating_sub(5)),
         Overlay::Composer(_) => (3 + input_line_count(&app.input).saturating_sub(1))
             .min(7)
             .min(area.height.saturating_sub(5)),
@@ -73,6 +76,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
     if let Overlay::Confirm(target) = &app.overlay {
         render_confirmation(frame, app, target, area);
+    } else if app.overlay == Overlay::HarnessPicker {
+        render_harness_picker(frame, app, area);
     }
 }
 
@@ -156,7 +161,7 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut lines = Vec::new();
     let mut selected_line = None;
-    let selection_visible = !matches!(app.overlay, Overlay::Composer(_));
+    let selection_visible = !matches!(app.overlay, Overlay::Composer(_) | Overlay::HarnessPicker);
 
     for (group_position, group) in app.groups().into_iter().enumerate() {
         if group_position > 0 {
@@ -369,15 +374,19 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .borders(Borders::TOP | Borders::BOTTOM)
         .border_style(Style::default().fg(DIM))
         .style(Style::default().bg(BG));
-    if matches!(app.overlay, Overlay::Composer(ComposerMode::NewSession)) {
+    if matches!(
+        app.overlay,
+        Overlay::Composer(ComposerMode::NewSession) | Overlay::HarnessPicker
+    ) {
         let model = app.launch_model.as_deref().unwrap_or("default");
         block = block.title(format!(
-            " new task · {} · model {model} ",
+            " new task · harness {} · model {model} ",
             app.launch_provider.label()
         ));
     }
     let (prefix, content, editable) = match &app.overlay {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
+        Overlay::HarnessPicker => ("❯ ", app.input.as_str(), false),
         Overlay::Composer(ComposerMode::Rename { .. }) => ("❯ name ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Filter) => ("❯ filter ", app.input.as_str(), true),
         _ => (
@@ -573,16 +582,21 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
         Overlay::Composer(ComposerMode::Rename { .. }) => "enter to save · esc to cancel".into(),
         Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
-            "enter to create · tab provider · /provider · /model · ctrl+j newline · esc cancel"
+            "enter to create · tab choose harness · /harness · /model · ctrl+j newline · esc cancel"
                 .into()
         }
         Overlay::Composer(ComposerMode::NewSession) if width >= 70 => {
-            "enter to create · ctrl+j for newline · tab provider · /help · esc cancel".into()
+            "enter to create · tab choose harness · ctrl+j newline · /help · esc cancel".into()
         }
         Overlay::Composer(ComposerMode::NewSession) if width >= 55 => {
-            "enter to create · tab provider · /help · esc cancel".into()
+            "enter to create · tab harness · /help · esc cancel".into()
         }
-        Overlay::Composer(ComposerMode::NewSession) => "enter to create · tab provider".into(),
+        Overlay::Composer(ComposerMode::NewSession) => "enter to create · tab harness".into(),
+        Overlay::HarnessPicker if width >= 55 => format!(
+            "↑/↓ or tab to choose · 1–{} direct · enter select · esc back",
+            app.launch_targets.len().min(9)
+        ),
+        Overlay::HarnessPicker => "↑/↓ choose · enter · esc".into(),
         Overlay::Peek
             if app.selected_session().is_some_and(|session| {
                 session.capabilities.contains(&Capability::Approve)
@@ -727,7 +741,7 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("ctrl+j for newline".into());
     actions.push("ctrl+f to filter".into());
     actions.push("ctrl+l to refresh".into());
-    actions.push("tab for new task/provider".into());
+    actions.push("tab for new task/harness picker".into());
     actions.push("/help for task commands".into());
     if let Some(session) = app.selected_session() {
         if session.capabilities.contains(&Capability::Approve)
@@ -793,6 +807,88 @@ fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<String> {
         }
     }
     lines
+}
+
+fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    if app.launch_targets.is_empty() {
+        return;
+    }
+    let popup_width = area.width.saturating_sub(2).min(58).max(28);
+    let desired_height = app.launch_targets.len() as u16 + 3;
+    let popup_height = desired_height.min(area.height.saturating_sub(2)).max(5);
+    let popup = Rect::new(
+        area.x + area.width.saturating_sub(popup_width) / 2,
+        area.y + area.height.saturating_sub(popup_height) / 2,
+        popup_width,
+        popup_height,
+    );
+    let visible_rows = popup_height.saturating_sub(3).max(1) as usize;
+    let start = (app.harness_selection / visible_rows) * visible_rows;
+    let mut lines = app
+        .launch_targets
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible_rows)
+        .map(|(index, target)| {
+            let selected = index == app.harness_selection;
+            let current = target.provider == app.launch_provider;
+            let detail = if popup_width >= 46 {
+                if target.supports_model {
+                    "selectable model"
+                } else {
+                    "default model"
+                }
+            } else if target.supports_model {
+                "model"
+            } else {
+                "default"
+            };
+            let label = format!(
+                " {} {}  {:<16} {}{}",
+                if selected { "›" } else { " " },
+                index + 1,
+                sanitize_inline(target.provider.label()),
+                detail,
+                if current { " · current" } else { "" }
+            );
+            Line::from(label).style(if selected {
+                Style::default()
+                    .bg(SELECTED_BG)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
+            } else if current {
+                Style::default().bg(BG).fg(ACCENT)
+            } else {
+                Style::default().bg(BG).fg(FG)
+            })
+        })
+        .collect::<Vec<_>>();
+    lines.push(
+        Line::from(if popup_width >= 46 {
+            " ↑/↓ or tab move · enter select · esc back"
+        } else {
+            " ↑/↓ · enter · esc"
+        })
+        .style(Style::default().fg(DIM)),
+    );
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(format!(
+                        " choose harness · {}/{} ",
+                        app.harness_selection + 1,
+                        app.launch_targets.len()
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ACCENT)),
+            )
+            .style(Style::default().bg(BG).fg(FG)),
+        popup,
+    );
 }
 
 fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, area: Rect) {
@@ -1014,7 +1110,7 @@ mod tests {
     use ratatui::Terminal;
 
     use crate::domain::{
-        AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot,
+        AgentSession, Capability, LaunchTarget, Provider, Runtime, SessionKind, SessionSnapshot,
     };
 
     use super::*;
@@ -1266,7 +1362,7 @@ mod tests {
         assert!(rendered.contains("❯ first line"));
         assert!(rendered.contains("second line"));
         assert!(rendered.contains("third line"));
-        assert!(rendered.contains("ctrl+j for newline"));
+        assert!(rendered.contains("ctrl+j newline"));
     }
 
     #[test]
@@ -1403,10 +1499,114 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("new task · Claude · model opus"));
-        assert!(rendered.contains("tab provider"));
-        assert!(rendered.contains("/provider"));
+        assert!(rendered.contains("new task · harness Claude · model opus"));
+        assert!(rendered.contains("tab choose harness"));
+        assert!(rendered.contains("/harness"));
         assert!(rendered.contains("/model"));
+    }
+
+    #[test]
+    fn harness_picker_lists_every_available_choice_and_marks_the_current_one() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Codex,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::OpenCode,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::Cursor,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::GitHubCopilot,
+                    supports_model: false,
+                },
+            ],
+        );
+        app.start_new_session(None);
+        app.input = "draft survives".into();
+        app.open_harness_picker();
+        app.move_harness_selection(1);
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("choose harness · 2/6"));
+        assert!(rendered.contains("1  Claude"));
+        assert!(rendered.contains("2  Codex"));
+        assert!(rendered.contains("3  Pi"));
+        assert!(rendered.contains("4  OpenCode"));
+        assert!(rendered.contains("5  Cursor"));
+        assert!(rendered.contains("6  GitHub Copilot"));
+        assert!(rendered.contains("selectable model"));
+        assert!(rendered.contains("default model"));
+        assert!(rendered.contains("draft survives"));
+        assert!(rendered.contains("enter select"));
+        assert!(rendered.contains("esc back"));
+    }
+
+    #[test]
+    fn narrow_harness_picker_pages_to_keep_the_highlighted_choice_visible() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Codex,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::OpenCode,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::Cursor,
+                    supports_model: false,
+                },
+                LaunchTarget {
+                    provider: Provider::GitHubCopilot,
+                    supports_model: false,
+                },
+            ],
+        );
+        app.start_new_session(None);
+        app.open_harness_picker();
+        app.harness_selection = 5;
+        let backend = TestBackend::new(32, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("choose harness · 6/6"));
+        assert!(rendered.contains("6  GitHub Copilot"));
+        assert!(!rendered.contains("1  Claude"));
     }
 
     #[test]
