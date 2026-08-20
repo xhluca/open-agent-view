@@ -16,6 +16,9 @@ use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
 use crate::pi_supervisor::{ManagedPiSession, PiPendingKind, PiSupervisor};
+use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
+
+const MAX_MODEL_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 
 /// Read-only discovery of Pi's documented JSONL session store.
 pub struct PiSource {
@@ -31,6 +34,7 @@ pub struct PiController {
     executable: String,
     source: PiSource,
     supervisor: Option<Arc<PiSupervisor>>,
+    runner: Arc<dyn CommandRunner>,
 }
 
 impl PiController {
@@ -39,6 +43,7 @@ impl PiController {
             executable: executable.into(),
             source: PiSource::host(session_dir),
             supervisor: None,
+            runner: Arc::new(ProcessRunner),
         }
     }
 
@@ -51,6 +56,7 @@ impl PiController {
             executable: executable.into(),
             source: PiSource::managed(session_dir, supervisor.clone()),
             supervisor: Some(supervisor),
+            runner: Arc::new(ProcessRunner),
         }
     }
 
@@ -66,10 +72,30 @@ impl ProviderController for PiController {
 
     fn launch_mode(&self) -> LaunchMode {
         if self.supervisor.is_some() {
-            LaunchMode::DefaultModel
+            LaunchMode::SelectableModel
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        let mut command = CommandRequest::new(
+            self.executable.clone(),
+            vec!["--offline".into(), "--list-models".into()],
+        );
+        command.timeout = Duration::from_secs(8);
+        let output = self.runner.run(&command)?;
+        if output.status != 0 {
+            bail!(
+                "Pi model discovery exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        if output.stdout.len() > MAX_MODEL_CATALOG_BYTES {
+            bail!("Pi model catalog exceeded the 4 MiB safety limit");
+        }
+        parse_pi_model_catalog(output.stdout_text()?)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -110,7 +136,11 @@ impl ProviderController for PiController {
             .supervisor
             .as_ref()
             .context("managed Pi launch is not configured")?;
-        let session = supervisor.launch(&request.prompt, &request.cwd)?;
+        let session = supervisor.launch_with_model(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
         Ok(ControlOutcome {
             message: format!("started managed Pi session {}", session.name),
             provider_session_hint: Some(session.id),
@@ -720,21 +750,105 @@ fn truncate_chars(input: &str, limit: usize) -> String {
     value
 }
 
+fn parse_pi_model_catalog(input: &str) -> Result<Vec<String>> {
+    let mut lines = input.lines().filter(|line| !line.trim().is_empty());
+    let header = lines
+        .next()
+        .context("Pi model catalog omitted its header")?;
+    let header = header.split_whitespace().collect::<Vec<_>>();
+    if header.first() != Some(&"provider") || header.get(1) != Some(&"model") {
+        bail!("Pi model catalog has an unsupported header");
+    }
+
+    let mut models = BTreeSet::new();
+    for (index, line) in lines.enumerate() {
+        let columns = line.split_whitespace().collect::<Vec<_>>();
+        let (Some(provider), Some(model)) = (columns.first(), columns.get(1)) else {
+            bail!("Pi model catalog row {} is malformed", index + 2);
+        };
+        if provider.is_empty()
+            || model.is_empty()
+            || provider.contains('/')
+            || provider.chars().any(char::is_control)
+            || model.chars().any(char::is_control)
+        {
+            bail!("Pi model catalog row {} is invalid", index + 2);
+        }
+        let identifier = format!("{provider}/{model}");
+        if identifier.len() <= 128 {
+            models.insert(identifier);
+        }
+        if models.len() > 20_000 {
+            bail!("Pi model catalog exceeded the 20,000-model safety limit");
+        }
+    }
+    Ok(models.into_iter().collect())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    use std::sync::Mutex;
 
     use tempfile::tempdir;
 
     use super::*;
+    use crate::process::CommandOutput;
+
+    struct FakeRunner {
+        expected: CommandRequest,
+        output: Mutex<Option<CommandOutput>>,
+    }
+
+    impl CommandRunner for FakeRunner {
+        fn run(&self, request: &CommandRequest) -> Result<CommandOutput> {
+            assert_eq!(request, &self.expected);
+            Ok(self.output.lock().unwrap().take().unwrap())
+        }
+    }
 
     const SESSION: &str = r#"{"type":"session","version":3,"id":"123e4567-e89b-12d3-a456-426614174000","timestamp":"2026-08-18T12:00:00.000Z","cwd":"/work/project"}
 {"type":"message","id":"a1","parentId":null,"timestamp":"2026-08-18T12:00:01.000Z","message":{"role":"user","content":"Implement the provider dashboard","timestamp":1}}
 {"type":"session_info","id":"a2","parentId":"a1","timestamp":"2026-08-18T12:00:02.000Z","name":"provider-work"}
 {"type":"message","id":"a3","parentId":"a2","timestamp":"2026-08-18T12:00:03.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"The adapter is ready."}],"stopReason":"stop","timestamp":2}}
 "#;
+
+    #[test]
+    fn parses_and_deduplicates_pi_model_catalog() {
+        let models = parse_pi_model_catalog(
+            "provider model context max-out thinking images\nopenai gpt-5.4 272K 128K yes yes\nanthropic claude-sonnet-4-5 200K 64K yes yes\nopenai gpt-5.4 272K 128K yes yes\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            models,
+            vec!["anthropic/claude-sonnet-4-5", "openai/gpt-5.4"]
+        );
+        assert!(parse_pi_model_catalog("unexpected output\n").is_err());
+    }
+
+    #[test]
+    fn controller_requests_the_real_pi_model_listing_surface() {
+        let mut expected =
+            CommandRequest::new("pi", vec!["--offline".into(), "--list-models".into()]);
+        expected.timeout = Duration::from_secs(8);
+        let mut controller = PiController::host("pi", "/sessions");
+        controller.runner = Arc::new(FakeRunner {
+            expected,
+            output: Mutex::new(Some(CommandOutput {
+                status: 0,
+                stdout: b"provider model context max-out thinking images\nopenai gpt-5.4 272K 128K yes yes\n".to_vec(),
+                stderr: Vec::new(),
+            })),
+        });
+
+        assert_eq!(
+            controller.available_models().unwrap(),
+            vec!["openai/gpt-5.4"]
+        );
+    }
 
     #[test]
     fn parses_current_pi_v3_jsonl_shape() {

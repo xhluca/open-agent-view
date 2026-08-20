@@ -14,6 +14,23 @@ use open_agent_view::pi_supervisor::PiSupervisor;
 use tempfile::tempdir;
 
 #[test]
+#[ignore = "set OAV_REAL_PI_BIN for a read-only installed-provider catalog probe"]
+fn real_pi_model_catalog_is_nonempty_and_fully_qualified() {
+    let executable = std::env::var("OAV_REAL_PI_BIN").unwrap();
+    let controller = PiController::host(executable, tempdir().unwrap().path());
+
+    let models = controller.available_models().unwrap();
+
+    assert!(!models.is_empty());
+    assert!(models.iter().all(|model| {
+        model
+            .split_once('/')
+            .map(|(provider, id)| !provider.is_empty() && !id.is_empty())
+            .unwrap_or(false)
+    }));
+}
+
+#[test]
 fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     let directory = tempdir().unwrap();
     let fake_pi = directory.path().join("fake-pi");
@@ -38,7 +55,7 @@ fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     let launched = first_controller
         .launch(&LaunchRequest {
             provider: Provider::Pi,
-            model: None,
+            model: Some("openai/gpt-5.4-mini".into()),
             prompt: "initial task".into(),
             cwd: directory.path().to_path_buf(),
         })
@@ -46,6 +63,13 @@ fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     assert_eq!(
         launched.provider_session_hint.as_deref(),
         Some("fake-session")
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("pi-launch-args")).unwrap(),
+        format!(
+            "--mode\nrpc\n--no-approve\n--session-dir\n{}\n--name\ninitial task\n--model\nopenai/gpt-5.4-mini\n",
+            first_supervisor.session_dir().display()
+        )
     );
 
     let source = PiSource::managed(
@@ -170,6 +194,7 @@ fn write_fake_pi(path: &Path) {
     fs::write(
         path,
         r##"#!/bin/sh
+printf '%s\n' "$@" > pi-launch-args
 while IFS= read -r line; do
   id=$(printf '%s\n' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
   case "$line" in

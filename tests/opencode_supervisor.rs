@@ -34,7 +34,7 @@ fn owned_server_survives_dashboard_reconnect_and_rejects_external_sessions() {
     let launched = controller
         .launch(&LaunchRequest {
             provider: Provider::OpenCode,
-            model: None,
+            model: Some("anthropic/claude-sonnet-4-5".into()),
             prompt: "initial managed task".into(),
             cwd: directory.path().to_path_buf(),
         })
@@ -287,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
             session_id = parsed.path.split("/")[2]
             if session_id not in sessions: return self.respond(404, {"error": "missing"})
             data = self.body()
+            if not messages[session_id] and data.get("model") != {"providerID": "anthropic", "modelID": "claude-sonnet-4-5"}:
+                return self.respond(422, {"error": "model selector missing or malformed"})
             text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
             messages[session_id].append({"info": {"role": "user"}, "parts": [{"type": "text", "text": text}]})
             statuses[session_id] = "busy"

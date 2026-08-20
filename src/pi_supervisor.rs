@@ -25,6 +25,7 @@ const RECORD_VERSION: u32 = 1;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
 const RPC_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
+const MODEL_LAUNCH_FEATURE: &str = "launch_with_model";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,12 +81,33 @@ pub struct ManagedPiSession {
 enum DaemonRequest {
     Ping,
     List,
-    Launch { prompt: String, cwd: PathBuf },
-    Inspect { session_id: String },
-    Reply { session_id: String, prompt: String },
-    Interrupt { session_id: String },
-    ResolveConfirm { session_id: String, accept: bool },
-    RespondInput { session_id: String, answer: String },
+    Launch {
+        prompt: String,
+        cwd: PathBuf,
+    },
+    LaunchWithModel {
+        prompt: String,
+        cwd: PathBuf,
+        model: String,
+    },
+    Inspect {
+        session_id: String,
+    },
+    Reply {
+        session_id: String,
+        prompt: String,
+    },
+    Interrupt {
+        session_id: String,
+    },
+    ResolveConfirm {
+        session_id: String,
+        accept: bool,
+    },
+    RespondInput {
+        session_id: String,
+        answer: String,
+    },
     Shutdown,
 }
 
@@ -151,6 +173,15 @@ impl PiSupervisor {
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedPiSession> {
+        self.launch_with_model(prompt, cwd, None)
+    }
+
+    pub fn launch_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<ManagedPiSession> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the Pi launch prompt cannot be empty");
@@ -158,14 +189,57 @@ impl PiSupervisor {
         if !cwd.is_absolute() {
             bail!("the Pi launch directory must be absolute");
         }
-        let record = self.ensure_endpoint()?;
-        self.request(
-            &record,
-            &DaemonRequest::Launch {
+        let mut record = self.ensure_endpoint()?;
+        let request = match model {
+            Some(model) => {
+                record = self.model_launch_endpoint(record)?;
+                DaemonRequest::LaunchWithModel {
+                    prompt: prompt.into(),
+                    cwd: cwd.into(),
+                    model: validate_pi_model(model)?.into(),
+                }
+            }
+            None => DaemonRequest::Launch {
                 prompt: prompt.into(),
                 cwd: cwd.into(),
             },
-        )
+        };
+        self.request(&record, &request)
+    }
+
+    fn model_launch_endpoint(&self, record: SupervisorRecord) -> Result<SupervisorRecord> {
+        let capabilities: Value = self.request(&record, &DaemonRequest::Ping)?;
+        if supports_model_launch(&capabilities) {
+            return Ok(record);
+        }
+
+        // v0.1.10 and earlier already understand Ping/List/Shutdown, but do not
+        // understand LaunchWithModel. Check their owned state before replacing
+        // the exact daemon; never risk terminating active provider work merely
+        // to upgrade this optional capability.
+        let sessions: Vec<ManagedPiSession> = self.request(&record, &DaemonRequest::List)?;
+        let active = sessions
+            .iter()
+            .filter(|session| session.state != SessionState::Completed)
+            .map(|session| session.name.as_str())
+            .take(3)
+            .collect::<Vec<_>>();
+        if !active.is_empty() {
+            bail!(
+                "the running Pi supervisor predates model selection and still owns active work ({}); finish or interrupt those sessions, then retry the model launch",
+                active.join(", ")
+            );
+        }
+
+        self.request::<Value>(&record, &DaemonRequest::Shutdown)?;
+        wait_for_verified_process_exit(&record, Duration::from_secs(2))
+            .context("timed out safely upgrading the idle Pi supervisor")?;
+        let upgraded = self.ensure_endpoint()?;
+        let capabilities: Value = self.request(&upgraded, &DaemonRequest::Ping)?;
+        if !supports_model_launch(&capabilities) {
+            bail!("the restarted Pi supervisor does not advertise model-selection support");
+        }
+        Ok(upgraded)
     }
 
     /// List only sessions owned by an already-running daemon. Discovery never
@@ -249,16 +323,8 @@ impl PiSupervisor {
             return Ok(());
         };
         self.request::<Value>(&record, &DaemonRequest::Shutdown)?;
-        let deadline = Instant::now() + Duration::from_secs(2);
-        loop {
-            if !verify_process(&record)? {
-                return Ok(());
-            }
-            if Instant::now() >= deadline {
-                bail!("timed out waiting for the exact Pi supervisor process to exit");
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
+        wait_for_verified_process_exit(&record, Duration::from_secs(2))
+            .context("timed out waiting for the exact Pi supervisor process to exit")
     }
 
     fn ensure_endpoint(&self) -> Result<SupervisorRecord> {
@@ -413,6 +479,7 @@ impl RpcProcess {
         session_dir: &Path,
         prompt: &str,
         cwd: &Path,
+        model: Option<&str>,
         log: File,
     ) -> Result<Self> {
         let name = prompt
@@ -420,10 +487,15 @@ impl RpcProcess {
             .take(8)
             .collect::<Vec<_>>()
             .join(" ");
-        let mut child = Command::new(pi_bin)
+        let mut command = Command::new(pi_bin);
+        command
             .args(["--mode", "rpc", "--no-approve", "--session-dir"])
             .arg(session_dir)
-            .args(["--name", &name])
+            .args(["--name", &name]);
+        if let Some(model) = model {
+            command.args(["--model", validate_pi_model(model)?]);
+        }
+        let mut child = command
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -566,7 +638,7 @@ struct DaemonState {
 }
 
 impl DaemonState {
-    fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedPiSession> {
+    fn launch(&self, prompt: &str, cwd: &Path, model: Option<&str>) -> Result<ManagedPiSession> {
         if !cwd.is_absolute() {
             bail!("managed Pi cwd must be absolute");
         }
@@ -576,6 +648,7 @@ impl DaemonState {
             &self.session_dir,
             prompt,
             cwd,
+            model,
             log,
         )?);
         let snapshot = process.snapshot()?;
@@ -609,11 +682,22 @@ impl DaemonState {
 
     fn dispatch(&self, request: DaemonRequest) -> Result<(Value, bool)> {
         match request {
-            DaemonRequest::Ping => Ok((json!({"version": RECORD_VERSION}), false)),
+            DaemonRequest::Ping => Ok((
+                json!({
+                    "version": RECORD_VERSION,
+                    "features": [MODEL_LAUNCH_FEATURE]
+                }),
+                false,
+            )),
             DaemonRequest::List => Ok((serde_json::to_value(self.list()?)?, false)),
-            DaemonRequest::Launch { prompt, cwd } => {
-                Ok((serde_json::to_value(self.launch(&prompt, &cwd)?)?, false))
-            }
+            DaemonRequest::Launch { prompt, cwd } => Ok((
+                serde_json::to_value(self.launch(&prompt, &cwd, None)?)?,
+                false,
+            )),
+            DaemonRequest::LaunchWithModel { prompt, cwd, model } => Ok((
+                serde_json::to_value(self.launch(&prompt, &cwd, Some(&model))?)?,
+                false,
+            )),
             DaemonRequest::Inspect { session_id } => {
                 let response = self
                     .session(&session_id)?
@@ -1112,6 +1196,29 @@ fn verify_process(record: &SupervisorRecord) -> Result<bool> {
     Ok(start == record.process_start_token && cmdline == record.process_cmdline)
 }
 
+fn supports_model_launch(capabilities: &Value) -> bool {
+    capabilities
+        .get("features")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .any(|feature| feature == MODEL_LAUNCH_FEATURE)
+}
+
+fn wait_for_verified_process_exit(record: &SupervisorRecord, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if !verify_process(record)? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            bail!("verified Pi supervisor process did not exit before the deadline");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
 fn is_missing_process(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<std::io::Error>()
@@ -1229,11 +1336,96 @@ fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
+fn validate_pi_model(model: &str) -> Result<&str> {
+    let model = model.trim();
+    if model.is_empty() || model.len() > 128 {
+        bail!("the Pi model name must contain between 1 and 128 bytes");
+    }
+    if model
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("the Pi model name cannot contain whitespace or control characters");
+    }
+    Ok(model)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn detects_model_launch_protocol_capability() {
+        assert!(!supports_model_launch(&json!({"version": 1})));
+        assert!(supports_model_launch(&json!({
+            "version": 1,
+            "features": ["launch_with_model"]
+        })));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn old_protocol_mock_refuses_upgrade_while_it_owns_active_work() {
+        use std::os::unix::net::UnixListener;
+
+        let directory = tempfile::tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let supervisor = PiSupervisor::with_state_dir_and_exe(
+            "pi",
+            state_dir.clone(),
+            std::env::current_exe().unwrap(),
+        )
+        .unwrap();
+        let socket_path = state_dir.join("old.sock");
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            for request_number in 0..2 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let request: DaemonRequest = serde_json::from_reader(&mut stream).unwrap();
+                let response = match (request_number, request) {
+                    (0, DaemonRequest::Ping) => {
+                        DaemonResponse::success(json!({"version": 1})).unwrap()
+                    }
+                    (1, DaemonRequest::List) => DaemonResponse::success(vec![ManagedPiSession {
+                        id: "old-active".into(),
+                        cwd: PathBuf::from("/work"),
+                        name: "important active task".into(),
+                        pid: 42,
+                        process_start_token: "token".into(),
+                        state: SessionState::Working,
+                        summary: String::new(),
+                        session_file: None,
+                        pending: None,
+                        alive: true,
+                        created_at_ms: 1,
+                        updated_at_ms: 1,
+                    }])
+                    .unwrap(),
+                    (_, request) => panic!("unexpected old-daemon request: {request:?}"),
+                };
+                serde_json::to_writer(&mut stream, &response).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        let pid = std::process::id();
+        let record = SupervisorRecord {
+            version: RECORD_VERSION,
+            pid,
+            process_start_token: process_start_token(pid).unwrap(),
+            process_cmdline: process_cmdline(pid).unwrap(),
+            pi_bin: "pi".into(),
+            socket_path,
+            created_at_ms: 1,
+        };
+
+        let error = supervisor.model_launch_endpoint(record).unwrap_err();
+
+        assert!(format!("{error:#}").contains("predates model selection"));
+        assert!(format!("{error:#}").contains("important active task"));
+        server.join().unwrap();
+    }
 
     #[test]
     fn formats_rpc_message_content() {

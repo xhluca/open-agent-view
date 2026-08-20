@@ -19,6 +19,7 @@ use crate::process::{CancellableProcessRunner, CommandRequest, CommandRunner};
 // generic help text. The official read-only `db` command is the only current
 // CLI surface that projects every root and child session across workspaces.
 const GLOBAL_SESSION_QUERY: &str = "SELECT id, title, time_created AS created, time_updated AS updated, project_id AS projectId, directory FROM session ORDER BY time_updated DESC";
+const MAX_MODEL_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 
 /// A command prefix for an OpenCode installation on the host or in Docker.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -94,10 +95,14 @@ impl ProviderController for OpenCodeController {
 
     fn launch_mode(&self) -> LaunchMode {
         if self.supervisor.is_some() {
-            LaunchMode::DefaultModel
+            LaunchMode::SelectableModel
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        self.source.available_models()
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -136,7 +141,7 @@ impl ProviderController for OpenCodeController {
             .supervisor
             .as_ref()
             .context("managed OpenCode launch is not configured")?
-            .launch(&request.prompt, &request.cwd)?;
+            .launch_with_model(&request.prompt, &request.cwd, request.model.as_deref())?;
         Ok(ControlOutcome {
             message: format!("started managed OpenCode session {}", session.title),
             provider_session_hint: Some(session.id),
@@ -268,6 +273,25 @@ impl OpenCodeSource {
             runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: None,
         }
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        let mut args = self.invocation.prefix_args.clone();
+        args.push("models".into());
+        let mut command = CommandRequest::new(self.invocation.program.clone(), args);
+        command.timeout = Duration::from_secs(8);
+        let output = self.runner.run(&command)?;
+        if output.status != 0 {
+            bail!(
+                "OpenCode model discovery exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        if output.stdout.len() > MAX_MODEL_CATALOG_BYTES {
+            bail!("OpenCode model catalog exceeded the 4 MiB safety limit");
+        }
+        parse_opencode_models(output.stdout_text()?)
     }
 
     /// Render a persisted session transcript using OpenCode's read-only export
@@ -520,6 +544,33 @@ fn limit_transcript(mut value: String) -> String {
     format!("[earlier output omitted]\n{value}")
 }
 
+fn parse_opencode_models(input: &str) -> Result<Vec<String>> {
+    let mut models = BTreeSet::new();
+    for (index, line) in input.lines().enumerate() {
+        let identifier = line.trim();
+        if identifier.is_empty() {
+            continue;
+        }
+        let Some((provider, model)) = identifier.split_once('/') else {
+            bail!("OpenCode model catalog row {} is malformed", index + 1);
+        };
+        if provider.is_empty()
+            || model.is_empty()
+            || identifier.len() > 128
+            || identifier
+                .chars()
+                .any(|character| character.is_control() || character.is_whitespace())
+        {
+            bail!("OpenCode model catalog row {} is invalid", index + 1);
+        }
+        models.insert(identifier.to_owned());
+        if models.len() > 20_000 {
+            bail!("OpenCode model catalog exceeded the 20,000-model safety limit");
+        }
+    }
+    Ok(models.into_iter().collect())
+}
+
 fn normalize_record(record: OpenCodeRecord, runtime: Runtime) -> AgentSession {
     let runtime_id = match &runtime {
         Runtime::Host => "host",
@@ -594,6 +645,47 @@ mod tests {
         assert_eq!(
             sessions[0].capabilities,
             BTreeSet::from([Capability::Inspect])
+        );
+    }
+
+    #[test]
+    fn parses_exact_opencode_model_identifiers() {
+        assert_eq!(
+            parse_opencode_models("openai/gpt-5.4\nanthropic/claude-sonnet-4-5\nopenai/gpt-5.4\n")
+                .unwrap(),
+            vec!["anthropic/claude-sonnet-4-5", "openai/gpt-5.4"]
+        );
+        assert!(parse_opencode_models("gpt-5.4\n").is_err());
+        assert!(parse_opencode_models("openai/\n").is_err());
+    }
+
+    #[test]
+    fn controller_uses_the_documented_opencode_models_command() {
+        let mut expected = CommandRequest::new("opencode", vec!["models".into()]);
+        expected.timeout = Duration::from_secs(8);
+        let runner = Arc::new(FakeRunner {
+            expected,
+            output: Mutex::new(Some(CommandOutput {
+                status: 0,
+                stdout: b"openai/gpt-5.4\nanthropic/claude-sonnet-4-5\n".to_vec(),
+                stderr: Vec::new(),
+            })),
+        });
+        let source = OpenCodeSource::with_runner(
+            "test",
+            OpenCodeInvocation::host("opencode"),
+            Runtime::Host,
+            runner,
+        );
+        let controller = OpenCodeController {
+            executable: "opencode".into(),
+            source,
+            supervisor: None,
+        };
+
+        assert_eq!(
+            controller.available_models().unwrap(),
+            vec!["anthropic/claude-sonnet-4-5", "openai/gpt-5.4"]
         );
     }
 

@@ -100,11 +100,23 @@ impl OpenCodeSupervisor {
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedOpenCodeSession> {
+        self.launch_with_model(prompt, cwd, None)
+    }
+
+    pub fn launch_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<ManagedOpenCodeSession> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the OpenCode launch prompt cannot be empty");
         }
         validate_cwd(cwd)?;
+        // Validate the complete turn body before creating a provider session.
+        // A malformed selector must never leave an empty owned session behind.
+        let prompt_body = opencode_prompt_body(prompt, model)?;
         let _lock = StateLock::acquire(&self.lock_path)?;
         let mut record = self.ensure_server_locked()?;
         let title = prompt
@@ -142,12 +154,7 @@ impl OpenCodeSupervisor {
         // does prove which exact session this server created.
         save_record(&self.record_path, &record)?;
         let path = with_directory_query(&format!("/session/{id}/prompt_async"), cwd);
-        if let Err(error) = self.request_empty(
-            &record,
-            "POST",
-            &path,
-            Some(&json!({"parts": [{"type": "text", "text": prompt}]})),
-        ) {
+        if let Err(error) = self.request_empty(&record, "POST", &path, Some(&prompt_body)) {
             return Err(error).context(format!(
                 "OpenCode created owned session {id}, but rejected its initial prompt"
             ));
@@ -756,6 +763,35 @@ fn validate_cwd(cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+fn opencode_prompt_body(prompt: &str, model: Option<&str>) -> Result<Value> {
+    let mut body = json!({"parts": [{"type": "text", "text": prompt}]});
+    let Some(identifier) = model else {
+        return Ok(body);
+    };
+    let identifier = identifier.trim();
+    if identifier.is_empty()
+        || identifier.len() > 128
+        || identifier
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("the OpenCode model name must contain 1 to 128 non-whitespace bytes");
+    }
+    let (provider_id, model_id) = identifier
+        .split_once('/')
+        .context("the OpenCode model must use provider/model format")?;
+    if provider_id.is_empty() || model_id.is_empty() {
+        bail!("the OpenCode model must use provider/model format");
+    }
+    body.as_object_mut()
+        .expect("the OpenCode prompt body is an object")
+        .insert(
+            "model".into(),
+            json!({"providerID": provider_id, "modelID": model_id}),
+        );
+    Ok(body)
+}
+
 #[cfg(target_os = "linux")]
 fn random_secret() -> Result<String> {
     let mut bytes = [0_u8; 32];
@@ -1107,6 +1143,26 @@ mod tests {
             render_messages(&value).unwrap(),
             "User: Build\n\nAssistant: Done"
         );
+    }
+
+    #[test]
+    fn builds_documented_model_selector_for_async_prompt() {
+        assert_eq!(
+            opencode_prompt_body("Build", Some("anthropic/claude-sonnet-4-5")).unwrap(),
+            json!({
+                "parts": [{"type": "text", "text": "Build"}],
+                "model": {
+                    "providerID": "anthropic",
+                    "modelID": "claude-sonnet-4-5"
+                }
+            })
+        );
+        assert_eq!(
+            opencode_prompt_body("Build", Some("openrouter/vendor/model")).unwrap()["model"],
+            json!({"providerID": "openrouter", "modelID": "vendor/model"})
+        );
+        assert!(opencode_prompt_body("Build", Some("missing-provider")).is_err());
+        assert!(opencode_prompt_body("Build", Some("openai/ ")).is_err());
     }
 
     #[cfg(target_os = "linux")]
