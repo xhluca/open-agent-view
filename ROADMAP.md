@@ -1,6 +1,6 @@
 # Roadmap
 
-Status at the current private pre-alpha checkout. A checked implementation item
+Status at the current private-preview checkout. A checked implementation item
 means it is present and covered by the validation layer named in
 [docs/testing.md](docs/testing.md); it does not imply a public release or an
 authenticated fresh-container end-to-end run.
@@ -24,6 +24,8 @@ authenticated fresh-container end-to-end run.
 ## Milestone 2 — Managed sessions (in progress)
 
 - [x] Launch host Claude tasks from the composer.
+- [x] Select every configured launch-capable harness from a visible,
+  draft-preserving keyboard palette, with explicit model state.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
   exposes an exact resume command.
@@ -87,7 +89,7 @@ authenticated fresh-container end-to-end run.
   lifecycle in dedicated fresh environments.
 - [ ] Validate and record SSH, additional terminal/theme combinations, and any
   supported non-Linux read-only behavior.
-- [ ] Push a signed version-matching tag and verify the published checksum and
-  archive. No tag or GitHub release exists yet.
+- [x] Push version-matching private-preview tags and verify the complete native
+  archive/checksum set through the published installer workflow.
 - [ ] Decide public-repository/package publication only after the private
   release gates and security review pass.

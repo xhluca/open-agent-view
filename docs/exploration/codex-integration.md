@@ -85,7 +85,7 @@ response, then sends the `initialized` notification. No other request is valid
 before that handshake. Use client metadata such as:
 
 ```json
-{"method":"initialize","id":1,"params":{"clientInfo":{"name":"open_agent_view","title":"Open Agent View","version":"0.1.8"}}}
+{"method":"initialize","id":1,"params":{"clientInfo":{"name":"open_agent_view","title":"Open Agent View","version":"0.1.9"}}}
 ```
 
 The 0.144.4 response included `userAgent`, `codexHome`, `platformFamily`, and

@@ -30,7 +30,7 @@ coding-agents [OPTIONS]
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Provider for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
+| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
@@ -55,12 +55,15 @@ coding-agents doctor --json
 coding-agents doctor --docker-container exact-name-or-id
 ```
 
-`--launch-provider` chooses the initial composer provider. In the TUI, `tab`
-cycles only providers whose configured controller can launch; `/provider NAME`
-selects one explicitly. Claude and Codex also accept `/model NAME` or `/model
-default`; the selected provider/model is always displayed in the composer
-border before submission. Pi, OpenCode, Cursor, and Copilot currently use their
-provider default model. Copilot retains one process-local ACP control
+`--harness` chooses the initial composer harness; `--launch-provider` remains
+an alias. In the new-task composer, `tab` opens a palette containing
+only configured launch-capable harnesses. Arrow keys or `tab` preview, `1`–`9`
+select directly, `enter` confirms, and `esc` returns without changing the
+harness or losing the draft. `/harness NAME` selects explicitly;
+`/provider NAME` remains a compatibility alias. Claude and Codex also accept
+`/model NAME` or `/model default`; the selected harness/model is always
+displayed in the composer border before submission. Pi, OpenCode, Cursor, and
+Copilot currently use their provider default model. Copilot retains one process-local ACP control
 connection for sessions launched by the current dashboard. A later dashboard
 may still list a persisted Copilot session, but that row is
 observe/native-open rather than silently inheriting control.
@@ -205,8 +208,11 @@ label.
 | Session list | `ctrl+f` | Edit the case-insensitive name/summary/path/provider filter. |
 | Session list | `ctrl+l` | Request an immediate provider refresh. |
 | Session list | `tab`, `/`, or printable text | Compose a new host task. `/` begins a dashboard command rather than a filter. |
-| New-task composer | `tab` | Cycle configured launch-capable providers and reset the model to provider default. |
-| New-task composer | `/provider NAME` | Select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available. |
+| New-task composer | `tab` | Open the visible harness picker. |
+| Harness picker | `↑` / `↓`, `←` / `→`, or `tab` / `shift+tab` | Preview configured launch-capable harnesses with wraparound. |
+| Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
+| Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
+| New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available; `/provider` is an alias. |
 | New-task composer | `/model NAME` / `/model default` | Select or reset a Claude/Codex model; unsupported providers refuse locally. |
 | New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |

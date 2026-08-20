@@ -8,6 +8,27 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-08-20
+
+### Added
+
+- The new-task composer now has a visible harness picker. `tab` opens every
+  configured launch-capable harness; arrows or Tab preview with wraparound,
+  `enter` confirms, `1`–`9` selects directly, and `esc` returns without losing
+  the draft or changing the current harness.
+- `/harness` opens the picker, while `/harness NAME` and the CLI `--harness
+  NAME` select explicitly. `/provider` and `--launch-provider` remain
+  compatibility aliases.
+
+### Changed
+
+- Composer titles say `harness` explicitly. Switching harnesses resets a
+  selected model only after confirmation; previewing or cancelling is
+  side-effect free.
+- A real-PTY regression exercises palette visibility, arrow/Tab and numeric
+  selection, cancellation, confirmation, model reset, draft preservation, and
+  clean terminal restoration through the release binary.
+
 ## [0.1.8] - 2026-08-19
 
 ### Added

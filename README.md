@@ -87,8 +87,8 @@ coding-agents --docker-container my-agent-container
 # Check every configured CLI without starting the dashboard.
 coding-agents doctor
 
-# Choose a managed task backend (Claude is the default).
-coding-agents --launch-provider opencode
+# Choose the initial task harness (Claude is the default).
+coding-agents --harness opencode
 
 # Preview a bounded archive batch; add --yes only after reviewing it.
 coding-agents sessions archive --older-than-days 30 --limit 100
@@ -97,9 +97,12 @@ coding-agents sessions archive --older-than-days 30 --limit 100 --yes
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` to open, `space` to inspect,
 `ctrl+f` to filter, and `?` for contextual shortcuts. Start typing to hand off a
-new task; `tab` cycles launch-capable providers, while `/provider` and `/model`
-select them explicitly. Every row spells out its provider name; open Peek to
-see whether it runs on the host or in Docker. Groups with
+new task, then press `tab` for a visible harness picker. Use arrows or `tab` to
+preview Claude, Codex, Pi, OpenCode, Cursor, or Copilot; `enter` selects and
+`esc` returns without losing the draft. `/harness` opens the same picker,
+`/harness NAME` selects directly, and `/model` changes supported models
+(`/provider` remains an alias). Every row spells out its
+provider name; open Peek to see whether it runs on the host or in Docker. Groups with
 more than 25 matches end in a selectable **Show more** row; filtering always
 searches the complete discovered set, including rows that have not been
 revealed. Completed history is hidden before discovery by default; start with

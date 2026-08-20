@@ -61,10 +61,10 @@ scripts/real-tui-tests.sh
 
 This runs `cargo test --locked --test real_tty -- --test-threads=1`. It uses
 `libc::openpty`, feeds real key bytes, parses output with VT100 semantics, and
-isolates `HOME` and `XDG_STATE_HOME`. Eleven tests create PTYs at 120×34, 105×30,
+isolates `HOME` and `XDG_STATE_HOME`. Twelve tests create PTYs at 120×34, 105×30,
 100×28, 90×24, 55×18, and 31×7 (the narrow/fallback test creates two PTYs).
 They cover startup/sections, help, status/directory grouping, `ctrl+f` filter
-apply/cancel/clear, slash commands, provider/model composer state, multiline
+apply/cancel/clear, slash commands, harness/model composer state, multiline
 launch/cancellation, inspect peek, rename
 cancellation/submission, native-open suspend/restore, reply, interrupt,
 approval `y`/`n`, structured input, single/bulk delete, archive, safe
@@ -103,8 +103,9 @@ fixture expected by the next entry:
 | Directory view | `ctrl+s`; rows regroup by working directory, then `ctrl+s` restores status order. |
 | Filter | `ctrl+f`, type `codex`, edit with Backspace, `enter`; only matches remain. `ctrl+f`, erase all text, `enter` restores all rows. |
 | Help | `?`; inspect the contextual rows, then close with `?`. Repeat and close with `enter`, then with `esc`. |
-| New task | `tab`, verify the provider/default-model title, type text, `ctrl+j`, type another line, then `esc` to discard. Repeat and `enter`; the fixture-mode refusal is expected and must not repeat the prompt. Also verify a printable key from the list seeds the composer. |
-| Task commands | `/help`, `enter` lists dashboard commands rather than filtering. Use `/provider NAME` and `/model NAME`, verify the title after reopening the composer, then `/model default`. `tab` cycles only available launch providers. `/filter TEXT` remains an explicit alternative to `ctrl+f`. |
+| New task | `tab`, verify the harness/default-model title, type text, `ctrl+j`, type another line, then `esc` to discard. Repeat and `enter`; the fixture-mode refusal is expected and must not repeat the prompt. Also verify a printable key from the list seeds the composer. |
+| Harness picker | With two or more isolated launch controllers enabled, type a draft and press `tab`. Verify every available harness is visible. Exercise arrows, `tab`, `shift+tab`, direct number selection, `enter`, and `esc`; preview/cancel must not switch the harness or lose the draft, while confirmation changes the title and resets only the model. |
+| Task commands | `/help`, `enter` lists dashboard commands rather than filtering. Verify `/harness` opens the picker; use `/harness NAME` and `/model NAME`, verify the title after reopening the composer, then `/model default`. `/provider` remains an alias and `/filter TEXT` remains an explicit alternative to `ctrl+f`. |
 | Manual refresh | `ctrl+l`; the dashboard reports a refresh without blocking subsequent arrow or typing input. |
 | Claude attachment | Select a Claude row and `enter`; verify the confirmation says `←` stays inside Claude and `ctrl+z` returns to Open Agent View. Cancel with `esc`; in a safe real-provider probe, attach and use `ctrl+z` to return. |
 | Rename | Select a row, `ctrl+r`, edit the prefilled name, `esc`. Repeat and `enter`; the explicit unsupported notice must not repeat the proposed name. |

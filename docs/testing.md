@@ -60,8 +60,9 @@ checks; the guide also contains release gates that are not yet complete.
   normalization and confirm that answers never enter the supervisor record.
 - Reference-fidelity tests cover initial row focus, cyclic header/row
   navigation, direct escape-to-quit, printable-to-compose behavior,
-  context-sensitive `?`, `ctrl+f` filtering, task slash commands,
-  provider/model selection, Claude attach-return guidance, selection reconciliation after filtering, Claude
+  context-sensitive `?`, `ctrl+f` filtering, task slash commands, the visible
+  harness palette and model selection, Claude attach-return guidance, selection
+  reconciliation after filtering, Claude
   worktree grouping, aggregate review/working counts, capability-aware help,
   and the narrow footer's retained help affordance. Focused rendering tests
   sanitize terminal-control characters from every provider-derived or dynamic
@@ -75,16 +76,22 @@ checks; the guide also contains release gates that are not yet complete.
   committed lock file and Rust 1.75 minimum-version dependency set.
 - GitHub Actions enforces Rust 1.75 rustfmt and warning-free Clippy across all
   targets, then repeats tests and release builds on Rust 1.75.0 and stable.
-- `scripts/real-tui-tests.sh` runs eleven serialized tests against real Unix PTYs
+- `scripts/real-tui-tests.sh` runs twelve serialized tests against real Unix PTYs
   with isolated `HOME`/`XDG_STATE_HOME`. At 120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, `ctrl+f`
-  filter apply/cancel/clear, slash commands, multiline new-task launch/cancellation, peek, rename
+  filter apply/cancel/clear, slash commands, the harness palette, multiline
+  new-task launch/cancellation, peek, rename
   cancellation/submission, native-open suspend/restore, reply, interrupt,
   approval `y`/`n`, single/bulk delete and archive confirmation, structured
   input, and fixture-fenced refusals. A 90×24 case sends real arrow sequences
   and collapses/expands a group. The 55×18 and 31×7 cases verify the bounded
   narrow layout and explicit too-small fallback. Every case asserts alternate
   screen and cursor restoration from the raw PTY stream.
+- A dedicated isolated real-PTY case enables fake Claude and Pi launch
+  controllers and exercises the harness palette through the actual binary. It
+  asserts complete choice visibility, arrow/Tab preview, number selection,
+  Enter confirmation, Escape cancellation, model reset on a real switch, and
+  draft preservation throughout; no provider process receives a prompt.
 - A provider-enabled PTY regression returns two Claude rows, deliberately
   stalls the next provider refresh for two seconds, and verifies that both
   exact selected-row arrow repaints and dashboard exit still finish within 750
@@ -220,7 +227,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Normalization, key routing, responsive layout, capability gates | Locked Rust test suite with Ratatui test backend | Verified |
 | Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
-| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Eleven-test `real_tty` harness using canonical and generated fixtures | Verified |
+| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Twelve-test `real_tty` harness using canonical and generated fixtures | Verified |
 | Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |

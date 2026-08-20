@@ -27,7 +27,8 @@ delete, filter, and refresh.
 - Rows with status, provider/runtime, name, latest useful summary, age, and
   optional repository metadata.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,
-  confirmation dialogs, filters, and a new-session composer.
+  confirmation dialogs, filters, and a new-session composer with a visible,
+  draft-preserving harness picker.
 - Graceful behavior in narrow terminals and over SSH/tmux.
 - Machine-readable JSON output for scripting and diagnostics.
 

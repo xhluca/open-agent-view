@@ -50,6 +50,14 @@ Adapters implement discovery first. Control methods are enabled independently:
 An adapter must return an explicit unsupported result when its installed CLI
 version cannot perform an action safely.
 
+The control layer separately exposes a normalized `LaunchTarget` inventory.
+The task composer renders only those launch-capable targets in its harness
+picker. Moving through the picker changes UI selection only; confirmation
+switches the harness and resets incompatible model state, while cancellation
+preserves both the current harness and draft. `/harness`, `/model`, and the
+other dashboard slash commands are reduced locally and never forwarded as a
+provider prompt.
+
 ## Process model
 
 Read-only discovery runs with strict timeouts. Durable managed providers use a

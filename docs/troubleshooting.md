@@ -99,13 +99,16 @@ View now shows a confirmation before attachment. Press `ctrl+z` inside Claude
 to return to the dashboard; the background session keeps running. Escape only
 cancels the pre-attach confirmation.
 
-## Slash opens the wrong mode or model/provider selection is unclear
+## Slash opens the wrong mode or harness selection is unclear
 
-On 0.1.8, `ctrl+f` is the filter. `/` starts a task command: `/help`,
-`/provider NAME`, `/model NAME`, `/model default`, or `/filter TEXT`. The
-composer border always displays the chosen provider and model. `tab` cycles
-launch-capable providers. Model selection is currently exposed for Claude and
-Codex; other providers use their default and refuse `/model` locally.
+On 0.1.9, `ctrl+f` is the filter. `/` starts a task command: `/help`,
+`/harness`, `/harness NAME`, `/model NAME`, `/model default`, or `/filter TEXT`;
+`/provider` remains an alias. The composer border always displays the chosen
+harness and model. Press `tab` while composing to open the complete available
+harness palette; `/harness` opens it too. Preview with arrows or `tab`, confirm with `enter` or a number,
+and use `esc` to return without switching or losing the draft. Model selection
+is currently exposed for Claude and Codex; other harnesses use their default
+and refuse `/model` locally.
 
 ## A session is visible but a control is unavailable
 
