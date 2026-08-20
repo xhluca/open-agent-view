@@ -110,8 +110,9 @@ pi --mode rpc --no-approve --session-dir <oav-private-sessions> --name <task-nam
 The supervisor correlates every command response by exact RPC request ID,
 tracks lifecycle events, and retains pending extension dialog IDs. `prompt`
 uses `streamingBehavior: steer` only while the exact owned process reports a
-working turn; idle/completed sessions receive an ordinary prompt. `abort`
-interrupts only an exact owned live process. Confirmation and input responses
+working turn; idle/completed sessions receive an ordinary prompt. Ctrl+X stops
+an exact owned process by closing its supervisor-held stdin rather than waiting
+on the model-facing `abort` response. Confirmation and input responses
 must match the current pending request; selections must exactly match a
 presented option.
 
@@ -134,8 +135,8 @@ Pi's project-trust prompt is not a tool sandbox. In RPC mode, unapproved project
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Existing JSONL history | yes | yes | possible via `pi --session <id>` | no | no | no | no |
 | Existing unrelated live Pi | history only | persisted text | possible | no | no | no | no |
-| OAV-owned live RPC on Linux | yes | live RPC | refused while live to avoid concurrent writers | yes | yes | yes, exact request ID | no |
-| OAV-owned RPC after process exit | persisted history | yes | yes | no | no | no | no |
+| OAV-owned live RPC on Linux | yes | live RPC | completed-only handoff after exact stop | yes | yes | yes, exact request ID | stop, then delete |
+| OAV-owned RPC after process exit | persisted owned history | yes | yes | no | no | no | exact delete |
 
 ## Isolated real-CLI validation
 
@@ -157,7 +158,8 @@ Verified:
 - combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory.
 - an isolated process-level fake RPC provider covering launch, transcript
   inspection, active steer, confirmation allow/deny capabilities, structured
-  text response, interrupt, unowned-ID refusal, and clean shutdown;
+  text response, nonblocking stop, exact delete, completed native handoff,
+  unowned-ID refusal, and clean shutdown;
 - a second supervisor client reconnecting through the persisted exact daemon
   identity while the managed Pi child remained live;
 - state-directory, ownership-record mode, and symlink refusal tests;
@@ -170,5 +172,6 @@ Not claimed:
 - safe control of sessions not launched by Open Agent View;
 - durable managed control on macOS until an equally strong process-identity
   primitive replaces the Linux `/proc` check;
-- concurrent native-TUI attachment to a live managed RPC session, which is
-  deliberately refused to avoid two writers.
+- concurrent native-TUI attachment to active managed RPC work, which is
+  deliberately refused because Pi has no attachable transport. Completed work
+  is handed off by closing the exact owned RPC stdin before native resume.

@@ -12,13 +12,13 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. The manually published v0.1.15
+> Open Agent View is an early private preview. The manually published v0.1.16
 > binary currently covers Linux x86-64; collaborators authenticate with GitHub
 > to install it. The source remains portable, but macOS and ARM64 artifacts are
 > not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> v0.1.15 was packaged, checksummed, smoke-tested, and published manually after
+> v0.1.16 was packaged, checksummed, smoke-tested, and published manually after
 > the repository's hosted build service remained unavailable. The release page
 > and installer state the exact Linux x86-64 scope.
 
@@ -67,7 +67,7 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 
 The installer selects a release asset for the current host, verifies its
 SHA-256 checksum, and installs `coding-agents` under `~/.local/bin`. The current
-manual v0.1.15 release is Linux x86-64 only. See the
+manual v0.1.16 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
@@ -145,7 +145,7 @@ every CLI.
 | --- | --- | --- |
 | Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Inspect and native open; launch with a catalog-backed model picker; interrupt an exact OAV-owned host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
-| Pi | Durable OAV-managed RPC sessions on Linux by default; documented host JSONL history with `--include-external` | Inspect/native resume for history; catalog-backed owned launch, reply/steer, request handling, and interrupt |
+| Pi | Durable OAV-managed RPC sessions and their persisted OAV-owned history on Linux by default; unrelated host JSONL history with `--include-external` | Catalog-backed owned launch, inspect/reply/request handling, Ctrl+X stop then exact delete, and completed-session handoff to native Pi; unrelated history remains inspect/native-resume only |
 | OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
 | GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |

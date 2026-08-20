@@ -8,6 +8,22 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.16] - 2026-08-20
+
+### Fixed
+
+- Enter/Right can now hand a completed OAV-managed Pi conversation from its
+  idle RPC process to Pi's full native interface. Active turns and pending
+  questions remain protected from an implicit stop.
+- Ctrl+X no longer waits on Pi's turn-abort RPC. The first press closes the
+  exact owned RPC transport; after refresh confirms exit, the second press
+  deletes only its exact OAV-owned JSONL history. Persisted OAV-managed Pi
+  history remains in the default owned view after a supervisor restart.
+- A verified older Pi supervisor is migrated safely: per-session stop falls
+  back to daemon shutdown only when no other active Pi work would be affected.
+  The request returns immediately, while native handoff separately waits for
+  the verified transport to exit.
+
 ## [0.1.15] - 2026-08-20
 
 ### Fixed

@@ -26,6 +26,8 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
 const RPC_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: usize = 1024 * 1024;
 const MODEL_LAUNCH_FEATURE: &str = "launch_with_model";
+const STOP_SESSION_FEATURE: &str = "stop_session";
+const DELETE_SESSION_FEATURE: &str = "delete_session";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +109,12 @@ enum DaemonRequest {
     RespondInput {
         session_id: String,
         answer: String,
+    },
+    Stop {
+        session_id: String,
+    },
+    Delete {
+        session_id: String,
     },
     Shutdown,
 }
@@ -316,6 +324,84 @@ impl PiSupervisor {
         Ok(())
     }
 
+    /// Close the exact OAV-owned Pi RPC transport. Older verified daemons did
+    /// not expose per-session stop; they may be replaced only when doing so
+    /// cannot terminate another active session.
+    pub fn stop(&self, session_id: &str) -> Result<()> {
+        let record = self.required_live_record()?;
+        let capabilities: Value = self.request(&record, &DaemonRequest::Ping)?;
+        if supports_feature(&capabilities, STOP_SESSION_FEATURE) {
+            self.request::<Value>(
+                &record,
+                &DaemonRequest::Stop {
+                    session_id: session_id.into(),
+                },
+            )?;
+            return Ok(());
+        }
+
+        let sessions: Vec<ManagedPiSession> = self.request(&record, &DaemonRequest::List)?;
+        let target = sessions
+            .iter()
+            .find(|session| session.id == session_id)
+            .context("refusing to stop a Pi session not owned by this supervisor")?;
+        if !target.alive {
+            return Ok(());
+        }
+        let other_active = sessions
+            .iter()
+            .filter(|session| {
+                session.id != session_id
+                    && session.alive
+                    && session.state != SessionState::Completed
+            })
+            .map(|session| session.name.as_str())
+            .take(3)
+            .collect::<Vec<_>>();
+        if !other_active.is_empty() {
+            bail!(
+                "the running Pi supervisor predates per-session stop and owns other active work ({}); finish or interrupt that work before stopping this session",
+                other_active.join(", ")
+            );
+        }
+        self.request::<Value>(&record, &DaemonRequest::Shutdown)?;
+        Ok(())
+    }
+
+    pub fn delete(&self, session_id: &str) -> Result<()> {
+        let record = self.required_live_record()?;
+        let capabilities: Value = self.request(&record, &DaemonRequest::Ping)?;
+        if !supports_feature(&capabilities, DELETE_SESSION_FEATURE) {
+            bail!("the running Pi supervisor predates exact session deletion; stop its idle sessions and restart Open Agent View before retrying");
+        }
+        self.request::<Value>(
+            &record,
+            &DaemonRequest::Delete {
+                session_id: session_id.into(),
+            },
+        )?;
+        Ok(())
+    }
+
+    pub fn wait_until_stopped(&self, session_id: &str, timeout: Duration) -> Result<()> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let sessions = self.list()?;
+            if sessions
+                .iter()
+                .find(|session| session.id == session_id)
+                .map(|session| !session.alive)
+                .unwrap_or(true)
+            {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                bail!("managed Pi RPC process did not stop before the deadline");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
     /// Stop the exact verified daemon. Intended for isolated tests and explicit
     /// operator cleanup, never dashboard shutdown.
     pub fn shutdown_daemon(&self) -> Result<()> {
@@ -467,7 +553,7 @@ struct RpcProcess {
     process_start_token: String,
     session_file: Option<PathBuf>,
     created_at_ms: u64,
-    stdin: Arc<Mutex<ChildStdin>>,
+    stdin: Mutex<Option<ChildStdin>>,
     pending_responses: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
     state: Arc<Mutex<LiveState>>,
     next_request_id: AtomicU64,
@@ -504,9 +590,7 @@ impl RpcProcess {
             .with_context(|| format!("failed to start managed Pi via {pi_bin}"))?;
         let pid = child.id();
         let process_start_token = process_start_token(pid)?;
-        let stdin = Arc::new(Mutex::new(
-            child.stdin.take().context("Pi stdin unavailable")?,
-        ));
+        let stdin = Mutex::new(Some(child.stdin.take().context("Pi stdin unavailable")?));
         let stdout = child.stdout.take().context("Pi stdout unavailable")?;
         let pending_responses = Arc::new(Mutex::new(HashMap::new()));
         let state = Arc::new(Mutex::new(LiveState {
@@ -571,6 +655,7 @@ impl RpcProcess {
                 .stdin
                 .lock()
                 .map_err(|_| anyhow!("Pi stdin lock was poisoned"))?;
+            let stdin = stdin.as_mut().context("Pi RPC process input is closed")?;
             stdin.write_all(&bytes)?;
             stdin.write_all(b"\n")?;
             stdin.flush()?;
@@ -601,9 +686,27 @@ impl RpcProcess {
             .stdin
             .lock()
             .map_err(|_| anyhow!("Pi stdin lock was poisoned"))?;
+        let stdin = stdin.as_mut().context("Pi RPC process input is closed")?;
         stdin.write_all(&bytes)?;
         stdin.write_all(b"\n")?;
         stdin.flush()?;
+        Ok(())
+    }
+
+    fn stop(&self) -> Result<()> {
+        {
+            let mut live = self
+                .state
+                .lock()
+                .map_err(|_| anyhow!("Pi live-state lock was poisoned"))?;
+            live.state = SessionState::Completed;
+            live.pending = None;
+            live.updated_at_ms = now_millis();
+        }
+        self.stdin
+            .lock()
+            .map_err(|_| anyhow!("Pi stdin lock was poisoned"))?
+            .take();
         Ok(())
     }
 
@@ -685,7 +788,7 @@ impl DaemonState {
             DaemonRequest::Ping => Ok((
                 json!({
                     "version": RECORD_VERSION,
-                    "features": [MODEL_LAUNCH_FEATURE]
+                    "features": [MODEL_LAUNCH_FEATURE, STOP_SESSION_FEATURE, DELETE_SESSION_FEATURE]
                 }),
                 false,
             )),
@@ -758,8 +861,63 @@ impl DaemonState {
                 }))?;
                 Ok((Value::Null, false))
             }
+            DaemonRequest::Stop { session_id } => {
+                self.session(&session_id)?.stop()?;
+                Ok((Value::Null, false))
+            }
+            DaemonRequest::Delete { session_id } => {
+                self.delete(&session_id)?;
+                Ok((Value::Null, false))
+            }
             DaemonRequest::Shutdown => Ok((Value::Null, true)),
         }
+    }
+
+    fn delete(&self, session_id: &str) -> Result<()> {
+        let process = self.session(session_id)?;
+        let snapshot = process.snapshot()?;
+        if snapshot.alive {
+            bail!("the managed Pi RPC process must stop before deletion");
+        }
+        let path = snapshot
+            .session_file
+            .context("the managed Pi session file is unavailable")?;
+        let metadata = fs::symlink_metadata(&path)
+            .with_context(|| format!("failed to inspect Pi session {}", path.display()))?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            bail!("refusing to delete a non-regular Pi session file");
+        }
+        let owned_root = fs::canonicalize(&self.session_dir).with_context(|| {
+            format!(
+                "failed to resolve managed Pi session root {}",
+                self.session_dir.display()
+            )
+        })?;
+        let canonical = fs::canonicalize(&path)
+            .with_context(|| format!("failed to resolve Pi session {}", path.display()))?;
+        if !canonical.starts_with(owned_root) {
+            bail!("refusing to delete a Pi session outside the managed store");
+        }
+        let file = File::open(&canonical)?;
+        let first_line = BufReader::new(file)
+            .lines()
+            .next()
+            .transpose()?
+            .context("managed Pi session file is empty")?;
+        let header: Value = serde_json::from_str(&first_line)
+            .context("managed Pi session header is invalid JSON")?;
+        if header.get("type").and_then(Value::as_str) != Some("session")
+            || header.get("id").and_then(Value::as_str) != Some(session_id)
+        {
+            bail!("managed Pi session header does not match the exact owned ID");
+        }
+        fs::remove_file(&canonical)
+            .with_context(|| format!("failed to delete Pi session {}", canonical.display()))?;
+        self.sessions
+            .lock()
+            .map_err(|_| anyhow!("Pi daemon session lock was poisoned"))?
+            .remove(session_id);
+        Ok(())
     }
 }
 
@@ -1303,13 +1461,17 @@ fn executable_file(path: &Path) -> bool {
 }
 
 fn supports_model_launch(capabilities: &Value) -> bool {
+    supports_feature(capabilities, MODEL_LAUNCH_FEATURE)
+}
+
+fn supports_feature(capabilities: &Value, expected: &str) -> bool {
     capabilities
         .get("features")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(Value::as_str)
-        .any(|feature| feature == MODEL_LAUNCH_FEATURE)
+        .any(|feature| feature == expected)
 }
 
 fn wait_for_verified_process_exit(record: &SupervisorRecord, timeout: Duration) -> Result<()> {

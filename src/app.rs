@@ -721,7 +721,7 @@ impl App {
         if let Some(session) = self.selected_session() {
             let running = is_active_session_state(session.state);
             let id = session.id.clone();
-            let action = if running && session.capabilities.contains(&Capability::Interrupt) {
+            let action = if session.capabilities.contains(&Capability::Interrupt) {
                 AppAction::Interrupt { session_id: id }
             } else if !running && session.capabilities.contains(&Capability::Delete) {
                 AppAction::Delete {

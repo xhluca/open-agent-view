@@ -23,6 +23,7 @@ const MAX_MODEL_CATALOG_BYTES: usize = 4 * 1024 * 1024;
 /// Read-only discovery of Pi's documented JSONL session store.
 pub struct PiSource {
     session_dirs: Vec<PathBuf>,
+    managed_session_dir: Option<PathBuf>,
     supervisor: Option<Arc<PiSupervisor>>,
 }
 
@@ -177,16 +178,35 @@ impl ProviderController for PiController {
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
         let owned = self.require_live_owned(session)?;
-        if owned.state != SessionState::Working {
-            bail!("the managed Pi session is not currently working");
-        }
         self.supervisor
             .as_ref()
             .context("managed Pi control is not configured")?
-            .interrupt(&owned.id)?;
+            .stop(&owned.id)?;
         Ok(ControlOutcome {
-            message: format!("interrupted Pi session {}", session.name),
+            message: format!("stopping managed Pi session {}", session.name),
             provider_session_hint: Some(owned.id),
+        })
+    }
+
+    fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if session.kind != SessionKind::Managed {
+            bail!("refusing to delete Pi history not created by Open Agent View");
+        }
+        if let Some(owned) = self.owned_session(session)? {
+            if owned.alive {
+                bail!("the managed Pi RPC process must stop before deletion");
+            }
+            self.supervisor
+                .as_ref()
+                .context("managed Pi control is not configured")?
+                .delete(&owned.id)?;
+        } else {
+            self.source
+                .delete_managed_history(&session.provider_session_id)?;
+        }
+        Ok(ControlOutcome {
+            message: format!("deleted managed Pi session {}", session.name),
+            provider_session_hint: Some(session.provider_session_id.clone()),
         })
     }
 
@@ -233,12 +253,23 @@ impl ProviderController for PiController {
         if session.provider != Provider::Pi || session.runtime != Runtime::Host {
             bail!("the host Pi controller does not own this runtime");
         }
-        if self
-            .owned_session(session)?
-            .map(|owned| owned.alive)
-            .unwrap_or(false)
-        {
-            bail!("a managed Pi session cannot be opened concurrently; use inline controls");
+        if let Some(owned) = self.owned_session(session)? {
+            if owned.alive {
+                if owned.state == SessionState::Working
+                    || owned.state == SessionState::NeedsInput
+                    || owned.pending.is_some()
+                {
+                    bail!("the managed Pi session is still active; press Ctrl+X to stop it before opening the native interface");
+                }
+                let supervisor = self
+                    .supervisor
+                    .as_ref()
+                    .context("managed Pi control is not configured")?;
+                supervisor.stop(&owned.id)?;
+                supervisor
+                    .wait_until_stopped(&owned.id, Duration::from_secs(2))
+                    .context("failed to hand the completed Pi session to its native interface")?;
+            }
         }
         let session_dir = self
             .source
@@ -292,16 +323,19 @@ impl PiSource {
     pub fn host(session_dir: impl Into<PathBuf>) -> Self {
         Self {
             session_dirs: vec![session_dir.into()],
+            managed_session_dir: None,
             supervisor: None,
         }
     }
 
     pub fn managed(session_dir: impl Into<PathBuf>, supervisor: Arc<PiSupervisor>) -> Self {
-        let mut session_dirs = vec![session_dir.into(), supervisor.session_dir()];
+        let managed_session_dir = supervisor.session_dir();
+        let mut session_dirs = vec![session_dir.into(), managed_session_dir.clone()];
         session_dirs.sort();
         session_dirs.dedup();
         Self {
             session_dirs,
+            managed_session_dir: Some(managed_session_dir),
             supervisor: Some(supervisor),
         }
     }
@@ -330,6 +364,29 @@ impl PiSource {
                 .and_then(|(_, path)| path.parent().map(Path::to_path_buf)),
         )
     }
+
+    fn delete_managed_history(&self, session_id: &str) -> Result<()> {
+        let root = self
+            .managed_session_dir
+            .as_ref()
+            .context("managed Pi history deletion is not configured")?;
+        let path = find_pi_session_file(root, session_id)?
+            .context("the managed Pi session file is no longer present")?;
+        let metadata = fs::symlink_metadata(&path)
+            .with_context(|| format!("failed to inspect Pi session {}", path.display()))?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            bail!("refusing to delete a non-regular Pi session file");
+        }
+        let canonical_root = fs::canonicalize(root)
+            .with_context(|| format!("failed to resolve Pi session root {}", root.display()))?;
+        let canonical = fs::canonicalize(&path)
+            .with_context(|| format!("failed to resolve Pi session {}", path.display()))?;
+        if !canonical.starts_with(canonical_root) {
+            bail!("refusing to delete a Pi session outside the managed store");
+        }
+        fs::remove_file(&canonical)
+            .with_context(|| format!("failed to delete Pi session {}", canonical.display()))
+    }
 }
 
 impl SessionSource for PiSource {
@@ -339,10 +396,14 @@ impl SessionSource for PiSource {
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
         let mut sessions = BTreeMap::new();
-        if request.include_external {
+        if request.include_external || self.managed_session_dir.is_some() {
             let mut files = Vec::new();
             for directory in &self.session_dirs {
-                if directory.exists() {
+                let managed = self
+                    .managed_session_dir
+                    .as_ref()
+                    .is_some_and(|managed| directory == managed);
+                if (request.include_external || managed) && directory.exists() {
                     collect_jsonl_files(directory, &mut files)?;
                 }
             }
@@ -357,7 +418,15 @@ impl SessionSource for PiSource {
                     .with_context(|| format!("failed to inspect Pi session {}", file.display()))?;
                 let started_at = metadata.created().ok();
                 let updated_at = metadata.modified().ok();
-                let session = parse_pi_session_file(&file, started_at, updated_at)?;
+                let mut session = parse_pi_session_file(&file, started_at, updated_at)?;
+                if self
+                    .managed_session_dir
+                    .as_ref()
+                    .is_some_and(|managed| file.starts_with(managed))
+                {
+                    session.kind = SessionKind::Managed;
+                    session.capabilities.insert(Capability::Delete);
+                }
                 if (request.include_completed || session.state != SessionState::Completed)
                     && request
                         .cwd
@@ -503,12 +572,13 @@ fn grant_managed_capabilities(session: &mut AgentSession, managed: &ManagedPiSes
     session.capabilities.clear();
     session.capabilities.insert(Capability::Inspect);
     if !managed.alive {
+        session.capabilities.insert(Capability::Delete);
         return;
     }
+    session.capabilities.insert(Capability::Interrupt);
     match managed.state {
         SessionState::Working => {
             session.capabilities.insert(Capability::Reply);
-            session.capabilities.insert(Capability::Interrupt);
         }
         SessionState::Completed | SessionState::ReadyForReview | SessionState::Unknown => {
             session.capabilities.insert(Capability::Reply);
@@ -999,6 +1069,42 @@ mod tests {
             .discover(&DiscoveryRequest::default())
             .unwrap()
             .is_empty());
+    }
+
+    #[test]
+    fn persisted_managed_history_stays_owned_and_exactly_deletable_without_a_live_daemon() {
+        let directory = tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let supervisor = Arc::new(
+            PiSupervisor::with_state_dir_and_exe("pi", state_dir, std::env::current_exe().unwrap())
+                .unwrap(),
+        );
+        fs::create_dir_all(supervisor.session_dir()).unwrap();
+        let session_file = supervisor.session_dir().join("owned.jsonl");
+        fs::write(&session_file, SESSION).unwrap();
+        let source = PiSource::managed(
+            directory.path().join("external-history"),
+            supervisor.clone(),
+        );
+        let sessions = source
+            .discover(&DiscoveryRequest {
+                include_completed: true,
+                include_external: false,
+                ..DiscoveryRequest::default()
+            })
+            .unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].kind, SessionKind::Managed);
+        assert_eq!(
+            sessions[0].capabilities,
+            [Capability::Inspect, Capability::Delete].into()
+        );
+
+        let controller =
+            PiController::managed("pi", directory.path().join("external-history"), supervisor);
+        controller.delete(&sessions[0]).unwrap();
+        assert!(!session_file.exists());
     }
 
     #[test]

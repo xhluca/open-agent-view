@@ -32,7 +32,8 @@ checks; the guide also contains release gates that are not yet complete.
   bounded during teardown.
 - A disposable mock Pi RPC executable covers managed launch, live discovery,
   transcript inspection, active steer, confirmation, structured text input,
-  interrupt, exact unowned-ID refusal, modeled launch, and shutdown. A second
+  nonblocking exact stop, stopped-session delete, completed native handoff,
+  exact unowned-ID refusal, modeled launch, and shutdown. A second
   dashboard client reconnects through the same verified daemon while its Pi
   child remains live. Compatibility tests prove an old daemon advertises no
   model feature, refuses replacement while it owns active work, and can be
@@ -108,7 +109,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.15, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.16, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -201,6 +202,12 @@ checks; the guide also contains release gates that are not yet complete.
   the exact completed Pi history on this Linux host in a read-only native-TUI
   probe before returning cleanly to Open Agent View. Space remains independently
   covered as the inline Peek route.
+- The v0.1.16 candidate adds a process-level completed-Pi native handoff and a
+  stop-to-delete lifecycle. The mock proves stop returns within 500 ms, exit is
+  observed before Delete appears, native resume receives the exact ID/session
+  directory, deletion revalidates the managed JSONL header/path, and external
+  IDs remain refused. A real PTY also bounds completed-Pi Ctrl+X repaint below
+  750 ms.
 - After the managed-Codex lifecycle fixes, release binary SHA-256
   `efb0a8d8f62f878fc5bb09c6b67da73a871c26f30e7a2dd56d10922a186cbec9`
   was staged mode `0755` and rerun in the same immutable image at a real
@@ -342,13 +349,13 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
-| Pi durable RPC launch/reconnect/reply/request/interrupt/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
+| Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
 | OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |
 | Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
 | Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
 | Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
 | Managed-Docker command construction and authority failures | Injected command runner; no Docker daemon | Verified |
-| Authenticated managed Codex/Pi host lifecycle in isolated temporary state | Opt-in exact-response launch, inspect, reply, approval race, interrupt, delete/shutdown and PID cleanup | Verified on the reported host |
+| Authenticated managed Codex/Pi host lifecycle in isolated temporary state | Opt-in exact-response launch, inspect, reply, approval race, stop, delete/shutdown and PID cleanup | Verified on the reported host |
 | Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated container credentials, network, and disposable tasks required | Not run |
 | SSH portability and broad terminal/theme matrix | Environment-specific real-TTY runs required | Not yet claimed |
 

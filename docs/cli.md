@@ -342,6 +342,14 @@ reports active work they also expose Interrupt. They refuse native open through
 a second server and do not yet expose provider permission or structured-input
 requests. External OpenCode history remains inspect/native-open only.
 
+Managed Pi rows expose Ctrl+X stop while their exact RPC process is alive,
+including an idle process after a completed turn. Stop closes the selected
+supervisor-owned stdin without waiting on a model response. After refresh
+observes exit, the same row exposes exact Delete; the next Ctrl+X removes its
+validated JSONL file. Enter/Right performs that handoff automatically only for
+a completed row, then opens Pi's full native interface. Active work and pending
+questions must be stopped explicitly first.
+
 ## Runtime state paths
 
 Under `$XDG_STATE_HOME/open-agent-view/`, or `~/.local/state/open-agent-view/`

@@ -1295,6 +1295,15 @@ mod tests {
             .insert(Capability::Delete);
         assert_eq!(
             handle_key(&mut dashboard, control_key('x')),
+            AppAction::Interrupt {
+                session_id: "worker".into()
+            }
+        );
+        dashboard.snapshot.sessions[0]
+            .capabilities
+            .remove(&Capability::Interrupt);
+        assert_eq!(
+            handle_key(&mut dashboard, control_key('x')),
             AppAction::Delete {
                 session_ids: vec!["worker".into()]
             }

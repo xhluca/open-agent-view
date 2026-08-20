@@ -300,6 +300,15 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
     app.wait_for("managed Pi peek close", |screen| {
         !screen.contains("pi-refactor · Pi") && screen.contains("pi-refactor")
     });
+    let hide_started = Instant::now();
+    app.send(CTRL_X);
+    app.wait_for("completed Pi Ctrl+X remains responsive", |screen| {
+        screen.contains("hid 1 session locally") && !screen.contains("pi-refactor")
+    });
+    assert!(
+        hide_started.elapsed() < Duration::from_millis(750),
+        "completed Pi Ctrl+X stalled the terminal"
+    );
 
     app.send(CTRL_F);
     app.send(&[0x7f; 64]);

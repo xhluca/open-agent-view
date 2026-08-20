@@ -278,12 +278,22 @@ one. A verified live daemon whose socket is unavailable is reported and not
 replaced. Never kill the numeric PID or unlink the socket solely from the JSON
 record.
 
-Only sessions launched through this supervisor can be controlled. A Pi JSONL
-session found in the ordinary history store is intentionally inspect/open-only.
-A live managed Pi session also refuses native open to prevent two writers; use
-peek/reply controls, interrupt it, or wait for it to finish. On macOS, all Pi
+Only sessions launched through this supervisor can be controlled. Their JSONL
+files remain OAV-owned/default-visible after the RPC process or supervisor
+exits. A Pi JSONL session found only in the ordinary history store is
+intentionally inspect/open-only. Enter on a completed managed Pi session closes
+its exact idle RPC transport before native resume. Active work or a pending
+question still refuses native open; use Peek or Ctrl+X to stop it first. On macOS, all Pi
 sessions use the history/native-open path because durable supervision currently
 depends on Linux `/proc` identity.
+
+Ctrl+X never waits for Pi's model-facing abort response. It asks the verified
+supervisor to close only the selected RPC stdin and returns immediately. After
+refresh observes process exit, the row advertises Delete and a second Ctrl+X
+removes only the exact JSONL file under OAV's private managed session root.
+The exact header ID and canonical root are checked before removal. An older
+supervisor without per-session stop can be shut down only when it owns no other
+active Pi work; completed histories remain available afterward.
 
 Supervisors started by version 0.1.10 or earlier do not understand modeled
 launches. The current client probes the verified daemon's feature list before a

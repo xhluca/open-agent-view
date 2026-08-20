@@ -120,24 +120,69 @@ fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     let session = &snapshot.sessions[0];
     assert_eq!(
         session.capabilities,
-        [Capability::Inspect, Capability::Respond].into()
+        [
+            Capability::Inspect,
+            Capability::Respond,
+            Capability::Interrupt,
+        ]
+        .into()
     );
     second_controller
         .respond_input(session, "typed answer")
         .unwrap();
-    wait_for_state(&second_source, &second_controller, SessionState::Completed);
+    snapshot = wait_for_state(&second_source, &second_controller, SessionState::Completed);
 
-    snapshot = discover_and_enrich(&second_source, &second_controller);
+    // Enter/native open takes an exact completed RPC session through an EOF
+    // handoff before starting Pi's full-screen client.
+    let opened = second_controller.open(&snapshot.sessions[0]).unwrap();
+    assert_eq!(
+        opened.provider_session_hint.as_deref(),
+        Some("fake-session")
+    );
+    assert_eq!(
+        fs::read_to_string(directory.path().join("pi-native-args")).unwrap(),
+        format!(
+            "--session\nfake-session\n--session-dir\n{}\n",
+            second_supervisor.session_dir().display()
+        )
+    );
+    snapshot = wait_for_capability(&second_source, &second_controller, Capability::Delete);
+    second_controller.delete(&snapshot.sessions[0]).unwrap();
+    assert!(discover_and_enrich(&second_source, &second_controller)
+        .sessions
+        .is_empty());
+
     second_controller
-        .reply(&snapshot.sessions[0], "work again")
+        .launch(&LaunchRequest {
+            provider: Provider::Pi,
+            model: None,
+            prompt: "work again".into(),
+            cwd: directory.path().to_path_buf(),
+        })
+        .unwrap();
+    second_controller
+        .reply(
+            &wait_for_state(&second_source, &second_controller, SessionState::Working).sessions[0],
+            "still working",
+        )
         .unwrap();
     snapshot = wait_for_state(&second_source, &second_controller, SessionState::Working);
-    second_controller.interrupt(&snapshot.sessions[0]).unwrap();
-    wait_for_state(&second_source, &second_controller, SessionState::Completed);
-
+    assert!(second_controller.open(&snapshot.sessions[0]).is_err());
     let mut unowned = snapshot.sessions[0].clone();
     unowned.provider_session_id = "external-session".into();
     assert!(second_controller.reply(&unowned, "must fail").is_err());
+
+    let stop_started = Instant::now();
+    second_controller.interrupt(&snapshot.sessions[0]).unwrap();
+    assert!(stop_started.elapsed() < Duration::from_millis(500));
+    snapshot = wait_for_capability(&second_source, &second_controller, Capability::Delete);
+    let stopped = &snapshot.sessions[0];
+    assert_eq!(stopped.state, SessionState::Completed);
+    assert!(!stopped.capabilities.contains(&Capability::Interrupt));
+    second_controller.delete(stopped).unwrap();
+    assert!(discover_and_enrich(&second_source, &second_controller)
+        .sessions
+        .is_empty());
 
     second_supervisor.shutdown_daemon().unwrap();
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -190,16 +235,51 @@ fn wait_for_state(
     }
 }
 
+fn wait_for_capability(
+    source: &PiSource,
+    controller: &PiController,
+    expected: Capability,
+) -> SessionSnapshot {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let snapshot = discover_and_enrich(source, controller);
+        if snapshot.sessions[0].capabilities.contains(&expected) {
+            return snapshot;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for {expected:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
 fn write_fake_pi(path: &Path) {
     fs::write(
         path,
         r##"#!/bin/sh
+if [ "${1:-}" != "--mode" ]; then
+  printf '%s\n' "$@" > pi-native-args
+  exit 0
+fi
 printf '%s\n' "$@" > pi-launch-args
+session_dir=
+previous=
+for argument in "$@"; do
+  if [ "$previous" = "--session-dir" ]; then
+    session_dir="$argument"
+    break
+  fi
+  previous="$argument"
+done
+mkdir -p "$session_dir"
+session_file="$session_dir/fake-session.jsonl"
+printf '{"type":"session","version":3,"id":"fake-session","timestamp":"2026-08-20T00:00:00Z","cwd":"%s"}\n' "$PWD" > "$session_file"
 while IFS= read -r line; do
   id=$(printf '%s\n' "$line" | sed -n 's/.*"id":"\([^"]*\)".*/\1/p')
   case "$line" in
     *'"type":"get_state"'*)
-      printf '{"type":"response","id":"%s","success":true,"data":{"sessionId":"fake-session","sessionFile":"/tmp/fake-session.jsonl"}}\n' "$id"
+      printf '{"type":"response","id":"%s","success":true,"data":{"sessionId":"fake-session","sessionFile":"%s"}}\n' "$id" "$session_file"
       ;;
     *'"type":"get_messages"'*)
       printf '{"type":"response","id":"%s","success":true,"data":{"messages":[{"role":"user","content":"initial task"},{"role":"assistant","content":[{"type":"text","text":"fake reply"}]}]}}\n' "$id"

@@ -175,11 +175,11 @@ JSONL history and unrelated live Pi processes never acquire control authority.
 | --- | --- | --- |
 | Discover | Supervisor live state plus its private JSONL store | Documented JSONL store |
 | Inspect | Bounded `get_messages` transcript | Bounded persisted transcript |
-| Open | Refused while RPC is live to prevent concurrent writers | `pi --session ID --session-dir DIR` |
+| Open | Completed/idle RPC is stopped by closing its exact owned stdin, then `pi --session ID --session-dir DIR`; active work and pending questions are refused | `pi --session ID --session-dir DIR` |
 | Launch/reply | `prompt`; launch may pass an exact catalog/custom `--model`, and active work uses exact `steer` behavior | Disabled |
-| Interrupt | `abort` on the exact owned live process | Disabled |
+| Stop | Ctrl+X closes the exact owned RPC stdin without waiting on a model/abort response | Disabled |
 | Confirmation/input | Exact pending extension request ID; selections require an exact option | Disabled |
-| Delete/archive | Disabled | Disabled |
+| Delete/archive | Exact managed JSONL deletion only after process exit; archive disabled | Disabled |
 
 The supervisor state is under `$XDG_STATE_HOME/open-agent-view/pi/`, or
 `~/.local/state/open-agent-view/pi/`. Before any reconnect or control request,
@@ -200,6 +200,16 @@ A modeled launch additionally requires the daemon to advertise the
 `launch_with_model` protocol feature. An older verified daemon is replaced only
 after its own session list proves every owned session completed; active work
 causes an actionable refusal instead of a shutdown.
+
+The supervisor also advertises exact per-session stop/delete features. Stop
+closes only the selected RPC pipe and returns without waiting on a provider
+turn, keeping the dashboard responsive. Discovery must then observe the child
+exit before Delete is granted. The JSONL header ID and canonical path under the
+private managed session root are revalidated immediately before removal.
+Persisted files in that managed root remain owned/default-visible even after a
+supervisor restart; unrelated Pi history still requires `--include-external`.
+When upgrading an older daemon without per-session stop, OAV may shut down that
+verified daemon only if no other active Pi session would be affected.
 
 ## OpenCode ownership boundary
 
