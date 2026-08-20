@@ -300,6 +300,11 @@ fn main() -> Result<()> {
         return Ok(());
     }
     let request = discovery_request(&cli);
+    // Secure the shared state root before any provider supervisor creates a
+    // child directory. With a conventional 0022 umask, create_dir_all on a
+    // provider path would otherwise leave the common parent at 0755 and the
+    // hidden-session registry would correctly refuse to use it.
+    let hidden_sessions = HiddenSessions::load_default()?;
     let provider_io_enabled = provider_io_enabled(&cli);
     let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
     let claude_enabled =
@@ -469,7 +474,6 @@ fn main() -> Result<()> {
             engine.add_source(CodexSource::docker(target.name, target.id, display_image));
         }
     }
-    let hidden_sessions = HiddenSessions::load_default()?;
     if cli.json {
         let mut snapshot = engine.discover(&request);
         control.enrich(&mut snapshot);

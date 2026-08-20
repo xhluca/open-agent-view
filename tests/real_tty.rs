@@ -4,6 +4,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Mutex, MutexGuard};
@@ -86,6 +87,15 @@ impl PtyApp {
             .stdin(Stdio::from(stdin))
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
+        // GitHub's ARM runner uses the conventional 0022 umask. Force that
+        // exact fresh-environment condition so state-root permission ordering
+        // cannot regress only on a release runner.
+        unsafe {
+            command.pre_exec(|| {
+                libc::umask(0o022);
+                Ok(())
+            });
+        }
         let child = command.spawn().expect("launch coding-agents under PTY");
 
         Self {
