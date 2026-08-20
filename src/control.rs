@@ -60,6 +60,14 @@ pub trait ProviderController: Send + Sync {
         LaunchMode::Unavailable
     }
 
+    /// Return model identifiers accepted by this provider's launch API.
+    ///
+    /// Providers without a stable machine-readable catalog may return an
+    /// empty list while still accepting an explicitly typed model name.
+    fn available_models(&self) -> Result<Vec<String>> {
+        Ok(Vec::new())
+    }
+
     fn enrich(&self, _snapshot: &mut SessionSnapshot) {}
 
     fn launch(&self, _request: &LaunchRequest) -> Result<ControlOutcome> {
@@ -186,6 +194,15 @@ impl ControlHub {
                 }),
             })
             .collect()
+    }
+
+    pub fn available_models(&self, provider: &Provider) -> Result<Vec<String>> {
+        self.ensure_provider_io()?;
+        let controller = self.controller(provider)?;
+        if controller.launch_mode() != LaunchMode::SelectableModel {
+            bail!("{} does not expose model selection", provider.label());
+        }
+        controller.available_models()
     }
 
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
@@ -430,6 +447,22 @@ impl ProviderController for ClaudeController {
         LaunchMode::SelectableModel
     }
 
+    fn available_models(&self) -> Result<Vec<String>> {
+        let mut args = self.invocation.prefix_args.clone();
+        args.push("--help".into());
+        let mut request = CommandRequest::new(self.invocation.program.clone(), args);
+        request.timeout = Duration::from_secs(5);
+        let output = self.runner.run(&request)?;
+        if output.status != 0 {
+            bail!(
+                "Claude model discovery exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        parse_claude_model_aliases(output.stdout_text()?)
+    }
+
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
         for session in &mut snapshot.sessions {
             if is_interruptible_claude_session(session) {
@@ -506,6 +539,10 @@ impl ProviderController for CodexController {
 
     fn launch_mode(&self) -> LaunchMode {
         LaunchMode::SelectableModel
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        self.supervisor.available_models()
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -781,6 +818,53 @@ fn parse_background_id(output: &str) -> Option<String> {
     })
 }
 
+fn parse_claude_model_aliases(help: &str) -> Result<Vec<String>> {
+    let mut description = String::new();
+    let mut found = false;
+    for line in help.lines() {
+        if !found {
+            if line.contains("--model <model>") {
+                found = true;
+                description.push_str(line);
+                description.push('\n');
+            }
+            continue;
+        }
+        if line.trim_start().starts_with('-') {
+            break;
+        }
+        description.push_str(line);
+        description.push('\n');
+        if description.lines().count() >= 8 {
+            break;
+        }
+    }
+    if !found {
+        bail!("Claude help omitted --model <model>");
+    }
+
+    let mut models = BTreeSet::new();
+    // Inspect each apostrophe-delimited segment independently. This remains
+    // correct when prose includes an apostrophe such as "model's full name"
+    // immediately before a quoted model identifier.
+    for candidate in description.split('\'') {
+        if let Ok(Some(model)) = validate_model(Some(candidate.to_owned())) {
+            if model
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_alphanumeric())
+                && model.chars().all(|character| {
+                    character.is_ascii_alphanumeric()
+                        || matches!(character, '-' | '_' | '.' | ':' | '/' | '@')
+                })
+            {
+                models.insert(model);
+            }
+        }
+    }
+    Ok(models.into_iter().collect())
+}
+
 fn short_claude_id(provider_session_id: &str) -> String {
     provider_session_id.chars().take(8).collect()
 }
@@ -897,6 +981,16 @@ mod tests {
     fn parses_supported_background_launch_output() {
         let output = "backgrounded · 4b34abd1 · oav-probe\n  claude agents  list";
         assert_eq!(parse_background_id(output), Some("4b34abd1".into()));
+    }
+
+    #[test]
+    fn parses_current_claude_model_aliases_without_guessing_other_options() {
+        let help = "  --fallback-model <model> fallback\n  --model <model> Model for the current session. Provide\n                  an alias for the latest model (e.g.\n                  'fable', 'opus', or 'sonnet') or a\n                  model's full name (e.g. 'claude-fable-5').\n  -n, --name <name> display name\n";
+        assert_eq!(
+            parse_claude_model_aliases(help).unwrap(),
+            vec!["claude-fable-5", "fable", "opus", "sonnet"]
+        );
+        assert!(parse_claude_model_aliases("--model-id value").is_err());
     }
 
     #[test]

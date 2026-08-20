@@ -170,6 +170,67 @@ impl CodexSupervisor {
         AppServerClient::connect(&self.client_invocation(&record))
     }
 
+    /// List the visible models exposed by the exact owning App Server.
+    ///
+    /// The catalog is account/configuration aware and cursor paginated. Keep
+    /// it on the supervisor connection so model discovery and launch use the
+    /// same durable Codex process.
+    pub fn available_models(&self) -> Result<Vec<String>> {
+        const PAGE_SIZE: u64 = 100;
+        const MAX_PAGES: usize = 200;
+        const MAX_MODELS: usize = 20_000;
+
+        let server = self.ensure_endpoint()?;
+        let mut control = self
+            .control
+            .lock()
+            .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
+        let client = self.control_client(&mut control, &server)?;
+        let mut cursor: Option<String> = None;
+        let mut models = Vec::new();
+        let mut seen = BTreeSet::new();
+
+        for _ in 0..MAX_PAGES {
+            let response = client.request(
+                "model/list",
+                json!({
+                    "cursor": cursor,
+                    "limit": PAGE_SIZE,
+                    "includeHidden": false
+                }),
+            )?;
+            let page = response
+                .get("data")
+                .and_then(Value::as_array)
+                .context("model/list response omitted data")?;
+            for item in page {
+                if item.get("hidden").and_then(Value::as_bool) == Some(true) {
+                    continue;
+                }
+                let model = item
+                    .get("model")
+                    .or_else(|| item.get("id"))
+                    .and_then(Value::as_str)
+                    .context("model/list item omitted model and id")?;
+                validate_catalog_model(model, "Codex")?;
+                if seen.insert(model.to_owned()) {
+                    models.push(model.to_owned());
+                }
+                if models.len() > MAX_MODELS {
+                    bail!("Codex model catalog exceeded {MAX_MODELS} entries");
+                }
+            }
+            cursor = response
+                .get("nextCursor")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned);
+            if cursor.is_none() {
+                return Ok(models);
+            }
+        }
+        bail!("Codex model catalog pagination did not terminate")
+    }
+
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
         self.launch_with_model(prompt, cwd, None)
     }
@@ -1612,6 +1673,19 @@ impl Drop for ResponseLease {
     }
 }
 
+fn validate_catalog_model<'a>(model: &'a str, provider: &str) -> Result<&'a str> {
+    if model.is_empty() || model.len() > 128 {
+        bail!("{provider} model name must contain between 1 and 128 bytes");
+    }
+    if model
+        .chars()
+        .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("{provider} model name contains whitespace or control characters");
+    }
+    Ok(model)
+}
+
 fn now_millis() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -1860,6 +1934,10 @@ mod tests {
             .unwrap();
         let first_record = first.live_record().unwrap();
         let _process_guard = VerifiedTestProcess(first_record.clone());
+        assert_eq!(
+            first.available_models().unwrap(),
+            vec!["gpt-visible", "gpt-second"]
+        );
         assert_eq!(
             fs::metadata(&state_dir).unwrap().permissions().mode() & 0o777,
             0o700
@@ -2188,6 +2266,14 @@ if args[:2] == ["app-server", "--listen"]:
                 if state["active"]:
                     stream.write((json.dumps({"id": ident, "error": {"code": -32600, "message": "active"}})+"\n").encode()); stream.flush(); continue
                 state.update(thread=None, turn=None, archived=False); result = {}
+            elif method == "model/list":
+                if message.get("params", {}).get("cursor") is None:
+                    result = {"data": [
+                        {"model": "gpt-visible", "hidden": False},
+                        {"model": "gpt-hidden", "hidden": True}
+                    ], "nextCursor": "models-page-2"}
+                else:
+                    result = {"data": [{"id": "gpt-second", "hidden": False}], "nextCursor": None}
             elif method == "thread/list":
                 data = [] if state["thread"] is None or state["archived"] else [{
                     "id": state["thread"], "cwd": "/tmp", "createdAt": 1,
