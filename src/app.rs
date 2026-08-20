@@ -20,6 +20,7 @@ pub enum SelectionKey {
 }
 
 pub const SESSION_PAGE_SIZE: usize = 25;
+pub const MODEL_PICKER_PAGE_SIZE: usize = 10;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
@@ -27,6 +28,7 @@ pub enum Overlay {
     Help,
     Peek,
     HarnessPicker,
+    ModelPicker,
     Composer(ComposerMode),
     Confirm(ConfirmTarget),
 }
@@ -61,6 +63,12 @@ pub enum AppAction {
     None,
     Quit,
     Refresh,
+    SetCompletedVisibility {
+        include_completed: bool,
+    },
+    LoadModels {
+        provider: Provider,
+    },
     Open {
         session_id: String,
     },
@@ -119,6 +127,11 @@ pub struct App {
     pub launch_provider: Provider,
     pub launch_model: Option<String>,
     pub harness_selection: usize,
+    pub available_models: Vec<String>,
+    pub model_filter: String,
+    pub model_selection: usize,
+    pub models_loading: bool,
+    pub models_provider: Option<Provider>,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
     pub notice: Option<String>,
@@ -172,6 +185,11 @@ impl App {
             launch_provider,
             launch_model: None,
             harness_selection,
+            available_models: Vec::new(),
+            model_filter: String::new(),
+            model_selection: 0,
+            models_loading: false,
+            models_provider: None,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
             notice: None,
@@ -321,6 +339,10 @@ impl App {
                 self.confirm_harness_selection();
                 AppAction::None
             }
+            Overlay::ModelPicker => {
+                self.confirm_model_selection();
+                AppAction::None
+            }
             Overlay::Composer(mode) => self.submit_composer(mode),
             Overlay::Confirm(target) => self.confirm(target),
             Overlay::None => match self.selection.clone() {
@@ -348,6 +370,12 @@ impl App {
             }
             Overlay::HarnessPicker => {
                 self.overlay = Overlay::Composer(ComposerMode::NewSession);
+                self.notice = None;
+                AppAction::None
+            }
+            Overlay::ModelPicker => {
+                self.overlay = Overlay::Composer(ComposerMode::NewSession);
+                self.model_filter.clear();
                 self.notice = None;
                 AppAction::None
             }
@@ -458,6 +486,131 @@ impl App {
         self.launch_targets
             .iter()
             .find(|target| target.provider == self.launch_provider)
+    }
+
+    pub fn open_model_picker(&mut self) -> AppAction {
+        if !self
+            .launch_target()
+            .is_some_and(|target| target.supports_model)
+        {
+            self.set_notice(format!(
+                "{} does not expose model selection",
+                self.launch_provider.label()
+            ));
+            return AppAction::None;
+        }
+        if self.models_provider.as_ref() != Some(&self.launch_provider) {
+            self.available_models.clear();
+        }
+        self.model_filter.clear();
+        self.model_selection = self
+            .model_choices()
+            .iter()
+            .position(|choice| *choice == self.launch_model.as_deref())
+            .unwrap_or(0);
+        self.models_loading = true;
+        self.models_provider = Some(self.launch_provider.clone());
+        self.notice = None;
+        self.overlay = Overlay::ModelPicker;
+        AppAction::LoadModels {
+            provider: self.launch_provider.clone(),
+        }
+    }
+
+    pub fn set_available_models(
+        &mut self,
+        provider: Provider,
+        result: Result<Vec<String>, String>,
+    ) {
+        if self.models_provider.as_ref() != Some(&provider) {
+            return;
+        }
+        self.models_loading = false;
+        match result {
+            Ok(models) => {
+                let mut seen = BTreeSet::new();
+                self.available_models = models
+                    .into_iter()
+                    .filter(|model| valid_model_name(model))
+                    .filter(|model| seen.insert(model.clone()))
+                    .collect();
+                self.model_selection = self
+                    .model_choices()
+                    .iter()
+                    .position(|choice| *choice == self.launch_model.as_deref())
+                    .unwrap_or(0);
+                self.reconcile_model_selection();
+                self.notice = None;
+            }
+            Err(error) => {
+                self.available_models.clear();
+                self.model_selection = 0;
+                self.set_notice(format!("failed to list {} models: {error}", provider.label()));
+            }
+        }
+    }
+
+    pub fn model_choices(&self) -> Vec<Option<&str>> {
+        let needle = self.model_filter.to_ascii_lowercase();
+        let mut choices = Vec::new();
+        if needle.is_empty() || "default".contains(&needle) {
+            choices.push(None);
+        }
+        choices.extend(
+            self.available_models
+                .iter()
+                .filter(|model| model.to_ascii_lowercase().contains(&needle))
+                .map(|model| Some(model.as_str())),
+        );
+        choices
+    }
+
+    pub fn move_model_selection(&mut self, delta: isize) {
+        let len = self.model_choices().len();
+        if len == 0 {
+            self.model_selection = 0;
+            return;
+        }
+        self.model_selection = (self.model_selection as isize + delta)
+            .rem_euclid(len as isize) as usize;
+    }
+
+    pub fn move_model_page(&mut self, delta: isize) {
+        let len = self.model_choices().len();
+        if len == 0 {
+            self.model_selection = 0;
+            return;
+        }
+        self.model_selection = (self.model_selection as isize
+            + delta * MODEL_PICKER_PAGE_SIZE as isize)
+            .clamp(0, len.saturating_sub(1) as isize) as usize;
+    }
+
+    pub fn confirm_model_selection(&mut self) {
+        let selection = self
+            .model_choices()
+            .get(self.model_selection)
+            .copied()
+            .flatten()
+            .map(ToOwned::to_owned);
+        if self.model_choices().is_empty() {
+            return;
+        }
+        self.launch_model = selection;
+        self.model_filter.clear();
+        self.notice = None;
+        self.overlay = Overlay::Composer(ComposerMode::NewSession);
+    }
+
+    pub fn set_completed_visibility(&mut self, include_completed: bool) {
+        self.includes_completed = include_completed;
+        self.visible_limits.clear();
+        self.notice = Some(if include_completed {
+            "showing completed sessions".into()
+        } else {
+            "completed sessions hidden".into()
+        });
+        self.reconcile_selection();
     }
 
     pub fn start_filter(&mut self) {
@@ -571,6 +724,11 @@ impl App {
     }
 
     pub fn push_input(&mut self, character: char) {
+        if self.overlay == Overlay::ModelPicker {
+            self.model_filter.push(character);
+            self.reconcile_model_selection();
+            return;
+        }
         let peek_is_writable = self.overlay == Overlay::Peek
             && self.selected_session().is_some_and(|session| {
                 session.capabilities.contains(&Capability::Reply)
@@ -582,7 +740,12 @@ impl App {
     }
 
     pub fn pop_input(&mut self) {
-        self.input.pop();
+        if self.overlay == Overlay::ModelPicker {
+            self.model_filter.pop();
+            self.reconcile_model_selection();
+        } else {
+            self.input.pop();
+        }
     }
 
     pub fn set_notice(&mut self, notice: impl Into<String>) {
@@ -657,10 +820,26 @@ impl App {
             return AppAction::None;
         };
         let id = session.id.clone();
+        let opens_inline = session.provider != Provider::Claude
+            && session.capabilities.contains(&Capability::Inspect)
+            && [
+                Capability::Reply,
+                Capability::Approve,
+                Capability::Decline,
+                Capability::Respond,
+            ]
+            .iter()
+            .any(|capability| session.capabilities.contains(capability));
         if session.provider == Provider::Claude {
             self.overlay = Overlay::Confirm(ConfirmTarget::OpenClaude { id });
             self.notice = None;
             AppAction::None
+        } else if opens_inline {
+            self.overlay = Overlay::Peek;
+            self.notice = None;
+            AppAction::Inspect {
+                session_id: id,
+            }
         } else {
             AppAction::Open { session_id: id }
         }
@@ -680,11 +859,12 @@ impl App {
             .unwrap_or((input.as_str(), ""));
         match command.to_ascii_lowercase().as_str() {
             "/help" => self.set_notice(
-                "commands: /harness [NAME] · /model NAME|default · /filter TEXT · ctrl+f filter",
+                "commands: /harness [NAME] · /model [NAME|default] · /completed [show|hide] · /filter TEXT",
             ),
             "/harness" | "/provider" if argument.is_empty() => self.open_harness_picker(),
             "/harness" | "/provider" => self.select_launch_provider(argument),
-            "/model" => self.select_launch_model(argument),
+            "/model" => return self.select_launch_model(argument),
+            "/completed" => return self.select_completed_visibility(argument),
             "/filter" => {
                 self.filter = argument.to_owned();
                 self.visible_limits.clear();
@@ -739,7 +919,7 @@ impl App {
         }
     }
 
-    fn select_launch_model(&mut self, argument: &str) {
+    fn select_launch_model(&mut self, argument: &str) -> AppAction {
         if !self
             .launch_target()
             .is_some_and(|target| target.supports_model)
@@ -748,15 +928,10 @@ impl App {
                 "{} does not expose model selection",
                 self.launch_provider.label()
             ));
-            return;
+            return AppAction::None;
         }
         if argument.is_empty() {
-            self.set_notice(format!(
-                "{} model: {}; use /model NAME or /model default",
-                self.launch_provider.label(),
-                self.launch_model.as_deref().unwrap_or("default")
-            ));
-            return;
+            return self.open_model_picker();
         }
         if argument.eq_ignore_ascii_case("default") {
             self.launch_model = None;
@@ -764,7 +939,7 @@ impl App {
                 "{} will use its default model",
                 self.launch_provider.label()
             ));
-            return;
+            return AppAction::None;
         }
         if argument.len() > 128
             || argument
@@ -772,13 +947,32 @@ impl App {
                 .any(|character| character.is_control() || character.is_whitespace())
         {
             self.set_notice("model names must be 1–128 characters without whitespace");
-            return;
+            return AppAction::None;
         }
         self.launch_model = Some(argument.to_owned());
         self.set_notice(format!(
             "new {} tasks will use model {argument}",
             self.launch_provider.label()
         ));
+        AppAction::None
+    }
+
+    fn select_completed_visibility(&mut self, argument: &str) -> AppAction {
+        let include_completed = match argument.to_ascii_lowercase().as_str() {
+            "" | "toggle" => !self.includes_completed,
+            "show" | "on" | "all" => true,
+            "hide" | "off" => false,
+            _ => {
+                self.set_notice("use /completed, /completed show, or /completed hide");
+                return AppAction::None;
+            }
+        };
+        AppAction::SetCompletedVisibility { include_completed }
+    }
+
+    fn reconcile_model_selection(&mut self) {
+        let len = self.model_choices().len();
+        self.model_selection = self.model_selection.min(len.saturating_sub(1));
     }
 
     fn status_groups(&self) -> Vec<Group> {
@@ -876,6 +1070,14 @@ fn provider_alias(provider: &Provider) -> String {
         Provider::OpenCode => "opencode".into(),
         _ => normalize_provider_name(provider.label()),
     }
+}
+
+fn valid_model_name(model: &str) -> bool {
+    !model.is_empty()
+        && model.len() <= 128
+        && !model
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
 }
 
 pub(crate) fn project_group_path(path: &std::path::Path) -> PathBuf {
@@ -1361,6 +1563,41 @@ mod tests {
         app.overlay = Overlay::Peek;
         app.selection = None;
         assert_eq!(app.activate(), AppAction::None);
+    }
+
+    #[test]
+    fn enter_uses_inline_peek_for_managed_non_claude_sessions_only() {
+        for inline_capability in [
+            Capability::Reply,
+            Capability::Approve,
+            Capability::Decline,
+            Capability::Respond,
+        ] {
+            let mut item = session("managed", SessionState::Working);
+            item.provider = Provider::Pi;
+            item.capabilities = BTreeSet::from([Capability::Inspect, inline_capability]);
+            let mut app = app_with(vec![item]);
+
+            assert_eq!(
+                app.activate(),
+                AppAction::Inspect {
+                    session_id: "managed".into()
+                }
+            );
+            assert_eq!(app.overlay, Overlay::Peek);
+        }
+
+        let mut read_only = session("external", SessionState::Completed);
+        read_only.provider = Provider::Pi;
+        read_only.capabilities = BTreeSet::from([Capability::Inspect]);
+        let mut app = app_with(vec![read_only]);
+        assert_eq!(
+            app.activate(),
+            AppAction::Open {
+                session_id: "external".into()
+            }
+        );
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]
@@ -1893,5 +2130,128 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("unknown dashboard command"));
+    }
+
+    #[test]
+    fn completed_command_requests_toggle_or_explicit_visibility_without_guessing() {
+        let mut app = App::with_completed_visibility(SessionSnapshot::default(), false);
+
+        app.start_new_session(None);
+        app.input = "/completed".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::SetCompletedVisibility {
+                include_completed: true
+            }
+        );
+        assert!(!app.includes_completed);
+
+        app.set_completed_visibility(true);
+        assert!(app.includes_completed);
+        assert_eq!(app.notice.as_deref(), Some("showing completed sessions"));
+
+        app.start_new_session(None);
+        app.input = "/completed hide".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::SetCompletedVisibility {
+                include_completed: false
+            }
+        );
+
+        app.start_new_session(None);
+        app.input = "/completed sometimes".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("/completed show"));
+    }
+
+    #[test]
+    fn model_picker_loads_filters_pages_and_preserves_the_task_draft() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Pi,
+            vec![LaunchTarget {
+                provider: Provider::Pi,
+                supports_model: true,
+            }],
+        );
+        app.start_new_session(None);
+        app.input = "keep this task draft".into();
+
+        assert_eq!(
+            app.open_model_picker(),
+            AppAction::LoadModels {
+                provider: Provider::Pi
+            }
+        );
+        assert_eq!(app.overlay, Overlay::ModelPicker);
+        assert_eq!(app.input, "keep this task draft");
+        assert!(app.models_loading);
+        assert_eq!(app.model_choices(), vec![None]);
+
+        app.set_available_models(
+            Provider::Pi,
+            Ok(vec![
+                "openai/gpt-5".into(),
+                "anthropic/claude-sonnet".into(),
+                "openai/gpt-5".into(),
+                "invalid model".into(),
+            ]),
+        );
+        assert!(!app.models_loading);
+        assert_eq!(
+            app.model_choices(),
+            vec![
+                None,
+                Some("openai/gpt-5"),
+                Some("anthropic/claude-sonnet")
+            ]
+        );
+
+        app.push_input('g');
+        app.push_input('p');
+        app.push_input('t');
+        assert_eq!(app.model_choices(), vec![Some("openai/gpt-5")]);
+        assert_eq!(app.model_selection, 0);
+        app.confirm_model_selection();
+        assert_eq!(app.launch_model.as_deref(), Some("openai/gpt-5"));
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "keep this task draft");
+
+        app.open_model_picker();
+        assert_eq!(app.model_selection, 1);
+        app.move_model_selection(-1);
+        assert_eq!(app.model_selection, 0);
+        app.move_model_selection(-1);
+        assert_eq!(app.model_selection, 2);
+        app.move_model_page(-1);
+        assert_eq!(app.model_selection, 0);
+        assert_eq!(app.escape(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+        assert_eq!(app.input, "keep this task draft");
+    }
+
+    #[test]
+    fn model_picker_ignores_stale_provider_results_and_surfaces_current_errors() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.start_new_session(None);
+        app.open_model_picker();
+
+        app.set_available_models(Provider::Codex, Ok(vec!["stale".into()]));
+        assert!(app.available_models.is_empty());
+        assert!(app.models_loading);
+
+        app.set_available_models(Provider::Claude, Err("command timed out".into()));
+        assert!(!app.models_loading);
+        assert!(app
+            .notice
+            .as_deref()
+            .unwrap()
+            .contains("failed to list Claude models"));
     }
 }

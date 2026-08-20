@@ -7,7 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
-    SelectionKey, ViewMode, SESSION_PAGE_SIZE,
+    SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE, SESSION_PAGE_SIZE,
 };
 use crate::domain::{AgentSession, Capability, SessionState};
 
@@ -78,6 +78,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         render_confirmation(frame, app, target, area);
     } else if app.overlay == Overlay::HarnessPicker {
         render_harness_picker(frame, app, area);
+    } else if app.overlay == Overlay::ModelPicker {
+        render_model_picker(frame, app, area);
     }
 }
 
@@ -95,9 +97,9 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
         },
     );
     let completed_status = if app.includes_completed {
-        format!("{completed} completed")
+        format!("{completed} completed (/completed hide)")
     } else {
-        "completed hidden".into()
+        "completed hidden (/completed show)".into()
     };
     let providers = provider_summary(app);
     let title = format!("Open Agent View v{}", env!("CARGO_PKG_VERSION"));
@@ -161,7 +163,10 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let mut lines = Vec::new();
     let mut selected_line = None;
-    let selection_visible = !matches!(app.overlay, Overlay::Composer(_) | Overlay::HarnessPicker);
+    let selection_visible = !matches!(
+        app.overlay,
+        Overlay::Composer(_) | Overlay::HarnessPicker | Overlay::ModelPicker
+    );
 
     for (group_position, group) in app.groups().into_iter().enumerate() {
         if group_position > 0 {
@@ -289,7 +294,7 @@ fn empty_state_lines(includes_completed: bool) -> Vec<Line<'static>> {
             if includes_completed {
                 " Finished sessions wait here for you to review"
             } else {
-                " Hidden by default · start with --all to include them"
+                " Hidden by default · use /completed show (or start with --all)"
             },
             Style::default().fg(DIM),
         )),
@@ -376,7 +381,9 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .style(Style::default().bg(BG));
     if matches!(
         app.overlay,
-        Overlay::Composer(ComposerMode::NewSession) | Overlay::HarnessPicker
+        Overlay::Composer(ComposerMode::NewSession)
+            | Overlay::HarnessPicker
+            | Overlay::ModelPicker
     ) {
         let model = app.launch_model.as_deref().unwrap_or("default");
         block = block.title(format!(
@@ -386,7 +393,7 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     }
     let (prefix, content, editable) = match &app.overlay {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
-        Overlay::HarnessPicker => ("❯ ", app.input.as_str(), false),
+        Overlay::HarnessPicker | Overlay::ModelPicker => ("❯ ", app.input.as_str(), false),
         Overlay::Composer(ComposerMode::Rename { .. }) => ("❯ name ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Filter) => ("❯ filter ", app.input.as_str(), true),
         _ => (
@@ -431,9 +438,9 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .saturating_sub(1)
             .min(area.height.saturating_sub(3));
         let prefix_width = (line_index == 0)
-            .then(|| prefix.chars().count())
+            .then(|| display_width(prefix))
             .unwrap_or(0);
-        let cursor_x = area.x + 1 + prefix_width as u16 + display_width(last_line) as u16;
+        let cursor_x = area.x + prefix_width as u16 + display_width(last_line) as u16;
         frame.set_cursor(
             cursor_x.min(area.right().saturating_sub(1)),
             area.y + 1 + line_index,
@@ -597,6 +604,10 @@ fn contextual_footer(app: &App, width: u16) -> String {
             app.launch_targets.len().min(9)
         ),
         Overlay::HarnessPicker => "↑/↓ choose · enter · esc".into(),
+        Overlay::ModelPicker if width >= 70 => {
+            "type to filter · ↑/↓ move · page up/down · enter select · esc back".into()
+        }
+        Overlay::ModelPicker => "type filter · ↑/↓ · enter · esc".into(),
         Overlay::Peek
             if app.selected_session().is_some_and(|session| {
                 session.capabilities.contains(&Capability::Approve)
@@ -678,8 +689,12 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::None if app.selected_session().is_some() => {
             "enter to open · ? for shortcuts".into()
         }
+        _ if width >= 90 => {
+            "type to create · ↑/↓ select · ctrl+f filter · /completed show|hide · ? shortcuts"
+                .into()
+        }
         _ if width >= 70 => {
-            "type to create · ↑/↓ to select · ctrl+f to filter · ? for shortcuts".into()
+            "type to create · ↑/↓ to select · /completed · ? for shortcuts".into()
         }
         _ => "↑/↓ to select · ? for shortcuts".into(),
     }
@@ -743,6 +758,7 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("ctrl+l to refresh".into());
     actions.push("tab for new task/harness picker".into());
     actions.push("/help for task commands".into());
+    actions.push("/completed to show/hide finished sessions".into());
     if let Some(session) = app.selected_session() {
         if session.capabilities.contains(&Capability::Approve)
             || session.capabilities.contains(&Capability::Decline)
@@ -888,6 +904,124 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             )
             .style(Style::default().bg(BG).fg(FG)),
         popup,
+    );
+}
+
+fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let choices = app.model_choices();
+    let popup_width = area.width.saturating_sub(2).min(76).max(28);
+    let visible_rows = MODEL_PICKER_PAGE_SIZE
+        .min(area.height.saturating_sub(7).max(1) as usize)
+        .max(1);
+    let result_rows = choices.len().clamp(1, visible_rows);
+    let popup_height = (result_rows as u16 + 5)
+        .min(area.height.saturating_sub(2))
+        .max(6);
+    let popup = Rect::new(
+        area.x + area.width.saturating_sub(popup_width) / 2,
+        area.y + area.height.saturating_sub(popup_height) / 2,
+        popup_width,
+        popup_height,
+    );
+    let start = if choices.is_empty() {
+        0
+    } else {
+        (app.model_selection / visible_rows) * visible_rows
+    };
+    let mut lines = vec![Line::from(vec![
+        Span::styled(" filter  ", Style::default().fg(DIM)),
+        Span::styled(
+            if app.model_filter.is_empty() {
+                "type to search".into()
+            } else {
+                sanitize_inline(&app.model_filter)
+            },
+            if app.model_filter.is_empty() {
+                Style::default().fg(DIM)
+            } else {
+                Style::default().fg(FG)
+            },
+        ),
+    ])];
+    if choices.is_empty() {
+        lines.push(Line::from(Span::styled(
+            if app.models_loading {
+                "  Loading models…"
+            } else {
+                "  No matching models"
+            },
+            Style::default().fg(DIM),
+        )));
+    } else {
+        lines.extend(
+            choices
+                .iter()
+                .enumerate()
+                .skip(start)
+                .take(visible_rows)
+                .map(|(index, model)| {
+                    let selected = index == app.model_selection;
+                    let label = model.unwrap_or("Default");
+                    let current = *model == app.launch_model.as_deref();
+                    Line::from(format!(
+                        " {} {}{}",
+                        if selected { "›" } else { " " },
+                        sanitize_inline(label),
+                        if current { " · current" } else { "" }
+                    ))
+                    .style(if selected {
+                        Style::default()
+                            .bg(SELECTED_BG)
+                            .fg(Color::White)
+                            .add_modifier(Modifier::BOLD)
+                    } else if current {
+                        Style::default().bg(BG).fg(ACCENT)
+                    } else {
+                        Style::default().bg(BG).fg(FG)
+                    })
+                }),
+        );
+    }
+    if app.models_loading && !choices.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " Discovering available models…",
+            Style::default().fg(DIM),
+        )));
+    }
+    lines.push(
+        Line::from(if popup_width >= 58 {
+            " ↑/↓ move · PgUp/PgDn page · enter select · esc back"
+        } else {
+            " ↑/↓ · enter · esc"
+        })
+        .style(Style::default().fg(DIM)),
+    );
+
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(format!(
+                        " choose {} model · {} result{} ",
+                        app.launch_provider.label(),
+                        choices.len(),
+                        if choices.len() == 1 { "" } else { "s" }
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ACCENT)),
+            )
+            .style(Style::default().bg(BG).fg(FG)),
+        popup,
+    );
+    let filter_prefix = " filter  ";
+    frame.set_cursor(
+        (popup.x
+            + 1
+            + display_width(filter_prefix) as u16
+            + display_width(&app.model_filter) as u16)
+            .min(popup.right().saturating_sub(2)),
+        popup.y + 1,
     );
 }
 
@@ -1159,7 +1293,7 @@ mod tests {
 
         assert!(rendered.contains("completed hidden"));
         assert!(!rendered.contains("0 completed"));
-        assert!(rendered.contains("start with --all to include them"));
+        assert!(rendered.contains("/completed show"));
     }
 
     #[test]
@@ -1503,6 +1637,64 @@ mod tests {
         assert!(rendered.contains("tab choose harness"));
         assert!(rendered.contains("/harness"));
         assert!(rendered.contains("/model"));
+    }
+
+    #[test]
+    fn composer_cursor_is_exactly_after_the_text_without_a_phantom_left_border() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.start_new_session(None);
+        app.input = "abc".into();
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+
+        assert_eq!(terminal.get_cursor().unwrap(), (5, 21));
+        assert_eq!(terminal.backend().buffer().get(2, 21).symbol(), "a");
+        assert_eq!(terminal.backend().buffer().get(4, 21).symbol(), "c");
+    }
+
+    #[test]
+    fn model_picker_is_searchable_bounded_and_keeps_the_selected_page_visible() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Pi,
+            vec![LaunchTarget {
+                provider: Provider::Pi,
+                supports_model: true,
+            }],
+        );
+        app.start_new_session(None);
+        app.input = "draft survives model selection".into();
+        app.open_model_picker();
+        app.set_available_models(
+            Provider::Pi,
+            Ok((0..25).map(|index| format!("provider/model-{index:02}")).collect()),
+        );
+        app.model_selection = 13;
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let page = buffer_text(terminal.backend().buffer());
+        assert!(page.contains("choose Pi model · 26 results"));
+        assert!(page.contains("provider/model-09"));
+        assert!(page.contains("provider/model-18"));
+        assert!(!page.contains("provider/model-08"));
+        assert!(!page.contains("provider/model-19"));
+        assert!(page.contains("PgUp/PgDn"));
+        assert!(page.contains("draft survives model selection"));
+
+        app.push_input('2');
+        app.push_input('4');
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let filtered = buffer_text(terminal.backend().buffer());
+        assert!(filtered.contains("filter  24"));
+        assert!(filtered.contains("choose Pi model · 1 result"));
+        assert!(filtered.contains("provider/model-24"));
+        assert!(!filtered.contains("provider/model-23"));
+        assert_eq!(terminal.get_cursor().unwrap(), (24, 13));
     }
 
     #[test]
