@@ -91,12 +91,15 @@ Then:
 From the approved commit:
 
 ```console
-git tag -s vMAJOR.MINOR.PATCH -m "open-agent-view vMAJOR.MINOR.PATCH"
+git tag -a vMAJOR.MINOR.PATCH -m "open-agent-view vMAJOR.MINOR.PATCH"
 git push origin vMAJOR.MINOR.PATCH
 ```
 
 The workflow never creates a tag from a branch build. Do not retry a failed
 release by moving an existing tag; fix the cause and choose a new version.
+Annotated tags are the current repository convention. Moving to signed tags
+requires a valid, non-expired maintainer signing key and a documented public-key
+verification path; do not claim a signature when those prerequisites are absent.
 
 ## Verify a published release
 
