@@ -153,6 +153,10 @@ struct Cli {
     #[arg(long)]
     include_interactive: bool,
 
+    /// Include provider sessions that were not created or managed by Open Agent View.
+    #[arg(long)]
+    include_external: bool,
+
     /// Maximum persisted-history records read from each provider per refresh.
     #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=10_000))]
     history_limit: u64,
@@ -435,37 +439,52 @@ fn main() -> Result<()> {
         }
         if codex_enabled {
             if let Some(supervisor) = control.codex_supervisor() {
-                engine.add_source(CodexSource::managed(supervisor));
+                if request.include_external {
+                    engine.add_source(CodexSource::managed(supervisor));
+                } else {
+                    engine.add_source(CodexSource::managed_owned(supervisor));
+                }
             }
         }
         if let Some(session_dir) = pi_session_dir {
             #[cfg(target_os = "linux")]
-            let source = PiSource::managed(
-                session_dir,
-                pi_supervisor.expect("Pi supervisor exists when the Pi source is enabled"),
-            );
+            let source = {
+                let supervisor =
+                    pi_supervisor.expect("Pi supervisor exists when the Pi source is enabled");
+                let discovery_dir = if request.include_external {
+                    session_dir
+                } else {
+                    supervisor.session_dir()
+                };
+                PiSource::managed(discovery_dir, supervisor)
+            };
             #[cfg(not(target_os = "linux"))]
             let source = PiSource::host(session_dir);
             engine.add_source(source);
         }
         if opencode_enabled {
             #[cfg(target_os = "linux")]
-            let source = OpenCodeSource::managed(
-                cli.opencode_bin,
-                opencode_supervisor.expect("OpenCode supervisor exists when OpenCode is enabled"),
-            );
+            let source = {
+                let supervisor = opencode_supervisor
+                    .expect("OpenCode supervisor exists when OpenCode is enabled");
+                if request.include_external {
+                    OpenCodeSource::managed(cli.opencode_bin, supervisor)
+                } else {
+                    OpenCodeSource::managed_owned(cli.opencode_bin, supervisor)
+                }
+            };
             #[cfg(not(target_os = "linux"))]
             let source = OpenCodeSource::host(cli.opencode_bin);
             engine.add_source(source);
         }
-        if copilot_enabled {
+        if copilot_enabled && request.include_external {
             engine.add_source(CopilotSource::host(cli.copilot_bin));
         }
         #[cfg(target_os = "linux")]
         if let Some(supervisor) = cursor_supervisor {
             engine.add_source(CursorSource::managed(supervisor));
         }
-        if antigravity_enabled {
+        if antigravity_enabled && request.include_external {
             engine.add_source(AntigravitySource::default_host()?);
         }
         for container in cli.docker_containers {
@@ -482,6 +501,9 @@ fn main() -> Result<()> {
     if cli.json {
         let mut snapshot = engine.discover(&request);
         control.enrich(&mut snapshot);
+        if !request.include_external {
+            control.retain_owned(&mut snapshot);
+        }
         hidden_sessions.filter_snapshot(&mut snapshot);
         serde_json::to_writer_pretty(io::stdout().lock(), &snapshot)?;
         println!();
@@ -511,6 +533,7 @@ fn discovery_request(cli: &Cli) -> DiscoveryRequest {
     DiscoveryRequest {
         include_completed: cli.all,
         include_interactive: cli.include_interactive,
+        include_external: cli.include_external || cli.fixture.is_some(),
         cwd: cli.cwd.clone(),
         history_limit: cli.history_limit as usize,
         history_oldest_first: false,
@@ -650,6 +673,7 @@ fn run_completed_archive(
     let mut snapshot = engine.discover(&DiscoveryRequest {
         include_completed: true,
         include_interactive: true,
+        include_external: false,
         cwd: None,
         history_limit: (cli.history_limit as usize).max(limit),
         history_oldest_first: true,
@@ -1064,6 +1088,20 @@ mod tests {
     }
 
     #[test]
+    fn external_provider_history_is_opt_in_and_fixtures_remain_complete() {
+        let live = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
+        assert!(!discovery_request(&live).include_external);
+
+        let external =
+            Cli::try_parse_from(["coding-agents", "--json", "--include-external"]).unwrap();
+        assert!(discovery_request(&external).include_external);
+
+        let fixture =
+            Cli::try_parse_from(["coding-agents", "--fixture", "/tmp/snapshot.json"]).unwrap();
+        assert!(discovery_request(&fixture).include_external);
+    }
+
+    #[test]
     fn cli_text_sanitization_blocks_controls_and_bounds_provider_output() {
         let sanitized = sanitize_cli_text(&format!("name\u{1b}[2J\n{}", "x".repeat(500)));
         assert!(!sanitized.contains('\u{1b}'));
@@ -1210,6 +1248,7 @@ mod tests {
             "--no-host-antigravity",
             "--all",
             "--include-interactive",
+            "--include-external",
             "--history-limit",
             "250",
             "--cwd",
@@ -1236,6 +1275,7 @@ mod tests {
         assert!(cli.no_host_antigravity);
         assert!(cli.all);
         assert!(cli.include_interactive);
+        assert!(cli.include_external);
         assert_eq!(cli.history_limit, 250);
         assert_eq!(cli.cwd, Some(PathBuf::from("/project")));
         assert_eq!(cli.launch_provider, LaunchProvider::Codex);

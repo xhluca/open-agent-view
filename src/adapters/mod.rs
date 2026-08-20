@@ -61,6 +61,8 @@ pub const DEFAULT_HISTORY_LIMIT: usize = 100;
 pub struct DiscoveryRequest {
     pub include_completed: bool,
     pub include_interactive: bool,
+    /// Include provider history that was not created or adopted by OAV.
+    pub include_external: bool,
     pub cwd: Option<PathBuf>,
     /// Maximum persisted-history records a provider may read in one refresh.
     /// Live/owned session inventories are not constrained by this limit.
@@ -74,6 +76,7 @@ impl Default for DiscoveryRequest {
         Self {
             include_completed: false,
             include_interactive: false,
+            include_external: false,
             cwd: None,
             history_limit: DEFAULT_HISTORY_LIMIT,
             history_oldest_first: false,

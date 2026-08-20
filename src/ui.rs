@@ -9,7 +9,7 @@ use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE,
 };
-use crate::domain::{AgentSession, Capability, SessionState};
+use crate::domain::{AgentSession, Capability, Provider, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -682,17 +682,22 @@ fn contextual_footer(app: &App, width: u16) -> String {
             let session = app.selected_session().expect("selection checked");
             let peek = session_peek_suffix(session);
             let control = session_control_suffix(session);
-            format!("enter to open{peek}{control} · ? for shortcuts")
+            let open = if session.provider == Provider::Claude {
+                "enter/right attach · ctrl+z returns"
+            } else {
+                "enter/right to open"
+            };
+            format!("{open}{peek}{control} · ? for shortcuts")
         }
         Overlay::None if app.selected_session().is_some() && width >= 55 => {
             let session = app.selected_session().expect("selection checked");
             format!(
-                "enter to open{} · ? for shortcuts",
+                "enter/right open{} · ? shortcuts",
                 session_peek_suffix(session)
             )
         }
         Overlay::None if app.selected_session().is_some() => {
-            "enter to open · ? for shortcuts".into()
+            "enter/right to open · ? for shortcuts".into()
         }
         _ if width >= 90 => {
             "type to create · ↑/↓ select · ctrl+f filter · /completed show|hide · ? shortcuts"
@@ -753,6 +758,13 @@ fn help_actions(app: &App) -> Vec<String> {
         actions.push("enter to show more".into());
     }
     if app.selected_session().is_some() {
+        actions.push("enter/right to open session".into());
+        if app
+            .selected_session()
+            .is_some_and(|session| session.provider == Provider::Claude)
+        {
+            actions.push("ctrl+z returns from Claude".into());
+        }
         actions.push("ctrl+r to rename".into());
     }
     actions.push("ctrl+s to switch views".into());
@@ -1032,17 +1044,6 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
     let popup = centered_rect(72, 30, area);
     frame.render_widget(Clear, popup);
     let message = match target {
-        ConfirmTarget::OpenClaude { id } => format!(
-            "Attach to this Claude background session?\n\n{id}\n\nInside Claude:\n← opens Claude's agent view.\nCtrl+Z returns to Open Agent View.\nThe background session keeps running.\n\nEnter attaches; escape cancels."
-        ),
-        ConfirmTarget::Session { id, running: true } => {
-            format!(
-                "Interrupt the exact running session?\n\n{id}\n\nEnter confirms; escape keeps it."
-            )
-        }
-        ConfirmTarget::Session { id, running: false } => {
-            format!("Delete the exact session record?\n\n{id}\n\nEnter confirms; escape keeps it.")
-        }
         ConfirmTarget::Archive { id } => {
             format!("Archive the exact session?\n\n{id}\n\nEnter confirms; escape keeps it.")
         }
@@ -1327,7 +1328,7 @@ mod tests {
         assert!(second_page.contains("session-49"));
         assert!(!second_page.contains("session-50"));
         assert!(second_page.contains("Show 10 more · 10 hidden"));
-        assert!(second_page.contains("enter to open"));
+        assert!(second_page.contains("enter/right"));
 
         app.selection = Some(SelectionKey::ShowMore("state:Working".into()));
         terminal.draw(|frame| render(frame, &app)).unwrap();
@@ -1557,7 +1558,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("enter to open · ? for shortcuts"));
+        assert!(rendered.contains("enter/right to open · ? for shortcuts"));
         assert!(!rendered.contains("space to reply"));
     }
 
@@ -1825,21 +1826,18 @@ mod tests {
     }
 
     #[test]
-    fn claude_attach_confirmation_explains_the_only_return_key() {
-        let mut app = App::new(SessionSnapshot {
+    fn claude_row_explains_how_to_return_after_direct_attach() {
+        let app = App::new(SessionSnapshot {
             sessions: vec![session("worker", SessionState::Working)],
             warnings: vec![],
         });
-        assert_eq!(app.activate(), crate::app::AppAction::None);
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).unwrap();
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("Attach to this Claude background session?"));
-        assert!(rendered.contains("Ctrl+Z returns to Open Agent View"));
-        assert!(rendered.contains("← opens Claude's agent view"));
+        assert!(rendered.contains("enter/right attach · ctrl+z returns"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

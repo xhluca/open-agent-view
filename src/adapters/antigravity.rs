@@ -83,6 +83,9 @@ impl SessionSource for AntigravitySource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        if !request.include_external {
+            return Ok(Vec::new());
+        }
         let input = match fs::read_to_string(&self.path) {
             Ok(input) => input,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -267,6 +270,7 @@ mod tests {
         .unwrap();
         let sessions = AntigravitySource::host(path)
             .discover(&DiscoveryRequest {
+                include_external: true,
                 cwd: Some(directory.path().join("work")),
                 ..DiscoveryRequest::default()
             })

@@ -114,6 +114,7 @@ pub trait ProviderController: Send + Sync {
 pub struct ControlHub {
     controllers: BTreeMap<Provider, Arc<dyn ProviderController>>,
     codex: Option<Arc<CodexSupervisor>>,
+    claude_registry: Option<Arc<Mutex<OwnershipRegistry>>>,
     launch_provider: Provider,
     launch_cwd: PathBuf,
     provider_io_enabled: bool,
@@ -122,16 +123,20 @@ pub struct ControlHub {
 impl ControlHub {
     pub fn new(config: ControlHubConfig) -> Result<Self> {
         let mut controllers: BTreeMap<Provider, Arc<dyn ProviderController>> = BTreeMap::new();
+        let mut claude_registry = None;
         if config.provider_io_enabled && config.claude_enabled {
-            let registry = OwnershipRegistry::load(default_registry_path()?)?;
+            let registry = Arc::new(Mutex::new(OwnershipRegistry::load(
+                default_registry_path()?
+            )?));
             controllers.insert(
                 Provider::Claude,
                 Arc::new(ClaudeController::host(
                     config.claude_bin.clone(),
                     config.docker_bin.clone(),
-                    registry,
+                    registry.clone(),
                 )),
             );
+            claude_registry = Some(registry);
         }
         let codex = if config.provider_io_enabled && config.codex_enabled {
             let supervisor = Arc::new(CodexSupervisor::host(config.codex_bin.clone())?);
@@ -150,6 +155,7 @@ impl ControlHub {
         Ok(Self {
             controllers,
             codex,
+            claude_registry,
             launch_provider: config.launch_provider,
             launch_cwd: config.launch_cwd,
             provider_io_enabled: config.provider_io_enabled,
@@ -168,6 +174,33 @@ impl ControlHub {
     pub fn enrich(&self, snapshot: &mut SessionSnapshot) {
         for controller in self.controllers.values() {
             controller.enrich(snapshot);
+        }
+    }
+
+    /// Remove host Claude sessions not recorded by OAV's launch registry.
+    /// Other default sources are owned-by-construction (durable supervisors or
+    /// private managed registries), so they do not need a second history scan.
+    pub fn retain_owned(&self, snapshot: &mut SessionSnapshot) {
+        let Some(registry) = &self.claude_registry else {
+            snapshot.sessions.retain(|session| {
+                session.provider != Provider::Claude || session.runtime != Runtime::Host
+            });
+            return;
+        };
+        match registry.lock() {
+            Ok(registry) => snapshot.sessions.retain(|session| {
+                session.provider != Provider::Claude
+                    || session.runtime != Runtime::Host
+                    || registry.owns(session)
+            }),
+            Err(_) => {
+                snapshot
+                    .warnings
+                    .push("Claude ownership registry lock was poisoned".into());
+                snapshot.sessions.retain(|session| {
+                    session.provider != Provider::Claude || session.runtime != Runtime::Host
+                });
+            }
         }
     }
 
@@ -327,7 +360,11 @@ struct ClaudeController {
 }
 
 impl ClaudeController {
-    fn host(executable: String, docker_bin: String, registry: OwnershipRegistry) -> Self {
+    fn host(
+        executable: String,
+        docker_bin: String,
+        registry: Arc<Mutex<OwnershipRegistry>>,
+    ) -> Self {
         Self {
             invocation: ControlInvocation {
                 program: executable,
@@ -336,7 +373,7 @@ impl ClaudeController {
             docker_bin,
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
-            registry: Arc::new(Mutex::new(registry)),
+            registry,
         }
     }
 
@@ -464,8 +501,17 @@ impl ProviderController for ClaudeController {
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        let registry = match self.registry.lock() {
+            Ok(registry) => registry,
+            Err(_) => {
+                snapshot
+                    .warnings
+                    .push("Claude ownership registry lock was poisoned".into());
+                return;
+            }
+        };
         for session in &mut snapshot.sessions {
-            if is_interruptible_claude_session(session) {
+            if registry.owns(session) && is_interruptible_claude_session(session) {
                 session.capabilities.insert(Capability::Interrupt);
             }
         }
@@ -747,7 +793,6 @@ impl OwnershipRegistry {
         self.save()
     }
 
-    #[cfg(test)]
     fn owns(&self, session: &AgentSession) -> bool {
         let runtime = runtime_key(&session.runtime);
         self.records.iter().any(|record| {
@@ -1013,6 +1058,55 @@ mod tests {
     }
 
     #[test]
+    fn owned_view_removes_external_host_claude_without_hiding_other_managed_sources() {
+        let directory = tempdir().unwrap();
+        let mut registry =
+            OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        registry
+            .record(OwnedSession {
+                provider: Provider::Claude,
+                runtime_key: "host".into(),
+                provider_id_prefix: "owned123".into(),
+                created_at_ms: 1,
+            })
+            .unwrap();
+        let hub = ControlHub {
+            controllers: BTreeMap::new(),
+            codex: None,
+            claude_registry: Some(Arc::new(Mutex::new(registry))),
+            launch_provider: Provider::Claude,
+            launch_cwd: PathBuf::from("/work"),
+            provider_io_enabled: true,
+        };
+        let mut owned = session("owned123-full");
+        let external = session("external-full");
+        let mut docker = session("docker-full");
+        docker.runtime = Runtime::Docker {
+            container_id: "exact".into(),
+            container_name: "managed".into(),
+            image: "image@sha256:exact".into(),
+        };
+        let mut codex = session("codex-owned");
+        codex.provider = Provider::Codex;
+        owned.name = "owned".into();
+        let mut snapshot = SessionSnapshot {
+            sessions: vec![owned, external, docker, codex],
+            warnings: Vec::new(),
+        };
+
+        hub.retain_owned(&mut snapshot);
+
+        assert_eq!(
+            snapshot
+                .sessions
+                .iter()
+                .map(|session| session.provider_session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["owned123-full", "docker-full", "codex-owned"]
+        );
+    }
+
+    #[test]
     fn terminal_output_is_reduced_to_the_latest_assistant_message() {
         let input =
             b"\x1b[2J\x1b[H\x1b[2;1H\xe2\x97\x8f final answer\r\ncontinued\r\nBrewed for 3m";
@@ -1072,10 +1166,19 @@ mod tests {
     }
 
     #[test]
-    fn claude_interrupt_is_granted_and_revalidated_for_exact_host_background_session() {
+    fn claude_interrupt_is_granted_only_to_an_owned_exact_background_session() {
         let directory = tempdir().unwrap();
-        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
         let provider_id = "4b34abd1-91dc-4b50-a43f-6db2837576fe";
+        let mut registry =
+            OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        registry
+            .record(OwnedSession {
+                provider: Provider::Claude,
+                runtime_key: "host".into(),
+                provider_id_prefix: "4b34abd1".into(),
+                created_at_ms: 1,
+            })
+            .unwrap();
         let inventory = format!(
             r#"[{{"pid":42,"id":"4b34abd1","cwd":"/work","kind":"background","startedAt":1,"sessionId":"{provider_id}","name":"external","status":"busy","state":"working"}}]"#
         );
@@ -1114,7 +1217,7 @@ mod tests {
         assert!(snapshot.sessions[0]
             .capabilities
             .contains(&Capability::Interrupt));
-        assert!(!controller.owns(&external));
+        assert!(controller.owns(&external));
         controller.interrupt(&external).unwrap();
 
         let requests = runner.requests.lock().unwrap();
@@ -1182,6 +1285,7 @@ mod tests {
         let hub = ControlHub {
             controllers: BTreeMap::new(),
             codex: None,
+            claude_registry: None,
             launch_provider: Provider::Claude,
             launch_cwd: directory.path().into(),
             provider_io_enabled: false,
@@ -1226,6 +1330,7 @@ mod tests {
         ControlHub {
             controllers: BTreeMap::new(),
             codex: None,
+            claude_registry: None,
             launch_provider,
             launch_cwd: PathBuf::from("/work"),
             provider_io_enabled: true,

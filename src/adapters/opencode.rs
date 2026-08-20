@@ -59,6 +59,7 @@ pub struct OpenCodeSource {
     runtime: Runtime,
     runner: Arc<dyn CommandRunner>,
     supervisor: Option<Arc<OpenCodeSupervisor>>,
+    discover_external_history: bool,
 }
 
 /// Read-only history control plus optional exact owned-server lifecycle.
@@ -245,6 +246,7 @@ impl OpenCodeSource {
             runtime: Runtime::Host,
             runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: None,
+            discover_external_history: true,
         }
     }
 
@@ -255,6 +257,22 @@ impl OpenCodeSource {
             runtime: Runtime::Host,
             runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: Some(supervisor),
+            discover_external_history: true,
+        }
+    }
+
+    /// Discover only sessions recorded by the exact OAV-owned server.
+    pub fn managed_owned(
+        executable: impl Into<String>,
+        supervisor: Arc<OpenCodeSupervisor>,
+    ) -> Self {
+        Self {
+            label: "OpenCode (managed host)".into(),
+            invocation: OpenCodeInvocation::host(executable),
+            runtime: Runtime::Host,
+            runner: Arc::new(CancellableProcessRunner::default()),
+            supervisor: Some(supervisor),
+            discover_external_history: false,
         }
     }
 
@@ -275,6 +293,7 @@ impl OpenCodeSource {
             },
             runner: Arc::new(CancellableProcessRunner::default()),
             supervisor: None,
+            discover_external_history: true,
         }
     }
 
@@ -331,6 +350,7 @@ impl OpenCodeSource {
             runtime,
             runner,
             supervisor: None,
+            discover_external_history: true,
         }
     }
 }
@@ -350,7 +370,7 @@ impl SessionSource for OpenCodeSource {
         // Persisted OpenCode history has no live-state signal and every record
         // normalizes as Completed. Avoid starting the potentially enormous
         // global database query when completed sessions were not requested.
-        if request.include_completed {
+        if self.discover_external_history && request.include_external && request.include_completed {
             let mut args = self.invocation.prefix_args.clone();
             args.extend([
                 "db".into(),
@@ -800,6 +820,7 @@ mod tests {
             .discover(&DiscoveryRequest {
                 include_completed: true,
                 include_interactive: false,
+                include_external: true,
                 cwd: Some(PathBuf::from("/work")),
                 ..DiscoveryRequest::default()
             })
@@ -847,6 +868,7 @@ mod tests {
         let result = source
             .discover_with_warnings(&DiscoveryRequest {
                 include_completed: true,
+                include_external: true,
                 history_limit: 2,
                 ..DiscoveryRequest::default()
             })

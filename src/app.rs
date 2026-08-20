@@ -42,13 +42,6 @@ pub enum ComposerMode {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ConfirmTarget {
-    OpenClaude {
-        id: String,
-    },
-    Session {
-        id: String,
-        running: bool,
-    },
     Archive {
         id: String,
     },
@@ -689,26 +682,30 @@ impl App {
         self.overlay = Overlay::Composer(ComposerMode::Rename { session_id });
     }
 
-    pub fn start_confirm(&mut self) {
+    pub fn start_confirm(&mut self) -> AppAction {
         if let Some(session) = self.selected_session() {
             let running = is_active_session_state(session.state);
-            let required = if running {
-                Capability::Interrupt
+            let id = session.id.clone();
+            let action = if running && session.capabilities.contains(&Capability::Interrupt) {
+                AppAction::Interrupt { session_id: id }
+            } else if !running && session.capabilities.contains(&Capability::Delete) {
+                AppAction::Delete {
+                    session_ids: vec![id],
+                }
+            } else if !running {
+                AppAction::Hide {
+                    session_ids: vec![id],
+                }
             } else {
-                Capability::Delete
-            };
-            if !session.capabilities.contains(&required) {
                 self.overlay = Overlay::Confirm(ConfirmTarget::Hide {
-                    session_ids: vec![session.id.clone()],
+                    session_ids: vec![id],
                 });
                 self.notice = None;
-                return;
-            }
-            self.overlay = Overlay::Confirm(ConfirmTarget::Session {
-                id: session.id.clone(),
-                running,
-            });
+                return AppAction::None;
+            };
+            self.overlay = Overlay::None;
             self.notice = None;
+            return action;
         } else if let Some(group) = self.selected_group() {
             if group
                 .sessions
@@ -716,7 +713,7 @@ impl App {
                 .any(|index| is_active_session_state(self.snapshot.sessions[*index].state))
             {
                 self.set_notice("bulk stop is unavailable; select one running session");
-                return;
+                return AppAction::None;
             }
             let undeletable = group
                 .sessions
@@ -733,7 +730,7 @@ impl App {
                     session_ids: undeletable,
                 });
                 self.notice = None;
-                return;
+                return AppAction::None;
             }
             self.overlay = Overlay::Confirm(ConfirmTarget::Group {
                 key: group.key,
@@ -745,6 +742,7 @@ impl App {
             });
             self.notice = None;
         }
+        AppAction::None
     }
 
     pub fn start_archive_confirm(&mut self) {
@@ -963,11 +961,6 @@ impl App {
     fn confirm(&mut self, target: ConfirmTarget) -> AppAction {
         self.overlay = Overlay::None;
         match target {
-            ConfirmTarget::OpenClaude { id } => AppAction::Open { session_id: id },
-            ConfirmTarget::Session { id, running: true } => AppAction::Interrupt { session_id: id },
-            ConfirmTarget::Session { id, running: false } => AppAction::Delete {
-                session_ids: vec![id],
-            },
             ConfirmTarget::Archive { id } => AppAction::Archive { session_id: id },
             ConfirmTarget::Hide { session_ids } => AppAction::Hide { session_ids },
             ConfirmTarget::Group { session_ids, .. } => AppAction::Delete { session_ids },
@@ -989,11 +982,7 @@ impl App {
             ]
             .iter()
             .any(|capability| session.capabilities.contains(capability));
-        if session.provider == Provider::Claude {
-            self.overlay = Overlay::Confirm(ConfirmTarget::OpenClaude { id });
-            self.notice = None;
-            AppAction::None
-        } else if opens_inline {
+        if opens_inline {
             self.overlay = Overlay::Peek;
             self.notice = None;
             AppAction::Inspect { session_id: id }
@@ -1438,7 +1427,7 @@ mod tests {
     }
 
     #[test]
-    fn needs_input_is_treated_as_running_for_confirmation() {
+    fn needs_input_is_treated_as_running_for_lifecycle_control() {
         let mut item = session("one", SessionState::NeedsInput);
         item.capabilities.insert(Capability::Interrupt);
         let mut app = App::new(SessionSnapshot {
@@ -1446,20 +1435,13 @@ mod tests {
             warnings: vec![],
         });
 
-        app.start_confirm();
         assert_eq!(
-            app.overlay,
-            Overlay::Confirm(ConfirmTarget::Session {
-                id: "one".into(),
-                running: true,
-            })
-        );
-        assert_eq!(
-            app.activate(),
+            app.start_confirm(),
             AppAction::Interrupt {
                 session_id: "one".into()
             }
         );
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]
@@ -1697,11 +1679,6 @@ mod tests {
         assert_eq!(app.overlay, Overlay::None);
 
         app.overlay = Overlay::None;
-        assert_eq!(app.activate(), AppAction::None);
-        assert_eq!(
-            app.overlay,
-            Overlay::Confirm(ConfirmTarget::OpenClaude { id: "one".into() })
-        );
         assert_eq!(
             app.activate(),
             AppAction::Open {
@@ -1909,7 +1886,7 @@ mod tests {
         let mut active = session("active", SessionState::ReadyForReview);
         active.capabilities.clear();
         let mut app = app_with(vec![active]);
-        app.start_confirm();
+        assert_eq!(app.start_confirm(), AppAction::None);
         assert_eq!(
             app.activate(),
             AppAction::Hide {
@@ -1918,9 +1895,8 @@ mod tests {
         );
 
         grant(&mut app.snapshot.sessions[0], &[Capability::Interrupt]);
-        app.start_confirm();
         assert_eq!(
-            app.activate(),
+            app.start_confirm(),
             AppAction::Interrupt {
                 session_id: "active".into()
             }
@@ -1928,17 +1904,15 @@ mod tests {
 
         app.snapshot.sessions[0].state = SessionState::Completed;
         app.snapshot.sessions[0].capabilities.clear();
-        app.start_confirm();
         assert_eq!(
-            app.activate(),
+            app.start_confirm(),
             AppAction::Hide {
                 session_ids: vec!["active".into()]
             }
         );
         grant(&mut app.snapshot.sessions[0], &[Capability::Delete]);
-        app.start_confirm();
         assert_eq!(
-            app.activate(),
+            app.start_confirm(),
             AppAction::Delete {
                 session_ids: vec!["active".into()]
             }

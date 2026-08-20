@@ -782,6 +782,9 @@ impl SessionSource for CopilotSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        if !request.include_external {
+            return Ok(Vec::new());
+        }
         let mut connection = self
             .connection
             .lock()

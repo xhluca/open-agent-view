@@ -51,6 +51,7 @@ fn pi_discovers_in_isolation() {
 
     let snapshot = engine.discover(&DiscoveryRequest {
         include_completed: true,
+        include_external: true,
         ..DiscoveryRequest::default()
     });
 
@@ -67,6 +68,7 @@ fn opencode_discovers_in_isolation() {
 
     let snapshot = engine.discover(&DiscoveryRequest {
         include_completed: true,
+        include_external: true,
         ..DiscoveryRequest::default()
     });
 
@@ -89,6 +91,7 @@ fn pi_opencode_claude_and_codex_coexist_without_collisions() {
     let snapshot = engine.discover(&DiscoveryRequest {
         include_completed: true,
         include_interactive: true,
+        include_external: true,
         cwd: None,
         ..DiscoveryRequest::default()
     });

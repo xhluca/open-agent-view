@@ -338,33 +338,35 @@ impl SessionSource for PiSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        let mut files = Vec::new();
-        for directory in &self.session_dirs {
-            if directory.exists() {
-                collect_jsonl_files(directory, &mut files)?;
-            }
-        }
-        files.sort();
-        files.dedup();
-        if files.len() > 10_000 {
-            bail!("Pi session store exceeded the 10,000-file safety cap");
-        }
-
         let mut sessions = BTreeMap::new();
-        for file in files {
-            let metadata = fs::metadata(&file)
-                .with_context(|| format!("failed to inspect Pi session {}", file.display()))?;
-            let started_at = metadata.created().ok();
-            let updated_at = metadata.modified().ok();
-            let session = parse_pi_session_file(&file, started_at, updated_at)?;
-            if (request.include_completed || session.state != SessionState::Completed)
-                && request
-                    .cwd
-                    .as_ref()
-                    .map(|cwd| session.cwd.starts_with(cwd))
-                    .unwrap_or(true)
-            {
-                sessions.insert(session.provider_session_id.clone(), session);
+        if request.include_external {
+            let mut files = Vec::new();
+            for directory in &self.session_dirs {
+                if directory.exists() {
+                    collect_jsonl_files(directory, &mut files)?;
+                }
+            }
+            files.sort();
+            files.dedup();
+            if files.len() > 10_000 {
+                bail!("Pi session store exceeded the 10,000-file safety cap");
+            }
+
+            for file in files {
+                let metadata = fs::metadata(&file)
+                    .with_context(|| format!("failed to inspect Pi session {}", file.display()))?;
+                let started_at = metadata.created().ok();
+                let updated_at = metadata.modified().ok();
+                let session = parse_pi_session_file(&file, started_at, updated_at)?;
+                if (request.include_completed || session.state != SessionState::Completed)
+                    && request
+                        .cwd
+                        .as_ref()
+                        .map(|cwd| session.cwd.starts_with(cwd))
+                        .unwrap_or(true)
+                {
+                    sessions.insert(session.provider_session_id.clone(), session);
+                }
             }
         }
         if let Some(supervisor) = &self.supervisor {
@@ -892,7 +894,12 @@ mod tests {
         fs::write(directory.path().join("one.jsonl"), input).unwrap();
         let source = PiSource::host(directory.path());
 
-        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+        let sessions = source
+            .discover(&DiscoveryRequest {
+                include_external: true,
+                ..DiscoveryRequest::default()
+            })
+            .unwrap();
 
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].state, SessionState::Unknown);
@@ -925,6 +932,7 @@ mod tests {
             .discover(&DiscoveryRequest {
                 include_completed: true,
                 include_interactive: false,
+                include_external: true,
                 cwd: Some(PathBuf::from("/work")),
                 ..DiscoveryRequest::default()
             })

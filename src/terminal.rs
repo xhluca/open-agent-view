@@ -73,6 +73,10 @@ pub fn run_dashboard(
                     &worker_request,
                     |partial, completed, total| {
                         let mut partial = partial.clone();
+                        worker_control.enrich(&mut partial);
+                        if !worker_request.include_external {
+                            worker_control.retain_owned(&mut partial);
+                        }
                         worker_hidden_sessions.filter_snapshot(&mut partial);
                         partial.warnings.push(format!(
                             "loading remaining providers… ({completed}/{total})"
@@ -84,6 +88,9 @@ pub fn run_dashboard(
                 worker_engine.discover(&worker_request)
             };
             worker_control.enrich(&mut snapshot);
+            if !worker_request.include_external {
+                worker_control.retain_owned(&mut snapshot);
+            }
             worker_hidden_sessions.filter_snapshot(&mut snapshot);
             if snapshot_tx.send((snapshot, true)).is_err() {
                 break;
@@ -444,10 +451,7 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             KeyCode::Char('l') if app.overlay == Overlay::None => AppAction::Refresh,
             KeyCode::Char('x') => match app.overlay.clone() {
                 Overlay::Confirm(_) => app.activate(),
-                Overlay::None | Overlay::Peek => {
-                    app.start_confirm();
-                    AppAction::None
-                }
+                Overlay::None | Overlay::Peek => app.start_confirm(),
                 _ => AppAction::None,
             },
             KeyCode::Char('a') if app.overlay == Overlay::None => {
@@ -516,6 +520,8 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.select_next();
             AppAction::None
         }
+        KeyCode::Right if app.overlay == Overlay::None => app.activate(),
+        KeyCode::Left if app.overlay == Overlay::Peek => app.escape(),
         KeyCode::Enter => app.activate(),
         KeyCode::Char(' ') if app.overlay == Overlay::None || app.overlay == Overlay::Peek => {
             app.toggle_peek();
@@ -1198,14 +1204,56 @@ mod tests {
     }
 
     #[test]
-    fn control_x_is_a_two_step_exact_confirmation_and_is_inert_in_other_overlays() {
+    fn control_x_stops_active_then_deletes_after_the_row_becomes_idle() {
+        let mut dashboard = app();
+        dashboard.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Interrupt);
+
+        assert_eq!(
+            handle_key(&mut dashboard, control_key('x')),
+            AppAction::Interrupt {
+                session_id: "worker".into()
+            }
+        );
+        assert_eq!(dashboard.overlay, Overlay::None);
+
+        dashboard.snapshot.sessions[0].state = SessionState::Completed;
+        dashboard.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Delete);
+        assert_eq!(
+            handle_key(&mut dashboard, control_key('x')),
+            AppAction::Delete {
+                session_ids: vec!["worker".into()]
+            }
+        );
+
+        let mut locally_removed = app();
+        locally_removed.snapshot.sessions[0].state = SessionState::Completed;
+        assert_eq!(
+            handle_key(&mut locally_removed, control_key('x')),
+            AppAction::Hide {
+                session_ids: vec!["worker".into()]
+            }
+        );
+
+        dashboard.start_new_session(None);
+        handle_key(&mut dashboard, control_key('x'));
+        assert_eq!(
+            dashboard.overlay,
+            Overlay::Composer(ComposerMode::NewSession)
+        );
+    }
+
+    #[test]
+    fn control_x_stops_the_same_exact_session_from_peek() {
         let mut app = app();
         app.snapshot.sessions[0]
             .capabilities
             .insert(Capability::Interrupt);
+        app.toggle_peek();
 
-        assert_eq!(handle_key(&mut app, control_key('x')), AppAction::None);
-        assert!(matches!(app.overlay, Overlay::Confirm(_)));
         assert_eq!(
             handle_key(&mut app, control_key('x')),
             AppAction::Interrupt {
@@ -1213,34 +1261,6 @@ mod tests {
             }
         );
         assert_eq!(app.overlay, Overlay::None);
-
-        app.start_new_session(None);
-        handle_key(&mut app, control_key('x'));
-        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
-    }
-
-    #[test]
-    fn control_x_starts_the_same_exact_stop_confirmation_from_peek() {
-        let mut app = app();
-        app.snapshot.sessions[0]
-            .capabilities
-            .insert(Capability::Interrupt);
-        app.toggle_peek();
-
-        assert_eq!(handle_key(&mut app, control_key('x')), AppAction::None);
-        assert!(matches!(
-            app.overlay,
-            Overlay::Confirm(crate::app::ConfirmTarget::Session {
-                ref id,
-                running: true
-            }) if id == "worker"
-        ));
-        assert_eq!(
-            handle_key(&mut app, control_key('x')),
-            AppAction::Interrupt {
-                session_id: "worker".into()
-            }
-        );
     }
 
     #[test]
@@ -1306,13 +1326,6 @@ mod tests {
     #[test]
     fn enter_activates_composer_group_and_session_paths() {
         let mut app = app();
-        assert_eq!(handle_key(&mut app, key(KeyCode::Enter)), AppAction::None);
-        assert_eq!(
-            app.overlay,
-            Overlay::Confirm(crate::app::ConfirmTarget::OpenClaude {
-                id: "worker".into()
-            })
-        );
         assert_eq!(
             handle_key(&mut app, key(KeyCode::Enter)),
             AppAction::Open {
@@ -1335,6 +1348,36 @@ mod tests {
                 prompt: "ship".into()
             }
         );
+    }
+
+    #[test]
+    fn right_opens_the_selected_session_and_left_returns_from_peek() {
+        let mut claude = app();
+        assert_eq!(
+            handle_key(&mut claude, key(KeyCode::Right)),
+            AppAction::Open {
+                session_id: "worker".into()
+            }
+        );
+        assert_eq!(claude.overlay, Overlay::None);
+
+        let mut managed = app();
+        managed.snapshot.sessions[0].provider = Provider::Codex;
+        managed.snapshot.sessions[0]
+            .capabilities
+            .insert(Capability::Reply);
+        assert_eq!(
+            handle_key(&mut managed, key(KeyCode::Right)),
+            AppAction::Inspect {
+                session_id: "worker".into()
+            }
+        );
+        assert_eq!(managed.overlay, Overlay::Peek);
+        assert_eq!(
+            handle_key(&mut managed, key(KeyCode::Left)),
+            AppAction::None
+        );
+        assert_eq!(managed.overlay, Overlay::None);
     }
 
     #[test]

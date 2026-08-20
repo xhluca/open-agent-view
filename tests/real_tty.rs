@@ -290,11 +290,6 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
     });
     app.send(CTRL_X);
     app.wait_for("managed Cursor interrupt affordance", |screen| {
-        screen.contains("Interrupt the exact running session?")
-            && screen.contains("cursor:host:cursor-chat")
-    });
-    app.send(ENTER);
-    app.wait_for("fixture-fenced Cursor interrupt", |screen| {
         screen.contains("stop refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
     });
@@ -363,6 +358,7 @@ printf '%s\n' '[{"id":"first","cwd":"/workspace/one","kind":"background","sessio
                 "--no-host-copilot",
                 "--no-host-cursor",
                 "--no-host-antigravity",
+                "--include-external",
                 "--refresh-ms",
                 "1000",
             ])
@@ -479,6 +475,7 @@ printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessio
             "--no-host-opencode",
             "--no-host-copilot",
             "--no-host-cursor",
+            "--include-external",
             "--refresh-ms",
             "60000",
         ]);
@@ -657,6 +654,7 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
             "--no-host-copilot",
             "--no-host-cursor",
             "--no-host-antigravity",
+            "--include-external",
             "--refresh-ms",
             "60000",
         ]);
@@ -838,6 +836,7 @@ elif "models" in sys.argv:
             "--no-host-copilot",
             "--no-host-cursor",
             "--no-host-antigravity",
+            "--include-external",
             "--refresh-ms",
             "60000",
         ]);
@@ -973,6 +972,7 @@ fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
             "--no-host-copilot",
             "--no-host-cursor",
             "--no-host-antigravity",
+            "--include-external",
             "--refresh-ms",
             "60000",
         ]);
@@ -1037,6 +1037,7 @@ fn real_claude_attach_explains_and_honors_ctrl_z_return() {
     let mut app = PtyApp::spawn_configured(120, 34, |command, _| {
         command.env("HOME", &claude_home).args([
             "--all",
+            "--include-external",
             "--cwd",
             &cwd,
             "--no-host-codex",
@@ -1057,14 +1058,8 @@ fn real_claude_attach_explains_and_honors_ctrl_z_return() {
     app.send(session_name.as_bytes());
     app.send(ENTER);
     app.wait_for("filtered real Claude row", |screen| {
-        screen.contains(&session_name)
+        screen.contains(&session_name) && screen.contains("enter/right attach · ctrl+z returns")
     });
-    app.send(ENTER);
-    let confirmation = app.wait_for("Claude attach return guidance", |screen| {
-        screen.contains("Ctrl+Z returns to Open Agent View")
-            && screen.contains("← opens Claude's agent view")
-    });
-    assert!(confirmation.contains("background session keeps running"));
 
     let raw_before_open = app.raw.len();
     let leaves_before = count_bytes(&app.raw, b"\x1b[?1049l");
@@ -1171,7 +1166,7 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
 }
 
 #[test]
-fn default_dashboard_never_starts_opencode_completed_history_query() {
+fn owned_dashboard_never_starts_opencode_external_history_query_even_when_completed_is_shown() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
         let fake_opencode = home.path().join("opencode-history-trap");
@@ -1214,9 +1209,15 @@ fn default_dashboard_never_starts_opencode_completed_history_query() {
         startup.elapsed() < Duration::from_millis(750),
         "default dashboard waited on OpenCode completed history"
     );
+    app.send(b"/completed show");
+    app.send(ENTER);
+    app.wait_for("owned-only completed view", |screen| {
+        screen.contains("0 completed (/completed hide)")
+            && screen.contains("showing completed sessions")
+    });
     assert!(
         !app.home_path().join("opencode-history-called").exists(),
-        "OpenCode history command ran even though completed sessions were hidden"
+        "OpenCode external history ran without --include-external"
     );
     app.exit_cleanly();
 }
@@ -1418,17 +1419,9 @@ fn fixture_fence_covers_launch_open_reply_interrupt_and_bulk_delete() {
     });
 
     app.send(CTRL_X);
-    let interrupt_confirm = app.wait_for("interrupt confirmation", |screen| {
-        screen.contains("Interrupt the exact running session?")
-            && screen.contains("codex:host:owned-worker")
-            && screen.contains("Enter confirms; escape keeps it")
-    });
-    assert_lines_fit(&interrupt_confirm, 105);
-    app.send(ENTER);
     app.wait_for("fixture-fenced interrupt", |screen| {
         screen.contains("stop refused:")
             && screen.contains("provider actions are disabled while reading a fixture")
-            && !screen.contains("Enter confirms; escape keeps it")
     });
 
     app.send(CTRL_F);
@@ -1502,17 +1495,9 @@ fn real_tty_renders_actionable_request_and_confirmation_states() {
     });
 
     app.send(CTRL_X);
-    let delete_confirm = app.wait_for("delete confirmation", |screen| {
-        screen.contains("Delete the exact session record?")
-            && screen.contains("codex:host:completed")
-            && screen.contains("Enter confirms; escape keeps it")
-    });
-    assert_lines_fit(&delete_confirm, 100);
-    app.send(ENTER);
     app.wait_for("disabled-controller delete refusal", |screen| {
         screen.contains("delete refused for schema-migration:")
             && screen.contains("provider actions are disabled while reading a fixture")
-            && !screen.contains("Enter confirms; escape keeps it")
     });
 
     app.send(CTRL_A);
@@ -1570,7 +1555,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
         screen.contains(&expected_version)
             && screen.contains("2 awaiting · 4 working · 2 completed")
             && screen.contains("release-reviewer")
-            && screen.contains("? for shortcuts")
+            && screen.contains("? shortcuts")
             && !screen.contains("status view")
     });
     assert_lines_fit(&startup, 55);
