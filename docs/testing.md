@@ -109,7 +109,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.17, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.18, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
   on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -304,12 +304,14 @@ checks; the guide also contains release gates that are not yet complete.
 - Claude peek was checked against a real host session using read-only logs; the
   VT100 reconstruction surfaced the final assistant screen without escape-code
   leakage.
-- Claude 2.1.236 native attach was checked on a completed host background
-  session: left arrow entered Claude's agent view, while Ctrl+Z exited the
-  attachment and returned control to the caller. The dashboard now presents
-  that distinction before suspending its alternate screen.
+- Provider-native handoff is covered by a nested real-PTY regression: Left
+  backgrounds the exact frontend, the dashboard regains its terminal, and a
+  second open restores the retained VT screen before another Left return.
+  Main-account read-only probes repeated the cycle against a managed OpenCode
+  session and a managed Codex thread; the OpenCode server and Codex App Server
+  remained alive afterward.
 - Four opt-in real-host `openpty` regressions now preserve those reproductions:
-  nested Pi resume/return, completed Claude attach/Ctrl+Z return, and a
+  nested Pi resume/return, completed Claude attach/Left return, and a
   mutation-free composer route through Pi/Claude provider cycling,
   draft-preserving Shift+Tab Pi/Claude model selection, the dedicated filter,
   manual refresh, plus the six-harness/OpenCode/bounded-history route described
@@ -453,9 +455,9 @@ examples.
   lifecycle; enter the started container through ordinary Docker tooling or
   observe it with `--docker-container`.
 - Claude inline reply and rename, for which the explored CLI exposes no safe
-  background-agent command. Enter explains that Ctrl+Z returns from Claude's
-  native attach (`←` stays in Claude's agent view); owned Codex threads support
-  inline idle reply and active steer.
+  background-agent command. Enter opens its native attach and OAV reserves
+  Left to background that frontend; owned Codex threads support inline idle
+  reply and active steer.
 - Managed OpenCode permission and structured-input requests are not yet exposed
   inline. Durable supervision requires Linux; other platforms retain external
   history inspection and native resume.

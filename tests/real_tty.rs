@@ -1056,7 +1056,7 @@ fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
 
 #[test]
 #[ignore = "set OAV_REAL_CLAUDE_HOME, OAV_REAL_CLAUDE_CWD, and OAV_REAL_CLAUDE_SESSION_NAME for a read-only host probe"]
-fn real_claude_attach_explains_and_honors_ctrl_z_return() {
+fn real_claude_attach_explains_and_honors_left_background_return() {
     let _serial = serialize_real_tty_test();
     let claude_home = std::env::var("OAV_REAL_CLAUDE_HOME")
         .expect("OAV_REAL_CLAUDE_HOME must contain the provider state");
@@ -1088,7 +1088,7 @@ fn real_claude_attach_explains_and_honors_ctrl_z_return() {
     app.send(session_name.as_bytes());
     app.send(ENTER);
     app.wait_for("filtered real Claude row", |screen| {
-        screen.contains(&session_name) && screen.contains("enter/right attach · ctrl+z returns")
+        screen.contains(&session_name) && screen.contains("enter/right open · ← returns")
     });
 
     let raw_before_open = app.raw.len();
@@ -1101,11 +1101,11 @@ fn real_claude_attach_explains_and_honors_ctrl_z_return() {
         "dashboard suspension for real Claude",
     );
     thread::sleep(Duration::from_millis(1_000));
-    app.send(b"\x1a");
+    app.send(b"\x1b[D");
     app.wait_for_byte_count(
         b"\x1b[?1049h",
         enters_before + 1,
-        "dashboard restoration after Claude Ctrl+Z",
+        "dashboard restoration after Claude Left",
     );
     app.wait_for("returned Open Agent View after Claude", |screen| {
         screen.contains("Open Agent View") && screen.contains(&session_name)

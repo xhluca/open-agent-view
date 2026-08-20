@@ -514,7 +514,7 @@ fn compact(value: &Value) -> String {
 fn actionable_auth_error(error: anyhow::Error, executable: &str) -> anyhow::Error {
     if format!("{error:#}").contains("Authentication required") {
         anyhow!(
-            "GitHub Copilot is not authenticated for managed launch; run `{executable} login` once, or authenticate `gh` with an account that has Copilot access"
+            "GitHub Copilot is not authenticated; run `copilot login`, or authenticate `gh` with an account that has Copilot access (configured executable: {executable})"
         )
     } else {
         error
@@ -539,7 +539,8 @@ mod tests {
             "/opt/copilot",
         );
         let message = error.to_string();
-        assert!(message.contains("/opt/copilot login"));
+        assert!(message.contains("copilot login"));
+        assert!(message.contains("configured executable: /opt/copilot"));
         assert!(message.contains("authenticate `gh`"));
         assert!(!message.contains("ACP request failed"));
     }

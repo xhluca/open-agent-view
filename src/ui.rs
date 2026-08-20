@@ -9,7 +9,7 @@ use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE,
 };
-use crate::domain::{AgentSession, Capability, Provider, SessionState};
+use crate::domain::{AgentSession, Capability, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -682,11 +682,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
             let session = app.selected_session().expect("selection checked");
             let peek = session_peek_suffix(session);
             let control = session_control_suffix(session);
-            let open = if session.provider == Provider::Claude {
-                "enter/right attach · ctrl+z returns"
-            } else {
-                "enter/right to open"
-            };
+            let open = "enter/right open · ← returns";
             format!("{open}{peek}{control} · ? for shortcuts")
         }
         Overlay::None if app.selected_session().is_some() && width >= 55 => {
@@ -755,12 +751,7 @@ fn help_actions(app: &App) -> Vec<String> {
     }
     if app.selected_session().is_some() {
         actions.push("enter/right to open session".into());
-        if app
-            .selected_session()
-            .is_some_and(|session| session.provider == Provider::Claude)
-        {
-            actions.push("ctrl+z returns from Claude".into());
-        }
+        actions.push("left returns from native session".into());
         actions.push("ctrl+r to rename".into());
     }
     actions.push("ctrl+s to switch views".into());
@@ -1837,7 +1828,7 @@ mod tests {
     }
 
     #[test]
-    fn claude_row_explains_how_to_return_after_direct_attach() {
+    fn session_row_explains_how_to_return_after_native_open() {
         let app = App::new(SessionSnapshot {
             sessions: vec![session("worker", SessionState::Working)],
             warnings: vec![],
@@ -1848,7 +1839,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("enter/right attach · ctrl+z returns"));
+        assert!(rendered.contains("enter/right open · ← returns"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

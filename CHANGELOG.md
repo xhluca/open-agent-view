@@ -8,6 +8,31 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.18] - 2026-08-20
+
+### Fixed
+
+- Provider-native sessions now run behind a private PTY. Left backgrounds the
+  exact frontend and returns to OAV without stopping the managed backend;
+  Enter/Right resumes it and restores its retained terminal screen. Fresh
+  opens clear the physical screen first, so Codex no longer appends below prior
+  shell contents.
+- Managed OpenCode native open attaches to the exact authenticated loopback
+  server/session. Older records containing bare `opencode` reconnect when the
+  configured path resolves to that same verified executable.
+- Cursor checks its read-only model catalog before `create-chat`, turning an
+  unauthenticated/no-model account into a prompt `cursor-agent login` message
+  instead of a 15-second apparent hang.
+- Copilot managed-launch authentication errors now give direct `copilot login`
+  and `gh` recovery instructions without dumping the ACP response payload or
+  adding another credential lookup to each refresh.
+
+### Tests
+
+- Added a nested real-PTY detach/reattach/screen-restore regression, canonical
+  OpenCode executable identity coverage, no-create Cursor preflight coverage,
+  and fresh network-disabled Rust 1.75/Copilot container reproductions.
+
 ## [0.1.17] - 2026-08-20
 
 ### Fixed

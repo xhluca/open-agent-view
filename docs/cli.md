@@ -267,7 +267,8 @@ label.
 | Session list | `↑` / `↓` | Move cyclically through group headings and rows. |
 | Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
-| Session row | `enter` or `→` | Suspend the dashboard and open the provider's full native interface. Claude attaches directly; `ctrl+z`, not `←`, returns to Open Agent View. |
+| Session row | `enter` or `→` | Suspend the dashboard and open the provider's full native interface. The physical screen is cleared before the provider draws. |
+| Provider-native interface | `←` | Stop and retain only the provider frontend, return to Open Agent View, and keep the managed backend alive. `enter` or `→` on the same row reattaches and restores its terminal screen. |
 | Inline Peek | `←` | Return to the session list without opening the native provider interface. |
 | Session row | `space` | Open the inline Peek panel and inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |
@@ -338,8 +339,9 @@ permission request. Persisted Copilot rows from `session/list` do not inherit
 those controls.
 
 Managed OpenCode rows on Linux expose Inspect and Reply; while the owned server
-reports active work they also expose Interrupt. They refuse native open through
-a second server and do not yet expose provider permission or structured-input
+reports active work they also expose Interrupt. Native open attaches to the
+same exact authenticated loopback server/session rather than starting a second
+server. They do not yet expose provider permission or structured-input
 requests. External OpenCode history remains inspect/native-open only.
 
 Managed Pi rows expose Ctrl+X stop while their exact RPC process is alive,

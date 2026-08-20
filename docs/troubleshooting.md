@@ -132,12 +132,19 @@ exists` before spawning `agy`. It does not rewrite or delete Antigravity's
 cache. Reopen the conversation from an existing workspace through
 Antigravity's native interface if needed.
 
-## Claude left arrow does not return to Open Agent View
+## Left does not return from a provider-native interface
 
-This is Claude's own keymap: left arrow enters Claude's agent view. Enter or
-Right attaches directly from Open Agent View, and the selected-row footer says
-`ctrl+z returns`. Press `ctrl+z` inside Claude to return to the dashboard; the
-background session keeps running. Left returns only from OAV's inline Peek.
+Upgrade to v0.1.18 or newer. Provider clients now run behind an OAV-owned
+pseudo-terminal. Plain Left backgrounds only that frontend and returns to the
+dashboard; the managed backend remains alive. Enter or Right on the same row
+resumes the exact retained frontend and restores its screen. This applies to
+Claude, Codex, Pi, OpenCode, Cursor, Copilot, and Antigravity native opens.
+
+Older builds handed the terminal directly to the provider, so Pi/OpenCode Left
+did nothing and Claude consumed it for its own agent view. `ctrl+c` in that
+mode could terminate the provider frontend. After upgrading, use Left for the
+OAV return path. If the dashboard itself exits, OAV cleans up retained frontend
+processes but does not target separately supervised provider backends.
 
 ## Slash opens the wrong mode or harness/model selection is unclear
 
@@ -330,9 +337,17 @@ the whole private directory when reporting an identity or listener mismatch.
 
 Only sessions created through that authenticated server receive inspect,
 reply, and active-work interrupt controls. Existing CLI history remains
-inspect/native-open only. Managed rows refuse native open through a second
-server, and inline permission or structured-input handling is not implemented.
-On non-Linux platforms OpenCode stays on the history/native-open path.
+inspect/native-open only. Version 0.1.18 opens a managed row by attaching the
+native TUI to that exact authenticated loopback server and session; the secret
+is child-local environment, never an argument. Left returns to OAV without
+stopping the server, and Enter/Right resumes the retained frontend.
+
+Version 0.1.18 also accepts a live record written as bare `opencode` when the
+current configured path (for example `~/.opencode/bin/opencode`) and the
+verified server's `/proc/PID/exe` resolve to the same canonical file. A
+different executable remains a hard refusal. Inline permission or
+structured-input handling is not implemented. On non-Linux platforms OpenCode
+stays on the history/native-open path.
 
 ## Cursor session is missing or refuses control
 
@@ -353,6 +368,12 @@ not edit `sessions.json`, signal its recorded numeric PID manually, or delete
 the bounded logs to force a state change; preserve the directory and report a
 redacted error if exact identity verification refuses control.
 
+Before `create-chat`, version 0.1.18 runs Cursor's read-only model catalog with
+a four-second bound. An account reporting no models gets an immediate
+`cursor-agent login` instruction instead of waiting for the old 15-second
+create timeout. A successful catalog is still followed by a bounded
+`create-chat`; OAV never adds Cursor's `--force`/`--yolo` flags.
+
 ## Copilot session is visible but read-only
 
 Persisted Copilot rows come from ACP `session/list` on a discovery connection.
@@ -366,6 +387,13 @@ This authority intentionally ends when the dashboard exits and has no OAV
 state file to repair. If a managed row loses its ACP connection, preserve the
 provider's persisted session and reopen it natively rather than attempting to
 reconstruct authority from its session ID.
+
+If launch reports `Authentication required`, upgrade to v0.1.18 and run
+`copilot login`. Copilot also documents `gh auth status` and its own GitHub CLI
+credential fallback, but an authenticated GitHub account can still lack
+Copilot entitlement or organization policy access. OAV leaves authentication
+to Copilot and never reads or persists its token. A failed launch now reports
+these actions without dumping the ACP response payload.
 
 ## Runtime state permissions are refused
 

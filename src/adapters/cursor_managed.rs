@@ -124,8 +124,8 @@ impl CursorSupervisor {
         request.timeout = CREATE_TIMEOUT;
         let output = self.run_command(&request).with_context(|| {
             format!(
-                "Cursor create-chat did not complete; run `{} login` and `{} models` to verify authentication before retrying",
-                self.executable, self.executable
+                "Cursor create-chat did not complete; run `cursor-agent login` and `cursor-agent models` before retrying (configured executable: {})",
+                self.executable
             )
         })?;
         if output.status != 0 {
@@ -146,7 +146,7 @@ impl CursorSupervisor {
         request.timeout = MODEL_PREFLIGHT_TIMEOUT;
         let output = self.run_command(&request).with_context(|| {
             format!(
-                "Cursor model preflight did not complete; run `{} login` and retry",
+                "Cursor model preflight did not complete; run `cursor-agent login` and retry (configured executable: {})",
                 self.executable
             )
         })?;
@@ -154,22 +154,20 @@ impl CursorSupervisor {
             bail!(
                 "Cursor model preflight failed with status {}; run `{} login`: {}",
                 output.status,
-                self.executable,
+                "cursor-agent",
                 output.stderr_lossy()
             );
         }
         let stdout = output.stdout_text()?;
         if stdout.contains("No models available for this account") {
             bail!(
-                "Cursor has no models available for this account; run `{} login`, then verify with `{} models`",
-                self.executable,
+                "Cursor account has no models; run `cursor-agent login`, then verify with `cursor-agent models` (configured executable: {})",
                 self.executable
             );
         }
         if !stdout.chars().any(|character| character.is_alphanumeric()) {
             bail!(
-                "Cursor returned no model catalog; run `{} login`, then verify with `{} models`",
-                self.executable,
+                "Cursor returned no model catalog; run `cursor-agent login`, then verify with `cursor-agent models` (configured executable: {})",
                 self.executable
             );
         }
@@ -993,7 +991,7 @@ exit 91
         let error = supervisor
             .launch("must not create", &workspace)
             .unwrap_err();
-        assert!(format!("{error:#}").contains("no models available"));
+        assert!(format!("{error:#}").contains("has no models"), "{error:#}");
         assert!(!directory.path().join("state/sessions.json").exists());
     }
 

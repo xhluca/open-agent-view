@@ -25,6 +25,10 @@ as stable contracts.
   documented workspace cache and native-only control boundary.
 - [`fresh-container-provider-validation.md`](fresh-container-provider-validation.md)
   — no-mount official installer and protocol smoke tests.
+- [`main-account-container-regressions.md`](main-account-container-regressions.md)
+  — v0.1.17 native-return, executable-identity, launch-latency, and
+  authentication reproductions on the reporting account and in isolated
+  containers.
 
 Return to the [documentation index](../README.md), or use the
 [real-TTY validation guide](../tui-validation.md) to repeat the reference and

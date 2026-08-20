@@ -35,11 +35,14 @@ never presented as an archive.
 | Archive or delete | No supported Claude command | Idle owned threads only | Disabled | Disabled |
 
 Opening a session temporarily suspends the dashboard's alternate screen and
-runs the provider's native interactive client with inherited terminal I/O.
-Returning restores raw mode and refreshes the dashboard. Enter or Right opens
-the selected row directly. Claude's left arrow opens Claude's own agent view;
-the dashboard footer therefore says that `ctrl+z` returns to Open Agent View.
-Left returns from OAV's inline Peek without starting a provider CLI.
+runs the provider's native interactive client behind a private pseudo-terminal.
+The screen is cleared first, so a Codex or other provider transcript starts at
+the top instead of appending below the previous shell contents. Enter or Right
+opens the selected row directly. A plain Left sequence is reserved by OAV: it
+stops and retains only that native frontend, restores the dashboard, and leaves
+the managed provider backend alive. Enter or Right on the same row resumes the
+exact retained frontend and replays its terminal screen. Left also returns from
+OAV's inline Peek without starting a provider CLI.
 
 ## Claude ownership registry
 

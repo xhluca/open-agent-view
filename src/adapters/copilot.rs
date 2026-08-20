@@ -14,7 +14,6 @@ use super::copilot_managed::CopilotSupervisor;
 use super::{DiscoveryRequest, SessionSource};
 use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
-use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_MESSAGE_BYTES: u64 = 8 * 1024 * 1024;
@@ -113,13 +112,6 @@ impl CopilotAcpConnection {
             "--no-remote",
             "--no-remote-export",
         ]);
-        if copilot_token_environment_is_empty() {
-            if let Some(token) = github_cli_token() {
-                // Copilot documents GitHub CLI OAuth tokens as supported via
-                // GH_TOKEN. Keep it child-local and never persist or log it.
-                command.env("GH_TOKEN", token);
-            }
-        }
         if mode == CopilotAcpMode::Discovery {
             // Listing sessions must not start repository customizations or MCP
             // servers. Control connections retain the user's ordinary setup.
@@ -570,34 +562,6 @@ impl CopilotAcpConnection {
         self.queued.push_back(message);
         Ok(())
     }
-}
-
-fn copilot_token_environment_is_empty() -> bool {
-    !["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"]
-        .iter()
-        .any(|name| {
-            std::env::var_os(name)
-                .map(|value| !value.is_empty())
-                .unwrap_or(false)
-        })
-}
-
-fn github_cli_token() -> Option<String> {
-    let mut request = CommandRequest::new("gh", vec!["auth".into(), "token".into()]);
-    request.timeout = Duration::from_secs(2);
-    let output = ProcessRunner.run(&request).ok()?;
-    if output.status != 0 {
-        return None;
-    }
-    validate_github_token(output.stdout_text().ok()?)
-}
-
-fn validate_github_token(value: &str) -> Option<String> {
-    let token = value.trim();
-    (20..=1024)
-        .contains(&token.len())
-        .then(|| token.to_owned())
-        .filter(|token| !token.chars().any(char::is_whitespace))
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1151,20 +1115,6 @@ mod tests {
         assert_eq!(
             parse_rfc3339("1970-01-01T01:00:00+01:00"),
             Some(SystemTime::UNIX_EPOCH)
-        );
-    }
-
-    #[test]
-    fn validates_github_cli_tokens_without_accepting_whitespace_or_short_values() {
-        let token = "gho_12345678901234567890";
-        assert_eq!(
-            validate_github_token(&format!(" {token}\n")),
-            Some(token.into())
-        );
-        assert_eq!(validate_github_token("too-short"), None);
-        assert_eq!(
-            validate_github_token("gho_1234567890 embedded-whitespace"),
-            None
         );
     }
 
