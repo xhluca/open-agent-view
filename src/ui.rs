@@ -85,17 +85,10 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
 
 fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let cwd = header_directory(app);
-    let (awaiting, working, completed) = app.snapshot.sessions.iter().fold(
-        (0usize, 0usize, 0usize),
-        |(awaiting, working, completed), session| match session.state {
-            SessionState::NeedsInput => (awaiting + 1, working, completed),
-            SessionState::ReadyForReview | SessionState::Working => {
-                (awaiting, working + 1, completed)
-            }
-            SessionState::Completed => (awaiting, working, completed + 1),
-            SessionState::Unknown => (awaiting, working, completed),
-        },
-    );
+    let awaiting = app.session_count(SessionState::NeedsInput);
+    let working = app.session_count(SessionState::ReadyForReview)
+        + app.session_count(SessionState::Working);
+    let completed = app.session_count(SessionState::Completed);
     let completed_status = if app.includes_completed {
         format!("{completed} completed (/completed hide)")
     } else {
@@ -168,7 +161,7 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         Overlay::Composer(_) | Overlay::HarnessPicker | Overlay::ModelPicker
     );
 
-    for (group_position, group) in app.groups().into_iter().enumerate() {
+    for (group_position, group) in app.groups().iter().enumerate() {
         if group_position > 0 {
             lines.push(Line::default());
         }
@@ -194,7 +187,7 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
         if collapsed {
             continue;
         }
-        let visible = app.visible_session_count(&group);
+        let visible = app.visible_session_count(group);
         for index in group.sessions.iter().take(visible) {
             let session = &app.snapshot.sessions[*index];
             let is_selected = selection_visible
@@ -209,7 +202,7 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 is_selected,
             ));
         }
-        let hidden = app.hidden_session_count(&group);
+        let hidden = app.hidden_session_count(group);
         if hidden > 0 {
             let is_selected = selection_visible
                 && app.selection == Some(SelectionKey::ShowMore(group.key.clone()));
@@ -1070,16 +1063,10 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
 }
 
 fn provider_summary(app: &App) -> String {
-    let labels = app
-        .snapshot
-        .sessions
-        .iter()
-        .map(|session| session.provider.label())
-        .collect::<std::collections::BTreeSet<_>>();
-    if labels.is_empty() {
+    if app.provider_labels().is_empty() {
         "Coding agents".into()
     } else {
-        sanitize_inline(&labels.into_iter().collect::<Vec<_>>().join(" + "))
+        sanitize_inline(&app.provider_labels().join(" + "))
     }
 }
 
@@ -1475,7 +1462,7 @@ mod tests {
             sessions: vec![session("worker", SessionState::Working)],
             warnings: vec![],
         });
-        app.filter = "no-match".into();
+        app.set_filter("no-match");
         app.replace_snapshot(app.snapshot.clone());
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::SystemTime;
 
@@ -140,6 +140,12 @@ pub struct App {
     pub models_provider: Option<Provider>,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
+    group_cache: Vec<Group>,
+    session_indices: HashMap<String, usize>,
+    session_counts: BTreeMap<SessionState, usize>,
+    provider_labels: Vec<String>,
+    #[cfg(test)]
+    group_cache_rebuilds: usize,
     pub notice: Option<String>,
     pub details: BTreeMap<String, String>,
     pub refreshed_at: SystemTime,
@@ -198,17 +204,25 @@ impl App {
             models_provider: None,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
+            group_cache: Vec::new(),
+            session_indices: HashMap::new(),
+            session_counts: BTreeMap::new(),
+            provider_labels: Vec::new(),
+            #[cfg(test)]
+            group_cache_rebuilds: 0,
             notice: None,
             details: BTreeMap::new(),
             refreshed_at: SystemTime::now(),
             should_quit: false,
         };
+        app.rebuild_snapshot_cache();
         app.reconcile_selection();
         app
     }
 
     pub fn replace_snapshot(&mut self, snapshot: SessionSnapshot) {
         self.snapshot = snapshot;
+        self.rebuild_snapshot_cache();
         self.refreshed_at = SystemTime::now();
         let previous_selection = self.selection.clone();
         self.reconcile_selection();
@@ -222,11 +236,8 @@ impl App {
         }
     }
 
-    pub fn groups(&self) -> Vec<Group> {
-        match self.view_mode {
-            ViewMode::Status => self.status_groups(),
-            ViewMode::Directory => self.directory_groups(),
-        }
+    pub fn groups(&self) -> &[Group] {
+        &self.group_cache
     }
 
     pub fn selectable_keys(&self) -> Vec<SelectionKey> {
@@ -234,14 +245,14 @@ impl App {
         for group in self.groups() {
             keys.push(SelectionKey::Group(group.key.clone()));
             if !self.collapsed.contains(&group.key) {
-                let visible = self.visible_session_count(&group);
+                let visible = self.visible_session_count(group);
                 keys.extend(
                     group.sessions.iter().take(visible).map(|index| {
                         SelectionKey::Session(self.snapshot.sessions[*index].id.clone())
                     }),
                 );
                 if visible < group.sessions.len() {
-                    keys.push(SelectionKey::ShowMore(group.key));
+                    keys.push(SelectionKey::ShowMore(group.key.clone()));
                 }
             }
         }
@@ -261,6 +272,14 @@ impl App {
             .sessions
             .len()
             .saturating_sub(self.visible_session_count(group))
+    }
+
+    pub fn session_count(&self, state: SessionState) -> usize {
+        self.session_counts.get(&state).copied().unwrap_or(0)
+    }
+
+    pub fn provider_labels(&self) -> &[String] {
+        &self.provider_labels
     }
 
     pub fn select_next(&mut self) {
@@ -294,17 +313,18 @@ impl App {
         let SelectionKey::Session(id) = self.selection.as_ref()? else {
             return None;
         };
+        let index = *self.session_indices.get(id)?;
         self.snapshot
             .sessions
-            .iter()
-            .find(|session| &session.id == id)
+            .get(index)
+            .filter(|session| &session.id == id)
     }
 
     pub fn selected_group(&self) -> Option<Group> {
         let SelectionKey::Group(key) = self.selection.as_ref()? else {
             return None;
         };
-        self.groups().into_iter().find(|group| &group.key == key)
+        self.groups().iter().find(|group| &group.key == key).cloned()
     }
 
     pub fn activate(&mut self) -> AppAction {
@@ -410,6 +430,7 @@ impl App {
         };
         self.collapsed.clear();
         self.visible_limits.clear();
+        self.rebuild_group_cache();
         self.reconcile_selection();
     }
 
@@ -625,6 +646,16 @@ impl App {
         self.overlay = Overlay::Composer(ComposerMode::Filter);
     }
 
+    /// Replace the session filter and rebuild the grouping cache once. The
+    /// cache keeps subsequent draws and arrow-key navigation independent of
+    /// the full provider-history size.
+    pub fn set_filter(&mut self, filter: impl Into<String>) {
+        self.filter = filter.into();
+        self.visible_limits.clear();
+        self.rebuild_group_cache();
+        self.reconcile_selection();
+    }
+
     pub fn start_rename(&mut self) {
         let Some(session) = self.selected_session() else {
             return;
@@ -780,20 +811,113 @@ impl App {
             return true;
         }
         let needle = self.filter.to_ascii_lowercase();
-        session.name.to_ascii_lowercase().contains(&needle)
-            || session.summary.to_ascii_lowercase().contains(&needle)
-            || session
-                .cwd
-                .to_string_lossy()
-                .to_ascii_lowercase()
-                .contains(&needle)
-            || session
-                .provider
-                .label()
-                .to_ascii_lowercase()
-                .contains(&needle)
+        matches_filter(session, &needle)
     }
 
+    fn status_groups(&self) -> Vec<Group> {
+        let needle = self.filter.to_ascii_lowercase();
+        let mut grouped: BTreeMap<SessionState, Vec<usize>> = BTreeMap::new();
+        for (index, session) in self.snapshot.sessions.iter().enumerate() {
+            if needle.is_empty() || matches_filter(session, &needle) {
+                grouped.entry(session.state).or_default().push(index);
+            }
+        }
+        SessionState::DISPLAY_ORDER
+            .iter()
+            .filter_map(|state| {
+                let sessions = grouped.remove(state).unwrap_or_default();
+                (!sessions.is_empty()).then(|| Group {
+                    key: format!("state:{state:?}"),
+                    label: state.heading().into(),
+                    sessions,
+                })
+            })
+            .collect()
+    }
+
+    fn directory_groups(&self) -> Vec<Group> {
+        let needle = self.filter.to_ascii_lowercase();
+        let mut groups: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
+        for (index, session) in self.snapshot.sessions.iter().enumerate() {
+            if needle.is_empty() || matches_filter(session, &needle) {
+                groups
+                    .entry(project_group_path(&session.cwd))
+                    .or_default()
+                    .push(index);
+            }
+        }
+        groups
+            .into_iter()
+            .map(|(path, sessions)| Group {
+                key: format!("cwd:{}", path.display()),
+                label: abbreviate_home(&path),
+                sessions,
+            })
+            .collect()
+    }
+
+    fn rebuild_snapshot_cache(&mut self) {
+        self.session_counts.clear();
+        let mut provider_labels = BTreeSet::new();
+        for session in &self.snapshot.sessions {
+            *self.session_counts.entry(session.state).or_default() += 1;
+            provider_labels.insert(session.provider.label().to_owned());
+        }
+        self.provider_labels = provider_labels.into_iter().collect();
+        self.session_indices = self
+            .snapshot
+            .sessions
+            .iter()
+            .enumerate()
+            .map(|(index, session)| (session.id.clone(), index))
+            .collect();
+        self.rebuild_group_cache();
+    }
+
+    fn rebuild_group_cache(&mut self) {
+        self.group_cache = match self.view_mode {
+            ViewMode::Status => self.status_groups(),
+            ViewMode::Directory => self.directory_groups(),
+        };
+        #[cfg(test)]
+        {
+            self.group_cache_rebuilds += 1;
+        }
+    }
+
+    fn reconcile_selection(&mut self) {
+        let keys = self.selectable_keys();
+        if self
+            .selection
+            .as_ref()
+            .is_some_and(|selection| keys.contains(selection))
+        {
+            return;
+        }
+        self.selection = keys
+            .iter()
+            .find(|key| matches!(key, SelectionKey::Session(_)))
+            .cloned()
+            .or_else(|| keys.first().cloned());
+    }
+}
+
+fn matches_filter(session: &AgentSession, needle: &str) -> bool {
+    session.name.to_ascii_lowercase().contains(needle)
+        || session.summary.to_ascii_lowercase().contains(needle)
+        || session
+            .cwd
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains(needle)
+        || session
+            .provider
+            .label()
+            .to_ascii_lowercase()
+            .contains(needle)
+}
+
+impl App {
     fn submit_composer(&mut self, mode: ComposerMode) -> AppAction {
         let input = self.input.trim().to_owned();
         if input.is_empty() && mode != ComposerMode::Filter {
@@ -808,9 +932,7 @@ impl App {
                 name: input,
             },
             ComposerMode::Filter => {
-                self.filter = input;
-                self.visible_limits.clear();
-                self.reconcile_selection();
+                self.set_filter(input);
                 AppAction::None
             }
         }
@@ -881,9 +1003,7 @@ impl App {
             "/model" => return self.select_launch_model(argument),
             "/completed" => return self.select_completed_visibility(argument),
             "/filter" => {
-                self.filter = argument.to_owned();
-                self.visible_limits.clear();
-                self.reconcile_selection();
+                self.set_filter(argument);
                 self.set_notice(if argument.is_empty() {
                     "session filter cleared".into()
                 } else {
@@ -990,48 +1110,13 @@ impl App {
         self.model_selection = self.model_selection.min(len.saturating_sub(1));
     }
 
-    fn status_groups(&self) -> Vec<Group> {
-        let mut grouped: BTreeMap<SessionState, Vec<usize>> = BTreeMap::new();
-        for (index, session) in self.snapshot.sessions.iter().enumerate() {
-            if self.filtered(session) {
-                grouped.entry(session.state).or_default().push(index);
-            }
-        }
-        SessionState::DISPLAY_ORDER
-            .iter()
-            .filter_map(|state| {
-                let sessions = grouped.remove(state).unwrap_or_default();
-                (!sessions.is_empty()).then(|| Group {
-                    key: format!("state:{state:?}"),
-                    label: state.heading().into(),
-                    sessions,
-                })
-            })
-            .collect()
-    }
-
-    fn directory_groups(&self) -> Vec<Group> {
-        let mut groups: BTreeMap<PathBuf, Vec<usize>> = BTreeMap::new();
-        for (index, session) in self.snapshot.sessions.iter().enumerate() {
-            if self.filtered(session) {
-                groups
-                    .entry(project_group_path(&session.cwd))
-                    .or_default()
-                    .push(index);
-            }
-        }
-        groups
-            .into_iter()
-            .map(|(path, sessions)| Group {
-                key: format!("cwd:{}", path.display()),
-                label: abbreviate_home(&path),
-                sessions,
-            })
-            .collect()
-    }
-
     fn show_more(&mut self, key: &str) {
-        let Some(group) = self.groups().into_iter().find(|group| group.key == key) else {
+        let Some(group) = self
+            .groups()
+            .iter()
+            .find(|group| group.key == key)
+            .cloned()
+        else {
             self.reconcile_selection();
             return;
         };
@@ -1050,21 +1135,6 @@ impl App {
         self.reconcile_selection();
     }
 
-    fn reconcile_selection(&mut self) {
-        let keys = self.selectable_keys();
-        if self
-            .selection
-            .as_ref()
-            .is_some_and(|selection| keys.contains(selection))
-        {
-            return;
-        }
-        self.selection = keys
-            .iter()
-            .find(|key| matches!(key, SelectionKey::Session(_)))
-            .cloned()
-            .or_else(|| keys.first().cloned());
-    }
 }
 
 pub(crate) fn is_active_session_state(state: SessionState) -> bool {
@@ -1180,7 +1250,7 @@ mod tests {
             .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
             .collect();
         let mut app = app_with(sessions);
-        let group = app.groups().remove(0);
+        let group = app.groups()[0].clone();
 
         assert_eq!(app.visible_session_count(&group), SESSION_PAGE_SIZE);
         assert_eq!(app.hidden_session_count(&group), 36);
@@ -1221,6 +1291,29 @@ mod tests {
     }
 
     #[test]
+    fn seventy_thousand_rows_are_grouped_once_across_navigation_and_draw_queries() {
+        let sessions = (0..70_000)
+            .map(|index| session(&format!("session-{index:05}"), SessionState::Completed))
+            .collect();
+        let mut app = app_with(sessions);
+        let rebuilds = app.group_cache_rebuilds;
+
+        for _ in 0..2_000 {
+            app.select_next();
+            let _ = app.groups();
+            let _ = app.selected_session();
+        }
+
+        assert_eq!(app.group_cache_rebuilds, rebuilds);
+        assert_eq!(app.groups()[0].sessions.len(), 70_000);
+        assert!(app.selectable_keys().len() <= SESSION_PAGE_SIZE + 2);
+
+        app.set_filter("session-69999");
+        assert_eq!(app.group_cache_rebuilds, rebuilds + 1);
+        assert_eq!(app.groups()[0].sessions, vec![69_999]);
+    }
+
+    #[test]
     fn filtering_searches_hidden_sessions_and_resets_paging() {
         let sessions = (0..60)
             .map(|index| session(&format!("session-{index:02}"), SessionState::Working))
@@ -1234,7 +1327,7 @@ mod tests {
         app.input = "session-59".into();
         assert_eq!(app.activate(), AppAction::None);
 
-        let filtered = app.groups().remove(0);
+        let filtered = app.groups()[0].clone();
         assert_eq!(filtered.sessions, vec![59]);
         assert_eq!(app.visible_session_count(&filtered), 1);
         assert_eq!(
@@ -1257,7 +1350,7 @@ mod tests {
             sessions: vec![session("one", SessionState::Working)],
             warnings: vec![],
         });
-        app.filter = "SUMMARY ONE".into();
+        app.set_filter("SUMMARY ONE");
 
         assert_eq!(app.groups()[0].sessions, vec![0]);
     }
@@ -1478,7 +1571,7 @@ mod tests {
             vec!["Ready for review", "Needs input", "Working", "Completed"]
         );
 
-        app.filter = "summary working".into();
+        app.set_filter("summary working");
         assert_eq!(app.groups().len(), 1);
         assert_eq!(app.groups()[0].sessions, vec![1]);
     }
@@ -1490,10 +1583,10 @@ mod tests {
         let mut app = app_with(vec![item]);
 
         for needle in ["AGENT-NAME", "SPECIAL-ROOT", "CLAUDE"] {
-            app.filter = needle.into();
+            app.set_filter(needle);
             assert_eq!(app.groups().len(), 1, "filter {needle}");
         }
-        app.filter = "missing".into();
+        app.set_filter("missing");
         assert!(app.groups().is_empty());
     }
 
