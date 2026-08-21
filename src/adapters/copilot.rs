@@ -778,13 +778,30 @@ impl CopilotController {
 }
 
 fn list_copilot_models(executable: &str) -> Result<Vec<String>> {
-    let mut child = Command::new(executable)
+    let mut command = Command::new(executable);
+    command
         .args(["--headless", "--no-auto-update", "--stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .with_context(|| format!("failed to start Copilot model catalog from `{executable}`"))?;
+        .stderr(Stdio::null());
+    let mut attempts = 0;
+    let mut child = loop {
+        match command.spawn() {
+            Ok(child) => break child,
+            Err(error)
+                if error.raw_os_error() == Some(libc::ETXTBSY)
+                    && attempts < EXECUTABLE_BUSY_RETRIES =>
+            {
+                attempts += 1;
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!("failed to start Copilot model catalog from `{executable}`")
+                })
+            }
+        }
+    };
     let mut stdin = child
         .stdin
         .take()

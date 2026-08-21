@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.22] - 2026-08-21
+
 ### Added
 
 - `open-agent-view -v`/`-V` now match `--version`; `opav update` and its
@@ -24,6 +26,8 @@ and future released versions are intended to follow Semantic Versioning.
   the user on a stale Pi row, or blocks the input thread during bootstrap.
 - Direct Cursor and Copilot authentication failures now preserve the task and
   open an actionable native login modal instead of leaving a passive footer.
+- Copilot model discovery retries the same bounded Linux executable-replacement
+  race already handled by its ACP transport instead of surfacing `ETXTBSY`.
 - Antigravity model-less launches are refused before starting `agy`, preventing
   the observed `neither PlanModel nor RequestedModel specified` termination.
 

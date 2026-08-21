@@ -1,6 +1,6 @@
 [package]
 name = "open-agent-view"
-version = "0.1.21"
+version = "0.1.22"
 edition = "2021"
 rust-version = "1.75"
 description = "Open terminal dashboard for supervising multiple coding-agent CLIs"
