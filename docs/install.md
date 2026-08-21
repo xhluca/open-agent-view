@@ -120,9 +120,17 @@ interactive test.
 
 ## Upgrade
 
-Run the installer again. It verifies and stages the new binary before replacing
-the installed executable. Existing provider sessions and Open Agent View state
-are not removed.
+Use the installed shorthand:
+
+```console
+opav update
+# or: opav upgrade
+```
+
+The updater downloads this repository's installer, which resolves the latest
+published release, verifies its SHA-256 checksum, and stages the new binary
+before replacement. Existing provider sessions and Open Agent View state are
+not removed. Re-running the installation command above is equivalent.
 
 Pin `--version` in automation; the default `latest` channel can change whenever
 a new stable release is published.

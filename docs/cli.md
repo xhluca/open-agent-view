@@ -12,6 +12,21 @@ legacy alias. All three execute the same canonical binary and report
 open-agent-view [OPTIONS]
 ```
 
+Version and self-update commands:
+
+```console
+open-agent-view --version   # -v and -V are accepted
+opav update
+opav upgrade               # alias of update
+```
+
+`update` downloads the repository's current installer (using authenticated
+`gh api` first for the private preview, then public `curl` as a fallback) and
+runs it for the current install directory. The installer still resolves a
+published release asset and verifies its SHA-256 checksum before replacing the
+binary. `OAV_REPO` and `OAV_INSTALL_DIR` retain their documented installer
+overrides.
+
 | Option | Meaning |
 | --- | --- |
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
@@ -95,7 +110,9 @@ to move, `page up`/`page down` to move ten choices, `enter` to select, and
 `esc` to keep the previous selection and draft. After a successful catalog
 load, **Default** is available alongside the exact account models. An
 authentication/catalog failure does not offer a blind default launch; it
-offers the native sign-in handoff instead. `/model NAME` accepts an exact custom
+offers the native sign-in handoff instead. If catalog retrieval itself is
+unavailable but the provider supports an exact identifier, type that ID in the
+error-state picker and press Enter. `/model NAME` accepts an exact custom
 identifier without loading the catalog, and `/model default` resets the
 selection. `/login` hands the terminal to the selected provider's native
 authentication/setup UI. When the catalog reports an authentication failure,
@@ -108,6 +125,11 @@ visible pages of App Server `model/list`; Pi parses `pi --offline
 models`; Copilot queries its headless SDK `models.list` without creating a
 session; and Antigravity parses `agy models`. A catalog is informative,
 not proof that the current account can successfully invoke every listed model.
+
+A launch-time authentication failure follows the same route: OAV preserves the
+task draft and selected model, opens the provider's setup picker, and makes
+Enter/`l` run native login. This avoids leaving a Cursor/Copilot error as a
+passive footer where Enter would open an unrelated selected row.
 
 The native setup surfaces are `claude auth login`, `codex login`, Pi's
 no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,

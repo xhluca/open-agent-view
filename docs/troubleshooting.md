@@ -9,6 +9,9 @@ open-agent-view doctor
 open-agent-view --json --all
 ```
 
+If the installed OAV itself is stale, `opav update` (or `opav upgrade`)
+downloads and verifies the latest published release.
+
 Add the provider's `--no-host-*` flag to isolate one host adapter, and
 add an exact `--docker-container NAME_OR_ID` only when you intend to inspect
 that running container. Do not paste unreviewed provider transcripts, state
@@ -175,12 +178,27 @@ handoff explicitly. OAV never asks you to paste a token into its UI. Pi's setup
 is its no-session TUI; choose `/login` there. Antigravity uses its first-run
 browser login.
 
+The same picker now opens automatically when a direct Cursor or Copilot launch
+fails authentication. The task draft remains intact; Enter no longer acts on
+the dashboard row behind the error. An authenticated Cursor account can still
+advertise zero models, and an authenticated `gh` account can still lack
+Copilot entitlement—those are provider/account results, not credentials OAV
+can manufacture.
+
 For deeper diagnosis, run the provider surface directly in the same shell:
 `claude --help`, a healthy managed Codex App Server, `pi --offline
 --list-models`, `opencode models`, `cursor-agent models`, `copilot login`, or
 `agy models`. Pi/OpenCode entries normally use
 `provider/model` form. A listed model can still fail later because the account,
 credentials, region, or provider configuration does not authorize it.
+
+If Antigravity previously opened and immediately printed `Agent execution
+terminated due to error`, inspect only its redacted provider error. On the
+reporting account, Antigravity 1.1.17 logged `neither PlanModel nor
+RequestedModel specified`. Current OAV refuses to start Antigravity without an
+exact model. If `agy models` times out, type a known exact model ID in OAV's
+error-state picker and press Enter, or press `l` for Antigravity's native setup.
+OAV does not guess a provider model or bypass its sandbox/permissions.
 
 ## A newly launched task does not appear
 
@@ -191,9 +209,12 @@ asynchronously are retried every 250 ms for up to five seconds. If the footer
 eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
 provider in `open-agent-view --json --all`.
 
-The current foreground Claude path preassigns an exact UUID, invokes the
-documented `--background` launch, waits until `claude agents --json --all`
-lists that UUID, and immediately opens `claude attach`. Left backgrounds only
+The current foreground Claude path runs the documented `--background` launch
+on a worker, captures Claude's returned eight-character ID, resolves the exact
+full UUID from `claude agents --json --all`, records that exact identity, and
+immediately opens `claude attach`. It never supplies `--session-id` alongside
+`--background`, because current Claude explicitly ignores that combination.
+Left backgrounds only
 the retained frontend and returns to the exact new row. Background-provider
 launches animate independently of the worker, so arrows, typing, and Escape do
 not wait on startup.
@@ -201,9 +222,10 @@ not wait on startup.
 Version 0.1.14 also handles two fast-completion edge cases: OAV-owned Codex
 threads stay visible even when Codex reports their source as `cli`, and a task
 that is already completed at the first refresh automatically reveals completed
-sessions and selects the exact returned ID. Claude launch preassigns an exact
-session UUID and detaches its documented `--background` bootstrap; a slow cold
-start is no longer killed at a fixed 15-second deadline.
+sessions and selects the exact returned ID. Claude's bounded bootstrap has a
+45-second provider-command allowance plus exact inventory reconciliation; it
+runs off the input thread, so a cold start animates without freezing arrows or
+typing.
 
 If Codex is missing only inside Open Agent View, confirm `open-agent-view doctor`
 and `codex --version` succeed in the same shell. A nonstandard executable can be

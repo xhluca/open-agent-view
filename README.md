@@ -105,6 +105,10 @@ open-agent-view --docker-container my-agent-container
 # Check every configured CLI without starting the dashboard.
 open-agent-view doctor
 
+# Show this installation's version, or replace it with the latest verified release.
+opav -v
+opav update                 # `opav upgrade` is an alias
+
 # Install a missing harness with its official user-local installer.
 # Omit --yes for an interactive confirmation.
 open-agent-view setup cursor --yes
@@ -163,13 +167,13 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; launch directly into full-screen `attach`, with Left returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
+| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; asynchronous `--background` bootstrap using Claude's returned ID, then full-screen `attach`, with Left returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Durable OAV-managed RPC sessions and their persisted OAV-owned history on Linux by default; unrelated host JSONL history with `--include-external` | Catalog-backed owned launch, inspect/reply/request handling, Ctrl+X stop then exact delete, and completed-session handoff to native Pi; unrelated history remains inspect/native-resume only |
 | OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog and selected-model launch; discovery, inspect, native resume/reply after idle, and verified interrupt |
-| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Native login; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; persisted rows remain observe/native-resume |
-| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, exact model selection, sandboxed full-screen launch, Left-to-background, and native resume; no inline approval or arbitrary all-history API |
+| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Failed launch opens actionable native `copilot login`; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; persisted rows remain observe/native-resume |
+| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, required exact model selection (including a typed-ID fallback when catalog loading fails), sandboxed full-screen launch, Left-to-background, and native resume; no inline approval or arbitrary all-history API |
 
 Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
 OAV-owned Cursor control. Copilot control lasts for the dashboard process's

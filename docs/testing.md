@@ -135,14 +135,19 @@ checks; the guide also contains release gates that are not yet complete.
   native login, reload exact model IDs, preserve the task draft, and select an
   exact model. Cursor then deliberately delays `create-chat`; the dashboard
   animates launch progress and the resulting managed command contains the exact
-  model. Separate PTYs prove Claude background UUID launch immediately attaches
-  full-screen and returns to the exact row on Left, while Antigravity performs
+  model. Separate PTYs prove Claude's provider-allocated background ID is
+  resolved to the exact UUID, immediately attaches full-screen, and returns to
+  the exact row on Left, while Antigravity performs
   first-run login, exact model selection, `--sandbox` full-screen launch, cache
   ownership, and Left return without a dangerous bypass flag.
 - `tests/setup_installer.rs` uses an isolated `PATH` and fake curl/bash. It
   proves non-TTY setup refuses before download without `--yes`, confirmed setup
   exposes download/provider progress, uses the exact official URL, executes a
   staged regular file, and removes that file afterward.
+- `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
+  `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
+  the exact repository request, install-directory propagation, successful
+  handoff, and cleanup of the downloaded installer without network access.
 - A dedicated Linux isolated real-PTY case enables fake Claude and managed Pi
   launch controllers and exercises the harness palette through the actual
   binary. It asserts complete choice visibility, arrow/Tab preview, number

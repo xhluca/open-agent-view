@@ -8,6 +8,31 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `open-agent-view -v`/`-V` now match `--version`; `opav update` and its
+  `upgrade` alias fetch the repository installer and retain release checksum
+  verification.
+- Catalog errors can accept an explicitly typed exact model ID, while native
+  sign-in remains available through Enter or `l`.
+
+### Fixed
+
+- Claude launch follows the current `--bg` contract: Claude allocates the ID,
+  OAV resolves the exact full UUID, records it, refreshes, selects it, and opens
+  full-screen attach. It no longer supplies the ignored `--session-id`, leaves
+  the user on a stale Pi row, or blocks the input thread during bootstrap.
+- Direct Cursor and Copilot authentication failures now preserve the task and
+  open an actionable native login modal instead of leaving a passive footer.
+- Antigravity model-less launches are refused before starting `agy`, preventing
+  the observed `neither PlanModel nor RequestedModel specified` termination.
+
+### Tests
+
+- Added exact Claude `backgrounded · ID` parser/argv tests, isolated updater
+  and version-alias tests, auth/draft/custom-model state tests, and real-PTY
+  launch-to-login coverage for Cursor, Copilot, Claude, and Antigravity.
+
 ## [0.1.21] - 2026-08-21
 
 ### Added

@@ -39,7 +39,7 @@ aliases` audits all overrides.
 | Discover | `claude agents --json` | Owning App Server `thread/list` | Same read surface | Provider protocol through exact container ID |
 | Inspect | `claude logs`, reconstructed as a terminal screen | `thread/read(includeTurns: true)`, bounded for display | Summary only | Claude logs; Codex summary |
 | Open | `claude attach` | `codex --remote … resume` against the owning server | `codex resume` | Interactive `docker exec` to the provider CLI |
-| Launch | Exact UUID through `claude --background`, then full-screen `claude attach` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
+| Launch | Claude allocates the ID through `--background`; OAV resolves its exact full UUID, records it, then opens full-screen `claude attach` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
 | Interrupt | `claude stop`, exact provider-listed active host background sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
 | Inline reply or provider request | Not exposed by the supported non-TTY CLI | Idle `turn/start`; working `turn/steer`; exact one-shot command decisions, safe denials, and non-secret structured input | Native TUI only | Disabled |
 | Archive or delete | No supported Claude command | Idle owned threads only | Disabled | Disabled |
@@ -68,8 +68,11 @@ no session ownership or control authority.
 
 ## Claude ownership registry
 
-`claude --background` returns an eight-character session ID. `open-agent-view`
-records that prefix with its provider and runtime in:
+`claude --background` returns an eight-character session ID. OAV deliberately
+does not combine `--background` with `--session-id`: current Claude releases
+own the background ID and warn that the supplied ID would be ignored. OAV
+captures the returned prefix, resolves the exact full UUID from `claude agents
+--json --all`, and records that UUID with its provider and runtime in:
 
 ```text
 $XDG_STATE_HOME/open-agent-view/ownership.json

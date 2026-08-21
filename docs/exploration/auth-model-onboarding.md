@@ -1,9 +1,10 @@
 # Authentication, model catalogs, setup, and foreground launch
 
-Date: 2026-08-20. This note records the evidence behind the guided onboarding
+Date: 2026-08-21. This note records the evidence behind the guided onboarding
 flow. It distinguishes read-only observations from deterministic fake-account
-tests; no real login, provider install, or model-backed task was performed on
-the reporting account during this exploration.
+tests. No login or provider install was performed. One bounded Claude
+background-contract probe was created and then stopped by its exact returned
+ID; no other model-backed task was submitted.
 
 ## Product contract
 
@@ -26,7 +27,7 @@ The dashboard follows one sequence for every launch-capable provider:
 
 | Provider | Native setup/authentication | Account/model surface | Selected-model launch |
 | --- | --- | --- | --- |
-| Claude Code | `claude auth login` | aliases advertised next to `--model` in installed `claude --help` | `--model`; host launch preassigns `--session-id`, uses `--background`, verifies the exact row, then `attach` |
+| Claude Code | `claude auth login` | aliases advertised next to `--model` in installed `claude --help` | `--model`; host launch lets `--background` allocate the ID, resolves the exact full row, then `attach` |
 | OpenAI Codex | `codex login` | App Server `model/list` pages | App Server `thread/start` model |
 | Pi | `pi --no-session`, then `/login` in Pi | `pi --offline --list-models` | exact `--model` on the owned RPC child |
 | OpenCode | `opencode auth login` | `opencode models` | exact `providerID`/`modelID` in `prompt_async` |
@@ -48,14 +49,20 @@ Primary provider references:
 ## Reporting-account read-only observations
 
 - Claude Code 2.1.238 returned 19 `claude agents --json --all` rows in roughly
-  0.42 seconds. No launch was performed.
+  0.42 seconds. A bounded disposable background probe then returned
+  `backgrounded · SHORT_ID`; it was stopped by that exact ID and verified
+  stopped. The CLI's own strings and help confirmed that `--bg` manages the
+  session ID and ignores a simultaneous `--session-id`.
 - Cursor Agent `2026.03.20-44cb435` returned `No models available for this
   account`. This was the exact failure that formerly produced only a manual
   `cursor-agent login` instruction.
 - GitHub Copilot CLI 1.0.80 returned its documented ACP `Authentication
   required` error. No login or session creation was attempted.
 - Antigravity 1.1.17 printed its model-fetching state and did not return a
-  catalog inside the bounded read-only probe. No first-run login was started.
+  catalog inside the bounded read-only probe. Its redacted native log showed
+  the reported launch failure was `neither PlanModel nor RequestedModel
+  specified`, which OAV now prevents by requiring an exact model. No token or
+  account identifier was read or recorded.
 - Pi's installed help documents `--model`, `--models`, `--list-models`, and its
   interactive OAuth `/login`; `pi auth` itself exposes credential
   print/readiness commands rather than a generic provider-selection login.
@@ -80,8 +87,8 @@ homes and provider executables:
 - Copilot begins signed out, returns the real LSP-framed headless authentication
   error, hands `l` to native login, reloads exact SDK model IDs without creating
   a session, and retains/selects the draft/model.
-- Claude allocates an exact UUID, uses the background launch, waits for that
-  UUID in the agent JSON inventory, opens full-screen attach, and returns on
+- Claude accepts a background launch, returns its provider-owned ID, waits for
+  the exact UUID in the agent JSON inventory, opens full-screen attach, and returns on
   Left to the newly selected row.
 - Antigravity begins signed out, completes its first-run handoff, reloads an
   exact model, launches full-screen with `--sandbox`, selected `--model`, and
@@ -106,3 +113,6 @@ official URL, executes a staged file, and removes it afterward.
   conversation after that cache entry changes.
 - Pi's setup handoff opens its no-session native TUI because its `pi auth`
   subcommands do not expose a provider-neutral interactive login command.
+- Real-account observations remain on the host. Credential/config directories
+  were deliberately not copied into Docker; fresh-container probes use empty
+  homes and prove unauthenticated protocol/error handling, not account access.

@@ -1,4 +1,4 @@
-# Main-account and fresh-container regressions (2026-08-20)
+# Main-account and fresh-container regressions (2026-08-21)
 
 This note records the failures reported against v0.1.17, the read-only evidence
 collected from the reporting account, and isolated reproductions. It does not
@@ -92,6 +92,33 @@ for returning to OAV; other bytes, including Up/Down/Right, are forwarded.
 Stopping the retained frontend is distinct from interrupting or deleting the
 managed provider session.
 
+## Follow-up launch/onboarding regressions
+
+The reporting host was rechecked with Claude 2.1.238, Pi 0.84.2, Cursor Agent
+`2026.03.20-44cb435`, Copilot 1.0.80, Antigravity 1.1.17, and OpenCode 1.17.20:
+
+- Claude's real `--bg` output assigns a short ID itself. Combining it with
+  `--session-id` produces the reported warning and can make OAV track a UUID
+  Claude ignored. The fixed path captures the returned short ID, resolves the
+  exact full inventory UUID, and only then records ownership. One disposable
+  background contract probe was stopped using its exact returned ID.
+- Cursor still reports no models for this account. Direct submission now opens
+  the actionable setup/model modal; Enter or `l` invokes `cursor-agent login`
+  rather than acting on the row behind the error.
+- Copilot's ACP `session/new` returns `Authentication required`. Direct
+  submission now preserves the task and routes into native `copilot login`,
+  then reloads the headless account catalog.
+- Antigravity's model catalog timed out. The provider log for the reported
+  failed task ended with `neither PlanModel nor RequestedModel specified`.
+  OAV now refuses any model-less Antigravity launch and lets the user type an
+  exact model ID when catalog retrieval is unavailable.
+
+No credential directories were mounted into containers. That separation is
+intentional: host probes establish the reporting account's observable result;
+fresh empty-home containers establish protocol classification and isolation.
+Copying a main-account token/keychain into Docker would broaden exposure and is
+not required for these regressions.
+
 ## Primary provider references
 
 - [OpenCode CLI: attach, session, export, and authentication](https://dev.opencode.ai/docs/cli/)
@@ -101,4 +128,3 @@ managed provider session.
 - [GitHub Copilot CLI authentication](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli)
 - [GitHub Copilot ACP server](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server)
 - [Pi CLI/RPC/session reference](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/README.md)
-
