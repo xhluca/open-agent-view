@@ -162,31 +162,36 @@ impl CursorSupervisor {
         request.timeout = MODEL_PREFLIGHT_TIMEOUT;
         let output = self.run_command(&request).with_context(|| {
             format!(
-                "Cursor model preflight did not complete; run `cursor-agent login` and retry (configured executable: {})",
+                "Cursor model catalog did not respond (configured executable: {})",
                 self.executable
             )
         })?;
+        let stdout = output.stdout_text()?;
+        let stderr = output.stderr_lossy();
         if output.status != 0 {
+            let detail = format!("{stdout}\n{stderr}").to_ascii_lowercase();
+            if detail.contains("auth")
+                || detail.contains("login")
+                || detail.contains("no models available")
+            {
+                bail!(
+                    "Cursor is not authenticated or this account has no models; press Enter to sign in"
+                );
+            }
             bail!(
-                "Cursor model preflight failed with status {}; run `{} login`: {}",
+                "Cursor model catalog failed with status {}: {}",
                 output.status,
-                "cursor-agent",
-                output.stderr_lossy()
+                stderr
             );
         }
-        let stdout = output.stdout_text()?;
         if stdout.contains("No models available for this account") {
             bail!(
-                "Cursor account has no models; run `cursor-agent login`, then verify with `cursor-agent models` (configured executable: {})",
-                self.executable
+                "Cursor is not authenticated or this account has no models; press Enter to sign in"
             );
         }
         let models = parse_cursor_models(stdout);
         if models.is_empty() {
-            bail!(
-                "Cursor returned no model catalog; run `cursor-agent login`, then verify with `cursor-agent models` (configured executable: {})",
-                self.executable
-            );
+            bail!("Cursor returned no account models; press Enter to sign in or check plan access");
         }
         Ok(models)
     }

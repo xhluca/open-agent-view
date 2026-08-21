@@ -814,10 +814,10 @@ esac
             && screen.contains("cursor login task")
     });
     app.send(SHIFT_TAB);
-    app.wait_for("Cursor account requires login", |screen| {
+    app.wait_for("Cursor sign-in is actionable", |screen| {
         screen.contains("choose Cursor model")
             && screen.contains("sign in")
-            && screen.contains("Cursor model preflight failed")
+            && screen.contains("Cursor is not authenticated")
     });
     let leaves_before = count_bytes(&app.raw, b"\x1b[?1049l");
     app.send(ENTER);
