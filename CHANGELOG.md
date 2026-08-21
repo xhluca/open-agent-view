@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.21] - 2026-08-21
+
 ### Added
 
 - `ctrl+r` now stores a private session display name keyed by the stable
