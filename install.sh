@@ -19,7 +19,7 @@ fail() {
 
 usage() {
   cat <<'EOF'
-Install the coding-agents binary from a verified GitHub release.
+Install Open Agent View from a verified GitHub release.
 
 Usage: install.sh [OPTIONS]
 
@@ -36,7 +36,8 @@ Environment variables:
   GH_TOKEN               Token used by gh or curl for a private repository
 
 The installer downloads a prebuilt archive and verifies its SHA-256 checksum.
-It never installs Rust, invokes Cargo, or edits shell configuration files.
+It installs open-agent-view plus the opav and coding-agents symlinks. It never
+installs Rust, invokes Cargo, or edits shell configuration files.
 EOF
 }
 
@@ -71,7 +72,7 @@ done
   fail "repository must have the form OWNER/REPO"
 [[ -n "$install_dir" ]] || fail "installation directory cannot be empty"
 
-for command in curl tar install mktemp mv; do
+for command in curl tar install ln mktemp mv readlink; do
   command -v "$command" >/dev/null 2>&1 || fail "required command not found: $command"
 done
 
@@ -166,22 +167,51 @@ fi
 [[ "$actual_checksum" == "$expected_checksum" ]] || fail "release checksum verification failed"
 
 tar -xzf "${temp_dir}/${archive}" -C "$temp_dir"
-binary="${temp_dir}/${stem}/coding-agents"
-[[ -f "$binary" && -x "$binary" ]] || fail "release archive does not contain ${stem}/coding-agents"
+binary="${temp_dir}/${stem}/open-agent-view"
+[[ -f "$binary" && -x "$binary" ]] || fail "release archive does not contain ${stem}/open-agent-view"
 
 install -d "$install_dir"
-staged_binary="${install_dir}/.coding-agents.install.$$"
+staged_binary="${install_dir}/.open-agent-view.install.$$"
 install -m 0755 "$binary" "$staged_binary"
-mv -f -- "$staged_binary" "${install_dir}/coding-agents"
+mv -f -- "$staged_binary" "${install_dir}/open-agent-view"
 staged_binary=""
 
-installed_version="$("${install_dir}/coding-agents" --version 2>/dev/null)" ||
+installed_version="$("${install_dir}/open-agent-view" --version 2>/dev/null)" ||
   fail "the installed binary could not be executed"
-[[ "$installed_version" == "coding-agents ${version}" ]] ||
+[[ "$installed_version" == "open-agent-view ${version}" ]] ||
   fail "installed binary reported an unexpected version: ${installed_version}"
 
-say "installed coding-agents ${version} to ${install_dir}/coding-agents"
+install_alias() {
+  local alias="$1"
+  local destination="${install_dir}/${alias}"
+  if [[ -e "$destination" || -L "$destination" ]]; then
+    local replace_existing=false
+    if [[ -L "$destination" && "$(readlink "$destination")" == "open-agent-view" ]]; then
+      replace_existing=true
+    elif [[ "$alias" == "coding-agents" ]]; then
+      local existing_version=""
+      existing_version="$("$destination" --version 2>/dev/null || true)"
+      if [[ "$existing_version" == open-agent-view\ * || "$existing_version" == coding-agents\ * ]]; then
+        replace_existing=true
+      fi
+    fi
+    if [[ "$replace_existing" != true ]]; then
+      say "left unrelated existing command in place: ${destination}"
+      return
+    fi
+  fi
+  staged_binary="${install_dir}/.${alias}.install.$$"
+  ln -s "open-agent-view" "$staged_binary"
+  mv -f -- "$staged_binary" "$destination"
+  staged_binary=""
+}
+
+install_alias opav
+install_alias coding-agents
+
+say "installed open-agent-view ${version} to ${install_dir}/open-agent-view"
+say "installed shorthand: opav (legacy alias: coding-agents)"
 case ":${PATH}:" in
   *":${install_dir}:"*) ;;
-  *) say "add ${install_dir} to PATH, then run: coding-agents" ;;
+  *) say "add ${install_dir} to PATH, then run: open-agent-view (or opav)" ;;
 esac

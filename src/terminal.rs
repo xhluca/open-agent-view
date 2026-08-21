@@ -13,6 +13,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
+use crate::aliases::SessionAliases;
 use crate::app::{App, AppAction, Overlay, SESSION_PAGE_SIZE};
 use crate::control::{ControlHub, ControlOutcome, LaunchPresentation};
 use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot, SessionState};
@@ -43,6 +44,7 @@ struct ActionEffect {
     completed_visibility: Option<bool>,
     load_models: Option<Provider>,
     hide_session_ids: Vec<String>,
+    session_alias: Option<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -58,6 +60,7 @@ pub fn run_dashboard(
     refresh_interval: Duration,
     control: &ControlHub,
     hidden_sessions: HiddenSessions,
+    session_aliases: SessionAliases,
 ) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
@@ -66,6 +69,7 @@ pub fn run_dashboard(
     let worker_engine = (*engine).clone();
     let worker_control = control.clone();
     let worker_hidden_sessions = hidden_sessions.clone();
+    let worker_session_aliases = session_aliases.clone();
     let _refresh_worker = thread::spawn(move || {
         let mut first_refresh = true;
         while let Ok(worker_request) = refresh_rx.recv() {
@@ -80,6 +84,12 @@ pub fn run_dashboard(
                             worker_control.retain_owned(&mut partial);
                         }
                         worker_hidden_sessions.filter_snapshot(&mut partial);
+                        if let Err(error) = worker_session_aliases.reload() {
+                            partial
+                                .warnings
+                                .push(format!("failed to reload local session names: {error:#}"));
+                        }
+                        worker_session_aliases.apply_snapshot_with_warning(&mut partial);
                         partial.warnings.push(format!(
                             "loading remaining providers… ({completed}/{total})"
                         ));
@@ -94,6 +104,12 @@ pub fn run_dashboard(
                 worker_control.retain_owned(&mut snapshot);
             }
             worker_hidden_sessions.filter_snapshot(&mut snapshot);
+            if let Err(error) = worker_session_aliases.reload() {
+                snapshot
+                    .warnings
+                    .push(format!("failed to reload local session names: {error:#}"));
+            }
+            worker_session_aliases.apply_snapshot_with_warning(&mut snapshot);
             if snapshot_tx.send((snapshot, true)).is_err() {
                 break;
             }
@@ -285,7 +301,7 @@ pub fn run_dashboard(
                 match event::read()? {
                     Event::Key(key) => {
                         let action = handle_key(&mut app, key);
-                        let effect = match action {
+                        let mut effect = match action {
                             AppAction::Launch {
                                 provider,
                                 model,
@@ -365,6 +381,30 @@ pub fn run_dashboard(
                                     app.set_notice(format!("failed to hide session: {error:#}"))
                                 }
                             }
+                        }
+                        if let Some((session_id, alias)) = effect.session_alias.take() {
+                            match update_session_alias_from_app(
+                                &mut app,
+                                &session_aliases,
+                                &session_id,
+                                &alias,
+                            ) {
+                                Ok(SessionAliasUpdate::Set) => app.set_notice(format!(
+                                    "renamed locally to {alias}; the provider title was not changed"
+                                )),
+                                Ok(SessionAliasUpdate::Unchanged) => app.set_notice(format!(
+                                    "local name is already {alias}; the provider title was not changed"
+                                )),
+                                Ok(SessionAliasUpdate::Cleared) => app.set_notice(
+                                    "cleared local name; refreshing the latest provider title",
+                                ),
+                                Ok(SessionAliasUpdate::NotSet) => app.set_notice(
+                                    "no local name was set; refreshing the latest provider title",
+                                ),
+                                Err(error) => app
+                                    .set_notice(format!("failed to rename session locally: {error:#}")),
+                            }
+                            effect.refresh = true;
                         }
                         needs_draw = true;
                         if effect.refresh {
@@ -582,6 +622,45 @@ fn hide_sessions_from_app(
     hidden_sessions.filter_snapshot(&mut snapshot);
     app.replace_snapshot(snapshot);
     Ok(count)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SessionAliasUpdate {
+    Set,
+    Unchanged,
+    Cleared,
+    NotSet,
+}
+
+fn update_session_alias_from_app(
+    app: &mut App,
+    session_aliases: &SessionAliases,
+    session_id: &str,
+    alias: &str,
+) -> Result<SessionAliasUpdate> {
+    let session = app
+        .snapshot
+        .sessions
+        .iter()
+        .find(|session| session.id == session_id)
+        .cloned()
+        .context("the selected session disappeared during refresh")?;
+    if alias.trim().is_empty() {
+        return Ok(if session_aliases.clear(session_id)?.is_some() {
+            SessionAliasUpdate::Cleared
+        } else {
+            SessionAliasUpdate::NotSet
+        });
+    }
+    let changed = session_aliases.set_for_session(&session, alias)?;
+    let mut snapshot = app.snapshot.clone();
+    session_aliases.apply_snapshot(&mut snapshot);
+    app.replace_snapshot(snapshot);
+    Ok(if changed {
+        SessionAliasUpdate::Set
+    } else {
+        SessionAliasUpdate::Unchanged
+    })
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
@@ -906,6 +985,11 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
             hide_session_ids: session_ids,
             ..ActionEffect::default()
         },
+        AppAction::Rename { session_id, name } => ActionEffect {
+            refresh: true,
+            session_alias: Some((session_id, name)),
+            ..ActionEffect::default()
+        },
         AppAction::Launch {
             provider,
             model,
@@ -1073,10 +1157,7 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
             }
             true
         }
-        AppAction::Rename { .. } => {
-            app.set_notice("rename is unavailable through the supported provider CLI");
-            false
-        }
+        AppAction::Rename { .. } => unreachable!("rename actions are dispatched with effects"),
         AppAction::Interrupt { session_id } => {
             let Some(session) = app
                 .snapshot
@@ -1864,7 +1945,7 @@ mod tests {
     }
 
     #[test]
-    fn action_dispatch_handles_noop_quit_and_rename_without_provider_calls() {
+    fn action_dispatch_handles_noop_quit_and_local_rename_without_provider_calls() {
         let mut app = app();
         let mut terminal = FakeTerminal::default();
         let control = FakeControl::default();
@@ -1888,21 +1969,46 @@ mod tests {
             AppAction::Quit,
             &control
         ));
-        assert!(!handle_action(
+        let effect = dispatch_action(
             &mut terminal,
             &mut app,
             AppAction::Rename {
                 session_id: "worker".into(),
-                name: "new".into()
+                name: "new".into(),
             },
-            &control
-        ));
-        assert!(app
-            .notice
-            .as_deref()
-            .unwrap()
-            .contains("rename is unavailable"));
+            &control,
+        );
+        assert!(effect.refresh);
+        assert_eq!(effect.session_alias, Some(("worker".into(), "new".into())));
         assert!(control.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn local_rename_updates_the_row_without_touching_provider_control() {
+        let directory = tempfile::tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700))
+                .unwrap();
+        }
+        let aliases = SessionAliases::load(directory.path().join("aliases.json")).unwrap();
+        let mut app = app();
+
+        assert_eq!(
+            update_session_alias_from_app(&mut app, &aliases, "worker", "dashboard label").unwrap(),
+            SessionAliasUpdate::Set
+        );
+        assert_eq!(app.snapshot.sessions[0].name, "dashboard label");
+        assert_eq!(
+            aliases.list()[0].provider_name_at_creation.as_deref(),
+            Some("worker")
+        );
+        assert_eq!(
+            update_session_alias_from_app(&mut app, &aliases, "worker", "").unwrap(),
+            SessionAliasUpdate::Cleared
+        );
+        assert!(aliases.list().is_empty());
     }
 
     #[test]

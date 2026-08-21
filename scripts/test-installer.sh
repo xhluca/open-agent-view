@@ -31,15 +31,15 @@ make_release() {
   local stem="open-agent-view-${version}-${target}"
   local archive="${stem}.tar.gz"
   install -d "${root}/${stem}"
-  cat >"${root}/${stem}/coding-agents" <<EOF
+  cat >"${root}/${stem}/open-agent-view" <<EOF
 #!/usr/bin/env sh
 if [ "\${1:-}" = "--version" ]; then
-  echo "coding-agents ${version}"
+  echo "open-agent-view ${version}"
   exit 0
 fi
 echo fixture-binary
 EOF
-  chmod 0755 "${root}/${stem}/coding-agents"
+  chmod 0755 "${root}/${stem}/open-agent-view"
   tar -C "$root" -czf "${root}/${archive}" "$stem"
   (
     cd "$root"
@@ -68,20 +68,44 @@ output="$({
     OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
     bash "${repo_dir}/install.sh"
 } 2>&1)"
-[[ -x "${home}/.local/bin/coding-agents" ]] || fail "default binary was not installed"
-[[ "$("${home}/.local/bin/coding-agents" --version)" == "coding-agents ${version}" ]] ||
+[[ -x "${home}/.local/bin/open-agent-view" ]] || fail "default binary was not installed"
+[[ "$("${home}/.local/bin/open-agent-view" --version)" == "open-agent-view ${version}" ]] ||
   fail "default binary reports the wrong version"
-[[ "$output" == *"installed coding-agents ${version}"* ]] || fail "success output is missing"
+[[ -L "${home}/.local/bin/opav" ]] || fail "opav shorthand was not installed"
+[[ -L "${home}/.local/bin/coding-agents" ]] || fail "legacy alias was not installed"
+[[ "$("${home}/.local/bin/opav" --version)" == "open-agent-view ${version}" ]] ||
+  fail "opav shorthand reports the wrong version"
+[[ "$("${home}/.local/bin/coding-agents" --version)" == "open-agent-view ${version}" ]] ||
+  fail "legacy alias reports the wrong version"
+[[ "$output" == *"installed open-agent-view ${version}"* ]] || fail "success output is missing"
 [[ "$output" == *"add ${home}/.local/bin to PATH"* ]] || fail "PATH guidance is missing"
 
 custom_bin="${temp_root}/custom/bin"
 PATH="${custom_bin}:/usr/bin:/bin" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" --version "v${version}" --install-dir "$custom_bin" >/dev/null
-[[ -x "${custom_bin}/coding-agents" ]] || fail "custom install directory was ignored"
+[[ -x "${custom_bin}/open-agent-view" ]] || fail "custom install directory was ignored"
 
-printf 'old binary\n' >"${custom_bin}/coding-agents"
-chmod 0755 "${custom_bin}/coding-agents"
+collision_bin="${temp_root}/collision/bin"
+install -d "$collision_bin"
+cat >"${collision_bin}/opav" <<'EOF'
+#!/usr/bin/env sh
+echo unrelated-opav
+EOF
+chmod 0755 "${collision_bin}/opav"
+collision_output="$(OAV_VERSION="$version" \
+  OAV_INSTALL_DIR="$collision_bin" \
+  OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
+  bash "${repo_dir}/install.sh")"
+[[ "$("${collision_bin}/opav")" == "unrelated-opav" ]] ||
+  fail "installer replaced an unrelated opav command"
+[[ "$collision_output" == *"left unrelated existing command in place"* ]] ||
+  fail "opav collision was not explained"
+[[ -L "${collision_bin}/coding-agents" ]] ||
+  fail "legacy alias was not installed beside an opav collision"
+
+printf 'old binary\n' >"${custom_bin}/open-agent-view"
+chmod 0755 "${custom_bin}/open-agent-view"
 cp "${release_dir}/${host_archive}.sha256" "${release_dir}/${host_archive}.sha256.good"
 printf '%064d  %s\n' 0 "$host_archive" >"${release_dir}/${host_archive}.sha256"
 if OAV_VERSION="$version" \
@@ -92,7 +116,7 @@ if OAV_VERSION="$version" \
 fi
 grep -F "checksum verification failed" "${temp_root}/checksum.out" >/dev/null ||
   fail "checksum failure was not explained"
-grep -F "old binary" "${custom_bin}/coding-agents" >/dev/null ||
+grep -F "old binary" "${custom_bin}/open-agent-view" >/dev/null ||
   fail "failed installation replaced the existing binary"
 mv "${release_dir}/${host_archive}.sha256.good" "${release_dir}/${host_archive}.sha256"
 
@@ -131,7 +155,7 @@ for platform in "${platforms[@]}"; do
     OAV_INSTALL_DIR="$platform_bin" \
     OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
     bash "${repo_dir}/install.sh" >/dev/null
-  [[ -x "${platform_bin}/coding-agents" ]] ||
+  [[ -x "${platform_bin}/open-agent-view" ]] ||
     fail "supported platform mapping failed for ${test_os}/${test_arch}"
 done
 
@@ -145,7 +169,7 @@ HOME="${temp_root}/latest-home" \
   OAV_GITHUB_API_URL="file://${api_root}" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >/dev/null
-[[ -x "${latest_bin}/coding-agents" ]] || fail "public latest-release path did not install"
+[[ -x "${latest_bin}/open-agent-view" ]] || fail "public latest-release path did not install"
 
 fake_bin="${temp_root}/fake-bin"
 install -d "$fake_bin"
@@ -175,7 +199,7 @@ PATH="${fake_bin}:/usr/bin:/bin" \
   HOME="$private_home" \
   OAV_TEST_RELEASE_DIR="$release_dir" \
   bash "${repo_dir}/install.sh" >/dev/null
-[[ -x "${private_home}/.local/bin/coding-agents" ]] ||
+[[ -x "${private_home}/.local/bin/open-agent-view" ]] ||
   fail "authenticated private-release path did not install"
 
 bash "${repo_dir}/install.sh" --help | grep -F "never installs Rust" >/dev/null ||

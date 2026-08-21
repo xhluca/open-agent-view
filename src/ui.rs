@@ -25,7 +25,7 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
     if area.width < 32 || area.height < 8 {
         let message = if area.width >= 18 && area.height >= 2 {
             vec![
-                Line::from("coding-agents needs"),
+                Line::from("open-agent-view needs"),
                 Line::from("at least 32×8"),
             ]
         } else {
@@ -593,7 +593,9 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn contextual_footer(app: &App, width: u16) -> String {
     match &app.overlay {
         Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
-        Overlay::Composer(ComposerMode::Rename { .. }) => "enter to save · esc to cancel".into(),
+        Overlay::Composer(ComposerMode::Rename { .. }) => {
+            "enter save · empty resets to provider name · esc cancel".into()
+        }
         Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
             "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
         }
@@ -1033,7 +1035,7 @@ fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, a
             format!("Archive the exact session?\n\n{id}\n\nEnter confirms; escape keeps it.")
         }
         ConfirmTarget::Hide { session_ids } => format!(
-            "Hide {} session{} only from Open Agent View?{}\n\nProvider history and live processes are retained. Use `coding-agents sessions hidden` and `coding-agents sessions unhide SESSION_ID` to reverse this.\n\nEnter hides locally; escape keeps {} visible.",
+            "Hide {} session{} only from Open Agent View?{}\n\nProvider history and live processes are retained. Use `open-agent-view sessions hidden` and `open-agent-view sessions unhide SESSION_ID` to reverse this.\n\nEnter hides locally; escape keeps {} visible.",
             session_ids.len(),
             if session_ids.len() == 1 { "" } else { "s" },
             if session_ids.len() == 1 { format!("\n\n{}", session_ids[0]) } else { String::new() },
@@ -1447,7 +1449,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
 
         let rendered = buffer_text(terminal.backend().buffer());
-        assert!(rendered.contains("coding-agents needs"));
+        assert!(rendered.contains("open-agent-view needs"));
         assert!(rendered.contains("at least 32×8"));
     }
 

@@ -51,7 +51,7 @@ printf '%s\n' 'provider install progress 100%'
             .stdin(Stdio::null());
     };
 
-    let mut unconfirmed = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
+    let mut unconfirmed = Command::new(env!("CARGO_BIN_EXE_open-agent-view"));
     configure(&mut unconfirmed);
     let output = unconfirmed
         .args(["setup", "cursor"])
@@ -64,7 +64,7 @@ printf '%s\n' 'provider install progress 100%'
         "unconfirmed setup invoked the installer"
     );
 
-    let mut confirmed = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
+    let mut confirmed = Command::new(env!("CARGO_BIN_EXE_open-agent-view"));
     configure(&mut confirmed);
     let output = confirmed
         .args(["setup", "cursor", "--yes"])

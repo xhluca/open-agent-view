@@ -16,6 +16,7 @@ use open_agent_view::adapters::{
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
+use open_agent_view::aliases::{SessionAliasRecord, SessionAliases};
 use open_agent_view::control::{ControlHub, ControlHubConfig};
 use open_agent_view::doctor::{diagnose, render_text};
 use open_agent_view::domain::Provider;
@@ -92,7 +93,7 @@ enum SessionCommand {
     },
     /// Hide one exact normalized session ID locally without changing provider history.
     Hide {
-        /// Stable ID from the dashboard Peek view or `coding-agents --json`.
+        /// Stable ID from the dashboard Peek view or `open-agent-view --json`.
         #[arg(value_name = "SESSION_ID")]
         session_id: String,
     },
@@ -103,6 +104,22 @@ enum SessionCommand {
     },
     /// List session IDs hidden only from Open Agent View.
     Hidden,
+    /// Set a private Open Agent View display name without renaming the provider session.
+    Rename {
+        /// Stable normalized session ID from Peek or JSON output.
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
+        /// Local display name. Provider history is not changed.
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Clear a private display name and follow the latest provider title again.
+    ResetName {
+        #[arg(value_name = "SESSION_ID")]
+        session_id: String,
+    },
+    /// List private display-name overrides.
+    Aliases,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -146,7 +163,7 @@ enum DockerCommand {
 
 /// Open terminal dashboard for all your coding agents.
 #[derive(Debug, Parser)]
-#[command(name = "coding-agents", version, about)]
+#[command(name = "open-agent-view", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -329,6 +346,7 @@ fn main() -> Result<()> {
     // provider path would otherwise leave the common parent at 0755 and the
     // hidden-session registry would correctly refuse to use it.
     let hidden_sessions = HiddenSessions::load_default()?;
+    let session_aliases = SessionAliases::load_default()?;
     let provider_io_enabled = provider_io_enabled(&cli);
     let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
     let claude_enabled =
@@ -532,6 +550,7 @@ fn main() -> Result<()> {
             control.retain_owned(&mut snapshot);
         }
         hidden_sessions.filter_snapshot(&mut snapshot);
+        session_aliases.apply_snapshot_with_warning(&mut snapshot);
         serde_json::to_writer_pretty(io::stdout().lock(), &snapshot)?;
         println!();
         return Ok(());
@@ -547,6 +566,7 @@ fn main() -> Result<()> {
         Duration::from_millis(cli.refresh_ms),
         &control,
         hidden_sessions,
+        session_aliases,
     )?;
 
     Ok(())
@@ -617,7 +637,81 @@ fn run_session_command(command: &SessionCommand, cli: &Cli) -> Result<()> {
             let registry = HiddenSessions::load_default()?;
             print_hidden_sessions(&registry.list(), cli.json)
         }
+        SessionCommand::Rename { session_id, name } => {
+            let registry = SessionAliases::load_default()?;
+            let changed = registry.set_for_id(session_id, name)?;
+            if cli.json {
+                serde_json::to_writer_pretty(io::stdout().lock(), &registry.list())?;
+                println!();
+            } else if changed {
+                println!(
+                    "Named {} locally as {}. The provider title was not changed.",
+                    sanitize_cli_text(session_id),
+                    sanitize_cli_text(name.trim())
+                );
+            } else {
+                println!(
+                    "{} already has local name {}. The provider title was not changed.",
+                    sanitize_cli_text(session_id),
+                    sanitize_cli_text(name.trim())
+                );
+            }
+            Ok(())
+        }
+        SessionCommand::ResetName { session_id } => {
+            let registry = SessionAliases::load_default()?;
+            let removed = registry.clear(session_id)?;
+            if cli.json {
+                serde_json::to_writer_pretty(io::stdout().lock(), &removed)?;
+                println!();
+            } else if removed.is_some() {
+                println!(
+                    "Cleared the local name for {}. The latest provider title will appear on refresh.",
+                    sanitize_cli_text(session_id)
+                );
+            } else {
+                println!(
+                    "{} did not have a local name.",
+                    sanitize_cli_text(session_id)
+                );
+            }
+            Ok(())
+        }
+        SessionCommand::Aliases => {
+            let registry = SessionAliases::load_default()?;
+            print_session_aliases(&registry.list(), cli.json)
+        }
     }
+}
+
+fn print_session_aliases(records: &[SessionAliasRecord], json: bool) -> Result<()> {
+    if json {
+        serde_json::to_writer_pretty(io::stdout().lock(), records)?;
+        println!();
+        return Ok(());
+    }
+    if records.is_empty() {
+        println!("No sessions have local Open Agent View names.");
+        return Ok(());
+    }
+    println!(
+        "Local session names (provider titles are unchanged): {}",
+        records.len()
+    );
+    for record in records {
+        let provider = record
+            .provider
+            .as_ref()
+            .map(Provider::label)
+            .unwrap_or("unknown provider");
+        println!(
+            "  {}  {}  {}",
+            sanitize_cli_text(&record.id),
+            sanitize_cli_text(provider),
+            sanitize_cli_text(&record.alias)
+        );
+    }
+    Ok(())
 }
 
 fn print_hidden_sessions(records: &[HiddenSessionRecord], json: bool) -> Result<()> {
@@ -861,7 +955,7 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool) -> Result<()> {
         ),
     };
     if executable_available(executable) {
-        println!("{label} is already installed. Open the model picker in `coding-agents`; if authentication is needed, press Enter there.");
+        println!("{label} is already installed. Open the model picker in `open-agent-view`; if authentication is needed, press Enter there.");
         return Ok(());
     }
     let source = match &installer {
@@ -899,7 +993,7 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool) -> Result<()> {
     if !status.success() {
         bail!("{label} installer exited with status {status}");
     }
-    println!("{label} installation completed. Restart `coding-agents`, choose {label}, then open the model picker; OAV will hand off login if needed.");
+    println!("{label} installation completed. Restart `open-agent-view`, choose {label}, then open the model picker; OAV will hand off login if needed.");
     Ok(())
 }
 
@@ -1077,7 +1171,7 @@ fn run_docker_command(
             print_managed_statuses(&[status], json)?;
             if !json {
                 println!(
-                    "created stopped; run `coding-agents docker start {}` when ready",
+                    "created stopped; run `open-agent-view docker start {}` when ready",
                     name
                 );
             }
@@ -1156,7 +1250,7 @@ mod tests {
     use super::*;
 
     fn docker_command(arguments: &[&str]) -> DockerCommand {
-        let mut argv = vec!["coding-agents", "docker"];
+        let mut argv = vec!["open-agent-view", "docker"];
         argv.extend_from_slice(arguments);
         let cli = Cli::try_parse_from(argv).unwrap();
         let Some(Commands::Docker { command }) = cli.command else {
@@ -1166,7 +1260,7 @@ mod tests {
     }
 
     fn session_command(arguments: &[&str]) -> SessionCommand {
-        let mut argv = vec!["coding-agents", "sessions"];
+        let mut argv = vec!["open-agent-view", "sessions"];
         argv.extend_from_slice(arguments);
         let cli = Cli::try_parse_from(argv).unwrap();
         let Some(Commands::Sessions { command }) = cli.command else {
@@ -1178,7 +1272,7 @@ mod tests {
     #[test]
     fn parses_digest_pinned_managed_create_command() {
         let cli = Cli::try_parse_from([
-            "coding-agents",
+            "open-agent-view",
             "docker",
             "create",
             "--name",
@@ -1202,7 +1296,8 @@ mod tests {
 
     #[test]
     fn destructive_managed_commands_do_not_imply_confirmation() {
-        let cli = Cli::try_parse_from(["coding-agents", "docker", "remove", "oav-agent"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["open-agent-view", "docker", "remove", "oav-agent"]).unwrap();
 
         assert!(matches!(
             cli.command,
@@ -1241,10 +1336,10 @@ mod tests {
             }
         );
         for arguments in [
-            vec!["coding-agents", "sessions"],
-            vec!["coding-agents", "sessions", "archive", "--limit", "0"],
+            vec!["open-agent-view", "sessions"],
+            vec!["open-agent-view", "sessions", "archive", "--limit", "0"],
             vec![
-                "coding-agents",
+                "open-agent-view",
                 "sessions",
                 "archive",
                 "--older-than-days",
@@ -1257,38 +1352,38 @@ mod tests {
 
     #[test]
     fn completed_sessions_are_visible_by_default_with_an_explicit_opt_out() {
-        for arguments in [vec!["coding-agents"], vec!["coding-agents", "--json"]] {
+        for arguments in [vec!["open-agent-view"], vec!["open-agent-view", "--json"]] {
             let cli = Cli::try_parse_from(arguments).unwrap();
             assert!(discovery_request(&cli).include_completed);
         }
         for arguments in [
-            vec!["coding-agents", "--all"],
-            vec!["coding-agents", "--json", "--all"],
+            vec!["open-agent-view", "--all"],
+            vec!["open-agent-view", "--json", "--all"],
         ] {
             let cli = Cli::try_parse_from(arguments).unwrap();
             assert!(discovery_request(&cli).include_completed);
         }
         for arguments in [
-            vec!["coding-agents", "--hide-completed"],
-            vec!["coding-agents", "--json", "--active-only"],
+            vec!["open-agent-view", "--hide-completed"],
+            vec!["open-agent-view", "--json", "--active-only"],
         ] {
             let cli = Cli::try_parse_from(arguments).unwrap();
             assert!(!discovery_request(&cli).include_completed);
         }
-        assert!(Cli::try_parse_from(["coding-agents", "--all", "--hide-completed"]).is_err());
+        assert!(Cli::try_parse_from(["open-agent-view", "--all", "--hide-completed"]).is_err());
     }
 
     #[test]
     fn external_provider_history_is_opt_in_and_fixtures_remain_complete() {
-        let live = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
+        let live = Cli::try_parse_from(["open-agent-view", "--json"]).unwrap();
         assert!(!discovery_request(&live).include_external);
 
         let external =
-            Cli::try_parse_from(["coding-agents", "--json", "--include-external"]).unwrap();
+            Cli::try_parse_from(["open-agent-view", "--json", "--include-external"]).unwrap();
         assert!(discovery_request(&external).include_external);
 
         let fixture =
-            Cli::try_parse_from(["coding-agents", "--fixture", "/tmp/snapshot.json"]).unwrap();
+            Cli::try_parse_from(["open-agent-view", "--fixture", "/tmp/snapshot.json"]).unwrap();
         assert!(discovery_request(&fixture).include_external);
     }
 
@@ -1413,11 +1508,11 @@ mod tests {
     #[test]
     fn malformed_docker_commands_are_rejected_during_parsing() {
         for arguments in [
-            vec!["coding-agents", "docker"],
-            vec!["coding-agents", "docker", "status"],
-            vec!["coding-agents", "docker", "start"],
-            vec!["coding-agents", "docker", "create", "--name", "agent"],
-            vec!["coding-agents", "docker", "stop", "agent", "--yes=true"],
+            vec!["open-agent-view", "docker"],
+            vec!["open-agent-view", "docker", "status"],
+            vec!["open-agent-view", "docker", "start"],
+            vec!["open-agent-view", "docker", "create", "--name", "agent"],
+            vec!["open-agent-view", "docker", "stop", "agent", "--yes=true"],
         ] {
             assert!(Cli::try_parse_from(arguments).is_err());
         }
@@ -1426,7 +1521,7 @@ mod tests {
     #[test]
     fn dashboard_cli_parses_fixture_and_safety_related_options() {
         let cli = Cli::try_parse_from([
-            "coding-agents",
+            "open-agent-view",
             "--fixture",
             "/tmp/snapshot.json",
             "--no-host-claude",
@@ -1478,7 +1573,7 @@ mod tests {
 
     #[test]
     fn live_discovery_mode_keeps_provider_io_enabled() {
-        let cli = Cli::try_parse_from(["coding-agents", "--json"]).unwrap();
+        let cli = Cli::try_parse_from(["open-agent-view", "--json"]).unwrap();
         assert!(provider_io_enabled(&cli));
         assert_eq!(cli.refresh_ms, 15_000);
     }
@@ -1494,17 +1589,20 @@ mod tests {
             ("copilot", LaunchProvider::Copilot),
             ("antigravity", LaunchProvider::Antigravity),
         ] {
-            let cli = Cli::try_parse_from(["coding-agents", "--json", "--launch-provider", value])
-                .unwrap();
+            let cli =
+                Cli::try_parse_from(["open-agent-view", "--json", "--launch-provider", value])
+                    .unwrap();
             assert_eq!(cli.launch_provider, expected);
         }
-        let alias = Cli::try_parse_from(["coding-agents", "--json", "--harness", "codex"]).unwrap();
+        let alias =
+            Cli::try_parse_from(["open-agent-view", "--json", "--harness", "codex"]).unwrap();
         assert_eq!(alias.launch_provider, LaunchProvider::Codex);
     }
 
     #[test]
     fn setup_requires_an_exact_supported_harness_and_confirmation_is_explicit() {
-        let cli = Cli::try_parse_from(["coding-agents", "setup", "antigravity", "--yes"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["open-agent-view", "setup", "antigravity", "--yes"]).unwrap();
         assert_eq!(
             cli.command,
             Some(Commands::Setup {
@@ -1512,14 +1610,14 @@ mod tests {
                 yes: true,
             })
         );
-        assert!(Cli::try_parse_from(["coding-agents", "setup", "unknown"]).is_err());
+        assert!(Cli::try_parse_from(["open-agent-view", "setup", "unknown"]).is_err());
     }
 
     #[test]
     fn refresh_interval_below_the_supported_floor_is_rejected() {
-        assert!(Cli::try_parse_from(["coding-agents", "--refresh-ms", "249"]).is_err());
-        assert!(Cli::try_parse_from(["coding-agents", "--history-limit", "0"]).is_err());
-        assert!(Cli::try_parse_from(["coding-agents", "--history-limit", "10001"]).is_err());
+        assert!(Cli::try_parse_from(["open-agent-view", "--refresh-ms", "249"]).is_err());
+        assert!(Cli::try_parse_from(["open-agent-view", "--history-limit", "0"]).is_err());
+        assert!(Cli::try_parse_from(["open-agent-view", "--history-limit", "10001"]).is_err());
     }
 
     #[cfg(unix)]

@@ -1007,7 +1007,7 @@ fn matches_filter(session: &AgentSession, needle: &str) -> bool {
 impl App {
     fn submit_composer(&mut self, mode: ComposerMode) -> AppAction {
         let input = self.input.trim().to_owned();
-        if input.is_empty() && mode != ComposerMode::Filter {
+        if input.is_empty() && !matches!(mode, ComposerMode::Filter | ComposerMode::Rename { .. }) {
             return AppAction::None;
         }
         self.input.clear();
@@ -1933,6 +1933,18 @@ mod tests {
             AppAction::Rename {
                 session_id: "one".into(),
                 name: "new name".into()
+            }
+        );
+
+        app.overlay = Overlay::Composer(ComposerMode::Rename {
+            session_id: "one".into(),
+        });
+        app.input = "   ".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Rename {
+                session_id: "one".into(),
+                name: String::new()
             }
         );
 

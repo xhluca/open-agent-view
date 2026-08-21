@@ -118,7 +118,7 @@ fn real_pi_launch_interrupt_and_daemon_cleanup() -> Result<()> {
     let supervisor = Arc::new(PiSupervisor::with_state_dir_and_exe(
         executable,
         directory.path().join("pi-state"),
-        Path::new(env!("CARGO_BIN_EXE_coding-agents")).to_path_buf(),
+        Path::new(env!("CARGO_BIN_EXE_open-agent-view")).to_path_buf(),
     )?);
     let mut cleanup = PiCleanup::new(supervisor.clone());
     let source = PiSource::managed(

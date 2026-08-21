@@ -36,7 +36,7 @@ fn managed_pi_survives_dashboard_reconnect_and_controls_exact_rpc_session() {
     let fake_pi = directory.path().join("fake-pi");
     write_fake_pi(&fake_pi);
     let state_dir = directory.path().join("state");
-    let daemon_exe = Path::new(env!("CARGO_BIN_EXE_coding-agents")).to_path_buf();
+    let daemon_exe = Path::new(env!("CARGO_BIN_EXE_open-agent-view")).to_path_buf();
     let first_supervisor = Arc::new(
         PiSupervisor::with_state_dir_and_exe(
             fake_pi.display().to_string(),

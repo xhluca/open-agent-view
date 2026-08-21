@@ -79,7 +79,7 @@ impl PtyApp {
         let stdout = duplicate_file(slave).expect("duplicate slave for stdout");
         let stderr = unsafe { File::from_raw_fd(slave) };
         let home = tempfile::tempdir().expect("create isolated home");
-        let mut command = Command::new(env!("CARGO_BIN_EXE_coding-agents"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_open-agent-view"));
         command
             .env("TERM", "xterm-256color")
             .env("HOME", home.path())
@@ -98,7 +98,7 @@ impl PtyApp {
                 Ok(())
             });
         }
-        let child = command.spawn().expect("launch coding-agents under PTY");
+        let child = command.spawn().expect("launch open-agent-view under PTY");
 
         Self {
             child,
@@ -133,7 +133,7 @@ impl PtyApp {
             }
             if self.child.try_wait().expect("poll child").is_some() {
                 panic!(
-                    "coding-agents exited while waiting for {description}\n--- screen ---\n{latest}\n--- raw ---\n{}",
+                    "open-agent-view exited while waiting for {description}\n--- screen ---\n{latest}\n--- raw ---\n{}",
                     String::from_utf8_lossy(&self.raw)
                 );
             }
@@ -163,7 +163,7 @@ impl PtyApp {
                 return;
             }
             if self.child.try_wait().expect("poll child").is_some() {
-                panic!("coding-agents exited while waiting for {description}");
+                panic!("open-agent-view exited while waiting for {description}");
             }
             thread::sleep(Duration::from_millis(20));
         }
@@ -1756,7 +1756,7 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(CTRL_R);
     app.wait_for("rename composer", |screen| {
         screen.contains("❯ name release-reviewer")
-            && screen.contains("enter to save · esc to cancel")
+            && screen.contains("empty resets to provider name")
     });
     app.send(ESC);
     app.wait_for("rename cancellation", |screen| !screen.contains("❯ name"));
@@ -1765,11 +1765,42 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
     app.send(&[0x7f; 16]);
     app.send(b"reviewer-display-name");
     app.send(ENTER);
-    let rename_refused = app.wait_for("unsupported rename submission", |screen| {
-        screen.contains("rename is unavailable through the supported provider CLI")
-            && !screen.contains("reviewer-display-name")
+    app.wait_for("local rename submission", |screen| {
+        screen.contains("provider title was not changed")
+            && screen.contains("No sessions match the current filter")
     });
-    assert!(!rename_refused.contains("reviewer-display-name"));
+
+    let alias_path = app
+        .home_path()
+        .join("state/open-agent-view/session-aliases.json");
+    let stored = fs::read_to_string(&alias_path).expect("read private alias registry");
+    assert!(stored.contains("reviewer-display-name"));
+    assert_eq!(
+        fs::metadata(&alias_path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+
+    app.send(CTRL_F);
+    app.send(&[0x7f; 16]);
+    app.send(b"reviewer-display-name");
+    app.send(ENTER);
+    app.wait_for("local alias is filterable", |screen| {
+        screen.contains("reviewer-display-name")
+    });
+    app.send(CTRL_R);
+    app.send(&[0x7f; 21]);
+    app.send(ENTER);
+    app.wait_for("local rename reset", |screen| {
+        screen.contains("latest provider title")
+            && screen.contains("No sessions match the current filter")
+    });
+    app.send(CTRL_F);
+    app.send(&[0x7f; 21]);
+    app.send(b"release-reviewer");
+    app.send(ENTER);
+    app.wait_for("provider name follows reset", |screen| {
+        screen.contains("release-reviewer") && !screen.contains("reviewer-display-name")
+    });
 
     app.exit_cleanly();
 }
@@ -1996,7 +2027,7 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
 
     let mut tiny = PtyApp::spawn(31, 7);
     let fallback = tiny.wait_for("tiny terminal fallback", |screen| {
-        screen.contains("coding-agents needs")
+        screen.contains("open-agent-view needs")
             && screen.contains("at least 32×8")
             && !screen.contains("release-reviewer")
     });

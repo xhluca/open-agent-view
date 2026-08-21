@@ -86,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           install -d "dist/${STEM}"
-          install -m 0755 "target/${TARGET}/release/coding-agents" "dist/${STEM}/coding-agents"
+          install -m 0755 "target/${TARGET}/release/open-agent-view" "dist/${STEM}/open-agent-view"
           install -m 0644 LICENSE README.md "dist/${STEM}/"
 
           if [[ "${RUNNER_OS}" == "Linux" ]]; then
@@ -120,8 +120,8 @@ jobs:
           set -euo pipefail
           install -d smoke
           tar -xzf "dist/${ARCHIVE}" -C smoke
-          binary="smoke/${STEM}/coding-agents"
-          test "$("${binary}" --version)" = "coding-agents ${VERSION}"
+          binary="smoke/${STEM}/open-agent-view"
+          test "$("${binary}" --version)" = "open-agent-view ${VERSION}"
           "${binary}" --help | grep -F "Open terminal dashboard" >/dev/null
           "${binary}" --json --no-host-providers |
             jq -e '.sessions == [] and .warnings == []' >/dev/null
@@ -146,8 +146,10 @@ jobs:
           OAV_RELEASE_BASE_URL="file://${release_root}" \
             ./install.sh
 
-          test "$("${install_root}/coding-agents" --version)" = \
-            "coding-agents ${VERSION}"
+          test "$("${install_root}/open-agent-view" --version)" = \
+            "open-agent-view ${VERSION}"
+          test "$("${install_root}/opav" --version)" = \
+            "open-agent-view ${VERSION}"
 
       - name: Retain packaged assets
         uses: actions/upload-artifact@v7

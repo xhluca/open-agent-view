@@ -1,6 +1,6 @@
 //! Durable ownership and control for Pi's stdio-only RPC protocol.
 //!
-//! A small `coding-agents` daemon owns the actual Pi stdin/stdout pipes and
+//! A small `open-agent-view` daemon owns the actual Pi stdin/stdout pipes and
 //! exposes a user-private Unix socket. Dashboard processes can reconnect to the
 //! daemon, while unrelated Pi processes remain read-only history.
 

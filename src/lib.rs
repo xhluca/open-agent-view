@@ -1,6 +1,7 @@
-//! Provider-neutral core for the `coding-agents` terminal application.
+//! Provider-neutral core for the `open-agent-view` terminal application.
 
 pub mod adapters;
+pub mod aliases;
 pub mod app;
 mod codex_rpc;
 pub mod codex_supervisor;
