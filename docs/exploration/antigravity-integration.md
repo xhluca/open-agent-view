@@ -55,8 +55,10 @@ conversations. `/agents` shows live subagents, while `/tasks` shows and can
 terminate background terminal tasks. Those are TUI panels, not documented
 external management protocols.
 
+`agy models`, `--model ID`, and `--prompt-interactive PROMPT` are also exposed.
 `--dangerously-skip-permissions` is an explicit authority bypass. Open Agent
-View never adds it. Its new-session command builder selects `--sandbox`.
+View never adds it. Its new-session builder selects `--sandbox`, the exact
+account-selected model, and an interactive initial prompt.
 
 ## The only documented discovery cache
 
@@ -90,10 +92,10 @@ claim complete history discovery.
 
 | Operation | Verified surface | Open Agent View policy |
 | --- | --- | --- |
-| Last session/workspace | Documented JSON cache | Supported, read-only |
+| Last session/workspace | Documented JSON cache | OAV-owned exact entries by default; other cache entries with `--include-external` |
 | List every conversation | Interactive `/resume` picker only | Not claimed |
 | Native resume | `agy --conversation ID` from its workspace | Supported, shell-free open |
-| Start | Interactive/headless CLI | Sandboxed command building block; no durable owner yet |
+| Models/login/start | `agy models`, first-run `agy`, sandboxed interactive prompt | Native login, exact model picker, OAV ownership record, full-screen launch and Left background |
 | Read transcript | Undocumented SQLite/protobuf | Not claimed |
 | Live state/subagents | In-process `/agents` and `/tasks` panels | Not claimed externally |
 | Reply/steer/interrupt | No documented external session protocol | Not claimed |
@@ -103,12 +105,20 @@ claim complete history discovery.
 The limitation is intentional: displaying one documented cached session is
 useful, but labeling it “all Antigravity sessions” would be incorrect.
 
+OAV persists only `(workspace, conversation ID)` pairs it correlates after its
+own foreground launch. The registry is atomic and user-private and rejects
+symlinks or group/other-readable state. This proves which cache entry OAV
+created; it does not add transcript, lifecycle, approval, or delete authority.
+When Antigravity replaces a workspace's last-conversation value, the older
+owned conversation is no longer discoverable through the documented surface.
+
 ## Repeatable checks
 
 ```console
 agy --version
 agy --help
 cargo test --locked --lib adapters::antigravity
+cargo test --locked --test real_tty antigravity_login_model_selection_and_left_background_are_integrated -- --exact
 ```
 
 For installer validation, download the manifest and script into a disposable

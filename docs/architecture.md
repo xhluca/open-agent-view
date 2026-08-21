@@ -60,9 +60,19 @@ catalog on a worker and opens a separately filtered, ten-row-page picker
 without changing the draft; `/model` opens the same picker as a command, while
 `/model NAME` preserves an exact custom-identifier path. The catalog contract is
 implemented by Claude CLI help aliases, Codex App Server `model/list`, Pi's
-offline list, and OpenCode's configured-model list. `/harness`, `/model`,
-`/completed`, and the other dashboard slash commands are reduced locally and
-never forwarded as a provider prompt.
+offline list, OpenCode's configured-model list, Cursor's account catalog,
+Copilot's short-lived headless SDK catalog, and Antigravity's model command. A
+catalog authentication failure becomes an explicit login action when the
+provider has a native setup surface; the same catalog reloads on return.
+`/harness`, `/model`, `/login`, `/completed`, and the other dashboard slash
+commands are reduced locally and never forwarded as a provider prompt.
+
+Launch presentation is explicit in the same controller contract. Background
+controllers run on a worker while the event loop advances a status spinner.
+Foreground controllers suspend the dashboard before provider I/O. Claude
+creates an exact `--background` UUID, verifies it in `claude agents`, and opens
+`attach`; Antigravity starts its sandboxed native UI. Both use the native PTY
+bridge so Left retains the frontend and returns to the dashboard.
 
 ## Process model
 
@@ -99,8 +109,8 @@ the full history, and ready key/typing bursts produce one final frame.
 Default discovery is ownership-scoped and includes completed managed work.
 Claude rows are filtered against OAV's private launch registry; Codex, Pi,
 OpenCode, Cursor, and Copilot contribute only exact supervisor-owned records;
-Antigravity has no managed inventory and therefore contributes nothing by
-default. Explicit Docker targets remain visible because naming them on the
+Antigravity contributes only the exact OAV-owned conversation that still
+matches its documented last-conversation cache. Explicit Docker targets remain visible because naming them on the
 command line is an intentional enrollment action.
 
 `--include-external` adds provider-wide read-only history. Completed sessions
@@ -165,7 +175,8 @@ Managed Cursor on Linux creates chats through the documented CLI and runs each
 turn as a detached stream-JSON process. A private registry stores the exact
 process identity and bounded log paths, allowing later dashboards to rediscover
 only OAV-owned runs. Cursor's external TTY-only picker is not scraped, so there
-is no global Cursor list. Reply begins a new process only after the prior turn
+is no global Cursor list. Its account model IDs come from `cursor-agent models`,
+are revalidated at launch, and are retained for later replies. Reply begins a new process only after the prior turn
 is idle; interrupt revalidates the exact Linux process identity first.
 
 GitHub Copilot uses two ACP authority tiers. With `--include-external`, a
@@ -174,7 +185,17 @@ observe/native-open only. A
 separate retained control connection owns only the sessions it creates during
 the current dashboard process, carries their live events, and enables prompt,
 inspect, cancel, and exact one-shot permission choices. That managed authority
-is process-local and is not reconstructed from persisted session metadata.
+is process-local and is not reconstructed from persisted session metadata. A
+separate short-lived headless SDK connection calls `models.list` and exits
+without creating a session; ACP applies the selected model before the first
+prompt.
+
+Antigravity exposes no documented all-conversation listing protocol. OAV
+records exact conversations it launches and correlates them with the documented
+workspace-to-last-conversation cache. Launch uses `--sandbox`, an optional exact
+`--model`, and `--prompt-interactive`; it never adds the dangerous
+permission-bypass flag. An older conversation can no longer be rediscovered
+after the provider replaces that workspace's last-conversation entry.
 
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.

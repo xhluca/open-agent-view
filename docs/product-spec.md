@@ -29,7 +29,8 @@ delete, filter, and refresh.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,
   confirmation dialogs, filters, and a new-session composer with a visible,
   draft-preserving harness picker and draft-preserving searchable provider
-  model picker.
+  model picker. Authentication errors hand off to the provider's native login
+  and reload the account catalog; credentials never pass through OAV.
 - A live completed-history toggle, 25-row progressive reveal, and reversible
   local hiding for rows that Open Agent View can observe but does not own.
 - A bounded provider-history window with an explicit CLI override; ordinary
@@ -41,10 +42,12 @@ delete, filter, and refresh.
 
 ## Runtime scope
 
-- Host Claude via supported CLI surfaces, starting with
-  `claude agents --json`.
-- Codex via the supported app-server and CLI protocols available in the
-  installed version.
+- Host Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity via
+  their documented CLI/protocol surfaces and explicit ownership boundaries.
+- Native foreground launch where the provider exposes a full-screen interface,
+  with Left backgrounding the retained frontend and restoring the dashboard.
+- Confirmed user-local installation of a missing provider harness through its
+  official installer, without making Rust or Cargo a user prerequisite.
 - Existing Docker containers with explicit discovery policy.
 - Optional launch of new, opt-in containers based on a configured image.
 

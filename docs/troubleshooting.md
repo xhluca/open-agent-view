@@ -31,6 +31,11 @@ and conventional user installs such as `~/.npm-global/bin/codex` and
 works. If the executable has another nonstandard location, pass its `--*-bin`
 option explicitly.
 
+To install a missing harness without a source checkout or Cargo, use
+`coding-agents setup HARNESS`. OAV names the official source and asks before it
+downloads or installs anything; `--yes` is required in non-interactive use.
+Restart the dashboard afterward so Tab's harness picker is rebuilt.
+
 Use a temporary adapter exclusion to regain the dashboard while investigating:
 
 ```console
@@ -156,17 +161,24 @@ displays the chosen harness and model.
 Press `tab` while composing to open the complete available harness palette;
 `/harness` opens it too. Preview with arrows or `tab`, confirm with `enter` or a
 number, and use `esc` to return without switching or losing the draft.
-For Claude, Codex, Pi, and OpenCode, press `shift+tab` from the task composer to
+For every configured launch-capable harness, press `shift+tab` from the task composer to
 load a searchable model picker without losing the current draft. `/model` with
 no argument opens the same picker as a command. Type to filter, navigate with
 arrows/Tab/Page Up/Page Down, then Enter; Escape preserves the prior model and
 draft. `/model NAME` remains the escape hatch for an exact valid custom
-identifier that the catalog does not show. Cursor and Copilot currently use
-their provider default and refuse model selection locally.
+identifier that the catalog does not show.
 
-If the picker reports a catalog error, run the provider surface directly in the
-same shell: `claude --help`, a healthy managed Codex App Server, `pi --offline
---list-models`, or `opencode models`. Pi/OpenCode entries normally use
+If the picker reports an authentication error, press Enter or `l`. OAV suspends
+the dashboard, runs that provider's native login/setup UI, restores the
+dashboard, and reloads the exact account catalog. `/login` starts the same
+handoff explicitly. OAV never asks you to paste a token into its UI. Pi's setup
+is its no-session TUI; choose `/login` there. Antigravity uses its first-run
+browser login.
+
+For deeper diagnosis, run the provider surface directly in the same shell:
+`claude --help`, a healthy managed Codex App Server, `pi --offline
+--list-models`, `opencode models`, `cursor-agent models`, `copilot login`, or
+`agy models`. Pi/OpenCode entries normally use
 `provider/model` form. A listed model can still fail later because the account,
 credentials, region, or provider configuration does not authorize it.
 
@@ -178,6 +190,13 @@ and selects the exact new provider/session ID. Providers that persist
 asynchronously are retried every 250 ms for up to five seconds. If the footer
 eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
 provider in `coding-agents --json --all`.
+
+The current foreground Claude path preassigns an exact UUID, invokes the
+documented `--background` launch, waits until `claude agents --json --all`
+lists that UUID, and immediately opens `claude attach`. Left backgrounds only
+the retained frontend and returns to the exact new row. Background-provider
+launches animate independently of the worker, so arrows, typing, and Escape do
+not wait on startup.
 
 Version 0.1.14 also handles two fast-completion edge cases: OAV-owned Codex
 threads stay visible even when Codex reports their source as `cli`, and a task

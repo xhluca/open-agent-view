@@ -40,6 +40,7 @@ are doing; do not infer release readiness from the package version in
 - [Docker runtime boundary](exploration/docker-runtime.md)
 - [Fresh-container provider validation](exploration/fresh-container-provider-validation.md)
 - [Main-account and container regressions](exploration/main-account-container-regressions.md)
+- [Authentication, model catalogs, setup, and foreground launch](exploration/auth-model-onboarding.md)
 
 Exploration notes distinguish observations from inferences and retain version
 and probe context. Product and operator documentation describe only behavior

@@ -61,6 +61,12 @@ The server did **not** advertise `sessionCapabilities.delete` or
 assuming that every method in a newer ACP schema is implemented. This version
 uses `session/load` to restore and replay a persisted conversation.
 
+Model discovery uses a separate official headless SDK process rather than the
+ACP session process. OAV frames `connect` and `models.list` with LSP
+`Content-Length`, retains only exact bounded `models[].id` values, and then
+terminates that owned temporary child. It does not create or load a session to
+populate the picker. `copilot login` is the native authentication handoff.
+
 ## Session model and storage
 
 `session/list` returns paginated `SessionInfo` values:
@@ -119,8 +125,10 @@ controller owns a session, avoiding two simultaneous clients.
 | Operation | Verified surface | Open Agent View policy |
 | --- | --- | --- |
 | List all persisted sessions | ACP `session/list` with cursor pagination | Supported |
+| Login/list models | `copilot login`; headless SDK `models.list` | Native login and exact account picker, without session creation |
 | Open externally | `copilot --resume=ID -C PATH` | Native open |
 | Inspect/reply | ACP load/prompt | Only after exact connection ownership |
+| Modeled launch | ACP `session/new` config options and `session/set_config_option` | Validate the exact account value and set before first prompt |
 | Interrupt | ACP `session/cancel` | Only active prompt on owning connection |
 | Approval | ACP request/response | Only exact pending request and offered one-shot option |
 | Close | Advertised ACP `session/close` | Release connection resource; not delete |
@@ -131,6 +139,7 @@ controller owns a session, avoiding two simultaneous clients.
 
 ```console
 cargo test --locked --lib adapters::copilot
+cargo test --locked --test real_tty copilot_login_reloads_the_exact_account_model_catalog -- --exact
 copilot --version
 copilot --help
 ```

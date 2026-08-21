@@ -66,9 +66,10 @@ checks; the guide also contains release gates that are not yet complete.
   a decision remains resolving until `serverRequest/resolved`, and a second
   dashboard cannot acquire the process-held controller lease.
 - Model-catalog tests cover Claude's installed-help alias parser, cursor-paged
-  visible Codex `model/list`, Pi's bounded offline table, and OpenCode's exact
-  `provider/model` output. Managed Pi argv and OpenCode `prompt_async` payload
-  tests prove the selected identifier reaches the provider-native launch
+  visible Codex `model/list`, Pi's bounded offline table, OpenCode's exact
+  `provider/model` output, Cursor's terminal-progress output, Copilot's
+  short-lived headless `models.list`, and Antigravity's model table. Managed Pi,
+  OpenCode, Cursor, Copilot, and Antigravity assertions prove the selected identifier reaches the provider-native launch
   surface; Shift+Tab preserves the composer draft, catalog workers ignore
   stale-provider results, and picker search stays separate from task input.
 - Request-reducer/UI tests reject unowned or wrong-turn requests, incomplete
@@ -110,8 +111,8 @@ checks; the guide also contains release gates that are not yet complete.
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
   v0.1.19, whose Linux x86-64 artifact was built and verified manually.
-- `scripts/real-tui-tests.sh` runs thirteen serialized tests on Linux and twelve
-  on macOS against real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
+- `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
+  real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
   exercise populated sections, contextual help, grouping toggle, `ctrl+f`
   filter apply/cancel/clear, slash commands, the harness palette, multiline
@@ -122,6 +123,19 @@ checks; the guide also contains release gates that are not yet complete.
   and collapses/expands a group. The 55×18 and 31×7 cases verify the bounded
   narrow layout and explicit too-small fallback. Every case asserts alternate
   screen and cursor restoration from the raw PTY stream.
+- Dedicated provider-onboarding PTYs begin with no credentials. Cursor and
+  Copilot show an account-catalog authentication error, hand Enter/`l` to a
+  native login, reload exact model IDs, preserve the task draft, and select an
+  exact model. Cursor then deliberately delays `create-chat`; the dashboard
+  animates launch progress and the resulting managed command contains the exact
+  model. Separate PTYs prove Claude background UUID launch immediately attaches
+  full-screen and returns to the exact row on Left, while Antigravity performs
+  first-run login, exact model selection, `--sandbox` full-screen launch, cache
+  ownership, and Left return without a dangerous bypass flag.
+- `tests/setup_installer.rs` uses an isolated `PATH` and fake curl/bash. It
+  proves non-TTY setup refuses before download without `--yes`, confirmed setup
+  exposes download/provider progress, uses the exact official URL, executes a
+  staged regular file, and removes that file afterward.
 - A dedicated Linux isolated real-PTY case enables fake Claude and managed Pi
   launch controllers and exercises the harness palette through the actual
   binary. It asserts complete choice visibility, arrow/Tab preview, number
@@ -349,18 +363,18 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Normalization, key routing, responsive layout, capability gates | Locked Rust test suite with Ratatui test backend | Verified |
 | Real terminal mode entry/restoration and basic keys | Host PTY plus separate fresh Docker PTYs | Verified |
 | Claude/Open Agent View empty-state visual comparison | Fresh Docker PTYs on the same immutable image | Verified manually |
-| Every current TUI action route, all normalized states, and large-queue behavior in a real PTY | Thirteen-test Linux / twelve-test macOS `real_tty` harness using canonical and generated fixtures | Verified |
-| Default completed-history exclusion and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
+| Every current TUI action route, all normalized states, provider onboarding, and large-queue behavior in a real PTY | Serialized `real_tty` harness using canonical/generated fixtures and fake account-scoped provider CLIs | Verified |
+| Default completed-history visibility and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
-| Searchable async model catalogs and exact modeled launch | Claude/Codex/Pi/OpenCode parsers, mock App Server/RPC/HTTP payload assertions, stale-result and isolated-search UI tests | Verified deterministically |
+| Searchable async model catalogs, native auth retry, and exact modeled launch | All seven provider catalog parsers/transports, mock App Server/RPC/HTTP/ACP/headless payload assertions, and signed-out real-PTY flows | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
 | OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |
-| Cursor owned launch/log/interrupt/reply authority | Disposable mock CLI with exact Linux PID identity | Verified on Linux |
-| Copilot connection-owned prompt/cancel/permission/load authority | Disposable mock ACP plus real unauthenticated ACP negotiation | Verified |
-| Antigravity documented-cache discovery and safe native command | Disposable cache/command fixtures plus isolated real PTY | Verified |
+| Cursor account model/login plus owned launch/log/interrupt/reply authority | Disposable mock CLI, signed-out real PTY, exact Linux PID identity | Verified on Linux |
+| Copilot account model/login plus connection-owned prompt/cancel/permission/load authority | Disposable headless/ACP mocks, signed-out real PTY, and real unauthenticated ACP negotiation | Verified |
+| Antigravity login/model/sandboxed launch and documented-cache ownership | Disposable cache/command fixtures plus isolated real PTY | Verified |
 | Managed-Docker command construction and authority failures | Injected command runner; no Docker daemon | Verified |
 | Authenticated managed Codex/Pi host lifecycle in isolated temporary state | Opt-in exact-response launch, inspect, reply, approval race, stop, delete/shutdown and PID cleanup | Verified on the reported host |
 | Authenticated Claude/Codex task lifecycle in a fresh container | Dedicated container credentials, network, and disposable tasks required | Not run |

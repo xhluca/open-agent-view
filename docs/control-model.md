@@ -29,7 +29,7 @@ never presented as an archive.
 | Discover | `claude agents --json` | Owning App Server `thread/list` | Same read surface | Provider protocol through exact container ID |
 | Inspect | `claude logs`, reconstructed as a terminal screen | `thread/read(includeTurns: true)`, bounded for display | Summary only | Claude logs; Codex summary |
 | Open | `claude attach` | `codex --remote … resume` against the owning server | `codex resume` | Interactive `docker exec` to the provider CLI |
-| Launch | `claude --background` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
+| Launch | Exact UUID through `claude --background`, then full-screen `claude attach` | `thread/start`, then `turn/start` | Disabled | Disabled for observe-only containers |
 | Interrupt | `claude stop`, exact provider-listed active host background sessions only | `turn/interrupt`, owned active turns only | Disabled | Disabled for observe-only containers |
 | Inline reply or provider request | Not exposed by the supported non-TTY CLI | Idle `turn/start`; working `turn/steer`; exact one-shot command decisions, safe denials, and non-secret structured input | Native TUI only | Disabled |
 | Archive or delete | No supported Claude command | Idle owned threads only | Disabled | Disabled |
@@ -43,6 +43,18 @@ stops and retains only that native frontend, restores the dashboard, and leaves
 the managed provider backend alive. Enter or Right on the same row resumes the
 exact retained frontend and replays its terminal screen. Left also returns from
 OAV's inline Peek without starting a provider CLI.
+
+Authentication is a terminal handoff, not an OAV credential store. The model
+picker or `/login` may run a provider's own login/setup UI after suspending the
+dashboard. Open Agent View neither reads the resulting token nor persists
+answers; it only retries the provider-native model catalog after the command
+returns. Providers revalidate an exact selected model at launch.
+
+Missing-harness setup is a separate explicit mutation. `coding-agents setup
+HARNESS` names the official source and requires a terminal confirmation (or
+literal `--yes`). Downloaded shell installers are staged in a private temporary
+file rather than streamed directly to a shell. Setup installs a CLI; it grants
+no session ownership or control authority.
 
 ## Claude ownership registry
 

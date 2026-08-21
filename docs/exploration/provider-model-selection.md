@@ -120,9 +120,66 @@ Primary references:
 - [OpenCode CLI model listing](https://opencode.ai/docs/cli/)
 - [OpenCode server session and message endpoints](https://opencode.ai/docs/server/)
 
+## Cursor
+
+Cursor exposes the authenticated account catalog through `cursor-agent models`.
+OAV removes terminal progress rendering, accepts only bounded exact identifier
+tokens, and treats `No models available for this account` or an authentication
+failure as a native-login opportunity. `cursor-agent login` runs with inherited
+terminal I/O; on return the picker reloads automatically.
+
+Before allocating a chat, the managed supervisor lists models again and refuses
+an unavailable exact selection. The selected ID is added to the owned
+`--resume ID --print --output-format stream-json --model MODEL` turn and stored
+with the ownership record for future replies. Cursor's TTY-only global session
+picker remains outside this model/catalog support.
+
+Primary references:
+
+- [Cursor CLI authentication](https://docs.cursor.com/en/cli/reference/authentication)
+- [Cursor CLI parameters](https://docs.cursor.com/en/cli/reference/parameters)
+
+## GitHub Copilot
+
+Copilot's ACP session process exposes model config options, while its official
+headless SDK exposes the account catalog. OAV starts a temporary
+`copilot --headless --no-auto-update --stdio`, sends LSP-framed `connect` and
+`models.list`, keeps exact bounded `models[].id`, and terminates that child. It
+does not call `session/new` merely to fill the picker.
+
+For a launch, the retained ACP connection creates the session, verifies the
+selected value against the returned model `configOptions`, sends
+`session/set_config_option`, waits for success, and only then sends the first
+prompt. `copilot login` is the native login handoff; a successful login drops
+only an unused/unowned stale ACP connection.
+
+Primary references:
+
+- [Copilot ACP server](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server)
+- [Copilot CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
+
+## Antigravity
+
+Antigravity exposes account models through `agy models` and selection through
+`--model`. The adapter parses bounded exact IDs and uses first-run `agy` as the
+native authentication/setup handoff. An OAV launch is foreground and includes
+`--sandbox --model MODEL --prompt-interactive PROMPT`; it never adds
+`--dangerously-skip-permissions`.
+
+After the native UI starts, OAV correlates the exact workspace's documented
+last-conversation cache value, records that pair as OAV-owned, and uses it as
+the refresh/selection hint. This remains a last-conversation-per-workspace
+surface, not a complete model/session management protocol.
+
+Primary reference:
+
+- [Antigravity CLI repository](https://github.com/google-antigravity/antigravity-cli)
+
 ## Safety and performance boundaries
 
-- Catalog commands have an eight-second timeout.
+- Catalog commands have provider-bounded timeouts (four seconds for Cursor,
+  eight seconds for Pi/OpenCode, request-bounded App Server/SDK calls, and 20
+  seconds for Antigravity's network-backed catalog).
 - stdout is rejected above 4 MiB.
 - Parsed catalogs are rejected above 20,000 distinct models.
 - Model identifiers are bounded to 128 bytes and cannot contain whitespace or
@@ -130,5 +187,6 @@ Primary references:
 - Catalog discovery is read-only and never starts a provider supervisor.
 - Claude discovery is additionally limited to the small `--help` response;
   Codex pagination is capped at 200 pages with hidden entries excluded.
-- Tests use isolated fake executables and authenticated loopback servers; they
-  do not read or mutate a user's provider sessions.
+- Tests use isolated fake executables, fake signed-out accounts, real PTYs, and
+  authenticated loopback servers; they do not read or mutate a user's provider
+  sessions or credentials.

@@ -104,6 +104,10 @@ coding-agents --docker-container my-agent-container
 # Check every configured CLI without starting the dashboard.
 coding-agents doctor
 
+# Install a missing harness with its official user-local installer.
+# Omit --yes for an interactive confirmation.
+coding-agents setup cursor --yes
+
 # Choose the initial task harness (Claude is the default).
 coding-agents --harness opencode
 
@@ -122,9 +126,13 @@ new task, then press `tab` for a visible harness picker. Use arrows or `tab` to
 preview Claude, Codex, Pi, OpenCode, Cursor, or Copilot; `enter` selects and
 `esc` returns without losing the draft. `/harness` opens the same picker,
 `/harness NAME` selects directly, and `/model` changes supported models
-(`/provider` remains an alias). From the task composer, `shift+tab` opens the
+(`/provider` remains an alias). Antigravity is a launch target when `agy` is
+installed. From the task composer, `shift+tab` opens the
 searchable model picker without losing the draft; the installed provider's
-catalog loads without blocking typing or navigation. Every row
+account-scoped catalog loads without blocking typing or navigation. If the
+provider needs authentication, the picker changes Enter (or `l`) into a native
+login handoff, then reloads the catalog automatically. `/login` starts the same
+setup flow for the selected harness. Every row
 spells out its provider name; open Peek to see whether it runs on the host or in
 Docker. Groups with more matches than the current page end in a selectable
 **Show more** row; filtering searches the complete bounded snapshot, including
@@ -145,18 +153,19 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Inspect and native open; launch with a catalog-backed model picker; interrupt an exact OAV-owned host background session only after live provider revalidation |
+| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; launch directly into full-screen `attach`, with Left returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Durable OAV-managed RPC sessions and their persisted OAV-owned history on Linux by default; unrelated host JSONL history with `--include-external` | Catalog-backed owned launch, inspect/reply/request handling, Ctrl+X stop then exact delete, and completed-session handoff to native Pi; unrelated history remains inspect/native-resume only |
 | OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
-| Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Owned launch, discovery, inspect, native resume/reply after idle, and verified interrupt |
-| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Persisted rows observe/native resume; owned launch/reply, inspect, cancel, and exact one-shot allow/reject |
-| Antigravity CLI | The documented most-recent conversation for each host workspace, only with `--include-external` | Native resume; cache entries remain observe-only |
+| Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog and selected-model launch; discovery, inspect, native resume/reply after idle, and verified interrupt |
+| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Native login; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; persisted rows remain observe/native-resume |
+| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, exact model selection, sandboxed full-screen launch, Left-to-background, and native resume; no inline approval or arbitrary all-history API |
 
 Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
 OAV-owned Cursor control. Copilot control lasts for the dashboard process's
-retained ACP connection. Antigravity and unrelated provider records remain
-read-only/native-open. On non-Linux platforms, Pi and OpenCode keep their
+retained ACP connection. Unrelated provider records remain read-only/native-open.
+Antigravity can rediscover only the provider's documented last conversation per
+workspace. On non-Linux platforms, Pi and OpenCode keep their
 history/native-open paths. See the [provider exploration notes](docs/exploration/README.md)
 for tested versions, isolation setup, protocol observations, and boundaries.
 

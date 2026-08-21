@@ -33,7 +33,7 @@ coding-agents [OPTIONS]
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process. |
+| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity uses its native full-screen UI. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
@@ -65,6 +65,20 @@ coding-agents doctor --json
 coding-agents doctor --docker-container exact-name-or-id
 ```
 
+Install one missing provider CLI through its official user-local installer:
+
+```console
+coding-agents setup HARNESS
+coding-agents setup HARNESS --yes
+```
+
+`HARNESS` accepts all seven launch values above. Without `--yes`, setup requires
+an interactive terminal confirmation naming the exact download/package source.
+In non-interactive use it refuses before network or installer execution. Shell
+installers are staged in a private temporary directory, download with a visible
+curl progress bar, and are removed afterward. npm installs retain npm's native
+progress. Restart the dashboard after setup so executable discovery runs again.
+
 `--harness` chooses the initial composer harness; `--launch-provider` remains
 an alias. In the new-task composer, `tab` opens a palette containing only
 configured launch-capable harnesses. Arrow keys or `tab` preview, `1`–`9`
@@ -72,20 +86,29 @@ select directly, `enter` confirms, and `esc` returns without changing the
 harness or losing the draft. `/harness NAME` selects explicitly;
 `/provider NAME` remains a compatibility alias.
 
-For Claude, Codex, Pi, and OpenCode, `shift+tab` from the new-task composer
+For every installed launch-capable provider, `shift+tab` from the new-task composer
 opens an asynchronous searchable picker while preserving the current draft;
 `/model` opens the same picker as a command. Type to filter, use arrows or `tab`
 to move, `page up`/`page down` to move ten choices, `enter` to select, and
 `esc` to keep the previous selection and draft. **Default** is always
 available. `/model NAME` accepts an exact custom
 identifier without loading the catalog, and `/model default` resets the
-selection. The selected harness/model is always displayed in the composer
+selection. `/login` hands the terminal to the selected provider's native
+authentication/setup UI. When the catalog reports an authentication failure,
+the picker offers `enter`/`l` for that handoff and reloads the same account
+catalog automatically. The selected harness/model is always displayed in the composer
 border before submission. Catalog sources are provider-native: Claude parses
 aliases advertised beside `--model` in `claude --help`; Codex requests all
 visible pages of App Server `model/list`; Pi parses `pi --offline
---list-models`; and OpenCode parses `opencode models`. A catalog is informative,
+--list-models`; OpenCode parses `opencode models`; Cursor parses `cursor-agent
+models`; Copilot queries its headless SDK `models.list` without creating a
+session; and Antigravity parses `agy models`. A catalog is informative,
 not proof that the current account can successfully invoke every listed model.
-Cursor and Copilot currently use their provider default model.
+
+The native setup surfaces are `claude auth login`, `codex login`, Pi's
+no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,
+`copilot login`, and Antigravity's first-run `agy` flow. OAV suspends its
+alternate screen before these commands and never reads or copies credentials.
 
 Copilot retains one process-local ACP control connection for sessions launched
 by the current dashboard. A later dashboard may still list a persisted Copilot

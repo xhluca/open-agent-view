@@ -32,6 +32,30 @@ The dashboard needs an interactive terminal. `--json` works without a TTY.
 All provider CLIs and Docker are optional; install only the providers you
 intend to supervise.
 
+## Install a missing coding-agent harness
+
+Open Agent View can stage a provider's official user-local installer, show its
+native download/install progress, and run it only after confirmation:
+
+```console
+coding-agents setup claude
+coding-agents setup codex
+coding-agents setup pi
+coding-agents setup opencode
+coding-agents setup cursor
+coding-agents setup copilot
+coding-agents setup antigravity
+```
+
+For a non-interactive script, review the named source first and add `--yes`.
+Official shell installers are downloaded to a private temporary file and then
+executed; OAV does not pipe a network response directly into a shell. Codex and
+Pi use their official npm packages. A failed download/install leaves the
+existing OAV binary and provider state alone. Restart `coding-agents` after a
+new harness is installed, select it with Tab, and use Shift+Tab for models.
+When authentication is required, Enter in the model picker hands the terminal
+to the provider's native login and reloads the account catalog afterward.
+
 ## One-line installation
 
 An authorized user of the current private repository can fetch the installer

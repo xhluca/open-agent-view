@@ -29,6 +29,9 @@ as stable contracts.
   — v0.1.17 native-return, executable-identity, launch-latency, and
   authentication reproductions on the reporting account and in isolated
   containers.
+- [`auth-model-onboarding.md`](auth-model-onboarding.md) — the seven-provider
+  installer/authentication/model-selection contract and isolated foreground
+  launch validation.
 
 Return to the [documentation index](../README.md), or use the
 [real-TTY validation guide](../tui-validation.md) to repeat the reference and

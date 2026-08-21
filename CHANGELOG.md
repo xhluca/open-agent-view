@@ -8,6 +8,48 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Cursor, GitHub Copilot, and Antigravity now expose searchable exact
+  account-model catalogs. Cursor passes the selected model to managed runs;
+  Copilot applies it through ACP before the first prompt; Antigravity passes it
+  to a sandboxed native launch.
+- Model-catalog authentication failures now offer an in-place native login
+  handoff. Enter or `l` suspends OAV, runs the provider login, restores the
+  dashboard, and reloads the catalog. `/login` exposes the same setup route for
+  Claude, Codex, Pi, OpenCode, Cursor, Copilot, and Antigravity.
+- `coding-agents setup HARNESS` installs any of the seven supported provider
+  CLIs with its official user-local installer, explicit confirmation, native
+  progress, and private staging for downloaded scripts.
+- Antigravity is now a launch target. OAV records exact conversations it starts,
+  rediscovers the documented last conversation for that workspace, and supports
+  first-run login, model selection, full-screen sandboxed launch, Left
+  backgrounding, and native resume.
+
+### Fixed
+
+- New Claude tasks now start with an exact background UUID and immediately open
+  full-screen `claude attach`; Left returns to the exact new dashboard row. This
+  replaces the silent background-only path that could appear frozen and never
+  surface a usable native view.
+- Background launch workers display an animated progress indicator without
+  blocking terminal input. Copilot authentication errors are reduced to a short
+  actionable picker message instead of raw protocol JSON.
+
+### Security
+
+- Antigravity launch always includes `--sandbox` and never adds its dangerous
+  permission-bypass flag. Its ownership registry is private, atomic, and refuses
+  symlinked or group/other-readable authority state.
+
+### Tests
+
+- Added real-PTY signed-out-to-signed-in model flows for Cursor and Copilot,
+  exact Cursor model propagation with a deliberately slow launch, foreground
+  Claude attach/Left/row selection, and Antigravity login/model/sandbox/Left
+  lifecycle. An isolated installer test proves confirmation precedes download,
+  progress remains visible, and staged scripts are removed.
+
 ## [0.1.19] - 2026-08-20
 
 ### Changed

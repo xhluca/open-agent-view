@@ -32,9 +32,10 @@ authenticated fresh-container end-to-end run.
 - [x] Launch host Claude tasks from the composer.
 - [x] Select every configured launch-capable harness from a visible,
   draft-preserving keyboard palette, with explicit model state.
-- [x] Load searchable provider-native model catalogs asynchronously for Claude,
-  Codex, Pi, and OpenCode through a draft-preserving Shift+Tab route while
-  retaining exact custom model identifiers.
+- [x] Load searchable provider-native model catalogs asynchronously for all
+  seven launch-capable providers through a draft-preserving Shift+Tab route,
+  retain exact custom model identifiers, and hand authentication failures to
+  the provider's native login UI.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
   exposes an exact resume command, using Enter or Right; Left returns from
@@ -55,6 +56,9 @@ authenticated fresh-container end-to-end run.
 - [x] Own process-local Copilot ACP launch, prompt/reply, inspection, cancel,
   and exact one-shot permission response; keep persisted list rows
   observe/native-open.
+- [x] Launch exact owned Antigravity conversations through its sandboxed native
+  UI with account model selection and Left-to-background, bounded by the
+  documented last-conversation-per-workspace cache.
 - [x] Reply/steer, archive, and delete owned Codex threads with explicit
   capability checks and lifecycle-state revalidation.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.
@@ -107,5 +111,7 @@ authenticated fresh-container end-to-end run.
 - [x] Manually publish the v0.1.17 Pi legacy-handoff and Ctrl+X-label hotfix
   after hosted jobs became unavailable, with unsupported platforms stated
   explicitly rather than filled with untested artifacts.
+- [x] Provide confirmed provider-CLI setup with native progress, private script
+  staging, and no Rust/Cargo prerequisite for ordinary users.
 - [ ] Decide public-repository/package publication only after the private
   release gates and security review pass.

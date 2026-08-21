@@ -49,6 +49,12 @@ an authentication flow.
 Help/config probes created only isolated cache files and
 `.config/cursor/cli-config.json`. No credentials were supplied or inspected.
 
+`cursor-agent login` is the documented native authentication flow;
+`cursor-agent models` returns account-visible model IDs and `--model ID`
+selects one. On the reporting account the read-only catalog returned `No models
+available for this account`, which is why OAV turns that picker state into an
+interactive login action instead of waiting for launch to time out.
+
 ## Structured managed runs
 
 Print mode supports `text`, `json`, and `stream-json`. The documented JSON and
@@ -70,7 +76,7 @@ and are deliberately absent from the adapter's command builder.
 | --- | --- | --- |
 | Install/version | Official script; `--version` | Supported by doctor/install docs |
 | List every chat | TTY-only `ls` picker | Not claimed |
-| Start | `create-chat` plus owned print mode | Supported for OAV-managed sessions on Linux |
+| Login/models/start | `login`, `models`, `--model`, `create-chat` plus owned print mode | Native login, exact account picker, modeled OAV-managed sessions on Linux |
 | Resume/open | `--resume ID`, `--workspace PATH` | Native open, shell-free arguments |
 | Read transcript | Owned `stream-json` output | Supported only for OAV-managed turns |
 | Reply/steer live work | New `--resume ID --print` turn; no live-steer API | Reply only after the owned turn exits |
@@ -82,7 +88,8 @@ The managed adapter allocates a chat, starts a detached safe print-mode turn,
 and stores its exact session ID, workspace, PID identity, and bounded log paths
 in a mode-`0600` registry below a mode-`0700` state directory. Discovery reads
 only that registry. A session gains inspect/reply/interrupt capabilities only
-when the persisted workspace and exact owned process identity still match.
+when the persisted workspace and exact owned process identity still match. The
+exact selected model is stored with that record and reused for later replies.
 Before signalling, Linux opens a pidfd and revalidates the process; a stale or
 tampered identity is refused. It never sends a signal based on PID alone.
 
@@ -100,6 +107,7 @@ cursor-agent --help
 cursor-agent create-chat --help
 cursor-agent ls --help
 cargo test --locked --lib adapters::cursor
+cargo test --locked --test real_tty cursor_login_reloads_account_models_and_launches_without_freezing_the_tui -- --exact
 ```
 
 Use a new disposable home and a real PTY for `ls`; never point a compatibility
