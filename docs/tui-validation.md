@@ -100,7 +100,7 @@ fixture expected by the next entry:
 | --- | --- |
 | Cyclic selection | Repeated `↓`, then repeated `↑`; headings and rows wrap at both ends. |
 | Bounded group paging | Use a fixture with at least 50 sessions in one group; verify only the terminal-sized page (never more than 25 rows) renders, move to its `Show N more` control, press `enter`, and verify selection moves to the first newly revealed row while full counts stay unchanged. Resize and verify future pages adapt without losing a valid selection. Filter for a still-hidden row and verify it is found. |
-| Ownership and completed scopes | Start without flags and verify only OAV-managed rows appear and completed is hidden. Submit `/completed show`; completed owned rows arrive without querying external OpenCode/Pi/Copilot/Antigravity history. Repeat with `--all`. Then restart with `--include-external --all` and verify the bounded external window appears. |
+| Ownership and completed scopes | Start without flags and verify only OAV-managed rows appear, including completed rows. Submit `/completed hide`, verify immediate active-only display, then `/completed show` to restore them without querying external OpenCode/Pi/Copilot/Antigravity history. Restart with `--hide-completed` and verify the same active-only startup. Then restart with `--include-external` and verify the bounded external window appears. |
 | Collapse | Move to each heading, `enter`, then `enter`; its rows disappear and return without losing a valid selection. |
 | Directory view | `ctrl+s`; rows regroup by working directory, then `ctrl+s` restores status order. |
 | Filter | `ctrl+f`, type `codex`, edit with Backspace, `enter`; only matches remain. `ctrl+f`, erase all text, `enter` restores all rows. |

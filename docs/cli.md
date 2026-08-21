@@ -13,7 +13,8 @@ coding-agents [OPTIONS]
 | Option | Meaning |
 | --- | --- |
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
-| `--all` | Include completed sessions in the dashboard or JSON output. They are excluded by default. |
+| `--all` | Compatibility flag that explicitly includes completed sessions; completed is already the default. |
+| `--hide-completed` / `--active-only` | Hide completed sessions at startup. `/completed show` restores them without restarting. |
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
 | `--include-external` | Include provider sessions not created or managed by Open Agent View. External history is excluded by default. |
 | `--history-limit N` | Read at most `N` persisted-history records per provider per refresh; default 100, range 1–10,000. Live/owned inventories are separate. |
@@ -54,9 +55,9 @@ I/O. This makes committed fixtures safe for real-TTY interaction tests.
 Useful read-only invocations:
 
 ```console
-coding-agents --json --all
-coding-agents --all
-coding-agents --include-external --all --history-limit 500
+coding-agents --json
+coding-agents --hide-completed
+coding-agents --include-external --history-limit 500
 coding-agents --json --no-host-claude --no-host-codex
 coding-agents --json --cwd /absolute/project
 coding-agents doctor
@@ -98,12 +99,13 @@ container is an error and produces a nonzero exit status.
 
 ## Completed history and bulk archive
 
-The default dashboard and JSON snapshot include only exact OAV-managed
-sessions, and exclude completed managed sessions. The two scopes are separate:
-`/completed show` and `--all` reveal completed sessions inside the current
-owned-only scope; they do not read unrelated provider history. Add
+The default dashboard and JSON snapshot include completed exact OAV-managed
+sessions. Ownership and lifecycle visibility remain separate: `/completed hide`
+or `--hide-completed` provides an active-only managed view, while `/completed
+show` restores completed sessions. These controls do not read unrelated
+provider history. Add
 `--include-external` when provider-wide history is actually wanted. For
-example, `coding-agents --include-external --all --history-limit 500` opts into
+example, `coding-agents --include-external --history-limit 500` opts into
 a bounded completed-history review.
 
 Completed filtering is applied by adapters and again at the central discovery
@@ -113,7 +115,8 @@ OpenCode's global persisted-history query is never started without both
 provider's completed/cwd/interactive contract are removed before a partial
 snapshot reaches the UI. The header shows `completed hidden` rather than a
 misleading zero. `/completed show`, `/completed hide`, and `/completed` update
-the running dashboard; `--all` selects the initial state. External history is
+the running dashboard; `--hide-completed` selects the active-only initial state
+and `--all` remains accepted for compatibility. External history is
 limited to 100 records per provider by default, with a warning when more exist.
 The Show-more row pages only the already discovered window.
 

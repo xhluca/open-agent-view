@@ -100,7 +100,7 @@ for these focused gates in addition to the aggregate commands:
 
 - the 70,000-session grouping and local-hide tests complete without rebuilding
   groups during navigation;
-- real-PTY exercise covers `/completed show|hide`, draft-preserving Shift+Tab
+- real-PTY exercise covers default-visible completed paging, `/completed show|hide`, draft-preserving Shift+Tab
   model selection, Ctrl+X local-hide wording from list and Peek, exact composer
   cursor placement, and nonblocking post-launch refresh/selection;
 - isolated Pi proves selected `--model` propagation and refuses to replace an

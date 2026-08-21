@@ -22,8 +22,8 @@ delete, filter, and refresh.
 ## Initial interface scope
 
 - A compact header with runtime context and state counts.
-- Sections for ready-for-review, needs-input, working, and, when `--all` or the
-  live `/completed show` command is explicit, completed managed sessions.
+- Sections for ready-for-review, needs-input, working, and completed managed
+  sessions by default, with an explicit active-only startup/toggle.
 - Rows with status, provider/runtime, name, latest useful summary, age, and
   optional repository metadata.
 - Keyboard navigation, contextual help, detail/transcript view, reply flow,

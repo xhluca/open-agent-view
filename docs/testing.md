@@ -146,10 +146,11 @@ checks; the guide also contains release gates that are not yet complete.
   requires an immediately available Antigravity row within 750 ms, proving
   that the first screen is not gated on the slowest provider.
 - A separate default-mode PTY supplies 1,000 completed fixture records without
-  `--all`, requires a usable `completed hidden` screen within 750 ms, and
-  proves that no completed row enters navigation. The same PTY submits
-  `/completed show`, verifies a bounded Completed page and Show-more control,
-  then submits `/completed hide` and verifies immediate removal. A second
+  a visibility flag, requires the bounded Completed page within 750 ms, then
+  sends 208 arrow events in one burst and requires the exact destination within
+  750 ms while emitting less than 24 KiB. It submits `/completed hide`, verifies
+  immediate removal, then restores the same bounded page with `/completed
+  show`. A second
   real-PTY test points OpenCode at a marker-writing, two-second executable,
   enables `/completed show`, and proves the external-history command is still
   never started without `--include-external`; the adapter test independently

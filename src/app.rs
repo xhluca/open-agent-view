@@ -1372,6 +1372,7 @@ mod tests {
             .map(|index| session(&format!("session-{index:05}"), SessionState::Completed))
             .collect();
         let mut app = app_with(sessions);
+        assert!(app.includes_completed);
         let rebuilds = app.group_cache_rebuilds;
 
         for _ in 0..2_000 {

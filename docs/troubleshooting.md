@@ -45,18 +45,17 @@ be running. Open Agent View will not start it during discovery. Check it with
 ordinary read-only Docker inspection, or remove the `--docker-container`
 option.
 
-## Completed is hidden, or the dashboard is sluggish
+## Completed sessions or a large dashboard are sluggish
 
-Plain `coding-agents` now has two independent safety scopes: it shows only
-OAV-managed sessions, and it initially hides completed managed sessions. The
+Plain `coding-agents` shows completed OAV-managed sessions by default. The
 roughly 70,000 rows reported by an earlier build were provider-wide OpenCode
 history, not OAV-created work. That global store is no longer queried by
-default—even after `/completed show`.
+default.
 
-Type `/completed show` or start with `--all` to see completed sessions inside
-the managed scope. Add `--include-external` only when provider-wide history is
-actually wanted; combine it with `--all` to include external completed rows.
-JSON uses the same independent flags.
+Type `/completed hide` or start with `--hide-completed` (`--active-only`) for an
+active-only view; `/completed show` restores completed managed sessions. Add
+`--include-external` only when provider-wide history is actually wanted. JSON
+uses the same independent ownership and lifecycle controls.
 
 Completed, interactive, and cwd filtering is enforced centrally even when a
 provider CLI returns rows that violate its own flags. OpenCode's global history

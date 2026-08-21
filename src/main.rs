@@ -145,9 +145,13 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
-    /// Include completed sessions in the dashboard or JSON output.
+    /// Compatibility flag; completed sessions are shown by default.
     #[arg(long)]
     all: bool,
+
+    /// Hide completed sessions at startup (alias: --active-only).
+    #[arg(long, visible_alias = "active-only", conflicts_with = "all")]
+    hide_completed: bool,
 
     /// Include foreground interactive sessions as well as background agents.
     #[arg(long)]
@@ -531,7 +535,10 @@ fn provider_io_enabled(cli: &Cli) -> bool {
 
 fn discovery_request(cli: &Cli) -> DiscoveryRequest {
     DiscoveryRequest {
-        include_completed: cli.all,
+        // `--all` remains accepted for scripts written before completed
+        // sessions became the default. `--hide-completed` is the explicit
+        // startup opt-out and mirrors `/completed hide` in the dashboard.
+        include_completed: cli.all || !cli.hide_completed,
         include_interactive: cli.include_interactive,
         include_external: cli.include_external || cli.fixture.is_some(),
         cwd: cli.cwd.clone(),
@@ -1073,10 +1080,10 @@ mod tests {
     }
 
     #[test]
-    fn completed_sessions_are_hidden_unless_all_is_explicit() {
+    fn completed_sessions_are_visible_by_default_with_an_explicit_opt_out() {
         for arguments in [vec!["coding-agents"], vec!["coding-agents", "--json"]] {
             let cli = Cli::try_parse_from(arguments).unwrap();
-            assert!(!discovery_request(&cli).include_completed);
+            assert!(discovery_request(&cli).include_completed);
         }
         for arguments in [
             vec!["coding-agents", "--all"],
@@ -1085,6 +1092,14 @@ mod tests {
             let cli = Cli::try_parse_from(arguments).unwrap();
             assert!(discovery_request(&cli).include_completed);
         }
+        for arguments in [
+            vec!["coding-agents", "--hide-completed"],
+            vec!["coding-agents", "--json", "--active-only"],
+        ] {
+            let cli = Cli::try_parse_from(arguments).unwrap();
+            assert!(!discovery_request(&cli).include_completed);
+        }
+        assert!(Cli::try_parse_from(["coding-agents", "--all", "--hide-completed"]).is_err());
     }
 
     #[test]

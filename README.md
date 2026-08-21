@@ -28,10 +28,10 @@ open, provider-neutral project.
   created or explicitly managed by Open Agent View. Provider-wide history is a
   deliberate `--include-external` opt-in, and enabled providers refresh
   concurrently so one slow provider does not hide the others.
-- **Responsive large queues.** Each group initially shows a terminal-sized page
-  of at most 25 sessions behind a selectable Show more row, and completed
-  history is excluded unless `--all` is explicit. When history is requested,
-  each provider reads at most 100 persisted records per refresh by default;
+- **Responsive large queues.** Completed managed sessions are visible by
+  default, but each group renders only a terminal-sized page of at most 25
+  sessions behind a selectable Show more row. Each provider reads at most 100
+  persisted records per refresh by default;
   `--history-limit` changes that explicit budget. Buffered
   key repeats and typed bursts are coalesced so large histories do not flood
   SSH, tmux, or the terminal renderer.
@@ -89,14 +89,14 @@ Useful examples:
 # Focus on the current project.
 coding-agents --cwd "$PWD"
 
-# Start with completed sessions visible (they are hidden by default).
-coding-agents --all
+# Start with only active sessions (completed is visible by default).
+coding-agents --hide-completed
 
 # Review bounded provider-wide history only when you explicitly need it.
-coding-agents --include-external --all --history-limit 500
+coding-agents --include-external --history-limit 500
 
 # Include external and interactive history in machine-readable output.
-coding-agents --json --include-external --all --include-interactive
+coding-agents --json --include-external --include-interactive
 
 # Add one explicitly selected running container.
 coding-agents --docker-container my-agent-container
@@ -128,11 +128,12 @@ catalog loads without blocking typing or navigation. Every row
 spells out its provider name; open Peek to see whether it runs on the host or in
 Docker. Groups with more matches than the current page end in a selectable
 **Show more** row; filtering searches the complete bounded snapshot, including
-rows that have not been revealed. Completed managed sessions are hidden before
-discovery by default; use `/completed show` inside the dashboard or start with
-`--all`, then use `/completed hide` to return to the active queue. These controls
-do not opt into unrelated provider history; add `--include-external` explicitly
-for that. On an active owned row, `ctrl+x` stops it immediately. After refresh
+rows that have not been revealed. Completed managed sessions are visible by
+default; use `/completed hide` for an active-only view and `/completed show` to
+restore them. Start with `--hide-completed` (`--active-only`) when desired.
+These controls do not opt into unrelated provider history; add
+`--include-external` explicitly for that. On an active owned row, `ctrl+x` stops
+it immediately. After refresh
 shows the same row idle, the next `ctrl+x` deletes it when the provider supports
 exact deletion, or removes it reversibly from OAV's view otherwise.
 

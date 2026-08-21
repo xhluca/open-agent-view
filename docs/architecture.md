@@ -96,18 +96,19 @@ JSON response. `ctrl+l` requests an immediate refresh. Status grouping is
 computed in one snapshot pass, provider labels are deduplicated without sorting
 the full history, and ready key/typing bursts produce one final frame.
 
-Default discovery is both ownership-scoped and active-only. Claude rows are
-filtered against OAV's private launch registry; Codex, Pi, OpenCode, Cursor, and
-Copilot contribute only exact supervisor-owned records; Antigravity has no
-managed inventory and therefore contributes nothing by default. Explicit
-Docker targets remain visible because naming them on the command line is an
-intentional enrollment action.
+Default discovery is ownership-scoped and includes completed managed work.
+Claude rows are filtered against OAV's private launch registry; Codex, Pi,
+OpenCode, Cursor, and Copilot contribute only exact supervisor-owned records;
+Antigravity has no managed inventory and therefore contributes nothing by
+default. Explicit Docker targets remain visible because naming them on the
+command line is an intentional enrollment action.
 
 `--include-external` adds provider-wide read-only history. Completed sessions
-remain a separate opt-in: `--all` selects completed display at startup, while
-`/completed show` and `/completed hide` update the refresh worker without
-changing the ownership scope. This lets providers avoid expensive history
-work: Claude does not receive its `--all` flag while completed is hidden, and
+remain a separate visibility control: `/completed show` and `/completed hide`
+update the refresh worker without changing the ownership scope;
+`--hide-completed` selects an active-only startup and `--all` remains a
+compatibility flag. Providers still avoid expensive history work when hidden:
+Claude does not receive its `--all` flag, and
 OpenCode never runs its global persisted-session database query unless both
 external and completed scopes are enabled. Because provider versions can
 violate filters, the discovery engine independently enforces completed,

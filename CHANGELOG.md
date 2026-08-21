@@ -8,6 +8,20 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Completed OAV-managed sessions are visible by default. `--hide-completed`
+  (alias `--active-only`) provides an explicit active-only startup, while
+  `--all` remains accepted for compatibility.
+
+### Performance
+
+- Default-visible completed queues retain cached grouping/index lookups,
+  terminal-sized pages capped at 25 rows, background discovery, bounded
+  persisted history, and coalesced key bursts. A real PTY now holds 1,000
+  completed rows and verifies startup plus a 208-arrow burst within 750 ms and
+  under 24 KiB of terminal output.
+
 ## [0.1.18] - 2026-08-20
 
 ### Fixed

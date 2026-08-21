@@ -134,11 +134,10 @@ summaries. Follow a selected row with `thread/read`; do not resume merely to
 inspect it. `thread/read` responses are safe for a history/details view and can
 include full turns.
 
-The dashboard's default active-only refresh uses the owning server's
-`thread/loaded/list`, filters managed hosts to exact supervisor-owned IDs, and
-reads only those records. It does not page persisted rollouts merely to prove
-that no live OAV-owned session exists. Explicit completed-history discovery
-uses `thread/list`, newest first by default, with the shared 100-record budget;
+The dashboard's default owned-only refresh reads exact supervisor-owned IDs
+from the owning server rather than scanning unrelated persisted rollouts.
+External completed-history discovery uses `thread/list`, newest first by
+default, with the shared 100-record budget;
 an opaque next cursor produces a usable partial snapshot plus a warning rather
 than the former all-or-nothing safety-cap failure.
 

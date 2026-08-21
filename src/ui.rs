@@ -300,7 +300,7 @@ fn empty_state_lines(includes_completed: bool) -> Vec<Line<'static>> {
             if includes_completed {
                 " Finished sessions wait here for you to review"
             } else {
-                " Hidden by default · use /completed show (or start with --all)"
+                " Hidden for this view · use /completed show or restart without --hide-completed"
             },
             Style::default().fg(DIM),
         )),

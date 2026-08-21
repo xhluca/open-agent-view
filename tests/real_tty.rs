@@ -748,7 +748,7 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
 }
 
 #[test]
-fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
+fn completed_history_is_visible_by_default_and_stays_responsive() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_configured(120, 34, |command, home| {
         let template_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -794,35 +794,61 @@ fn completed_history_is_hidden_by_default_before_it_reaches_the_list() {
     });
     let startup = Instant::now();
 
-    let screen = app.wait_for("default completed-history filter", |screen| {
-        screen.contains("completed hidden")
-            && screen.contains("use /completed show (or start with --all)")
-            && !screen.contains("loading provider sessions")
-            && !screen.contains("completed-session-0000")
-    });
-
-    assert!(
-        startup.elapsed() < Duration::from_millis(750),
-        "hidden completed history delayed first usable screen"
-    );
-    assert_lines_fit(&screen, 120);
-
-    app.send(b"/completed show");
-    app.send(ENTER);
-    let shown = app.wait_for("in-dashboard completed history enable", |screen| {
+    let screen = app.wait_for("default bounded completed history", |screen| {
         screen.contains("1000 completed (/completed hide)")
             && screen.contains("completed-session-0000")
             && screen.contains("completed-session-0022")
             && screen.contains("Show 23 more · 977 hidden")
             && !screen.contains("completed-session-0023")
+            && !screen.contains("loading provider sessions")
     });
-    assert_lines_fit(&shown, 120);
+
+    assert!(
+        startup.elapsed() < Duration::from_millis(750),
+        "1,000 visible completed sessions delayed first usable screen"
+    );
+    assert_lines_fit(&screen, 120);
+
+    app.screen();
+    let output_before = app.raw.len();
+    let navigation_started = Instant::now();
+    let mut navigation = DOWN.repeat(208);
+    navigation.extend_from_slice(b" ");
+    app.send(&navigation);
+    app.wait_for("coalesced completed-history arrow burst", |screen| {
+        screen.contains("completed-session-0008 ·")
+    });
+    let navigation_elapsed = navigation_started.elapsed();
+    let navigation_bytes = app.raw.len() - output_before;
+    assert!(
+        navigation_elapsed < Duration::from_millis(750),
+        "208 queued arrows took {navigation_elapsed:?} with 1,000 completed sessions"
+    );
+    assert!(
+        navigation_bytes < 24 * 1024,
+        "208 queued arrows emitted {navigation_bytes} bytes instead of coalescing frames"
+    );
+    // Fixture mode refuses provider inspection without leaking into provider
+    // I/O. The first Escape clears that refusal; the second closes Peek.
+    app.send(ESC);
+    app.send(ESC);
+    app.wait_for("completed-history peek close", |screen| {
+        !screen.contains("completed-session-0008 ·")
+    });
 
     app.send(b"/completed hide");
     app.send(ENTER);
     app.wait_for("in-dashboard completed history disable", |screen| {
         screen.contains("completed hidden (/completed show)")
             && !screen.contains("completed-session-0000")
+    });
+
+    app.send(b"/completed show");
+    app.send(ENTER);
+    app.wait_for("in-dashboard completed history restore", |screen| {
+        screen.contains("1000 completed (/completed hide)")
+            && screen.contains("completed-session-0000")
+            && screen.contains("Show 23 more · 977 hidden")
     });
     app.exit_cleanly();
 }
@@ -866,13 +892,14 @@ elif "models" in sys.argv:
             "--no-host-cursor",
             "--no-host-antigravity",
             "--include-external",
+            "--hide-completed",
             "--refresh-ms",
             "60000",
         ]);
     });
 
     app.wait_for("active-only OpenCode startup", |screen| {
-        screen.contains("completed hidden") && screen.contains("Hidden by default")
+        screen.contains("completed hidden") && screen.contains("restart without --hide-completed")
     });
     let started = Instant::now();
     app.send(b"/completed show");
@@ -1230,8 +1257,7 @@ fn owned_dashboard_never_starts_opencode_external_history_query_even_when_comple
     let startup = Instant::now();
 
     app.wait_for("OpenCode history-free default startup", |screen| {
-        screen.contains("completed hidden")
-            && screen.contains("use /completed show (or start with --all)")
+        screen.contains("0 completed (/completed hide)")
             && !screen.contains("loading provider sessions")
     });
 
@@ -1239,12 +1265,6 @@ fn owned_dashboard_never_starts_opencode_external_history_query_even_when_comple
         startup.elapsed() < Duration::from_millis(750),
         "default dashboard waited on OpenCode completed history"
     );
-    app.send(b"/completed show");
-    app.send(ENTER);
-    app.wait_for("owned-only completed view", |screen| {
-        screen.contains("0 completed (/completed hide)")
-            && screen.contains("showing completed sessions")
-    });
     assert!(
         !app.home_path().join("opencode-history-called").exists(),
         "OpenCode external history ran without --include-external"
