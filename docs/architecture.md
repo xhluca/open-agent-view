@@ -2,7 +2,7 @@
 
 ## Design overview
 
-`coding-agents` is divided into four layers:
+`open-agent-view` is divided into four layers:
 
 ```text
 CLI/TUI
@@ -31,6 +31,12 @@ Every session has:
 
 The initial lifecycle states are `ready_for_review`, `needs_input`, `working`,
 `completed`, and `unknown`. Raw provider states are retained for diagnostics.
+
+Provider discovery owns canonical titles. A final local presentation layer
+applies private session aliases by stable normalized ID after discovery and
+ownership filtering. This deliberately does not become an adapter capability:
+renaming the OAV row grants no authority over provider history. Clearing an
+alias exposes the newest provider title on the next refresh.
 
 ## Adapter contract
 

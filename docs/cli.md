@@ -1,13 +1,15 @@
 # CLI and keyboard reference
 
-This reference describes the current checkout. `coding-agents --help` and
-`coding-agents <subcommand> --help` remain authoritative for the installed
-binary.
+This reference describes the current checkout. `open-agent-view --help` and
+`open-agent-view <subcommand> --help` remain authoritative for the installed
+binary. `opav` is the installed shorthand; `coding-agents` remains a guarded
+legacy alias. All three execute the same canonical binary and report
+`open-agent-view VERSION`.
 
 ## Dashboard and JSON options
 
 ```text
-coding-agents [OPTIONS]
+open-agent-view [OPTIONS]
 ```
 
 | Option | Meaning |
@@ -55,21 +57,21 @@ I/O. This makes committed fixtures safe for real-TTY interaction tests.
 Useful read-only invocations:
 
 ```console
-coding-agents --json
-coding-agents --hide-completed
-coding-agents --include-external --history-limit 500
-coding-agents --json --no-host-claude --no-host-codex
-coding-agents --json --cwd /absolute/project
-coding-agents doctor
-coding-agents doctor --json
-coding-agents doctor --docker-container exact-name-or-id
+open-agent-view --json
+open-agent-view --hide-completed
+open-agent-view --include-external --history-limit 500
+open-agent-view --json --no-host-claude --no-host-codex
+open-agent-view --json --cwd /absolute/project
+open-agent-view doctor
+open-agent-view doctor --json
+open-agent-view doctor --docker-container exact-name-or-id
 ```
 
 Install one missing provider CLI through its official user-local installer:
 
 ```console
-coding-agents setup HARNESS
-coding-agents setup HARNESS --yes
+open-agent-view setup HARNESS
+open-agent-view setup HARNESS --yes
 ```
 
 `HARNESS` accepts all seven launch values above. Without `--yes`, setup requires
@@ -130,7 +132,7 @@ or `--hide-completed` provides an active-only managed view, while `/completed
 show` restores completed sessions. These controls do not read unrelated
 provider history. Add
 `--include-external` when provider-wide history is actually wanted. For
-example, `coding-agents --include-external --history-limit 500` opts into
+example, `open-agent-view --include-external --history-limit 500` opts into
 a bounded completed-history review.
 
 Completed filtering is applied by adapters and again at the central discovery
@@ -165,14 +167,14 @@ The local hidden-ID registry can also be managed without opening the TUI:
 ```console
 # Obtain the stable normalized ID from Peek or JSON output. Add
 # --include-external when the target is not OAV-managed.
-coding-agents --json --include-external --all
+open-agent-view --json --include-external --all
 
-coding-agents sessions hide 'pi:host:EXACT_ID'
-coding-agents sessions hidden
-coding-agents sessions unhide 'pi:host:EXACT_ID'
+open-agent-view sessions hide 'pi:host:EXACT_ID'
+open-agent-view sessions hidden
+open-agent-view sessions unhide 'pi:host:EXACT_ID'
 
 # Each maintenance command also supports machine-readable output.
-coding-agents --json sessions hidden
+open-agent-view --json sessions hidden
 ```
 
 `sessions hide` is idempotent and accepts an exact normalized ID even if its
@@ -181,13 +183,28 @@ local suppression; the row returns on the next discovery only if its provider
 still reports it. Neither command opens, stops, deletes, archives, or edits a
 provider session.
 
+Private display names use a separate registry and never call a provider rename
+surface:
+
+```console
+open-agent-view sessions rename 'pi:host:EXACT_ID' 'release captain'
+open-agent-view sessions aliases
+open-agent-view --json sessions aliases
+open-agent-view sessions reset-name 'pi:host:EXACT_ID'
+```
+
+`rename` and `reset-name` are idempotent. If a native harness renames the same
+conversation, the local OAV name continues to win until reset. After reset, the
+next refresh displays the provider's latest title. In the TUI, `ctrl+r` edits
+the same local name and an empty submission resets it.
+
 Provider-native bulk archive is currently available for exact OAV-owned,
 completed host Codex threads. The first command is always a read-only preview:
 
 ```console
-coding-agents sessions archive
-coding-agents sessions archive --cwd /absolute/project --older-than-days 30 --limit 100
-coding-agents --json sessions archive --older-than-days 30
+open-agent-view sessions archive
+open-agent-view sessions archive --cwd /absolute/project --older-than-days 30 --limit 100
+open-agent-view --json sessions archive --older-than-days 30
 ```
 
 The report distinguishes all completed threads seen, those matching the
@@ -196,7 +213,7 @@ selected. It lists skipped matched threads that are visible but unowned. To
 apply the reviewed batch, repeat the exact command with `--yes`:
 
 ```console
-coding-agents sessions archive --cwd /absolute/project --older-than-days 30 --limit 100 --yes
+open-agent-view sessions archive --cwd /absolute/project --older-than-days 30 --limit 100 --yes
 ```
 
 The default batch limit is 100 and the maximum is 1,100. Every archive is independently revalidated against
@@ -218,7 +235,7 @@ the workspace:
 
 ```console
 install -d /absolute/project /absolute/dedicated-agent-home
-coding-agents docker create \
+open-agent-view docker create \
   --name oav-agent \
   --image registry.example/agents/runtime@sha256:FULL_64_HEX_DIGEST \
   --workspace /absolute/project \
@@ -244,12 +261,12 @@ Every later command accepts the registered name or immutable ID and revalidates
 the immutable identity before acting:
 
 ```console
-coding-agents docker list
-coding-agents docker status oav-agent
-coding-agents docker start oav-agent
-coding-agents docker stop oav-agent --yes
-coding-agents docker status oav-agent --json
-coding-agents docker remove oav-agent --yes
+open-agent-view docker list
+open-agent-view docker status oav-agent
+open-agent-view docker start oav-agent
+open-agent-view docker stop oav-agent --yes
+open-agent-view docker status oav-agent --json
+open-agent-view docker remove oav-agent --yes
 ```
 
 `start` refuses an already-running container. `stop` refuses a stopped
@@ -312,15 +329,15 @@ label.
 | Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
 | Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
 | New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available; `/provider` is an alias. |
-| New-task composer | `/model` | Asynchronously load the selected Claude, Codex, Pi, or OpenCode catalog and open a searchable picker. |
+| New-task composer | `/model` | Asynchronously load the selected harness's account/catalog model list and open a searchable picker. |
 | Model picker | type, `backspace`, `↑` / `↓`, `tab` / `shift+tab`, `page up` / `page down` | Filter and navigate catalog results; provider discovery stays off the input thread. |
 | Model picker | `enter` / `esc` | Select the highlighted model, or return with the previous model and draft unchanged. |
-| New-task composer | `/model NAME` / `/model default` | Select an exact custom model identifier or reset to the provider default. Cursor/Copilot model selection refuses locally. |
+| New-task composer | `/model NAME` / `/model default` | Select an exact custom model identifier or reset to the provider default. The provider revalidates it at launch. |
 | New-task composer | `/completed [show\|hide]` | Toggle completed discovery, or set it explicitly. `show` refreshes providers; `hide` immediately removes completed rows and keeps later refreshes active-only. |
 | New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |
 | Writable composer | `backspace` | Remove the last character. |
-| Session row | `ctrl+r` | Enter rename composition; submission currently reports unsupported. |
+| Session row | `ctrl+r` | Edit a private OAV display name. Empty submission clears it and follows the latest provider title again. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
 | Session row or Peek | `ctrl+x` | Stop an exact active owned session; after refresh reports it idle, press again to delete it or remove it reversibly from OAV's view. Active rows without stop authority require a local-hide confirmation. |
 | Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete; otherwise offer to hide the undeletable rows locally. |

@@ -31,7 +31,7 @@ was empty and `turn/interrupt` returned `thread not found`. Therefore:
   is not a supported control path.
 
 This makes the App Server supervisor, rather than the session JSONL files, the
-control plane for Codex sessions created by `coding-agents`.
+control plane for Codex sessions created by `open-agent-view`.
 
 ## Official sources
 
@@ -458,5 +458,5 @@ until the owning endpoint is restored.
   endpoint/thread.
 
 This design provides full control for sessions launched through
-`coding-agents`, honest read-only discovery for other persisted Codex sessions,
+`open-agent-view`, honest read-only discovery for other persisted Codex sessions,
 and explicit capability degradation instead of fragile transcript scraping.

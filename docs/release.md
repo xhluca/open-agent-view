@@ -1,6 +1,6 @@
 # Release guide
 
-Open Agent View is distributed as a prebuilt `coding-agents` executable. Users
+Open Agent View is distributed as a prebuilt `open-agent-view` executable. Users
 should not need Rust or Cargo. This guide is for maintainers preparing the
 artifacts consumed by [`install.sh`](../install.sh).
 
@@ -52,7 +52,7 @@ version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packag
 target=x86_64-unknown-linux-gnu
 stem="open-agent-view-${version}-${target}"
 install -d "dist/${stem}"
-install -m 0755 target/release/coding-agents "dist/${stem}/coding-agents"
+install -m 0755 target/release/open-agent-view "dist/${stem}/open-agent-view"
 install -m 0644 LICENSE README.md "dist/${stem}/"
 source_date_epoch="$(git show -s --format=%ct HEAD)"
 tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 \
@@ -64,6 +64,9 @@ Extract and smoke-test the archive, test `install.sh` against a temporary local
 release root, create and push an annotated version tag, then publish exactly the
 verified archive and checksum with `gh release create`. Never
 upload an untested cross-compiled artifact merely to fill the matrix.
+The archive contains only the canonical `open-agent-view` executable. The
+installer creates relative `opav` and legacy `coding-agents` symlinks after
+version verification and leaves an unrelated existing alias untouched.
 
 ## Automated release contract
 
@@ -109,7 +112,7 @@ for these focused gates in addition to the aggregate commands:
   asynchronous prompt body;
 - Claude and Codex catalog tests consume their provider-native surfaces and
   reject malformed/pagination-overflow results; and
-- `coding-agents sessions hide`, `hidden`, and `unhide` are smoke-tested with an
+- `open-agent-view sessions hide`, `hidden`, and `unhide` are smoke-tested with an
   isolated `HOME`/`XDG_STATE_HOME`, including JSON output and private file modes.
 
 Do not describe authenticated model availability as verified merely because a
@@ -146,8 +149,9 @@ authenticated and public installation paths as applicable:
 
 ```console
 OAV_VERSION=MAJOR.MINOR.PATCH ./install.sh
-coding-agents --version
-coding-agents --json --no-host-providers
+open-agent-view --version
+opav --version
+open-agent-view --json --no-host-providers
 ```
 
 For a public release, repeat the command from fresh Linux x86_64, Linux ARM64,
@@ -159,7 +163,9 @@ read the repository.
 
 The installer downloads both release assets, validates that the checksum is a
 64-character SHA-256 value, verifies the archive before extraction, stages the
-new executable, and atomically replaces `coding-agents` only after verification.
+new executable, and atomically replaces `open-agent-view` only after verification.
+It then creates guarded relative shorthand/compatibility symlinks; it never
+overwrites a command whose version output does not identify Open Agent View.
 It does not edit shell startup files or fall back to compiling source.
 
 SHA-256 detects corruption and release-asset mismatch, but it does not by

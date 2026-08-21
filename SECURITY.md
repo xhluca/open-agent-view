@@ -17,7 +17,8 @@ already established private channel and ask for a secure transfer method.
 
 Include only the minimum initially necessary:
 
-- affected commit and `coding-agents --version` output;
+- affected commit and `open-agent-view --version` output (the `opav` shorthand
+  reports the same canonical identity);
 - operating system, terminal context, and provider/runtime versions;
 - whether the issue crosses visibility/authority or exact-target boundaries;
 - a redacted reproduction using disposable state where possible;

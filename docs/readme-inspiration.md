@@ -13,7 +13,7 @@ presentation references, not implementation dependencies.
   Rust out of the primary install path.
 - [mise](https://github.com/jdx/mise) puts a compact navigation row, a demo, and
   a two-command quickstart before its deeper explanation. **Applied:** make the
-  route from landing on the repository to running `coding-agents` obvious.
+  route from landing on the repository to running `open-agent-view` obvious.
 - [ripgrep](https://github.com/BurntSushi/ripgrep) precisely explains default
   behavior, shows real output, links to focused guides, and documents reasons
   not to use the tool. **Applied:** distinguish verified capabilities from

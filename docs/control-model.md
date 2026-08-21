@@ -12,7 +12,7 @@ hides it only from Open Agent View. An active row without Interrupt authority
 requires an explicit hide confirmation because hiding will not stop it. The normalized ID is
 stored in the private `hidden-sessions.json` registry and removed from later
 dashboard and JSON snapshots. Provider history, conversation state, and live
-processes remain unchanged. `coding-agents sessions hidden` audits that local
+processes remain unchanged. `open-agent-view sessions hidden` audits that local
 list; `sessions unhide SESSION_ID` removes the suppression without recreating
 or resuming anything.
 
@@ -21,6 +21,16 @@ Those actions remain available only where the tables below grant exact
 authority and retain their own revalidation. An observe-only row
 is never deleted merely because it can be hidden, and a local hidden record is
 never presented as an archive.
+
+The same presentation/mutation distinction applies to names. `ctrl+r` writes a
+private alias keyed by the normalized session ID in `session-aliases.json`;
+`sessions rename SESSION_ID NAME` provides the same local operation from the
+CLI. It never calls a provider rename surface. If the native harness changes
+its own title, discovery treats that as the canonical provider name. OAV shows
+it whenever no local alias exists; while an alias exists, the alias wins.
+Submitting an empty `ctrl+r` editor or running `sessions reset-name SESSION_ID`
+removes the override and refreshes the latest provider title. `sessions
+aliases` audits all overrides.
 
 ## Claude and Codex capability matrix
 
@@ -50,7 +60,7 @@ dashboard. Open Agent View neither reads the resulting token nor persists
 answers; it only retries the provider-native model catalog after the command
 returns. Providers revalidate an exact selected model at launch.
 
-Missing-harness setup is a separate explicit mutation. `coding-agents setup
+Missing-harness setup is a separate explicit mutation. `open-agent-view setup
 HARNESS` names the official source and requires a terminal confirmation (or
 literal `--yes`). Downloaded shell installers are staged in a private temporary
 file rather than streamed directly to a shell. Setup installs a CLI; it grants
@@ -58,7 +68,7 @@ no session ownership or control authority.
 
 ## Claude ownership registry
 
-`claude --background` returns an eight-character session ID. `coding-agents`
+`claude --background` returns an eight-character session ID. `open-agent-view`
 records that prefix with its provider and runtime in:
 
 ```text
@@ -86,7 +96,7 @@ to stop or remove a Docker container.
 
 Host Codex discovery and launch share one reconnectable App Server listening on
 a Unix socket. The server is detached from the dashboard and remains running
-after `coding-agents` exits. A later dashboard connects through
+after `open-agent-view` exits. A later dashboard connects through
 the App Server's WebSocket protocol over its private Unix socket and reloads
 the exact thread and active-turn IDs it created. State lives in:
 
@@ -137,7 +147,7 @@ Ordinary discovery holds a shared private recovery lock; the bounded
 stop/delete/restart sequence holds it exclusively, so a second dashboard waits
 instead of starting or attaching to an intermediate owner.
 
-`coding-agents sessions archive` uses the same boundary in bulk. It discovers
+`open-agent-view sessions archive` uses the same boundary in bulk. It discovers
 only ordinary non-archived host Codex threads, enriches them through the owning
 supervisor, selects only completed rows carrying the exact Archive capability,
 and defaults to a read-only plan. `--cwd`, `--older-than-days`, and the bounded
@@ -312,7 +322,7 @@ automatically.
 
 ## Managed Docker ownership
 
-`coding-agents docker create` accepts only a digest-pinned image and creates a
+`open-agent-view docker create` accepts only a digest-pinned image and creates a
 stopped, non-root, `--init`, capability-dropped container with
 `no-new-privileges`, a PID limit, explicit bind mounts, and Open Agent View
 labels. A cryptographically random instance ID is written both to the label and
@@ -341,7 +351,7 @@ state.
   transcript files. Press Enter to attach and reply through Claude itself.
 - File-change acceptance, permission grants, MCP form/URL acceptance, secret
   structured input, and unknown request types remain native-only.
-- There is not yet a `coding-agents` status/stop command for the detached Codex
+- There is not yet a `open-agent-view` status/stop command for the detached Codex
   server. Logs append without rotation. Stale sockets and unverified PIDs are
   intentionally left untouched.
 - Durable Codex supervision currently requires Linux because safe PID reuse

@@ -1,7 +1,7 @@
 # Demo asset provenance
 
 `open-agent-view.gif` and a static populated frame, `open-agent-view.png`, were
-captured from the real release-mode `coding-agents` binary on 2026-08-18. The
+captured from the real release-mode `open-agent-view` binary on 2026-08-18. The
 session data comes from the committed deterministic fixture
 [`fixtures/all-providers-sessions.json`](../../fixtures/all-providers-sessions.json),
 whose seven providers are also exercised through a real PTY test.
@@ -13,7 +13,7 @@ history. It was recorded at 150 columns by 42 rows with:
 cargo build --release --locked
 asciinema rec --overwrite --quiet --cols 150 --rows 42 \
   --idle-time-limit 1 \
-  -c './target/release/coding-agents \
+  -c './target/release/open-agent-view \
       --fixture fixtures/all-providers-sessions.json \
       --all \
       --include-interactive --refresh-ms 10000' \

@@ -8,6 +8,28 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `ctrl+r` now stores a private session display name keyed by the stable
+  normalized ID. `sessions rename`, `sessions aliases`, and `sessions
+  reset-name` expose the same non-provider-mutating layer to scripts. A local
+  name wins over native provider title changes until it is explicitly cleared.
+- The canonical installed command is now `open-agent-view`, with `opav` as the
+  short alias. The installer retains `coding-agents` as a compatibility alias
+  and refuses to replace an unrelated existing `opav` command.
+
+### Security
+
+- Session aliases use an atomic 0600 registry under the existing 0700 state
+  root, reject control characters, oversized values, symlinks, wrong owners,
+  and permissive modes, and never grant provider control authority.
+
+### Tests
+
+- Added unit, CLI, installer, and real-PTY coverage for alias precedence/reset,
+  cross-process reload, file modes, canonical/shorthand/legacy commands, and
+  unrelated-command collision refusal.
+
 ## [0.1.20] - 2026-08-20
 
 ### Added

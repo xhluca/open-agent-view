@@ -105,6 +105,13 @@ checks; the guide also contains release gates that are not yet complete.
   nonblocking effects, a deliberately slow managed launch does not block typed
   input, and post-launch selection requires both the exact provider and exact
   provider session ID.
+- Session-alias tests prove local precedence over a changed provider title,
+  empty/reset behavior, cross-process reload, CLI/JSON round trips, 0600/0700
+  persistence, and refusal of control characters, oversized values, symlinks,
+  wrong owners, and permissive files. The real PTY renames, filters by the new
+  name, resets it, and observes the fixture's canonical provider name again.
+- Installer tests execute `open-agent-view`, `opav`, and the legacy
+  `coding-agents` alias and prove an unrelated pre-existing `opav` is retained.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
@@ -177,7 +184,7 @@ checks; the guide also contains release gates that are not yet complete.
   `sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da44669d9392`:
   `claude agents` 2.1.209 rendered its empty Needs input/Working/Completed
   dashboard, opened and closed shortcut help with `?`, and restored terminal
-  modes on Escape; the mounted `coding-agents` release rendered its empty
+  modes on Escape; the mounted `open-agent-view` release rendered its empty
   dashboard, opened and closed contextual help, switched to directory view with
   `ctrl+s`, and restored the alternate screen on Escape. The Open Agent View
   probe additionally ran unprivileged with a read-only root, dropped
@@ -391,7 +398,7 @@ Validate the canonical fixture through the same parser used by the application:
 
 ```console
 jq empty fixtures/populated-sessions.json
-target/release/coding-agents \
+target/release/open-agent-view \
   --fixture fixtures/populated-sessions.json \
   --no-host-claude \
   --no-host-codex \
@@ -469,8 +476,9 @@ examples.
 - Managed-container session launch/control remains separate from container
   lifecycle; enter the started container through ordinary Docker tooling or
   observe it with `--docker-container`.
-- Claude inline reply and rename, for which the explored CLI exposes no safe
-  background-agent command. Enter opens its native attach and OAV reserves
+- Claude inline reply and provider-native rename, for which the explored CLI
+  exposes no safe background-agent command. OAV-local aliases remain available
+  for every normalized session without mutating Claude. Enter opens its native attach and OAV reserves
   Left to background that frontend; owned Codex threads support inline idle
   reply and active steer.
 - Managed OpenCode permission and structured-input requests are not yet exposed

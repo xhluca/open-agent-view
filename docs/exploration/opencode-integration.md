@@ -135,7 +135,7 @@ Verified against 1.18.18:
 - host and explicit-Docker command construction;
 - read-only transcript formatting;
 - coexistence through the provider-neutral discovery engine unit suite;
-- combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory;
+- combined `open-agent-view --json --all` Pi and OpenCode discovery from a third working directory;
 - exact native TUI resume by session ID and clean terminal restoration.
 - authenticated managed-server startup using a random secret, exact listener
   ownership, `0700`/`0600` state permissions, and canonical owned IDs;

@@ -4,9 +4,9 @@ Start with read-only evidence. Open Agent View deliberately refuses recovery
 that could adopt or signal the wrong provider process or container.
 
 ```console
-coding-agents --version
-coding-agents doctor
-coding-agents --json --all
+open-agent-view --version
+open-agent-view doctor
+open-agent-view --json --all
 ```
 
 Add the provider's `--no-host-*` flag to isolate one host adapter, and
@@ -18,7 +18,7 @@ contain private paths, task text, or authentication metadata.
 ## The dashboard says a TTY is required
 
 The interactive dashboard requires both stdin and stdout to be terminals. Use
-`coding-agents --json` in a pipe, CI job, editor task, or redirected command.
+`open-agent-view --json` in a pipe, CI job, editor task, or redirected command.
 For interactive use, run it directly in a terminal or allocate a TTY with the
 relevant SSH/container option.
 
@@ -32,17 +32,17 @@ works. If the executable has another nonstandard location, pass its `--*-bin`
 option explicitly.
 
 To install a missing harness without a source checkout or Cargo, use
-`coding-agents setup HARNESS`. OAV names the official source and asks before it
+`open-agent-view setup HARNESS`. OAV names the official source and asks before it
 downloads or installs anything; `--yes` is required in non-interactive use.
 Restart the dashboard afterward so Tab's harness picker is rebuilt.
 
 Use a temporary adapter exclusion to regain the dashboard while investigating:
 
 ```console
-coding-agents --no-host-codex
-coding-agents --no-host-claude
-coding-agents --no-host-pi
-coding-agents --no-host-opencode
+open-agent-view --no-host-codex
+open-agent-view --no-host-claude
+open-agent-view --no-host-pi
+open-agent-view --no-host-opencode
 ```
 
 An explicitly selected Docker container is stricter: it must exist and already
@@ -52,7 +52,7 @@ option.
 
 ## Completed sessions or a large dashboard are sluggish
 
-Plain `coding-agents` shows completed OAV-managed sessions by default. The
+Plain `open-agent-view` shows completed OAV-managed sessions by default. The
 roughly 70,000 rows reported by an earlier build were provider-wide OpenCode
 history, not OAV-created work. That global store is no longer queried by
 default.
@@ -85,7 +85,7 @@ For exact OAV-owned completed Codex threads, preview bounded provider-native
 archiving before changing anything:
 
 ```console
-coding-agents sessions archive --older-than-days 30 --limit 100
+open-agent-view sessions archive --older-than-days 30 --limit 100
 ```
 
 Review every candidate, then repeat with `--yes` if the scope is correct.
@@ -104,12 +104,12 @@ authority, confirm the **local hide** warning; provider history and the live
 process are retained.
 
 For a scriptable equivalent, copy the exact normalized ID from Peek or
-`coding-agents --json --include-external --all`:
+`open-agent-view --json --include-external --all`:
 
 ```console
-coding-agents sessions hide 'PROVIDER:RUNTIME:EXACT_ID'
-coding-agents sessions hidden
-coding-agents sessions unhide 'PROVIDER:RUNTIME:EXACT_ID'
+open-agent-view sessions hide 'PROVIDER:RUNTIME:EXACT_ID'
+open-agent-view sessions hidden
+open-agent-view sessions unhide 'PROVIDER:RUNTIME:EXACT_ID'
 ```
 
 Unhiding does not recreate anything; the row returns only when the provider
@@ -123,7 +123,7 @@ Pi's default history store is recursive: a session file can live in a
 per-workspace child directory, while `pi --session` searches only the exact
 `--session-dir` it receives. Version 0.1.8 resolves the UUID to the JSONL file
 and passes that file's parent directory. Upgrade and retry. If it persists,
-confirm `coding-agents --json --include-external --all` reports the exact UUID and that the JSONL
+confirm `open-agent-view --json --include-external --all` reports the exact UUID and that the JSONL
 file still exists under the configured `--pi-session-dir`; do not move or edit
 provider history as a recovery step.
 
@@ -189,7 +189,7 @@ remain responsive. When launch completes, Open Agent View refreshes immediately
 and selects the exact new provider/session ID. Providers that persist
 asynchronously are retried every 250 ms for up to five seconds. If the footer
 eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
-provider in `coding-agents --json --all`.
+provider in `open-agent-view --json --all`.
 
 The current foreground Claude path preassigns an exact UUID, invokes the
 documented `--background` launch, waits until `claude agents --json --all`
@@ -205,7 +205,7 @@ sessions and selects the exact returned ID. Claude launch preassigns an exact
 session UUID and detaches its documented `--background` bootstrap; a slow cold
 start is no longer killed at a fixed 15-second deadline.
 
-If Codex is missing only inside Open Agent View, confirm `coding-agents doctor`
+If Codex is missing only inside Open Agent View, confirm `open-agent-view doctor`
 and `codex --version` succeed in the same shell. A nonstandard executable can be
 selected with `--codex-bin /absolute/path/to/codex`. Do the equivalent with
 `--pi-bin` or `--opencode-bin`; do not assume a desktop-launched process has the
@@ -256,7 +256,7 @@ file modes before reuse.
   next managed startup uses a new unique socket and leaves stale socket files
   alone.
 - A verified live process with an unavailable socket is reported instead of
-  being replaced. There is currently no `coding-agents` supervisor stop/status
+  being replaced. There is currently no `open-agent-view` supervisor stop/status
   command.
 - Never kill the numeric PID merely because it appears in `supervisor.json`;
   PIDs can be reused. Do not unlink a socket while a verified server may be
@@ -433,8 +433,8 @@ sessions or containers it identifies.
 
 ## Managed Docker reports unavailable or mismatched
 
-Use `coding-agents docker list` and
-`coding-agents docker status NAME_OR_ID` first. A missing container, modified
+Use `open-agent-view docker list` and
+`open-agent-view docker status NAME_OR_ID` first. A missing container, modified
 ownership label, changed instance label, registry mismatch, or Docker failure
 is surfaced as unavailable/refused. The tool does not adopt the container or
 silently rewrite its owner record.

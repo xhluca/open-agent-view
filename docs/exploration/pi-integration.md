@@ -91,16 +91,16 @@ The key ownership limitation is transport-related: RPC is stdio-only. An
 arbitrary Pi TUI or RPC process does not expose an attachable socket. Open Agent
 View therefore controls only processes launched by its durable supervisor. The
 supervisor owns the exact Pi stdin/stdout pipes and exposes a user-private Unix
-socket to dashboard clients. Closing and reopening `coding-agents` reconnects
+socket to dashboard clients. Closing and reopening `open-agent-view` reconnects
 to the supervisor; it does not attempt to reconstruct or steal provider pipes.
 
 Managed sessions use:
 
 ```console
-coding-agents --launch-provider pi
+open-agent-view --launch-provider pi
 ```
 
-The first submitted task starts a hidden `coding-agents` supervisor, which in
+The first submitted task starts a hidden `open-agent-view` supervisor, which in
 turn launches:
 
 ```text
@@ -155,7 +155,7 @@ Verified:
 - read-only transcript rendering by exact header UUID;
 - coexistence through the provider-neutral discovery engine unit suite;
 - exact native TUI resume by UUID with a custom session directory and clean terminal restoration;
-- combined `coding-agents --json --all` Pi and OpenCode discovery from a third working directory.
+- combined `open-agent-view --json --all` Pi and OpenCode discovery from a third working directory.
 - an isolated process-level fake RPC provider covering launch, transcript
   inspection, active steer, confirmation allow/deny capabilities, structured
   text response, nonblocking stop, exact delete, completed native handoff,

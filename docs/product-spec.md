@@ -5,7 +5,7 @@ Status: approved on 2026-08-17.
 ## Product
 
 Build an open reproduction of the workflow exposed by `claude agents`, named
-**open-agent-view** and launched from the shell as `coding-agents`.
+**open-agent-view** and launched from the shell as `open-agent-view`.
 
 The primary experience is a terminal UI that discovers and supervises Claude
 and Codex sessions running either on the host or in Docker. It supports the
@@ -33,6 +33,8 @@ delete, filter, and refresh.
   and reload the account catalog; credentials never pass through OAV.
 - A live completed-history toggle, 25-row progressive reveal, and reversible
   local hiding for rows that Open Agent View can observe but does not own.
+- Private local session names keyed by stable normalized ID. Provider-native
+  titles remain canonical; a local name wins only in OAV until explicitly reset.
 - A bounded provider-history window with an explicit CLI override; ordinary
   active-session refreshes must never scan an unbounded persisted store.
 - An owned-only default inventory; provider-wide external history requires the
@@ -64,7 +66,8 @@ delete, filter, and refresh.
 ## Delivery
 
 - Rust and Ratatui, with Rust 1.75 as the initial MSRV.
-- A single binary named `coding-agents`.
+- A single binary named `open-agent-view`, installed with `opav` as a shorthand
+  and `coding-agents` as a compatibility alias.
 - Private development repository at `xhluca/open-agent-view`, suitable for a
   later public release under the MIT license.
 - Frequent coherent commits, exploration records, architectural decisions,

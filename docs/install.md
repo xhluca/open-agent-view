@@ -1,8 +1,10 @@
 # Installation
 
-Open Agent View installs one executable named `coding-agents`. The normal
-installation downloads a verified prebuilt binary: Rust and Cargo are not user
-prerequisites.
+Open Agent View installs one canonical executable named `open-agent-view`. It
+also creates `opav` as a short symlink and preserves `coding-agents` as a legacy
+compatibility symlink. The normal installation downloads a verified prebuilt
+binary: Rust and Cargo are not user prerequisites. An unrelated existing
+`opav` command is never overwritten.
 
 > [!IMPORTANT]
 > The repository and its preview releases are currently private. An authorized
@@ -38,20 +40,20 @@ Open Agent View can stage a provider's official user-local installer, show its
 native download/install progress, and run it only after confirmation:
 
 ```console
-coding-agents setup claude
-coding-agents setup codex
-coding-agents setup pi
-coding-agents setup opencode
-coding-agents setup cursor
-coding-agents setup copilot
-coding-agents setup antigravity
+open-agent-view setup claude
+open-agent-view setup codex
+open-agent-view setup pi
+open-agent-view setup opencode
+open-agent-view setup cursor
+open-agent-view setup copilot
+open-agent-view setup antigravity
 ```
 
 For a non-interactive script, review the named source first and add `--yes`.
 Official shell installers are downloaded to a private temporary file and then
 executed; OAV does not pipe a network response directly into a shell. Codex and
 Pi use their official npm packages. A failed download/install leaves the
-existing OAV binary and provider state alone. Restart `coding-agents` after a
+existing OAV binary and provider state alone. Restart `open-agent-view` after a
 new harness is installed, select it with Tab, and use Shift+Tab for models.
 When authentication is required, Enter in the model picker hands the terminal
 to the provider's native login and reloads the account catalog afterward.
@@ -75,7 +77,8 @@ curl -fsSL \
   https://raw.githubusercontent.com/xhluca/open-agent-view/main/install.sh | bash
 ```
 
-Both commands install to `~/.local/bin/coding-agents`. If that directory is not
+Both commands install to `~/.local/bin/open-agent-view`; `opav` invokes that
+same file. If the directory is not
 already on `PATH`, the installer prints the exact next step. It does not change
 shell startup files.
 
@@ -87,7 +90,7 @@ curl -fsSL \
   bash -s -- --version MAJOR.MINOR.PATCH --install-dir /absolute/bin
 ```
 
-The installer requires `curl`, `tar`, `install`, and either `sha256sum` or
+The installer requires `curl`, `tar`, `install`, `ln`, `readlink`, and either `sha256sum` or
 `shasum`. Run `./install.sh --help` for all arguments and environment variables.
 
 ## Verify the installation
@@ -95,9 +98,10 @@ The installer requires `curl`, `tar`, `install`, and either `sha256sum` or
 Start with checks that do not contact an agent provider:
 
 ```console
-coding-agents --version
-coding-agents --help
-coding-agents --json --no-host-providers
+open-agent-view --version
+opav --version
+open-agent-view --help
+open-agent-view --json --no-host-providers
 ```
 
 The JSON command should report empty `sessions` and `warnings` arrays. It does
@@ -106,8 +110,8 @@ not start the TUI, a provider, Docker, or the durable Codex supervisor.
 Then inspect the providers installed on this machine:
 
 ```console
-coding-agents doctor
-coding-agents
+open-agent-view doctor
+open-agent-view
 ```
 
 Missing optional providers are warnings. See [troubleshooting](troubleshooting.md)
@@ -125,8 +129,9 @@ a new stable release is published.
 
 ## Uninstall
 
-Remove the executable installed at `~/.local/bin/coding-agents`, or the custom
-path passed to `--install-dir`.
+Remove the executable installed at `~/.local/bin/open-agent-view` and its
+`opav`/`coding-agents` symlinks, or their equivalents under the custom path
+passed to `--install-dir`.
 
 Uninstalling does not stop or delete provider sessions, containers,
 bind-mounted workspaces, state homes, or authority records. See the

@@ -21,8 +21,8 @@ From a clean checkout:
 cargo +1.75.0 test --locked
 cargo +1.75.0 build --release --locked
 git rev-parse HEAD
-sha256sum target/release/coding-agents
-target/release/coding-agents --version
+sha256sum target/release/open-agent-view
+target/release/open-agent-view --version
 docker image inspect \
   sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da44669d9392 \
   --format '{{.Id}} {{json .RepoTags}}'
@@ -40,7 +40,7 @@ new tag and cite the old result.
 First validate the synthetic populated screen without contacting providers:
 
 ```console
-target/release/coding-agents \
+target/release/open-agent-view \
   --fixture fixtures/populated-sessions.json \
   --all \
   --no-host-claude \
@@ -111,10 +111,10 @@ fixture expected by the next entry:
 | Task commands | `/help`, `enter` lists dashboard commands rather than filtering. Verify `/harness` opens the picker; use `/harness NAME`, `/model NAME`, `/model default`, and `/completed show|hide`, verifying the composer/header after each. `/provider` remains an alias and `/filter TEXT` remains an explicit alternative to `ctrl+f`. |
 | Model picker and login | With each isolated selectable-model controller, type a task draft and press Shift+Tab. Verify catalog loading never blocks arrows/typing, the draft remains unchanged, search text stays isolated from task input, arrows/Tab wrap, Page Up/Page Down move by ten, Enter selects, and Escape preserves the prior choice/draft. Repeat through `/model`. Verify Claude aliases, cursor-paged Codex results, Pi/OpenCode `provider/model`, Cursor/Copilot/Antigravity exact account IDs, Default, empty results, catalog error, stale late result, and exact custom `/model NAME`. For a signed-out Cursor/Copilot/Antigravity fixture, Enter or `l` must suspend OAV, show native login, restore OAV, automatically reload models, and preserve the draft. |
 | Foreground launch | In isolated fake-account PTYs, submit Claude and Antigravity tasks. Claude must allocate an exact background UUID, verify it in the agent inventory, and open full-screen attach. Antigravity must pass the exact selected model plus `--sandbox`, never a permission-bypass flag. Left must return to OAV and the exact new row must appear. |
-| Missing harness setup | With an isolated PATH, run `coding-agents setup cursor` without a TTY/`--yes` and verify no downloader runs. Repeat with `--yes`; verify official URL, visible download/provider progress, private staged file execution, cleanup, and completion instructions. |
+| Missing harness setup | With an isolated PATH, run `open-agent-view setup cursor` without a TTY/`--yes` and verify no downloader runs. Repeat with `--yes`; verify official URL, visible download/provider progress, private staged file execution, cleanup, and completion instructions. |
 | Manual refresh | `ctrl+l`; the dashboard reports a refresh without blocking subsequent arrow or typing input. |
 | Open/return keys | Select every provider row, including managed rows with inline action capabilities, and verify both `enter` and `→` suspend the dashboard, clear the old physical screen, and open the full provider-native interface. Press `←`; the dashboard must return without stopping the managed backend. Reopen the same row and verify the retained screen is restored, then press `←` again. On inline Peek, `←` returns to the list without starting a provider client. |
-| Rename | Select a row, `ctrl+r`, edit the prefilled name, `esc`. Repeat and `enter`; the explicit unsupported notice must not repeat the proposed name. |
+| Rename | Select a row, `ctrl+r`, edit the prefilled name, `esc`. Repeat and `enter`; verify the row changes immediately, the private 0600 alias registry is written, provider IDs/state remain unchanged, and refresh preserves the alias. Rename the provider fixture underneath it and verify the local alias still wins. Submit an empty rename and verify the latest provider title returns. |
 | Inspect | Select `release-reviewer`, `space`; peek opens without raw escape sequences. `space` closes it and `esc` also closes it. |
 | Managed Peek actions | Select managed Pi/Codex/OpenCode/Cursor/Copilot rows that advertise Reply, Approve, Decline, or Respond and press `space`; each opens Peek for its bounded inline actions. Enter and Right must never open Peek from the list. Use an empty Peek Enter only where that provider boundary supports native open. |
 | Native open | Select an observe/native-open row and `enter`; fixture mode refuses before invoking a provider, and the dashboard is restored. Repeat with empty peek then `enter` where supported. |
@@ -181,8 +181,8 @@ OAV_PROBE_IMAGE=sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da446
 OAV_PROBE_DIR="$(mktemp -d)"
 trap 'rm -r -- "$OAV_PROBE_DIR"' EXIT
 chmod 0755 "$OAV_PROBE_DIR"
-install -m 0755 target/release/coding-agents "$OAV_PROBE_DIR/coding-agents"
-OAV_BINARY="$OAV_PROBE_DIR/coding-agents"
+install -m 0755 target/release/open-agent-view "$OAV_PROBE_DIR/open-agent-view"
+OAV_BINARY="$OAV_PROBE_DIR/open-agent-view"
 docker run --rm --interactive --tty \
   --name oav-empty-tui-probe \
   --network none \
@@ -196,8 +196,8 @@ docker run --rm --interactive --tty \
   --env XDG_STATE_HOME=/home/oav/state \
   --user 65532:65532 \
   --workdir /tmp \
-  --volume "$OAV_BINARY:/usr/local/bin/coding-agents:ro" \
-  --entrypoint /usr/local/bin/coding-agents \
+  --volume "$OAV_BINARY:/usr/local/bin/open-agent-view:ro" \
+  --entrypoint /usr/local/bin/open-agent-view \
   "$OAV_PROBE_IMAGE" --no-host-providers
 ```
 
@@ -216,9 +216,9 @@ OAV_PROBE_IMAGE=sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da446
 OAV_PROBE_DIR="$(mktemp -d)"
 trap 'rm -r -- "$OAV_PROBE_DIR"' EXIT
 chmod 0755 "$OAV_PROBE_DIR"
-install -m 0755 target/release/coding-agents "$OAV_PROBE_DIR/coding-agents"
+install -m 0755 target/release/open-agent-view "$OAV_PROBE_DIR/open-agent-view"
 install -m 0644 fixtures/populated-sessions.json "$OAV_PROBE_DIR/populated-sessions.json"
-OAV_BINARY="$OAV_PROBE_DIR/coding-agents"
+OAV_BINARY="$OAV_PROBE_DIR/open-agent-view"
 OAV_FIXTURE="$OAV_PROBE_DIR/populated-sessions.json"
 docker run --rm --interactive --tty \
   --name oav-populated-tui-probe \
@@ -233,9 +233,9 @@ docker run --rm --interactive --tty \
   --env XDG_STATE_HOME=/home/oav/state \
   --user 65532:65532 \
   --workdir /tmp \
-  --volume "$OAV_BINARY:/usr/local/bin/coding-agents:ro" \
+  --volume "$OAV_BINARY:/usr/local/bin/open-agent-view:ro" \
   --volume "$OAV_FIXTURE:/fixtures/populated-sessions.json:ro" \
-  --entrypoint /usr/local/bin/coding-agents \
+  --entrypoint /usr/local/bin/open-agent-view \
   "$OAV_PROBE_IMAGE" \
   --fixture /fixtures/populated-sessions.json \
   --all \
@@ -254,7 +254,7 @@ real PTY. Use a unique session and a command from above:
 
 ```console
 tmux new-session -d -s oav-tui-check -x 120 -y 30 \
-  'target/release/coding-agents --fixture fixtures/populated-sessions.json --all --no-host-claude --no-host-codex'
+  'target/release/open-agent-view --fixture fixtures/populated-sessions.json --all --no-host-claude --no-host-codex'
 tmux capture-pane -e -p -t oav-tui-check
 tmux send-keys -t oav-tui-check '?'
 tmux capture-pane -e -p -t oav-tui-check

@@ -4,7 +4,7 @@
 
 Open Agent View turns agent sessions into a single live queue: see what needs
 input, follow work in progress, review completed tasks when needed, and jump
-back into the provider's native interface. Run it as `coding-agents`.
+back into the provider's native interface. Run it as `open-agent-view`.
 
 ![Open Agent View showing Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity sessions](docs/assets/open-agent-view.gif)
 
@@ -66,7 +66,8 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 ```
 
 The installer selects a release asset for the current host, verifies its
-SHA-256 checksum, and installs `coding-agents` under `~/.local/bin`. The current
+SHA-256 checksum, and installs `open-agent-view` under `~/.local/bin`, plus the
+short `opav` command and the legacy `coding-agents` compatibility alias. The current
 manual v0.1.20 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
@@ -76,7 +77,7 @@ upgrades, the current pre-release boundary, and contributor source builds.
 Open the dashboard from any project:
 
 ```console
-coding-agents
+open-agent-view
 ```
 
 Common user-local installs are found automatically, including Codex under
@@ -87,36 +88,40 @@ Useful examples:
 
 ```console
 # Focus on the current project.
-coding-agents --cwd "$PWD"
+open-agent-view --cwd "$PWD"
 
 # Start with only active sessions (completed is visible by default).
-coding-agents --hide-completed
+open-agent-view --hide-completed
 
 # Review bounded provider-wide history only when you explicitly need it.
-coding-agents --include-external --history-limit 500
+open-agent-view --include-external --history-limit 500
 
 # Include external and interactive history in machine-readable output.
-coding-agents --json --include-external --include-interactive
+open-agent-view --json --include-external --include-interactive
 
 # Add one explicitly selected running container.
-coding-agents --docker-container my-agent-container
+open-agent-view --docker-container my-agent-container
 
 # Check every configured CLI without starting the dashboard.
-coding-agents doctor
+open-agent-view doctor
 
 # Install a missing harness with its official user-local installer.
 # Omit --yes for an interactive confirmation.
-coding-agents setup cursor --yes
+open-agent-view setup cursor --yes
 
 # Choose the initial task harness (Claude is the default).
-coding-agents --harness opencode
+open-agent-view --harness opencode
 
 # Preview a bounded archive batch; add --yes only after reviewing it.
-coding-agents sessions archive --older-than-days 30 --limit 100
-coding-agents sessions archive --older-than-days 30 --limit 100 --yes
+open-agent-view sessions archive --older-than-days 30 --limit 100
+open-agent-view sessions archive --older-than-days 30 --limit 100 --yes
 
 # Review rows hidden only from Open Agent View.
-coding-agents sessions hidden
+open-agent-view sessions hidden
+
+# Give one stable session ID a private dashboard name, then clear it later.
+open-agent-view sessions rename 'codex:host:EXACT_ID' 'release captain'
+open-agent-view sessions reset-name 'codex:host:EXACT_ID'
 ```
 
 Inside the dashboard, use `↑`/`↓` to move, `enter` or `→` to open, `←` to
@@ -144,6 +149,11 @@ These controls do not opt into unrelated provider history; add
 it immediately. After refresh
 shows the same row idle, the next `ctrl+x` deletes it when the provider supports
 exact deletion, or removes it reversibly from OAV's view otherwise.
+`ctrl+r` edits a private OAV display name; it never renames provider history.
+If the title is changed inside Claude, Codex, or another native harness, OAV
+shows that provider title after refresh unless a local name is set. A local name
+wins until it is cleared by submitting an empty rename or with `sessions
+reset-name`.
 
 ## Provider support
 

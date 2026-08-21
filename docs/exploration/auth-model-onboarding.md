@@ -9,7 +9,7 @@ the reporting account during this exploration.
 
 The dashboard follows one sequence for every launch-capable provider:
 
-1. If the CLI is missing, `coding-agents setup HARNESS` names the official
+1. If the CLI is missing, `open-agent-view setup HARNESS` names the official
    source, asks for confirmation, and retains native download/install progress.
 2. Shift+Tab asks the installed provider for its account-visible model catalog
    on a worker thread. OAV does not ship a guessed cross-account list.
