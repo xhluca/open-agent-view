@@ -117,7 +117,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.22, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.23, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they

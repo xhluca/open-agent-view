@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.23] - 2026-08-21
+
 ### Changed
 
 - Rename mode is visually distinct from ordinary task input: its cyan title,
