@@ -321,7 +321,11 @@ impl AntigravityController {
         let mut request =
             CommandRequest::new(self.invocation.executable.clone(), vec!["models".into()]);
         request.timeout = Duration::from_secs(20);
-        let output = self.runner.run(&request)?;
+        let output = self.runner.run(&request).map_err(|error| {
+            anyhow!(
+                "Antigravity could not load this account's model catalog: {error:#}. Press l for native setup, or type an exact model ID and press Enter"
+            )
+        })?;
         if output.status != 0 {
             let detail = output.stderr_lossy();
             if detail.to_ascii_lowercase().contains("auth")
@@ -337,7 +341,9 @@ impl AntigravityController {
         }
         let models = parse_antigravity_models(output.stdout_text()?);
         if models.is_empty() {
-            bail!("Antigravity returned no available models; press Enter to complete setup")
+            bail!(
+                "Antigravity returned no available models. Press l for native setup, or type an exact model ID and press Enter"
+            )
         }
         Ok(models)
     }
@@ -348,11 +354,12 @@ impl AntigravityController {
             .as_ref()
             .context("managed Antigravity launch is not configured")?;
         let before = cached_conversation(&self.cache_path, &request.cwd)?;
-        let spec = self.invocation.sandboxed_launch(
-            &request.cwd,
-            &request.prompt,
-            request.model.as_deref(),
+        let model = request.model.as_deref().context(
+            "Antigravity requires an exact model selection because its CLI can terminate a default-model launch when the account advertises no PlanModel/RequestedModel",
         )?;
+        let spec = self
+            .invocation
+            .sandboxed_launch(&request.cwd, &request.prompt, Some(model))?;
         let launch_key = format!("antigravity:new:{}", now_millis());
         let exit = crate::native_session::run(spec.command(), &launch_key)?;
         let conversation_id =
@@ -794,5 +801,30 @@ mod tests {
             ),
             vec!["claude-sonnet-4.6", "gemini-3-pro"]
         );
+    }
+
+    #[test]
+    fn managed_launch_refuses_to_start_without_an_exact_model() {
+        let directory = tempdir().unwrap();
+        let ownership = Arc::new(AntigravityOwnership {
+            path: directory.path().join("state/sessions.json"),
+            records: Mutex::new(BTreeSet::new()),
+        });
+        let controller = AntigravityController {
+            invocation: AntigravityInvocation::host("must-not-run"),
+            ownership: Some(ownership),
+            cache_path: directory.path().join("last_conversations.json"),
+            runner: Arc::new(ProcessRunner),
+        };
+        let error = controller
+            .launch(&LaunchRequest {
+                provider: Provider::Antigravity,
+                model: None,
+                prompt: "do not execute this".into(),
+                cwd: directory.path().to_path_buf(),
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("requires an exact model selection"));
     }
 }

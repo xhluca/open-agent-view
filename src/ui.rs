@@ -952,6 +952,20 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             "  No matching models".into()
         };
         lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
+        if app.has_valid_custom_model_input() {
+            lines.push(
+                Line::from(format!(
+                    " › Use exact model ID {}",
+                    sanitize_inline(&app.model_filter)
+                ))
+                .style(
+                    Style::default()
+                        .bg(SELECTED_BG)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            );
+        }
     } else {
         lines.extend(
             choices
@@ -989,7 +1003,9 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
         )));
     }
     lines.push(
-        Line::from(if app.models_error.is_some() && app.models_auth_available {
+        Line::from(if app.has_valid_custom_model_input() {
+            " enter use exact ID · l sign in/setup · esc back"
+        } else if app.models_error.is_some() && app.models_auth_available {
             " enter/l sign in · esc back"
         } else if popup_width >= 58 {
             " ↑/↓ move · PgUp/PgDn page · enter select · esc back"

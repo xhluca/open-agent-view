@@ -34,6 +34,7 @@ const LAUNCH_SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 struct PendingLaunch {
     provider: Provider,
     provider_session_id: String,
+    open_when_visible: bool,
     deadline: Instant,
 }
 
@@ -51,6 +52,9 @@ struct ActionEffect {
 struct LaunchWorkerResult {
     sequence: u64,
     provider: Provider,
+    model: Option<String>,
+    prompt: String,
+    open_when_visible: bool,
     result: Result<ControlOutcome, String>,
 }
 
@@ -179,9 +183,22 @@ pub fn run_dashboard(
                     }
                     let changed = snapshot != app.snapshot;
                     app.replace_snapshot(snapshot);
-                    if select_pending_launch(&mut app, pending_launch.as_ref()) {
+                    if let Some(session_id) =
+                        select_pending_launch(&mut app, pending_launch.as_ref())
+                    {
+                        let open_when_visible = pending_launch
+                            .as_ref()
+                            .is_some_and(|pending| pending.open_when_visible);
                         pending_launch = None;
                         pending_launch_retry_at = None;
+                        if open_when_visible {
+                            refresh_after_current |= handle_action_legacy(
+                                &mut terminal,
+                                &mut app,
+                                AppAction::Open { session_id },
+                                control,
+                            );
+                        }
                     }
                     if complete {
                         refresh_in_flight = false;
@@ -233,10 +250,22 @@ pub fn run_dashboard(
                                         PendingLaunch {
                                             provider: completed.provider,
                                             provider_session_id,
+                                            open_when_visible: completed.open_when_visible,
                                             deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
                                         }
                                     });
                                 pending_launch_retry_at = None;
+                            }
+                            Err(error)
+                                if control.supports_authentication(&completed.provider)
+                                    && looks_like_authentication_error(&error) =>
+                            {
+                                app.require_authentication(
+                                    completed.provider,
+                                    completed.model,
+                                    completed.prompt,
+                                    error,
+                                );
                             }
                             Err(error) => app.set_notice(format!("launch failed: {error}")),
                         }
@@ -322,7 +351,10 @@ pub fn run_dashboard(
                                         control,
                                     )
                                 }
-                                Ok(LaunchPresentation::Background) => {
+                                Ok(
+                                    presentation @ (LaunchPresentation::Background
+                                    | LaunchPresentation::DeferredForeground),
+                                ) => {
                                     latest_launch_sequence = latest_launch_sequence.wrapping_add(1);
                                     launching_provider = Some(provider.clone());
                                     launch_animation_tick = 0;
@@ -334,6 +366,7 @@ pub fn run_dashboard(
                                         provider,
                                         model,
                                         prompt,
+                                        presentation == LaunchPresentation::DeferredForeground,
                                         launch_tx.clone(),
                                     );
                                     ActionEffect::default()
@@ -363,6 +396,7 @@ pub fn run_dashboard(
                             pending_launch = Some(PendingLaunch {
                                 provider,
                                 provider_session_id,
+                                open_when_visible: false,
                                 deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
                             });
                             pending_launch_retry_at = None;
@@ -525,16 +559,29 @@ fn schedule_launch(
     provider: Provider,
     model: Option<String>,
     prompt: String,
+    open_when_visible: bool,
     sender: mpsc::Sender<LaunchWorkerResult>,
 ) {
-    schedule_launch_job(sequence, provider.clone(), sender, move || {
-        control.launch_with(provider, model, prompt)
-    });
+    let operation_provider = provider.clone();
+    let operation_model = model.clone();
+    let operation_prompt = prompt.clone();
+    schedule_launch_job(
+        sequence,
+        provider,
+        model,
+        prompt,
+        open_when_visible,
+        sender,
+        move || control.launch_with(operation_provider, operation_model, operation_prompt),
+    );
 }
 
 fn schedule_launch_job(
     sequence: u64,
     provider: Provider,
+    model: Option<String>,
+    prompt: String,
+    open_when_visible: bool,
     sender: mpsc::Sender<LaunchWorkerResult>,
     operation: impl FnOnce() -> Result<ControlOutcome> + Send + 'static,
 ) {
@@ -543,6 +590,9 @@ fn schedule_launch_job(
         let _ = sender.send(LaunchWorkerResult {
             sequence,
             provider,
+            model,
+            prompt,
+            open_when_visible,
             result,
         });
     });
@@ -560,6 +610,8 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
         app.set_notice(format!("failed to suspend dashboard: {error:#}"));
         return ActionEffect::default();
     }
+    let retry_model = model.clone();
+    let retry_prompt = prompt.clone();
     let result = control.launch_foreground_session(provider.clone(), model, prompt);
     let resume = terminal.resume_dashboard();
     match (result, resume) {
@@ -574,7 +626,13 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
             }
         }
         (Err(error), Ok(())) => {
-            app.set_notice(format!("launch failed: {error:#}"));
+            let error = format!("{error:#}");
+            if control.supports_authentication(&provider) && looks_like_authentication_error(&error)
+            {
+                app.require_authentication(provider, retry_model, retry_prompt, error);
+            } else {
+                app.set_notice(format!("launch failed: {error}"));
+            }
             ActionEffect {
                 refresh: true,
                 ..ActionEffect::default()
@@ -587,18 +645,34 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
     }
 }
 
-fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> bool {
+fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> Option<String> {
     let Some(pending) = pending else {
-        return false;
+        return None;
     };
     let Some(session) = app.snapshot.sessions.iter().find(|session| {
         session.provider == pending.provider
-            && session.provider_session_id == pending.provider_session_id
+            && (session.provider_session_id == pending.provider_session_id
+                || session
+                    .provider_session_id
+                    .starts_with(&pending.provider_session_id)
+                || pending
+                    .provider_session_id
+                    .starts_with(&session.provider_session_id))
     }) else {
-        return false;
+        return None;
     };
     let session_id = session.id.clone();
     app.select_and_reveal_session(&session_id)
+        .then_some(session_id)
+}
+
+fn looks_like_authentication_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("not authenticated")
+        || error.contains("authentication required")
+        || error.contains("sign in")
+        || error.contains("login required")
+        || error.contains("not logged in")
 }
 
 fn hide_sessions_from_app(
@@ -862,6 +936,9 @@ trait DashboardControl {
             provider.label()
         ))
     }
+    fn supports_authentication(&self, _provider: &Provider) -> bool {
+        false
+    }
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome>;
     fn resolve_session_approval(
         &self,
@@ -904,6 +981,10 @@ impl DashboardControl for ControlHub {
 
     fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
         self.authenticate(provider)
+    }
+
+    fn supports_authentication(&self, provider: &Provider) -> bool {
+        self.supports_authentication(provider)
     }
 
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
@@ -2139,7 +2220,7 @@ mod tests {
     #[test]
     fn slow_launch_job_does_not_block_keyboard_state_changes() {
         let (sender, receiver) = mpsc::channel();
-        schedule_launch_job(7, Provider::Pi, sender, || {
+        schedule_launch_job(7, Provider::Pi, None, "build".into(), false, sender, || {
             thread::sleep(Duration::from_millis(100));
             Ok(ControlOutcome {
                 message: "launched".into(),
@@ -2159,6 +2240,8 @@ mod tests {
         let completed = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
         assert_eq!(completed.sequence, 7);
         assert_eq!(completed.provider, Provider::Pi);
+        assert_eq!(completed.prompt, "build");
+        assert!(!completed.open_when_visible);
         assert_eq!(
             completed.result.unwrap().provider_session_hint.as_deref(),
             Some("pi-id")
@@ -2181,10 +2264,11 @@ mod tests {
         let pending = PendingLaunch {
             provider: Provider::Pi,
             provider_session_id: "same".into(),
+            open_when_visible: false,
             deadline: Instant::now() + Duration::from_secs(1),
         };
 
-        assert!(select_pending_launch(&mut app, Some(&pending)));
+        assert!(select_pending_launch(&mut app, Some(&pending)).is_some());
         assert_eq!(
             app.selection,
             Some(SelectionKey::Session("pi:host:same".into()))
@@ -2193,7 +2277,7 @@ mod tests {
             provider: Provider::Codex,
             ..pending
         };
-        assert!(!select_pending_launch(&mut app, Some(&missing)));
+        assert!(select_pending_launch(&mut app, Some(&missing)).is_none());
     }
 
     #[test]
@@ -2202,6 +2286,7 @@ mod tests {
         let pending = PendingLaunch {
             provider: Provider::Codex,
             provider_session_id: "exact".into(),
+            open_when_visible: false,
             deadline: Instant::now() + Duration::from_secs(1),
         };
 

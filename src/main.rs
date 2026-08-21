@@ -45,6 +45,9 @@ enum LaunchProvider {
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
 enum Commands {
+    /// Download, verify, and install the latest Open Agent View release.
+    #[command(alias = "upgrade")]
+    Update,
     /// Check provider, Docker, and target availability without changing them.
     Doctor,
     /// Create and control only containers owned by Open Agent View.
@@ -163,8 +166,17 @@ enum DockerCommand {
 
 /// Open terminal dashboard for all your coding agents.
 #[derive(Debug, Parser)]
-#[command(name = "open-agent-view", version, about)]
+#[command(name = "open-agent-view", version, about, disable_version_flag = true)]
 struct Cli {
+    /// Print the Open Agent View version.
+    #[arg(
+        short = 'v',
+        short_alias = 'V',
+        long,
+        action = clap::ArgAction::Version
+    )]
+    version: Option<bool>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 
@@ -305,6 +317,7 @@ fn main() -> Result<()> {
     resolve_default_provider_bins(&mut cli);
     if let Some(command) = cli.command.as_ref() {
         match command {
+            Commands::Update => run_self_update()?,
             Commands::Doctor => {
                 let provider_bins = vec![
                     (Provider::Claude, cli.claude_bin.clone()),
@@ -1048,6 +1061,116 @@ fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> 
     let _ = std::fs::remove_file(&script);
     let _ = std::fs::remove_dir(&directory);
     Ok(status)
+}
+
+fn run_self_update() -> Result<()> {
+    let repository = std::env::var("OAV_REPO").unwrap_or_else(|_| "xhluca/open-agent-view".into());
+    if !repository
+        .split_once('/')
+        .is_some_and(|(owner, name)| !owner.is_empty() && !name.is_empty())
+        || repository.chars().any(|character| {
+            !(character.is_ascii_alphanumeric() || matches!(character, '/' | '_' | '-' | '.'))
+        })
+    {
+        bail!("OAV_REPO must have the form OWNER/REPO");
+    }
+    let directory = std::env::temp_dir().join(format!(
+        "open-agent-view-update-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&directory).with_context(|| {
+        format!(
+            "failed to create update staging directory {}",
+            directory.display()
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let script = directory.join("install.sh");
+    let result = (|| -> Result<()> {
+        println!("Checking for the latest Open Agent View release…");
+        let mut downloaded = false;
+        if executable_available("gh") {
+            let output = std::fs::File::create(&script)?;
+            let status = Command::new("gh")
+                .args([
+                    "api",
+                    "-H",
+                    "Accept: application/vnd.github.raw+json",
+                    &format!("repos/{repository}/contents/install.sh"),
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::from(output))
+                .stderr(Stdio::null())
+                .status()
+                .context("failed to start gh while downloading the updater")?;
+            downloaded = status.success();
+        }
+        if !downloaded {
+            let status = Command::new("curl")
+                .args([
+                    "--fail",
+                    "--location",
+                    "--show-error",
+                    "--progress-bar",
+                    "--output",
+                ])
+                .arg(&script)
+                .arg(format!(
+                    "https://raw.githubusercontent.com/{repository}/main/install.sh"
+                ))
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .context("failed to start curl while downloading the updater")?;
+            if !status.success() {
+                bail!(
+                    "could not download the Open Agent View installer; for a private repository, run `gh auth login` and retry"
+                );
+            }
+        }
+        if std::fs::metadata(&script)?.len() == 0 {
+            bail!("the downloaded Open Agent View installer was empty");
+        }
+        let install_dir = std::env::var_os("OAV_INSTALL_DIR")
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|path| path.parent().map(PathBuf::from))
+            })
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .map(|home| home.join(".local/bin"))
+            })
+            .context("could not determine the current Open Agent View install directory")?;
+        let status = Command::new("bash")
+            .arg(&script)
+            .env("OAV_REPO", &repository)
+            .env("OAV_INSTALL_DIR", &install_dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("failed to start the Open Agent View installer")?;
+        if !status.success() {
+            bail!("Open Agent View update exited with status {status}");
+        }
+        println!("Open Agent View update completed.");
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_dir(&directory);
+    result
 }
 
 fn resolve_default_provider_bins(cli: &mut Cli) {

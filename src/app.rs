@@ -412,7 +412,10 @@ impl App {
                 AppAction::None
             }
             Overlay::ModelPicker => {
-                if self.models_error.is_some() && self.models_auth_available {
+                if self.models_error.is_some()
+                    && self.models_auth_available
+                    && !self.has_valid_custom_model_input()
+                {
                     AppAction::Authenticate {
                         provider: self.launch_provider.clone(),
                     }
@@ -651,6 +654,30 @@ impl App {
         }
     }
 
+    /// Preserve an attempted task and turn an authentication failure into an
+    /// explicit modal action. A plain dashboard notice is not actionable:
+    /// Enter would otherwise open whichever session row remained selected.
+    pub fn require_authentication(
+        &mut self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+        error: String,
+    ) {
+        self.launch_provider = provider.clone();
+        self.launch_model = model;
+        self.input = prompt;
+        self.model_filter.clear();
+        self.available_models.clear();
+        self.model_selection = 0;
+        self.models_loading = false;
+        self.models_provider = Some(provider);
+        self.models_error = Some(error);
+        self.models_auth_available = true;
+        self.notice = None;
+        self.overlay = Overlay::ModelPicker;
+    }
+
     pub fn model_choices(&self) -> Vec<Option<&str>> {
         let needle = self.model_filter.to_ascii_lowercase();
         let mut choices = Vec::new();
@@ -664,6 +691,10 @@ impl App {
                 .map(|model| Some(model.as_str())),
         );
         choices
+    }
+
+    pub fn has_valid_custom_model_input(&self) -> bool {
+        self.models_error.is_some() && valid_model_name(&self.model_filter)
     }
 
     pub fn move_model_selection(&mut self, delta: isize) {
@@ -688,6 +719,13 @@ impl App {
     }
 
     pub fn confirm_model_selection(&mut self) {
+        if self.models_error.is_some() && valid_model_name(&self.model_filter) {
+            self.launch_model = Some(self.model_filter.clone());
+            self.model_filter.clear();
+            self.notice = None;
+            self.overlay = Overlay::Composer(ComposerMode::NewSession);
+            return;
+        }
         let selection = self
             .model_choices()
             .get(self.model_selection)
@@ -1045,6 +1083,13 @@ impl App {
 
     fn submit_new_session(&mut self, input: String) -> AppAction {
         if !input.starts_with('/') {
+            if self.launch_provider == Provider::Antigravity && self.launch_model.is_none() {
+                // Antigravity 1.1.x can terminate a task when its account does
+                // not advertise a default PlanModel/RequestedModel. Never send
+                // the user's task until an exact model has been selected.
+                self.input = input;
+                return self.open_model_picker();
+            }
             return AppAction::Launch {
                 provider: self.launch_provider.clone(),
                 model: self.launch_model.clone(),
@@ -2497,5 +2542,46 @@ mod tests {
         app.retry_model_load(&Provider::Claude);
         assert!(app.models_loading);
         assert!(app.models_error.is_none());
+    }
+
+    #[test]
+    fn launch_authentication_failure_preserves_the_task_and_makes_enter_actionable() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.require_authentication(
+            Provider::GitHubCopilot,
+            Some("gpt-5.4".into()),
+            "finish the release".into(),
+            "GitHub Copilot is not authenticated".into(),
+        );
+
+        assert_eq!(app.overlay, Overlay::ModelPicker);
+        assert_eq!(app.input, "finish the release");
+        assert_eq!(app.launch_model.as_deref(), Some("gpt-5.4"));
+        assert_eq!(
+            app.activate(),
+            AppAction::Authenticate {
+                provider: Provider::GitHubCopilot
+            }
+        );
+        assert_eq!(app.input, "finish the release");
+    }
+
+    #[test]
+    fn exact_model_id_is_an_explicit_fallback_when_catalog_loading_fails() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.require_authentication(
+            Provider::Antigravity,
+            None,
+            "investigate the failure".into(),
+            "model catalog timed out".into(),
+        );
+        for character in "gemini-3-pro".chars() {
+            app.push_input(character);
+        }
+        assert!(app.has_valid_custom_model_input());
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.launch_model.as_deref(), Some("gemini-3-pro"));
+        assert_eq!(app.input, "investigate the failure");
+        assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
     }
 }

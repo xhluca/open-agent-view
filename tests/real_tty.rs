@@ -813,7 +813,7 @@ esac
         screen.contains("new task · harness Cursor · model default")
             && screen.contains("cursor login task")
     });
-    app.send(SHIFT_TAB);
+    app.send(ENTER);
     app.wait_for("Cursor sign-in is actionable", |screen| {
         screen.contains("choose Cursor model")
             && screen.contains("sign in")
@@ -876,15 +876,10 @@ if [ "${1:-}" = "attach" ]; then
   printf '%s\n' "CLAUDE FULL SCREEN ATTACH ${2:-}"
   while :; do sleep 1; done
 fi
-while [ "$#" -gt 0 ]; do
-  if [ "$1" = "--session-id" ]; then
-    shift
-    printf '%s' "$1" > "$HOME/claude-session-id"
-    exit 0
-  fi
-  shift
-done
-exit 90
+printf '%s' 'deadbeef-91dc-4b50-a43f-6db2837576fe' > "$HOME/claude-session-id"
+printf '%s\n' "$*" > "$HOME/claude-launch-arguments"
+sleep 0.3
+printf '%s\n' 'backgrounded · deadbeef'
 "##,
         )
         .expect("write fake Claude executable");
@@ -909,6 +904,9 @@ exit 90
     });
     app.send(b"build the foreground feature");
     app.send(ENTER);
+    app.wait_for("animated Claude bootstrap", |screen| {
+        screen.contains("launching Claude")
+    });
     app.wait_for("Claude native full-screen attach", |screen| {
         screen.contains("CLAUDE FULL SCREEN ATTACH")
     });
@@ -923,7 +921,11 @@ exit 90
         screen.contains("Open Agent View") && screen.contains("new-claude-task")
     });
     assert!(returned.contains("Claude"));
-    assert!(returned.contains("backgrounded Claude session"));
+    assert!(returned.contains("backgrounded new-claude-task"));
+    let arguments = fs::read_to_string(app.home_path().join("claude-launch-arguments"))
+        .expect("read Claude launch arguments");
+    assert!(arguments.contains("--background build the foreground feature"));
+    assert!(!arguments.contains("--session-id"));
     app.exit_cleanly();
 }
 
@@ -941,6 +943,17 @@ if len(sys.argv) > 1 and sys.argv[1] == 'login':
     print('COPILOT INTERACTIVE LOGIN', flush=True)
     input()
     open(auth, 'w').close()
+    raise SystemExit(0)
+if '--acp' in sys.argv:
+    initialize = json.loads(sys.stdin.readline())
+    print(json.dumps({'jsonrpc':'2.0','id':initialize['id'],'result':{
+        'protocolVersion':1,
+        'agentCapabilities':{'loadSession':True,'sessionCapabilities':{'list':{},'close':{}}}
+    }}, separators=(',', ':')), flush=True)
+    new_session = json.loads(sys.stdin.readline())
+    print(json.dumps({'jsonrpc':'2.0','id':new_session['id'],'error':{
+        'code':-32000,'message':'Authentication required'
+    }}, separators=(',', ':')), flush=True)
     raise SystemExit(0)
 def receive():
     length = None
@@ -990,7 +1003,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
     app.send(b"/harness copilot");
     app.send(ENTER);
     app.send(b"copilot account task");
-    app.send(SHIFT_TAB);
+    app.send(ENTER);
     app.wait_for("Copilot account requires login", |screen| {
         screen.contains("choose GitHub Copilot model")
             && screen.contains("GitHub Copilot is not authenticated")
@@ -1080,7 +1093,7 @@ while :; do sleep 1; done
     app.send(b"/harness antigravity");
     app.send(ENTER);
     app.send(b"antigravity account task");
-    app.send(SHIFT_TAB);
+    app.send(ENTER);
     app.wait_for("Antigravity requires native login", |screen| {
         screen.contains("choose Antigravity model")
             && screen.contains("not authenticated")
@@ -1349,7 +1362,7 @@ fn real_host_auto_resolves_harnesses_models_and_bounded_history() {
         screen.contains("new task · harness OpenCode · model default")
             && screen.contains("read-only host draft")
     });
-    app.send(b"\x1b[Z");
+    app.send(SHIFT_TAB);
     app.wait_for("real host OpenCode model catalog", |screen| {
         screen.contains("choose OpenCode model")
             && screen.contains("Default")
@@ -1545,7 +1558,7 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
     app.wait_for("Pi composer title", |screen| {
         screen.contains("new task · harness Pi · model default")
     });
-    app.send(b"\x1b[Z");
+    app.send(SHIFT_TAB);
     app.wait_for("account-visible Pi model picker", |screen| {
         screen.contains("choose Pi model") && screen.contains("openai/gpt-4")
     });
@@ -1564,7 +1577,7 @@ fn real_host_composer_selects_provider_model_filter_and_manual_refresh() {
     app.wait_for("selected Claude composer title", |screen| {
         screen.contains("new task · harness Claude · model default")
     });
-    app.send(b"\x1b[Z");
+    app.send(SHIFT_TAB);
     app.wait_for("account-visible Claude model picker", |screen| {
         screen.contains("choose Claude model") && screen.contains("opus")
     });

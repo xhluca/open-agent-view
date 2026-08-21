@@ -1,6 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+#[cfg(test)]
+use std::fs::File;
+use std::fs::{self, OpenOptions};
+#[cfg(test)]
+use std::io::Read;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -37,6 +41,9 @@ pub enum LaunchMode {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LaunchPresentation {
     Background,
+    /// Bootstrap without blocking the dashboard, then open the exact returned
+    /// provider session once discovery confirms its stable ID.
+    DeferredForeground,
     Foreground,
 }
 
@@ -430,51 +437,7 @@ struct ClaudeController {
     docker_bin: String,
     runtime: Runtime,
     runner: Arc<dyn CommandRunner>,
-    background_launcher: Arc<dyn BackgroundLauncher>,
     registry: Arc<Mutex<OwnershipRegistry>>,
-}
-
-trait BackgroundLauncher: Send + Sync {
-    fn spawn(&self, request: &CommandRequest) -> Result<()>;
-}
-
-#[derive(Debug, Default)]
-struct DetachedBackgroundLauncher;
-
-impl BackgroundLauncher for DetachedBackgroundLauncher {
-    fn spawn(&self, request: &CommandRequest) -> Result<()> {
-        let mut command = Command::new(&request.program);
-        command
-            .args(&request.args)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        if let Some(current_dir) = &request.current_dir {
-            command.current_dir(current_dir);
-        }
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            command.process_group(0);
-        }
-        let mut child = command.spawn().with_context(|| {
-            format!(
-                "failed to start detached command {} {}",
-                request.program,
-                request.args.join(" ")
-            )
-        })?;
-        // Claude's documented --background path can keep its bootstrap
-        // process alive while the provider-owned task runs. Reap it when it
-        // eventually exits, but never impose a dashboard startup timeout that
-        // would kill the newly created provider task.
-        let _ = std::thread::Builder::new()
-            .name("oav-claude-launch-reaper".into())
-            .spawn(move || {
-                let _ = child.wait();
-            });
-        Ok(())
-    }
 }
 
 impl ClaudeController {
@@ -491,46 +454,72 @@ impl ClaudeController {
             docker_bin,
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
-            background_launcher: Arc::new(DetachedBackgroundLauncher),
             registry,
         }
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        let session_id = self.start_background(request)?;
+        Ok(ControlOutcome {
+            message: format!(
+                "started Claude background session {}",
+                short_claude_id(&session_id)
+            ),
+            provider_session_hint: Some(session_id),
+        })
+    }
+
+    fn start_background(&self, request: &LaunchRequest) -> Result<String> {
         if request.prompt.trim().is_empty() {
             bail!("the launch prompt cannot be empty");
         }
-        let session_id = generate_session_id()?;
         let mut args = self.invocation.prefix_args.clone();
         if let Some(model) = &request.model {
             args.extend(["--model".into(), model.clone()]);
         }
-        args.extend(["--session-id".into(), session_id.clone()]);
         args.extend(["--background".into(), request.prompt.trim().to_owned()]);
         let mut command = CommandRequest::new(self.invocation.program.clone(), args);
         command.current_dir = Some(request.cwd.clone());
+        // Recent Claude releases allocate their own background session ID and
+        // print it only after the background supervisor accepts the task. Run
+        // this bounded bootstrap off the dashboard thread, capture that exact
+        // ID, and never combine --background with --session-id (Claude ignores
+        // the latter and warns, which previously orphaned OAV ownership).
+        command.timeout = Duration::from_secs(45);
+        let output = self.runner.run(&command)?;
+        if output.status != 0 {
+            bail!(
+                "Claude background launch exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        let short_id = parse_claude_background_id(output.stdout_text()?)?;
+        let session_id = self.wait_until_listed(&short_id)?;
         let ownership = OwnedSession {
             provider: Provider::Claude,
             runtime_key: runtime_key(&self.runtime),
             provider_id_prefix: session_id.clone(),
             created_at_ms: now_millis(),
         };
-        let mut registry = self
+        if let Err(error) = self
             .registry
             .lock()
-            .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?;
-        registry.record(ownership.clone())?;
-        if let Err(error) = self.background_launcher.spawn(&command) {
-            registry.remove(&ownership).context(
-                "Claude launch failed and its provisional ownership record could not be removed",
-            )?;
-            return Err(error);
+            .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
+            .record(ownership)
+        {
+            // The provider already accepted the task. Best-effort stop the
+            // exact returned ID rather than leave an untracked background job.
+            let mut stop_args = self.invocation.prefix_args.clone();
+            stop_args.extend(["stop".into(), short_id]);
+            let mut stop = CommandRequest::new(self.invocation.program.clone(), stop_args);
+            stop.timeout = Duration::from_secs(8);
+            let _ = self.runner.run(&stop);
+            return Err(error).context(
+                "Claude launched a task, but its ownership record could not be saved; the exact task was stopped",
+            );
         }
-
-        Ok(ControlOutcome {
-            message: format!("started Claude background session {}", &session_id[..8]),
-            provider_session_hint: Some(session_id),
-        })
+        Ok(session_id)
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
@@ -540,52 +529,7 @@ impl ClaudeController {
         if self.runtime != Runtime::Host {
             bail!("foreground Claude launch is supported only on the host");
         }
-        let session_id = generate_session_id()?;
-        let mut launch = Command::new(&self.invocation.program);
-        launch.args(&self.invocation.prefix_args);
-        if let Some(model) = &request.model {
-            launch.args(["--model", model]);
-        }
-        launch
-            .args([
-                "--session-id",
-                &session_id,
-                "--background",
-                request.prompt.trim(),
-            ])
-            .current_dir(&request.cwd)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-        let ownership = OwnedSession {
-            provider: Provider::Claude,
-            runtime_key: runtime_key(&self.runtime),
-            provider_id_prefix: session_id.clone(),
-            created_at_ms: now_millis(),
-        };
-        self.registry
-            .lock()
-            .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
-            .record(ownership.clone())?;
-        let status = launch.status();
-        match status {
-            Ok(status) if status.success() => {}
-            Ok(status) => {
-                self.registry
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
-                    .remove(&ownership)?;
-                bail!("Claude background launch exited with status {status}");
-            }
-            Err(error) => {
-                self.registry
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
-                    .remove(&ownership)?;
-                return Err(error).context("failed to start Claude background session");
-            }
-        }
-        self.wait_until_listed(&session_id)?;
+        let session_id = self.start_background(request)?;
         let mut attach = Command::new(&self.invocation.program);
         attach
             .args(&self.invocation.prefix_args)
@@ -613,7 +557,7 @@ impl ClaudeController {
         }
     }
 
-    fn wait_until_listed(&self, session_id: &str) -> Result<()> {
+    fn wait_until_listed(&self, session_id: &str) -> Result<String> {
         let deadline = std::time::Instant::now() + Duration::from_secs(15);
         loop {
             let mut args = self.invocation.prefix_args.clone();
@@ -626,12 +570,12 @@ impl ClaudeController {
                         .stdout_text()
                         .and_then(|text| parse_claude_sessions(text, Runtime::Host))
                     {
-                        if current.iter().any(|session| {
+                        if let Some(session) = current.iter().find(|session| {
                             session.provider_session_id == session_id
                                 || session_id.starts_with(&session.provider_session_id)
                                 || session.provider_session_id.starts_with(session_id)
                         }) {
-                            return Ok(());
+                            return Ok(session.provider_session_id.clone());
                         }
                     }
                 }
@@ -639,7 +583,7 @@ impl ClaudeController {
             if std::time::Instant::now() >= deadline {
                 bail!(
                     "Claude accepted background launch {}, but did not list it within 15 seconds",
-                    &session_id[..8]
+                    short_claude_id(session_id)
                 );
             }
             std::thread::sleep(Duration::from_millis(150));
@@ -732,7 +676,7 @@ impl ProviderController for ClaudeController {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         if self.runtime == Runtime::Host {
-            LaunchPresentation::Foreground
+            LaunchPresentation::DeferredForeground
         } else {
             LaunchPresentation::Background
         }
@@ -801,13 +745,29 @@ impl ProviderController for ClaudeController {
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        let command = match &session.runtime {
+        match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.invocation.program);
                 command
                     .args(["attach", &short_claude_id(&session.provider_session_id)])
                     .current_dir(&session.cwd);
-                command
+                match crate::native_session::run(command, &session.id)? {
+                    crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                        message: format!("backgrounded {}; Enter/Right resumes it", session.name),
+                        provider_session_hint: Some(session.provider_session_id.clone()),
+                    }),
+                    crate::native_session::NativeSessionExit::Exited(status)
+                        if status.success() =>
+                    {
+                        Ok(ControlOutcome {
+                            message: format!("returned from {}", session.name),
+                            provider_session_hint: None,
+                        })
+                    }
+                    crate::native_session::NativeSessionExit::Exited(status) => {
+                        bail!("Claude session exited with status {status}")
+                    }
+                }
             }
             Runtime::Docker { container_id, .. } => {
                 let mut command = Command::new(&self.docker_bin);
@@ -819,10 +779,9 @@ impl ProviderController for ClaudeController {
                     "attach",
                     &short_claude_id(&session.provider_session_id),
                 ]);
-                command
+                run_interactive(command, session)
             }
-        };
-        run_interactive(command, session)
+        }
     }
 }
 
@@ -1081,11 +1040,6 @@ impl OwnershipRegistry {
         self.save()
     }
 
-    fn remove(&mut self, record: &OwnedSession) -> Result<()> {
-        self.records.remove(record);
-        self.save()
-    }
-
     fn owns(&self, session: &AgentSession) -> bool {
         let runtime = runtime_key(&session.runtime);
         self.records.iter().any(|record| {
@@ -1147,6 +1101,20 @@ fn runtime_key(runtime: &Runtime) -> String {
     }
 }
 
+fn parse_claude_background_id(output: &str) -> Result<String> {
+    let rendered = output.trim();
+    let id = rendered
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("backgrounded · "))
+        .map(str::trim)
+        .context("Claude background launch did not report `backgrounded · SESSION_ID`")?;
+    if id.len() != 8 || !id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!("Claude background launch returned an invalid session ID");
+    }
+    Ok(id.to_ascii_lowercase())
+}
+
+#[cfg(test)]
 fn generate_session_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
     File::open("/dev/urandom")
@@ -1426,10 +1394,24 @@ mod tests {
     fn launch_records_ownership_and_uses_argument_arrays() {
         let directory = tempdir().unwrap();
         let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
-        let launcher = Arc::new(FakeBackgroundLauncher::default());
-        let runner = Arc::new(FakeRunner {
+        let session_id = "deadbeef-91dc-4b50-a43f-6db2837576fe";
+        let inventory = format!(
+            r#"[{{"id":"deadbeef","sessionId":"{session_id}","cwd":"/work/project","kind":"background","name":"dashboard","state":"working"}}]"#
+        );
+        let runner = Arc::new(QueueRunner {
             requests: Mutex::new(Vec::new()),
-            output: Mutex::new(None),
+            outputs: Mutex::new(VecDeque::from([
+                CommandOutput {
+                    status: 0,
+                    stdout: "backgrounded · deadbeef\n".as_bytes().to_vec(),
+                    stderr: vec![],
+                },
+                CommandOutput {
+                    status: 0,
+                    stdout: inventory.into_bytes(),
+                    stderr: vec![],
+                },
+            ])),
         });
         let controller = ClaudeController {
             invocation: ControlInvocation {
@@ -1439,7 +1421,6 @@ mod tests {
             docker_bin: "must-not-run-docker".into(),
             runtime: Runtime::Host,
             runner: runner.clone(),
-            background_launcher: launcher.clone(),
             registry: Arc::new(Mutex::new(registry)),
         };
 
@@ -1452,87 +1433,46 @@ mod tests {
             })
             .unwrap();
 
-        let session_id = outcome.provider_session_hint.unwrap();
-        assert_eq!(session_id.len(), 36);
-        assert!(runner.requests.lock().unwrap().is_empty());
-        let requests = launcher.requests.lock().unwrap();
-        assert_eq!(requests.len(), 1);
+        assert_eq!(outcome.provider_session_hint.as_deref(), Some(session_id));
+        let requests = runner.requests.lock().unwrap();
+        assert_eq!(requests.len(), 2);
         assert_eq!(requests[0].program, "claude-test");
         assert_eq!(
             requests[0].args,
-            vec![
-                "--model",
-                "opus",
-                "--session-id",
-                &session_id,
-                "--background",
-                "Implement the dashboard"
-            ]
+            vec!["--model", "opus", "--background", "Implement the dashboard"]
         );
         assert_eq!(
             requests[0].current_dir,
             Some(PathBuf::from("/work/project"))
         );
+        assert_eq!(requests[0].timeout, Duration::from_secs(45));
+        assert_eq!(requests[1].args, vec!["agents", "--json", "--all"]);
         assert!(controller.owns(&session(&session_id)));
     }
 
-    #[cfg(unix)]
     #[test]
-    fn real_detached_launcher_returns_before_a_slow_claude_bootstrap_exits() {
-        use std::os::unix::fs::PermissionsExt;
-        use std::time::Instant;
-
-        let directory = tempdir().unwrap();
-        let executable = directory.path().join("slow-claude");
-        let arguments = directory.path().join("arguments");
-        let finished = directory.path().join("finished");
-        fs::write(
-            &executable,
-            format!(
-                "#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\nsleep 0.6\nprintf done > '{}'\n",
-                arguments.display(),
-                finished.display()
-            ),
-        )
-        .unwrap();
-        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
-        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
-        let controller = ClaudeController {
-            invocation: ControlInvocation {
-                program: executable.display().to_string(),
-                prefix_args: Vec::new(),
-            },
-            docker_bin: "must-not-run-docker".into(),
-            runtime: Runtime::Host,
-            runner: Arc::new(FakeRunner {
-                requests: Mutex::new(Vec::new()),
-                output: Mutex::new(None),
-            }),
-            background_launcher: Arc::new(DetachedBackgroundLauncher),
-            registry: Arc::new(Mutex::new(registry)),
-        };
-
-        let started = Instant::now();
-        let outcome = controller
-            .launch(&LaunchRequest {
-                provider: Provider::Claude,
-                model: Some("sonnet".into()),
-                prompt: "slow startup".into(),
-                cwd: directory.path().to_path_buf(),
-            })
-            .unwrap();
-
-        assert!(started.elapsed() < Duration::from_millis(300));
-        assert!(!finished.exists());
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while !finished.exists() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
+    fn claude_background_id_parser_accepts_only_the_current_exact_contract() {
+        assert_eq!(
+            parse_claude_background_id("backgrounded · A1b2C3d4\n").unwrap(),
+            "a1b2c3d4"
+        );
+        assert_eq!(
+            parse_claude_background_id("status\n  backgrounded · deadbeef\n").unwrap(),
+            "deadbeef"
+        );
+        for malformed in [
+            "",
+            "warning: --bg manages the session id",
+            "backgrounded deadbeef",
+            "backgrounded · short",
+            "backgrounded · zzzzzzzz",
+            "backgrounded · deadbeef-extra",
+        ] {
+            assert!(
+                parse_claude_background_id(malformed).is_err(),
+                "{malformed}"
+            );
         }
-        assert!(finished.exists());
-        let arguments = fs::read_to_string(arguments).unwrap();
-        assert!(arguments.contains("--session-id\n"));
-        assert!(arguments.contains(outcome.provider_session_hint.as_deref().unwrap()));
-        assert!(arguments.ends_with("--background\nslow startup\n"));
     }
 
     #[cfg(unix)]
@@ -1557,11 +1497,8 @@ if [ "${{1:-}}" = attach ]; then
   printf '%s' "${{2:-}}" > '{}'
   exit 0
 fi
-previous=''
-for argument in "$@"; do
-  if [ "$previous" = --session-id ]; then printf '%s' "$argument" > '{}'; fi
-  previous="$argument"
-done
+printf '%s' 'deadbeef-91dc-4b50-a43f-6db2837576fe' > '{}'
+printf '%s\n' 'backgrounded · deadbeef'
 exit 0
 "##,
                 state.display(),
@@ -1581,7 +1518,6 @@ exit 0
             docker_bin: "must-not-run-docker".into(),
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
-            background_launcher: Arc::new(DetachedBackgroundLauncher),
             registry: Arc::new(Mutex::new(registry)),
         };
 
@@ -1639,7 +1575,6 @@ exit 0
             docker_bin: "must-not-run-docker".into(),
             runtime: Runtime::Host,
             runner: runner.clone(),
-            background_launcher: Arc::new(FakeBackgroundLauncher::default()),
             registry: Arc::new(Mutex::new(registry)),
         };
         let external = session(provider_id);
@@ -1682,7 +1617,6 @@ exit 0
             docker_bin: "must-not-run-docker".into(),
             runtime: Runtime::Host,
             runner: runner.clone(),
-            background_launcher: Arc::new(FakeBackgroundLauncher::default()),
             registry: Arc::new(Mutex::new(registry)),
         };
         let mut completed = session("completed");
@@ -1896,13 +1830,9 @@ exit 0
     fn claude_launch_rejects_empty_input_and_rolls_back_a_spawn_failure() {
         let directory = tempdir().unwrap();
         let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
-        let launcher = Arc::new(FakeBackgroundLauncher {
+        let runner = Arc::new(QueueRunner {
             requests: Mutex::new(Vec::new()),
-            error: Mutex::new(Some("provider spawn failure".into())),
-        });
-        let runner = Arc::new(FakeRunner {
-            requests: Mutex::new(Vec::new()),
-            output: Mutex::new(None),
+            outputs: Mutex::new(VecDeque::new()),
         });
         let controller = ClaudeController {
             invocation: ControlInvocation {
@@ -1912,7 +1842,6 @@ exit 0
             docker_bin: "must-not-run-docker".into(),
             runtime: Runtime::Host,
             runner: runner.clone(),
-            background_launcher: launcher.clone(),
             registry: Arc::new(Mutex::new(registry)),
         };
         assert_eq!(
@@ -1937,35 +1866,14 @@ exit 0
             })
             .unwrap_err()
             .to_string();
-        assert!(error.contains("provider spawn failure"));
-        assert_eq!(launcher.requests.lock().unwrap().len(), 1);
+        assert!(error.contains("test runner exhausted"));
+        assert_eq!(runner.requests.lock().unwrap().len(), 1);
         assert!(controller.registry.lock().unwrap().records.is_empty());
-    }
-
-    struct FakeRunner {
-        requests: Mutex<Vec<CommandRequest>>,
-        output: Mutex<Option<CommandOutput>>,
     }
 
     struct QueueRunner {
         requests: Mutex<Vec<CommandRequest>>,
         outputs: Mutex<VecDeque<CommandOutput>>,
-    }
-
-    #[derive(Default)]
-    struct FakeBackgroundLauncher {
-        requests: Mutex<Vec<CommandRequest>>,
-        error: Mutex<Option<String>>,
-    }
-
-    impl BackgroundLauncher for FakeBackgroundLauncher {
-        fn spawn(&self, request: &CommandRequest) -> Result<()> {
-            self.requests.lock().unwrap().push(request.clone());
-            match self.error.lock().unwrap().take() {
-                Some(error) => Err(anyhow::anyhow!(error)),
-                None => Ok(()),
-            }
-        }
     }
 
     struct StubController {
@@ -2001,13 +1909,6 @@ exit 0
         fn inspect(&self, session: &AgentSession) -> Result<String> {
             assert_eq!(session.provider, self.provider);
             Ok(format!("inspected {}", self.marker))
-        }
-    }
-
-    impl CommandRunner for FakeRunner {
-        fn run(&self, request: &CommandRequest) -> Result<CommandOutput> {
-            self.requests.lock().unwrap().push(request.clone());
-            Ok(self.output.lock().unwrap().take().unwrap())
         }
     }
 
