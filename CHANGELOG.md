@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.19] - 2026-08-20
+
 ### Changed
 
 - Completed OAV-managed sessions are visible by default. `--hide-completed`
