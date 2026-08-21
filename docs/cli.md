@@ -90,8 +90,10 @@ For every installed launch-capable provider, `shift+tab` from the new-task compo
 opens an asynchronous searchable picker while preserving the current draft;
 `/model` opens the same picker as a command. Type to filter, use arrows or `tab`
 to move, `page up`/`page down` to move ten choices, `enter` to select, and
-`esc` to keep the previous selection and draft. **Default** is always
-available. `/model NAME` accepts an exact custom
+`esc` to keep the previous selection and draft. After a successful catalog
+load, **Default** is available alongside the exact account models. An
+authentication/catalog failure does not offer a blind default launch; it
+offers the native sign-in handoff instead. `/model NAME` accepts an exact custom
 identifier without loading the catalog, and `/model default` resets the
 selection. `/login` hands the terminal to the selected provider's native
 authentication/setup UI. When the catalog reports an authentication failure,
