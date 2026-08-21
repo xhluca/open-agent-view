@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.20] - 2026-08-20
+
 ### Added
 
 - Cursor, GitHub Copilot, and Antigravity now expose searchable exact

@@ -6,18 +6,18 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.19 is the current published private preview. Hosted jobs were
+Version 0.1.20 is the current published private preview. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
 release. Its release page contains only:
 
 ```text
-open-agent-view-0.1.19-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.19-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.20-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.20-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested on the native Linux x86-64 host. No ARM64 or macOS artifact is
-claimed for v0.1.19. Version 0.1.2 was the initial published preview. The
+claimed for v0.1.20. Version 0.1.2 was the initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental

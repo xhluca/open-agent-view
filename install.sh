@@ -117,7 +117,7 @@ version="${tag#v}"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   fail "release version must have the form MAJOR.MINOR.PATCH (received: ${tag})"
 
-if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
+if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" || "$version" == "0.1.20" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
   fail "v${version} was manually published only for Linux x86_64; use a source build on ${target} or install a release that provides that target"
 fi
 
