@@ -1447,7 +1447,7 @@ mod tests {
         );
         assert_eq!(requests[0].timeout, Duration::from_secs(45));
         assert_eq!(requests[1].args, vec!["agents", "--json", "--all"]);
-        assert!(controller.owns(&session(&session_id)));
+        assert!(controller.owns(&session(session_id)));
     }
 
     #[test]
