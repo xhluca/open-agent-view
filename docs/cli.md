@@ -359,7 +359,7 @@ label.
 | New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |
 | Writable composer | `backspace` | Remove the last character. |
-| Session row | `ctrl+r` | Edit a private OAV display name. Empty submission clears it and follows the latest provider title again. |
+| Session row | `ctrl+r` | Open the accented `rename session` composer. The `name ❯` mode label is separate from the editable display name; empty submission clears it and follows the latest provider title again. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
 | Session row or Peek | `ctrl+x` | Stop an exact active owned session; after refresh reports it idle, press again to delete it or remove it reversibly from OAV's view. Active rows without stop authority require a local-hide confirmation. |
 | Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete; otherwise offer to hide the undeletable rows locally. |

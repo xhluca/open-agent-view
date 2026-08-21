@@ -8,6 +8,12 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- Rename mode is visually distinct from ordinary task input: its cyan title,
+  border, and bold `name ❯` label precede the editable name, while the footer
+  explicitly explains how to save, reset, or cancel.
+
 ## [0.1.22] - 2026-08-21
 
 ### Added

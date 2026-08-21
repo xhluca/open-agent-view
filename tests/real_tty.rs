@@ -1768,11 +1768,13 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
 
     app.send(CTRL_R);
     app.wait_for("rename composer", |screen| {
-        screen.contains("❯ name release-reviewer")
+        screen.contains("rename session")
+            && screen.contains("name ❯ release-reviewer")
+            && screen.contains("type a new name")
             && screen.contains("empty resets to provider name")
     });
     app.send(ESC);
-    app.wait_for("rename cancellation", |screen| !screen.contains("❯ name"));
+    app.wait_for("rename cancellation", |screen| !screen.contains("name ❯"));
 
     app.send(CTRL_R);
     app.send(&[0x7f; 16]);

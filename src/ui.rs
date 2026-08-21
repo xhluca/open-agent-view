@@ -381,11 +381,17 @@ fn render_bottom_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let renaming = matches!(app.overlay, Overlay::Composer(ComposerMode::Rename { .. }));
     let mut block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
-        .border_style(Style::default().fg(DIM))
+        .border_style(Style::default().fg(if renaming { ACCENT } else { DIM }))
         .style(Style::default().bg(BG));
-    if matches!(
+    if renaming {
+        block = block.title(Span::styled(
+            " rename session ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    } else if matches!(
         app.overlay,
         Overlay::Composer(ComposerMode::NewSession) | Overlay::HarnessPicker | Overlay::ModelPicker
     ) {
@@ -398,7 +404,7 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let (prefix, content, editable) = match &app.overlay {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
         Overlay::HarnessPicker | Overlay::ModelPicker => ("❯ ", app.input.as_str(), false),
-        Overlay::Composer(ComposerMode::Rename { .. }) => ("❯ name ", app.input.as_str(), true),
+        Overlay::Composer(ComposerMode::Rename { .. }) => ("name ❯ ", app.input.as_str(), true),
         Overlay::Composer(ComposerMode::Filter) => ("❯ filter ", app.input.as_str(), true),
         _ => (
             "❯ ",
@@ -421,17 +427,24 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .enumerate()
             .map(|(index, line)| {
                 Line::from(vec![
-                    Span::styled(
-                        if index == 0 { prefix } else { "" },
-                        Style::default().fg(FG),
-                    ),
+                    Span::styled(if index == 0 { prefix } else { "" }, {
+                        let style = Style::default().fg(if renaming { ACCENT } else { FG });
+                        if renaming {
+                            style.add_modifier(Modifier::BOLD)
+                        } else {
+                            style
+                        }
+                    }),
                     Span::styled(line, text_style),
                 ])
             })
             .collect::<Vec<_>>()
     } else {
         vec![Line::from(vec![
-            Span::styled(prefix, Style::default().fg(FG)),
+            Span::styled(
+                prefix,
+                Style::default().fg(if renaming { ACCENT } else { FG }),
+            ),
             Span::styled(content.to_owned(), text_style),
         ])]
     };
@@ -593,8 +606,14 @@ fn render_footer(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn contextual_footer(app: &App, width: u16) -> String {
     match &app.overlay {
         Overlay::Composer(ComposerMode::Filter) => "enter to apply · esc to cancel".into(),
+        Overlay::Composer(ComposerMode::Rename { .. }) if width >= 85 => {
+            "rename session · type a new name · enter save · empty resets to provider name · esc cancel".into()
+        }
+        Overlay::Composer(ComposerMode::Rename { .. }) if width >= 55 => {
+            "rename session · type name · enter save · empty reset · esc cancel".into()
+        }
         Overlay::Composer(ComposerMode::Rename { .. }) => {
-            "enter save · empty resets to provider name · esc cancel".into()
+            "rename · type name · enter save · esc cancel".into()
         }
         Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
             "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
@@ -1696,6 +1715,30 @@ mod tests {
         assert_eq!(terminal.get_cursor().unwrap(), (5, 21));
         assert_eq!(terminal.backend().buffer().get(2, 21).symbol(), "a");
         assert_eq!(terminal.backend().buffer().get(4, 21).symbol(), "c");
+    }
+
+    #[test]
+    fn rename_composer_has_an_accented_mode_label_and_explicit_instruction() {
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![session("worker", SessionState::Completed)],
+            warnings: vec![],
+        });
+        app.start_rename();
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let rendered = buffer_text(buffer);
+
+        assert!(rendered.contains("rename session"));
+        assert!(rendered.contains("name ❯ worker"));
+        assert!(rendered.contains("type a new name"));
+        assert!(rendered.contains("empty resets to provider name"));
+        assert_eq!(buffer.get(0, 21).fg, ACCENT);
+        assert_eq!(buffer.get(7, 21).fg, FG);
+        assert_ne!(buffer.get(0, 21).fg, buffer.get(7, 21).fg);
+        assert_eq!(terminal.get_cursor().unwrap(), (13, 21));
     }
 
     #[test]
