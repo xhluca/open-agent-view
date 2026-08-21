@@ -7,7 +7,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::cursor_managed::CursorSupervisor;
-use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
+use crate::control::{
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+};
 use crate::domain::{AgentSession, Provider, Runtime, SessionSnapshot};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,24 +72,30 @@ impl CursorInvocation {
         session_id: &str,
         cwd: &Path,
         prompt: &str,
+        model: Option<&str>,
     ) -> Result<CursorCommandSpec> {
         require_session_id(session_id)?;
         require_absolute_cwd(cwd)?;
         if prompt.trim().is_empty() {
             bail!("Cursor prompt must not be empty");
         }
+        let mut args = vec![
+            "--resume".into(),
+            session_id.into(),
+            "--print".into(),
+            "--output-format".into(),
+            "stream-json".into(),
+            "--workspace".into(),
+            cwd.display().to_string(),
+        ];
+        if let Some(model) = model {
+            require_model(model)?;
+            args.extend(["--model".into(), model.into()]);
+        }
+        args.push(prompt.trim().into());
         Ok(CursorCommandSpec {
             program: self.executable.clone(),
-            args: vec![
-                "--resume".into(),
-                session_id.into(),
-                "--print".into(),
-                "--output-format".into(),
-                "stream-json".into(),
-                "--workspace".into(),
-                cwd.display().to_string(),
-                prompt.trim().into(),
-            ],
+            args,
             current_dir: cwd.to_owned(),
         })
     }
@@ -204,10 +212,22 @@ impl ProviderController for CursorController {
 
     fn launch_mode(&self) -> LaunchMode {
         if self.supervisor.is_some() {
-            LaunchMode::DefaultModel
+            LaunchMode::SelectableModel
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        self.managed_supervisor()?.available_models()
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        run_native_authentication(&self.invocation.executable, &["login"], Provider::Cursor)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -224,7 +244,11 @@ impl ProviderController for CursorController {
             .supervisor
             .as_ref()
             .context("managed Cursor launch is not configured")?;
-        let session_id = supervisor.launch(&request.prompt, &request.cwd)?;
+        let session_id = supervisor.launch_with_model(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
         Ok(ControlOutcome {
             message: format!("launched managed Cursor session {session_id}"),
             provider_session_hint: Some(session_id),
@@ -340,6 +364,18 @@ fn require_absolute_cwd(cwd: &Path) -> Result<()> {
     Ok(())
 }
 
+fn require_model(model: &str) -> Result<()> {
+    if model.is_empty()
+        || model.len() > 128
+        || model
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("Cursor model must contain 1 to 128 non-whitespace bytes");
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,9 +399,18 @@ mod tests {
             }
         );
         let print = invocation
-            .print_turn("chat-id", Path::new("/work/repo"), "check tests")
+            .print_turn(
+                "chat-id",
+                Path::new("/work/repo"),
+                "check tests",
+                Some("auto"),
+            )
             .unwrap();
         assert!(print.args.contains(&"stream-json".into()));
+        assert!(print
+            .args
+            .windows(2)
+            .any(|args| args == ["--model", "auto"]));
         assert!(!print
             .args
             .iter()

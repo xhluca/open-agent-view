@@ -19,8 +19,9 @@ use std::sync::Arc;
 use anyhow::Result;
 
 pub use antigravity::{
-    default_antigravity_last_conversations_path, parse_antigravity_last_conversations,
-    AntigravityCommandSpec, AntigravityController, AntigravityInvocation, AntigravitySource,
+    default_antigravity_last_conversations_path, default_antigravity_ownership_path,
+    parse_antigravity_last_conversations, AntigravityCommandSpec, AntigravityController,
+    AntigravityInvocation, AntigravityOwnership, AntigravitySource,
 };
 pub use claude::{parse_claude_sessions, ClaudeSource};
 pub use codex::{parse_codex_thread_list, CodexSource};

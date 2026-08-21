@@ -942,14 +942,14 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
         ),
     ])];
     if choices.is_empty() {
-        lines.push(Line::from(Span::styled(
-            if app.models_loading {
-                "  Loading models…"
-            } else {
-                "  No matching models"
-            },
-            Style::default().fg(DIM),
-        )));
+        let message = if app.models_loading {
+            "  Loading models…".into()
+        } else if let Some(error) = app.models_error.as_deref() {
+            format!("  {}", sanitize_inline(error))
+        } else {
+            "  No matching models".into()
+        };
+        lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
     } else {
         lines.extend(
             choices
@@ -987,7 +987,9 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
         )));
     }
     lines.push(
-        Line::from(if popup_width >= 58 {
+        Line::from(if app.models_error.is_some() && app.models_auth_available {
+            " enter/l sign in · esc back"
+        } else if popup_width >= 58 {
             " ↑/↓ move · PgUp/PgDn page · enter select · esc back"
         } else {
             " ↑/↓ · enter · esc"

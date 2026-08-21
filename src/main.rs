@@ -1,5 +1,6 @@
-use std::io::{self, IsTerminal};
+use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
@@ -8,9 +9,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use open_agent_view::adapters::{
     default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
-    AntigravityController, AntigravitySource, ClaudeSource, CodexSource, CopilotController,
-    CopilotSource, CopilotSupervisor, CursorController, DiscoveryEngine, DiscoveryRequest,
-    DockerTarget, FixtureSource, ManagedDockerCreateSpec, ManagedDockerService,
+    AntigravityController, AntigravityOwnership, AntigravitySource, ClaudeSource, CodexSource,
+    CopilotController, CopilotSource, CopilotSupervisor, CursorController, DiscoveryEngine,
+    DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec, ManagedDockerService,
     ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController, PiSource,
 };
 #[cfg(target_os = "linux")]
@@ -38,6 +39,7 @@ enum LaunchProvider {
     OpenCode,
     Cursor,
     Copilot,
+    Antigravity,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -53,6 +55,14 @@ enum Commands {
     Sessions {
         #[command(subcommand)]
         command: SessionCommand,
+    },
+    /// Install one coding-agent harness with its official installer.
+    Setup {
+        #[arg(value_name = "HARNESS", value_enum)]
+        harness: LaunchProvider,
+        /// Skip the explicit installer confirmation prompt.
+        #[arg(long)]
+        yes: bool,
     },
     #[command(name = "__pi-supervisor", hide = true)]
     PiSupervisor {
@@ -306,6 +316,7 @@ fn main() -> Result<()> {
                 cli.json,
             )?,
             Commands::Sessions { command } => run_session_command(command, &cli)?,
+            Commands::Setup { harness, yes } => run_harness_setup(*harness, *yes)?,
             Commands::PiSupervisor { state_dir, socket } => {
                 run_pi_supervisor_daemon(state_dir.clone(), socket.clone(), cli.pi_bin.clone())?
             }
@@ -345,6 +356,7 @@ fn main() -> Result<()> {
         LaunchProvider::OpenCode => Provider::OpenCode,
         LaunchProvider::Cursor => Provider::Cursor,
         LaunchProvider::Copilot => Provider::GitHubCopilot,
+        LaunchProvider::Antigravity => Provider::Antigravity,
     };
     let pi_session_dir = if !pi_enabled {
         None
@@ -378,6 +390,9 @@ fn main() -> Result<()> {
     #[cfg(target_os = "linux")]
     let cursor_supervisor = cursor_enabled
         .then(|| CursorSupervisor::host(cli.cursor_bin.clone()).map(Arc::new))
+        .transpose()?;
+    let antigravity_ownership = antigravity_open_enabled
+        .then(AntigravityOwnership::load_default)
         .transpose()?;
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
@@ -428,9 +443,13 @@ fn main() -> Result<()> {
             control.register_controller(Arc::new(controller))?;
         }
         if antigravity_open_enabled {
-            control.register_controller(Arc::new(AntigravityController::host(
+            control.register_controller(Arc::new(AntigravityController::managed(
                 cli.antigravity_bin.clone(),
-            )))?;
+                antigravity_ownership
+                    .as_ref()
+                    .expect("Antigravity ownership exists when its controller is enabled")
+                    .clone(),
+            )?))?;
         }
     }
 
@@ -488,8 +507,12 @@ fn main() -> Result<()> {
         if let Some(supervisor) = cursor_supervisor {
             engine.add_source(CursorSource::managed(supervisor));
         }
-        if antigravity_enabled && request.include_external {
-            engine.add_source(AntigravitySource::default_host()?);
+        if antigravity_enabled {
+            if let Some(ownership) = antigravity_ownership {
+                engine.add_source(AntigravitySource::managed(ownership)?);
+            } else if request.include_external {
+                engine.add_source(AntigravitySource::default_host()?);
+            }
         }
         for container in cli.docker_containers {
             let target = DockerTarget::inspect(&container, &cli.docker_bin)?;
@@ -778,6 +801,159 @@ fn sanitize_cli_text(value: &str) -> String {
 fn executable_available(program: &str) -> bool {
     executable_file(std::path::Path::new(program))
         || resolve_executable(program).is_some_and(|path| executable_file(&path))
+}
+
+enum HarnessInstaller {
+    Script { url: &'static str },
+    Npm { package: &'static str },
+}
+
+fn run_harness_setup(provider: LaunchProvider, confirmed: bool) -> Result<()> {
+    let (label, executable, installer) = match provider {
+        LaunchProvider::Claude => (
+            "Claude Code",
+            "claude",
+            HarnessInstaller::Script {
+                url: "https://claude.ai/install.sh",
+            },
+        ),
+        LaunchProvider::Codex => (
+            "Codex CLI",
+            "codex",
+            HarnessInstaller::Npm {
+                package: "@openai/codex",
+            },
+        ),
+        LaunchProvider::Pi => (
+            "Pi coding agent",
+            "pi",
+            HarnessInstaller::Npm {
+                package: "@mariozechner/pi-coding-agent",
+            },
+        ),
+        LaunchProvider::OpenCode => (
+            "OpenCode",
+            "opencode",
+            HarnessInstaller::Script {
+                url: "https://opencode.ai/install",
+            },
+        ),
+        LaunchProvider::Cursor => (
+            "Cursor Agent",
+            "cursor-agent",
+            HarnessInstaller::Script {
+                url: "https://cursor.com/install",
+            },
+        ),
+        LaunchProvider::Copilot => (
+            "GitHub Copilot CLI",
+            "copilot",
+            HarnessInstaller::Script {
+                url: "https://gh.io/copilot-install",
+            },
+        ),
+        LaunchProvider::Antigravity => (
+            "Antigravity CLI",
+            "agy",
+            HarnessInstaller::Script {
+                url: "https://antigravity.google/cli/install.sh",
+            },
+        ),
+    };
+    if executable_available(executable) {
+        println!("{label} is already installed. Open the model picker in `coding-agents`; if authentication is needed, press Enter there.");
+        return Ok(());
+    }
+    let source = match &installer {
+        HarnessInstaller::Script { url } => *url,
+        HarnessInstaller::Npm { package } => *package,
+    };
+    if !confirmed {
+        if !io::stdin().is_terminal() {
+            bail!(
+                "setup changes your user installation; rerun with --yes after reviewing {source}"
+            );
+        }
+        print!("Install {label} for the current user from {source}? [y/N] ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("Installation cancelled.");
+            return Ok(());
+        }
+    }
+    println!("Installing {label}…");
+    let status = match installer {
+        HarnessInstaller::Script { url } => run_official_script_installer(url)?,
+        HarnessInstaller::Npm { package } => Command::new("npm")
+            .args(["install", "--global", package])
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context(
+                "failed to start npm; install Node.js/npm or use the provider's native installer",
+            )?,
+    };
+    if !status.success() {
+        bail!("{label} installer exited with status {status}");
+    }
+    println!("{label} installation completed. Restart `coding-agents`, choose {label}, then open the model picker; OAV will hand off login if needed.");
+    Ok(())
+}
+
+fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> {
+    let directory = std::env::temp_dir().join(format!(
+        "open-agent-view-installer-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir(&directory).with_context(|| {
+        format!(
+            "failed to create installer staging directory {}",
+            directory.display()
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let script = directory.join("install.sh");
+    let download = Command::new("curl")
+        .args([
+            "--fail",
+            "--location",
+            "--show-error",
+            "--progress-bar",
+            "--output",
+        ])
+        .arg(&script)
+        .arg(url)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("failed to start curl for the official installer")?;
+    if !download.success() {
+        let _ = std::fs::remove_file(&script);
+        let _ = std::fs::remove_dir(&directory);
+        bail!("official installer download failed with status {download}");
+    }
+    let status = Command::new("bash")
+        .arg(&script)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .context("failed to start the downloaded official installer")?;
+    let _ = std::fs::remove_file(&script);
+    let _ = std::fs::remove_dir(&directory);
+    Ok(status)
 }
 
 fn resolve_default_provider_bins(cli: &mut Cli) {
@@ -1316,6 +1492,7 @@ mod tests {
             ("opencode", LaunchProvider::OpenCode),
             ("cursor", LaunchProvider::Cursor),
             ("copilot", LaunchProvider::Copilot),
+            ("antigravity", LaunchProvider::Antigravity),
         ] {
             let cli = Cli::try_parse_from(["coding-agents", "--json", "--launch-provider", value])
                 .unwrap();
@@ -1323,6 +1500,19 @@ mod tests {
         }
         let alias = Cli::try_parse_from(["coding-agents", "--json", "--harness", "codex"]).unwrap();
         assert_eq!(alias.launch_provider, LaunchProvider::Codex);
+    }
+
+    #[test]
+    fn setup_requires_an_exact_supported_harness_and_confirmation_is_explicit() {
+        let cli = Cli::try_parse_from(["coding-agents", "setup", "antigravity", "--yes"]).unwrap();
+        assert_eq!(
+            cli.command,
+            Some(Commands::Setup {
+                harness: LaunchProvider::Antigravity,
+                yes: true,
+            })
+        );
+        assert!(Cli::try_parse_from(["coding-agents", "setup", "unknown"]).is_err());
     }
 
     #[test]

@@ -1,13 +1,22 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, SystemTime};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use serde::{Deserialize, Serialize};
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, ProviderController};
+use crate::control::{
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
+    ProviderController,
+};
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionState};
+use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AntigravityCommandSpec {
@@ -48,13 +57,112 @@ impl AntigravityInvocation {
     }
 
     /// Build a sandboxed new-session command without permission bypass flags.
-    pub fn sandboxed_launch(&self, cwd: &Path) -> Result<AntigravityCommandSpec> {
+    pub fn sandboxed_launch(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<AntigravityCommandSpec> {
         require_absolute_workspace(cwd)?;
+        if prompt.trim().is_empty() {
+            bail!("Antigravity prompt must not be empty");
+        }
+        let mut args = vec!["--sandbox".into()];
+        if let Some(model) = model {
+            require_model(model)?;
+            args.extend(["--model".into(), model.into()]);
+        }
+        args.extend(["--prompt-interactive".into(), prompt.trim().into()]);
         Ok(AntigravityCommandSpec {
             program: self.executable.clone(),
-            args: vec!["--sandbox".into()],
+            args,
             current_dir: cwd.to_owned(),
         })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct OwnedAntigravityConversation {
+    workspace: PathBuf,
+    conversation_id: String,
+    created_at_ms: u64,
+}
+
+/// Durable ownership boundary for conversations created through OAV.
+pub struct AntigravityOwnership {
+    path: PathBuf,
+    records: Mutex<BTreeSet<OwnedAntigravityConversation>>,
+}
+
+impl AntigravityOwnership {
+    pub fn load_default() -> Result<Arc<Self>> {
+        let path = default_antigravity_ownership_path()?;
+        reject_symlink(&path)?;
+        reject_insecure_registry_permissions(&path)?;
+        let records = match fs::read_to_string(&path) {
+            Ok(input) => serde_json::from_str(&input).with_context(|| {
+                format!("invalid Antigravity ownership registry {}", path.display())
+            })?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => BTreeSet::new(),
+            Err(error) => return Err(error.into()),
+        };
+        Ok(Arc::new(Self {
+            path,
+            records: Mutex::new(records),
+        }))
+    }
+
+    fn owns(&self, workspace: &Path, conversation_id: &str) -> bool {
+        self.records
+            .lock()
+            .map(|records| {
+                records.iter().any(|record| {
+                    record.workspace == workspace && record.conversation_id == conversation_id
+                })
+            })
+            .unwrap_or(false)
+    }
+
+    fn record(&self, workspace: &Path, conversation_id: &str) -> Result<()> {
+        let mut records = self
+            .records
+            .lock()
+            .map_err(|_| anyhow!("Antigravity ownership registry lock was poisoned"))?;
+        records.insert(OwnedAntigravityConversation {
+            workspace: workspace.to_owned(),
+            conversation_id: conversation_id.into(),
+            created_at_ms: now_millis(),
+        });
+        let parent = self
+            .path
+            .parent()
+            .context("Antigravity registry has no parent")?;
+        reject_symlink(parent)?;
+        reject_symlink(&self.path)?;
+        reject_insecure_registry_permissions(&self.path)?;
+        fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(parent, fs::Permissions::from_mode(0o700))?;
+        }
+        let temporary = self
+            .path
+            .with_extension(format!("tmp-{}", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.create(true).truncate(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut file = options.open(&temporary)?;
+        serde_json::to_writer_pretty(&mut file, &*records)?;
+        file.write_all(b"\n")?;
+        file.sync_all()?;
+        fs::rename(temporary, &self.path)?;
+        Ok(())
     }
 }
 
@@ -63,17 +171,36 @@ pub fn default_antigravity_last_conversations_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".gemini/antigravity-cli/cache/last_conversations.json"))
 }
 
+pub fn default_antigravity_ownership_path() -> Result<PathBuf> {
+    if let Some(state_home) = std::env::var_os("XDG_STATE_HOME") {
+        return Ok(PathBuf::from(state_home).join("open-agent-view/antigravity/sessions.json"));
+    }
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    Ok(PathBuf::from(home).join(".local/state/open-agent-view/antigravity/sessions.json"))
+}
+
 pub struct AntigravitySource {
     path: PathBuf,
+    ownership: Option<Arc<AntigravityOwnership>>,
 }
 
 impl AntigravitySource {
     pub fn host(path: PathBuf) -> Self {
-        Self { path }
+        Self {
+            path,
+            ownership: None,
+        }
     }
 
     pub fn default_host() -> Result<Self> {
         Ok(Self::host(default_antigravity_last_conversations_path()?))
+    }
+
+    pub fn managed(ownership: Arc<AntigravityOwnership>) -> Result<Self> {
+        Ok(Self {
+            path: default_antigravity_last_conversations_path()?,
+            ownership: Some(ownership),
+        })
     }
 }
 
@@ -83,9 +210,6 @@ impl SessionSource for AntigravitySource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        if !request.include_external {
-            return Ok(Vec::new());
-        }
         let input = match fs::read_to_string(&self.path) {
             Ok(input) => input,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -102,7 +226,12 @@ impl SessionSource for AntigravitySource {
         Ok(sessions
             .into_iter()
             .filter(|session| {
-                session.cwd.is_dir()
+                let visible = request.include_external
+                    || self.ownership.as_ref().is_some_and(|ownership| {
+                        ownership.owns(&session.cwd, &session.provider_session_id)
+                    });
+                visible
+                    && session.cwd.is_dir()
                     && request
                         .cwd
                         .as_ref()
@@ -160,12 +289,109 @@ pub fn parse_antigravity_last_conversations(
 /// Observe-only controller for documented Antigravity cache entries.
 pub struct AntigravityController {
     invocation: AntigravityInvocation,
+    ownership: Option<Arc<AntigravityOwnership>>,
+    cache_path: PathBuf,
+    runner: Arc<dyn CommandRunner>,
 }
 
 impl AntigravityController {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
             invocation: AntigravityInvocation::host(executable),
+            ownership: None,
+            cache_path: default_antigravity_last_conversations_path()
+                .unwrap_or_else(|_| PathBuf::from("/nonexistent/last_conversations.json")),
+            runner: Arc::new(ProcessRunner),
+        }
+    }
+
+    pub fn managed(
+        executable: impl Into<String>,
+        ownership: Arc<AntigravityOwnership>,
+    ) -> Result<Self> {
+        Ok(Self {
+            invocation: AntigravityInvocation::host(executable),
+            ownership: Some(ownership),
+            cache_path: default_antigravity_last_conversations_path()?,
+            runner: Arc::new(ProcessRunner),
+        })
+    }
+
+    fn available_model_ids(&self) -> Result<Vec<String>> {
+        let mut request =
+            CommandRequest::new(self.invocation.executable.clone(), vec!["models".into()]);
+        request.timeout = Duration::from_secs(20);
+        let output = self.runner.run(&request)?;
+        if output.status != 0 {
+            let detail = output.stderr_lossy();
+            if detail.to_ascii_lowercase().contains("auth")
+                || detail.to_ascii_lowercase().contains("sign in")
+            {
+                bail!("Antigravity is not authenticated; press Enter to sign in")
+            }
+            bail!(
+                "Antigravity model discovery exited with status {}: {}",
+                output.status,
+                detail
+            );
+        }
+        let models = parse_antigravity_models(output.stdout_text()?);
+        if models.is_empty() {
+            bail!("Antigravity returned no available models; press Enter to complete setup")
+        }
+        Ok(models)
+    }
+
+    fn launch_native(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        let ownership = self
+            .ownership
+            .as_ref()
+            .context("managed Antigravity launch is not configured")?;
+        let before = cached_conversation(&self.cache_path, &request.cwd)?;
+        let spec = self.invocation.sandboxed_launch(
+            &request.cwd,
+            &request.prompt,
+            request.model.as_deref(),
+        )?;
+        let launch_key = format!("antigravity:new:{}", now_millis());
+        let exit = crate::native_session::run(spec.command(), &launch_key)?;
+        let conversation_id =
+            wait_for_new_cached_conversation(&self.cache_path, &request.cwd, before.as_deref())?;
+        let hint = if let Some(conversation_id) = conversation_id {
+            ownership.record(&request.cwd, &conversation_id)?;
+            Some(conversation_id)
+        } else {
+            None
+        };
+        if matches!(
+            &exit,
+            crate::native_session::NativeSessionExit::Backgrounded
+        ) {
+            if let Some(conversation_id) = hint.as_deref() {
+                crate::native_session::rename_key(
+                    &launch_key,
+                    &format!("antigravity:host:{conversation_id}"),
+                )?;
+            }
+        }
+        match exit {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: if hint.is_some() {
+                    "backgrounded Antigravity session; Enter/Right resumes it".into()
+                } else {
+                    "backgrounded Antigravity; its conversation ID is not visible yet".into()
+                },
+                provider_session_hint: hint,
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: "returned from Antigravity".into(),
+                    provider_session_hint: hint,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Antigravity session exited with status {status}")
+            }
         }
     }
 }
@@ -173,6 +399,38 @@ impl AntigravityController {
 impl ProviderController for AntigravityController {
     fn provider(&self) -> Provider {
         Provider::Antigravity
+    }
+
+    fn launch_mode(&self) -> LaunchMode {
+        if self.ownership.is_some() {
+            LaunchMode::SelectableModel
+        } else {
+            LaunchMode::Unavailable
+        }
+    }
+
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::Foreground
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        self.available_model_ids()
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        run_native_authentication(&self.invocation.executable, &[], Provider::Antigravity)
+    }
+
+    fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_native(request)
+    }
+
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_native(request)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -219,6 +477,125 @@ fn require_conversation_id(conversation_id: &str) -> Result<()> {
 fn require_absolute_workspace(cwd: &Path) -> Result<()> {
     if !cwd.is_absolute() {
         bail!("Antigravity workspace path must be absolute");
+    }
+    Ok(())
+}
+
+fn require_model(model: &str) -> Result<()> {
+    if model.is_empty()
+        || model.len() > 128
+        || model
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        bail!("Antigravity model must contain 1 to 128 non-whitespace bytes");
+    }
+    Ok(())
+}
+
+fn parse_antigravity_models(output: &str) -> Vec<String> {
+    let rendered = if output.contains('\x1b') {
+        let mut parser = vt100::Parser::new(200, 240, 0);
+        parser.process(output.as_bytes());
+        parser.screen().contents()
+    } else {
+        output.to_owned()
+    };
+    let mut models = BTreeSet::new();
+    for line in rendered.lines() {
+        let line = line.trim().trim_start_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '-' | '*' | '•' | '›' | '>' | '✓')
+        });
+        let Some(candidate) = line.split_whitespace().next() else {
+            continue;
+        };
+        let candidate = candidate.trim_matches(|character: char| matches!(character, ':' | ','));
+        let lower = candidate.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "fetching" | "loading" | "models" | "model" | "available" | "name" | "id"
+        ) {
+            continue;
+        }
+        if !candidate.is_empty()
+            && candidate.len() <= 128
+            && candidate.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '-' | '_' | '.' | ':' | '/' | '@')
+            })
+        {
+            models.insert(candidate.to_owned());
+        }
+    }
+    models.into_iter().collect()
+}
+
+fn cached_conversation(path: &Path, cwd: &Path) -> Result<Option<String>> {
+    let input = match fs::read_to_string(path) {
+        Ok(input) => input,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    let values: BTreeMap<String, String> =
+        serde_json::from_str(&input).context("invalid Antigravity conversation cache")?;
+    Ok(values.get(&cwd.to_string_lossy().into_owned()).cloned())
+}
+
+fn wait_for_new_cached_conversation(
+    path: &Path,
+    cwd: &Path,
+    before: Option<&str>,
+) -> Result<Option<String>> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(current) = cached_conversation(path, cwd)? {
+            if before != Some(current.as_str()) {
+                return Ok(Some(current));
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn reject_symlink(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!(
+                "refusing symlinked Antigravity state path {}",
+                path.display()
+            )
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn reject_insecure_registry_permissions(path: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        match fs::metadata(path) {
+            Ok(metadata) if metadata.permissions().mode() & 0o077 != 0 => {
+                bail!(
+                    "Antigravity ownership registry {} must not be accessible by group or other users",
+                    path.display()
+                )
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
     }
     Ok(())
 }
@@ -332,9 +709,18 @@ mod tests {
             }
         );
         let launch = invocation
-            .sandboxed_launch(Path::new("/work/repo"))
+            .sandboxed_launch(Path::new("/work/repo"), "fix tests", Some("gemini-3-pro"))
             .unwrap();
-        assert_eq!(launch.args, vec!["--sandbox"]);
+        assert_eq!(
+            launch.args,
+            vec![
+                "--sandbox",
+                "--model",
+                "gemini-3-pro",
+                "--prompt-interactive",
+                "fix tests"
+            ]
+        );
         assert!(!launch
             .args
             .contains(&"--dangerously-skip-permissions".into()));
@@ -350,5 +736,63 @@ mod tests {
                 .is_err()
         );
         assert!(parse_antigravity_last_conversations("[]", Runtime::Host).is_err());
+    }
+
+    #[test]
+    fn managed_source_shows_only_exact_oav_owned_cached_conversations() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let cache = directory.path().join("last_conversations.json");
+        fs::write(
+            &cache,
+            serde_json::json!({workspace.display().to_string(): "owned-conversation"}).to_string(),
+        )
+        .unwrap();
+        let ownership = Arc::new(AntigravityOwnership {
+            path: directory.path().join("state/sessions.json"),
+            records: Mutex::new(BTreeSet::new()),
+        });
+        let source = AntigravitySource {
+            path: cache,
+            ownership: Some(ownership.clone()),
+        };
+        assert!(source
+            .discover(&DiscoveryRequest::default())
+            .unwrap()
+            .is_empty());
+
+        ownership.record(&workspace, "owned-conversation").unwrap();
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].provider_session_id, "owned-conversation");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_registry_rejects_symlinks_and_public_permissions() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+
+        let directory = tempdir().unwrap();
+        let target = directory.path().join("target.json");
+        fs::write(&target, "[]").unwrap();
+        let link = directory.path().join("link.json");
+        symlink(&target, &link).unwrap();
+        assert!(reject_symlink(&link).is_err());
+
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(reject_insecure_registry_permissions(&target).is_err());
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        reject_insecure_registry_permissions(&target).unwrap();
+    }
+
+    #[test]
+    fn model_catalog_parser_ignores_progress_copy() {
+        assert_eq!(
+            parse_antigravity_models(
+                "Fetching available models...\n  gemini-3-pro  Gemini 3 Pro\n  claude-sonnet-4.6  Sonnet\n"
+            ),
+            vec!["claude-sonnet-4.6", "gemini-3-pro"]
+        );
     }
 }

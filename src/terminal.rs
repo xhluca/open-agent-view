@@ -14,7 +14,7 @@ use ratatui::Terminal;
 
 use crate::adapters::{DiscoveryEngine, DiscoveryRequest};
 use crate::app::{App, AppAction, Overlay, SESSION_PAGE_SIZE};
-use crate::control::{ControlHub, ControlOutcome};
+use crate::control::{ControlHub, ControlOutcome, LaunchPresentation};
 use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot, SessionState};
 use crate::hidden::HiddenSessions;
 use crate::ui;
@@ -26,6 +26,8 @@ use crate::ui;
 const MAX_READY_EVENTS_PER_TICK: usize = 256;
 const LAUNCH_DISCOVERY_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const LAUNCH_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
+const LAUNCH_ANIMATION_INTERVAL: Duration = Duration::from_millis(120);
+const LAUNCH_SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct PendingLaunch {
@@ -59,7 +61,7 @@ pub fn run_dashboard(
 ) -> Result<()> {
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
-    let (models_tx, models_rx) = mpsc::channel::<(Provider, Result<Vec<String>, String>)>();
+    let (models_tx, models_rx) = mpsc::channel::<(Provider, bool, Result<Vec<String>, String>)>();
     let (launch_tx, launch_rx) = mpsc::channel::<LaunchWorkerResult>();
     let worker_engine = (*engine).clone();
     let worker_control = control.clone();
@@ -117,6 +119,9 @@ pub fn run_dashboard(
     let mut pending_launch: Option<PendingLaunch> = None;
     let mut pending_launch_retry_at: Option<Instant> = None;
     let mut latest_launch_sequence = 0u64;
+    let mut launching_provider: Option<Provider> = None;
+    let mut launch_animation_tick = 0usize;
+    let mut next_launch_animation = Instant::now();
     let mut needs_draw = true;
     schedule_refresh(
         &refresh_tx,
@@ -188,7 +193,8 @@ pub fn run_dashboard(
         }
         loop {
             match models_rx.try_recv() {
-                Ok((provider, result)) => {
+                Ok((provider, auth_available, result)) => {
+                    app.set_models_auth_available(&provider, auth_available);
                     app.set_available_models(provider, result);
                     needs_draw = true;
                 }
@@ -202,6 +208,7 @@ pub fn run_dashboard(
                 Ok(completed) => {
                     completed_launch_needs_refresh = true;
                     if completed.sequence == latest_launch_sequence {
+                        launching_provider = None;
                         match completed.result {
                             Ok(outcome) => {
                                 app.set_notice(outcome.message);
@@ -252,6 +259,17 @@ pub fn run_dashboard(
         if app.should_quit {
             break Ok(());
         }
+        if launching_provider.is_some() && Instant::now() >= next_launch_animation {
+            let provider = launching_provider.as_ref().expect("checked above");
+            app.set_notice(format!(
+                "{} launching {}…",
+                LAUNCH_SPINNER[launch_animation_tick % LAUNCH_SPINNER.len()],
+                provider.label()
+            ));
+            launch_animation_tick = launch_animation_tick.wrapping_add(1);
+            next_launch_animation = Instant::now() + LAUNCH_ANIMATION_INTERVAL;
+            needs_draw = true;
+        }
         if needs_draw {
             terminal.terminal.draw(|frame| ui::render(frame, &app))?;
             needs_draw = false;
@@ -272,19 +290,43 @@ pub fn run_dashboard(
                                 provider,
                                 model,
                                 prompt,
-                            } => {
-                                latest_launch_sequence = latest_launch_sequence.wrapping_add(1);
-                                app.set_notice(format!("launching {}…", provider.label()));
-                                schedule_launch(
-                                    control.clone(),
-                                    latest_launch_sequence,
-                                    provider,
-                                    model,
-                                    prompt,
-                                    launch_tx.clone(),
-                                );
-                                ActionEffect::default()
-                            }
+                            } => match control.launch_presentation(&provider) {
+                                Ok(LaunchPresentation::Foreground) => {
+                                    app.set_notice(format!(
+                                        "starting {} native session…",
+                                        provider.label()
+                                    ));
+                                    terminal.terminal.draw(|frame| ui::render(frame, &app))?;
+                                    dispatch_foreground_launch(
+                                        &mut terminal,
+                                        &mut app,
+                                        provider,
+                                        model,
+                                        prompt,
+                                        control,
+                                    )
+                                }
+                                Ok(LaunchPresentation::Background) => {
+                                    latest_launch_sequence = latest_launch_sequence.wrapping_add(1);
+                                    launching_provider = Some(provider.clone());
+                                    launch_animation_tick = 0;
+                                    next_launch_animation = Instant::now();
+                                    app.set_notice(format!("launching {}…", provider.label()));
+                                    schedule_launch(
+                                        control.clone(),
+                                        latest_launch_sequence,
+                                        provider,
+                                        model,
+                                        prompt,
+                                        launch_tx.clone(),
+                                    );
+                                    ActionEffect::default()
+                                }
+                                Err(error) => {
+                                    app.set_notice(format!("launch failed: {error:#}"));
+                                    ActionEffect::default()
+                                }
+                            },
                             other => dispatch_action(&mut terminal, &mut app, other, control),
                         };
                         if let Some(include_completed) = effect.completed_visibility {
@@ -426,13 +468,14 @@ fn schedule_refresh(
 fn schedule_model_load(
     control: ControlHub,
     provider: Provider,
-    sender: mpsc::Sender<(Provider, Result<Vec<String>, String>)>,
+    sender: mpsc::Sender<(Provider, bool, Result<Vec<String>, String>)>,
 ) {
     let _model_worker = thread::spawn(move || {
+        let auth_available = control.supports_authentication(&provider);
         let result = control
             .available_models(&provider)
             .map_err(|error| format!("{error:#}"));
-        let _ = sender.send((provider, result));
+        let _ = sender.send((provider, auth_available, result));
     });
 }
 
@@ -463,6 +506,45 @@ fn schedule_launch_job(
             result,
         });
     });
+}
+
+fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
+    terminal: &mut T,
+    app: &mut App,
+    provider: Provider,
+    model: Option<String>,
+    prompt: String,
+    control: &C,
+) -> ActionEffect {
+    if let Err(error) = terminal.suspend_dashboard() {
+        app.set_notice(format!("failed to suspend dashboard: {error:#}"));
+        return ActionEffect::default();
+    }
+    let result = control.launch_foreground_session(provider.clone(), model, prompt);
+    let resume = terminal.resume_dashboard();
+    match (result, resume) {
+        (Ok(outcome), Ok(())) => {
+            app.set_notice(outcome.message);
+            ActionEffect {
+                refresh: true,
+                pending_launch: outcome
+                    .provider_session_hint
+                    .map(|provider_session_id| (provider, provider_session_id)),
+                ..ActionEffect::default()
+            }
+        }
+        (Err(error), Ok(())) => {
+            app.set_notice(format!("launch failed: {error:#}"));
+            ActionEffect {
+                refresh: true,
+                ..ActionEffect::default()
+            }
+        }
+        (_, Err(error)) => {
+            app.set_notice(format!("failed to restore dashboard: {error:#}"));
+            ActionEffect::default()
+        }
+    }
 }
 
 fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> bool {
@@ -576,6 +658,13 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.move_model_page(1);
             AppAction::None
         }
+        KeyCode::Char('l')
+            if app.overlay == Overlay::ModelPicker
+                && app.models_error.is_some()
+                && app.models_auth_available =>
+        {
+            app.activate()
+        }
         KeyCode::Up | KeyCode::Left if app.overlay == Overlay::HarnessPicker => {
             app.move_harness_selection(-1);
             AppAction::None
@@ -680,6 +769,20 @@ trait DashboardControl {
         model: Option<String>,
         prompt: String,
     ) -> Result<ControlOutcome>;
+    fn launch_foreground_session(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome> {
+        self.launch_session(provider, model, prompt)
+    }
+    fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+        Err(anyhow!(
+            "{} does not expose interactive login",
+            provider.label()
+        ))
+    }
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome>;
     fn resolve_session_approval(
         &self,
@@ -709,6 +812,19 @@ impl DashboardControl for ControlHub {
         prompt: String,
     ) -> Result<ControlOutcome> {
         self.launch_with(provider, model, prompt)
+    }
+
+    fn launch_foreground_session(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome> {
+        self.launch_foreground_with(provider, model, prompt)
+    }
+
+    fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+        self.authenticate(provider)
     }
 
     fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
@@ -760,6 +876,32 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
             load_models: Some(provider),
             ..ActionEffect::default()
         },
+        AppAction::Authenticate { provider } => {
+            if let Err(error) = terminal.suspend_dashboard() {
+                app.set_notice(format!("failed to suspend dashboard: {error:#}"));
+                return ActionEffect::default();
+            }
+            let result = control.authenticate_provider(&provider);
+            let resume = terminal.resume_dashboard();
+            match (result, resume) {
+                (Ok(outcome), Ok(())) => {
+                    app.set_notice(outcome.message);
+                    app.retry_model_load(&provider);
+                    ActionEffect {
+                        load_models: Some(provider),
+                        ..ActionEffect::default()
+                    }
+                }
+                (Err(error), Ok(())) => {
+                    app.set_notice(format!("login failed: {error:#}"));
+                    ActionEffect::default()
+                }
+                (_, Err(error)) => {
+                    app.set_notice(format!("failed to restore dashboard: {error:#}"));
+                    ActionEffect::default()
+                }
+            }
+        }
         AppAction::Hide { session_ids } => ActionEffect {
             hide_session_ids: session_ids,
             ..ActionEffect::default()
@@ -818,6 +960,7 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
         | AppAction::Quit
         | AppAction::SetCompletedVisibility { .. }
         | AppAction::LoadModels { .. }
+        | AppAction::Authenticate { .. }
         | AppAction::Hide { .. } => false,
         AppAction::Refresh => {
             app.set_notice("refreshing provider sessions…");
@@ -1683,6 +1826,10 @@ mod tests {
             Ok(outcome)
         }
 
+        fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+            self.invoke("authenticate", provider.label().into())
+        }
+
         fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
             self.invoke("reply", format!("{}:{prompt}", session.id))
         }
@@ -1756,6 +1903,34 @@ mod tests {
             .unwrap()
             .contains("rename is unavailable"));
         assert!(control.calls.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn authentication_handoff_restores_the_dashboard_and_reloads_models() {
+        let mut app = app();
+        app.open_model_picker();
+        app.set_available_models(Provider::Claude, Err("authentication required".into()));
+        app.set_models_auth_available(&Provider::Claude, true);
+        let mut terminal = FakeTerminal::default();
+        let control = FakeControl::default();
+
+        let effect = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::Authenticate {
+                provider: Provider::Claude,
+            },
+            &control,
+        );
+
+        assert_eq!(terminal.calls, vec!["suspend", "resume"]);
+        assert_eq!(effect.load_models, Some(Provider::Claude));
+        assert!(app.models_loading);
+        assert!(app.models_error.is_none());
+        assert_eq!(
+            control.calls.lock().unwrap().as_slice(),
+            ["authenticate:Claude"]
+        );
     }
 
     #[test]

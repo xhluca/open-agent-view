@@ -65,6 +65,9 @@ pub enum AppAction {
     LoadModels {
         provider: Provider,
     },
+    Authenticate {
+        provider: Provider,
+    },
     Open {
         session_id: String,
     },
@@ -131,6 +134,8 @@ pub struct App {
     pub model_selection: usize,
     pub models_loading: bool,
     pub models_provider: Option<Provider>,
+    pub models_error: Option<String>,
+    pub models_auth_available: bool,
     pub collapsed: BTreeSet<String>,
     visible_limits: BTreeMap<String, usize>,
     session_page_size: usize,
@@ -196,6 +201,8 @@ impl App {
             model_selection: 0,
             models_loading: false,
             models_provider: None,
+            models_error: None,
+            models_auth_available: false,
             collapsed: BTreeSet::new(),
             visible_limits: BTreeMap::new(),
             session_page_size: SESSION_PAGE_SIZE,
@@ -405,8 +412,14 @@ impl App {
                 AppAction::None
             }
             Overlay::ModelPicker => {
-                self.confirm_model_selection();
-                AppAction::None
+                if self.models_error.is_some() && self.models_auth_available {
+                    AppAction::Authenticate {
+                        provider: self.launch_provider.clone(),
+                    }
+                } else {
+                    self.confirm_model_selection();
+                    AppAction::None
+                }
             }
             Overlay::Composer(mode) => self.submit_composer(mode),
             Overlay::Confirm(target) => self.confirm(target),
@@ -576,6 +589,8 @@ impl App {
             .unwrap_or(0);
         self.models_loading = true;
         self.models_provider = Some(self.launch_provider.clone());
+        self.models_error = None;
+        self.models_auth_available = false;
         self.notice = None;
         self.overlay = Overlay::ModelPicker;
         AppAction::LoadModels {
@@ -606,11 +621,13 @@ impl App {
                     .position(|choice| *choice == self.launch_model.as_deref())
                     .unwrap_or(0);
                 self.reconcile_model_selection();
+                self.models_error = None;
                 self.notice = None;
             }
             Err(error) => {
                 self.available_models.clear();
                 self.model_selection = 0;
+                self.models_error = Some(error.clone());
                 self.set_notice(format!(
                     "failed to list {} models: {error}",
                     provider.label()
@@ -619,10 +636,25 @@ impl App {
         }
     }
 
+    pub fn set_models_auth_available(&mut self, provider: &Provider, available: bool) {
+        if self.models_provider.as_ref() == Some(provider) {
+            self.models_auth_available = available;
+        }
+    }
+
+    pub fn retry_model_load(&mut self, provider: &Provider) {
+        if self.models_provider.as_ref() == Some(provider) {
+            self.models_loading = true;
+            self.models_error = None;
+            self.available_models.clear();
+            self.model_selection = 0;
+        }
+    }
+
     pub fn model_choices(&self) -> Vec<Option<&str>> {
         let needle = self.model_filter.to_ascii_lowercase();
         let mut choices = Vec::new();
-        if needle.is_empty() || "default".contains(&needle) {
+        if self.models_error.is_none() && (needle.is_empty() || "default".contains(&needle)) {
             choices.push(None);
         }
         choices.extend(
@@ -1025,11 +1057,17 @@ impl App {
             .unwrap_or((input.as_str(), ""));
         match command.to_ascii_lowercase().as_str() {
             "/help" => self.set_notice(
-                "commands: /harness [NAME] · /model [NAME|default] · /completed [show|hide] · /filter TEXT",
+                "commands: /harness [NAME] · /model [NAME|default] · /login · /completed [show|hide] · /filter TEXT",
             ),
             "/harness" | "/provider" if argument.is_empty() => self.open_harness_picker(),
             "/harness" | "/provider" => self.select_launch_provider(argument),
             "/model" => return self.select_launch_model(argument),
+            "/login" if argument.is_empty() => {
+                return AppAction::Authenticate {
+                    provider: self.launch_provider.clone(),
+                }
+            }
+            "/login" => self.set_notice("use /login after selecting a harness with /harness"),
             "/completed" => return self.select_completed_visibility(argument),
             "/filter" => {
                 self.set_filter(argument);
@@ -2430,10 +2468,22 @@ mod tests {
 
         app.set_available_models(Provider::Claude, Err("command timed out".into()));
         assert!(!app.models_loading);
+        assert!(app.model_choices().is_empty());
         assert!(app
             .notice
             .as_deref()
             .unwrap()
             .contains("failed to list Claude models"));
+
+        app.set_models_auth_available(&Provider::Claude, true);
+        assert_eq!(
+            app.activate(),
+            AppAction::Authenticate {
+                provider: Provider::Claude
+            }
+        );
+        app.retry_model_load(&Provider::Claude);
+        assert!(app.models_loading);
+        assert!(app.models_error.is_none());
     }
 }

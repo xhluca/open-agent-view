@@ -18,6 +18,8 @@ const ESC: &[u8] = b"\x1b";
 const ENTER: &[u8] = b"\r";
 const UP: &[u8] = b"\x1b[A";
 const DOWN: &[u8] = b"\x1b[B";
+const LEFT: &[u8] = b"\x1b[D";
+const SHIFT_TAB: &[u8] = b"\x1b[Z";
 const CTRL_A: &[u8] = b"\x01";
 const CTRL_F: &[u8] = b"\x06";
 const CTRL_J: &[u8] = b"\x0a";
@@ -744,6 +746,378 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     app.wait_for("slash harness composer close", |screen| {
         screen.contains("describe a task · /help for commands")
     });
+    app.exit_cleanly();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn cursor_login_reloads_account_models_and_launches_without_freezing_the_tui() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("cursor-agent");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+case "${1:-}" in
+  models)
+    if [ ! -f "$HOME/cursor-authenticated" ]; then
+      printf '%s\n' 'No models available for this account'
+      exit 1
+    fi
+    printf '%s\n' 'auto  Recommended' 'claude-sonnet-4.6  Sonnet'
+    ;;
+  login)
+    printf '%s\n' 'CURSOR INTERACTIVE LOGIN'
+    IFS= read -r answer
+    : > "$HOME/cursor-authenticated"
+    ;;
+  create-chat)
+    sleep 1
+    printf '%s\n' 'cursor-auth-session'
+    ;;
+  *)
+    printf '%s\n' "$*" > "$HOME/cursor-launch-arguments"
+    printf '%s\n' '{"type":"system","subtype":"init","cwd":"/work","session_id":"cursor-auth-session","model":"claude-sonnet-4.6"}'
+    printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"finished","session_id":"cursor-auth-session"}'
+    ;;
+esac
+"##,
+        )
+        .expect("write fake Cursor executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Cursor executable runnable");
+        command.args([
+            "--cursor-bin",
+            executable.to_str().expect("UTF-8 fake Cursor path"),
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("Cursor-only startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"/harness cursor");
+    app.send(ENTER);
+    app.wait_for("Cursor harness selected", |screen| {
+        screen.contains("new tasks will use the Cursor harness")
+    });
+    app.send(b"cursor login task");
+    app.wait_for("Cursor task draft", |screen| {
+        screen.contains("new task · harness Cursor · model default")
+            && screen.contains("cursor login task")
+    });
+    app.send(SHIFT_TAB);
+    app.wait_for("Cursor account requires login", |screen| {
+        screen.contains("choose Cursor model")
+            && screen.contains("sign in")
+            && screen.contains("Cursor model preflight failed")
+    });
+    let leaves_before = count_bytes(&app.raw, b"\x1b[?1049l");
+    app.send(ENTER);
+    app.wait_for_byte_count(
+        b"\x1b[?1049l",
+        leaves_before + 1,
+        "dashboard suspension for Cursor login",
+    );
+    app.wait_for("Cursor native login prompt", |screen| {
+        screen.contains("CURSOR INTERACTIVE LOGIN")
+    });
+    app.send(ENTER);
+    app.wait_for("authenticated Cursor account model catalog", |screen| {
+        screen.contains("choose Cursor model")
+            && screen.contains("claude-sonnet-4.6")
+            && !screen.contains("sign in")
+    });
+    app.send(DOWN);
+    app.send(DOWN);
+    app.send(ENTER);
+    app.wait_for("exact Cursor account model selected", |screen| {
+        screen.contains("new task · harness Cursor · model claude-sonnet-4.6")
+            && screen.contains("cursor login task")
+    });
+    app.send(ENTER);
+    app.wait_for("animated slow Cursor launch", |screen| {
+        screen.contains("launching Cursor")
+    });
+    app.wait_for("new managed Cursor row after launch", |screen| {
+        screen.contains("cursor-auth-session")
+    });
+    let arguments = fs::read_to_string(app.home_path().join("cursor-launch-arguments"))
+        .expect("read fake Cursor launch arguments");
+    assert!(arguments.contains("--model claude-sonnet-4.6"));
+    app.exit_cleanly();
+}
+
+#[test]
+fn foreground_claude_launch_attaches_full_screen_and_left_returns_to_the_new_row() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("claude");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+if [ "${1:-}" = "agents" ]; then
+  if [ -f "$HOME/claude-session-id" ]; then
+    id=$(cat "$HOME/claude-session-id")
+    printf '[{"cwd":"%s","kind":"background","sessionId":"%s","name":"new-claude-task","state":"working"}]\n' "$PWD" "$id"
+  else
+    printf '%s\n' '[]'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = "attach" ]; then
+  printf '%s\n' "CLAUDE FULL SCREEN ATTACH ${2:-}"
+  while :; do sleep 1; done
+fi
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--session-id" ]; then
+    shift
+    printf '%s' "$1" > "$HOME/claude-session-id"
+    exit 0
+  fi
+  shift
+done
+exit 90
+"##,
+        )
+        .expect("write fake Claude executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Claude executable runnable");
+        command.args([
+            "--claude-bin",
+            executable.to_str().expect("UTF-8 fake Claude path"),
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("empty Claude startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"build the foreground feature");
+    app.send(ENTER);
+    app.wait_for("Claude native full-screen attach", |screen| {
+        screen.contains("CLAUDE FULL SCREEN ATTACH")
+    });
+    let enters_before = count_bytes(&app.raw, b"\x1b[?1049h");
+    app.send(LEFT);
+    app.wait_for_byte_count(
+        b"\x1b[?1049h",
+        enters_before + 1,
+        "dashboard restoration after Claude Left",
+    );
+    let returned = app.wait_for("new Claude row selected after backgrounding", |screen| {
+        screen.contains("Open Agent View") && screen.contains("new-claude-task")
+    });
+    assert!(returned.contains("Claude"));
+    assert!(returned.contains("backgrounded Claude session"));
+    app.exit_cleanly();
+}
+
+#[test]
+fn copilot_login_reloads_the_exact_account_model_catalog() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("copilot");
+        fs::write(
+            &executable,
+            r##"#!/usr/bin/env python3
+import json, os, sys
+auth = os.path.join(os.environ['HOME'], 'copilot-authenticated')
+if len(sys.argv) > 1 and sys.argv[1] == 'login':
+    print('COPILOT INTERACTIVE LOGIN', flush=True)
+    input()
+    open(auth, 'w').close()
+    raise SystemExit(0)
+def receive():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line: raise SystemExit(0)
+        if line in (b'\n', b'\r\n'): break
+        if line.lower().startswith(b'content-length:'):
+            length = int(line.split(b':', 1)[1])
+    return json.loads(sys.stdin.buffer.read(length))
+def send(value):
+    body = json.dumps(value, separators=(',', ':')).encode()
+    sys.stdout.buffer.write(b'Content-Length: %d\r\n\r\n' % len(body) + body)
+    sys.stdout.buffer.flush()
+request = receive()
+if not os.path.exists(auth):
+    send({'jsonrpc':'2.0','id':request['id'],'error':{'code':-32000,'message':'Authentication required'}})
+    raise SystemExit(0)
+send({'jsonrpc':'2.0','id':request['id'],'result':{'ok':True,'protocolVersion':3,'version':'test'}})
+request = receive()
+send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
+    {'id':'gpt-5.4','name':'GPT 5.4'},
+    {'id':'claude-sonnet-4.6','name':'Sonnet'}
+]}})
+"##,
+        )
+        .expect("write fake Copilot executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Copilot executable runnable");
+        command.args([
+            "--copilot-bin",
+            executable.to_str().expect("UTF-8 fake Copilot path"),
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("Copilot-only startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"/harness copilot");
+    app.send(ENTER);
+    app.send(b"copilot account task");
+    app.send(SHIFT_TAB);
+    app.wait_for("Copilot account requires login", |screen| {
+        screen.contains("choose GitHub Copilot model")
+            && screen.contains("GitHub Copilot is not authenticated")
+            && screen.contains("sign in")
+    });
+    app.send(b"l");
+    app.wait_for("Copilot native login prompt", |screen| {
+        screen.contains("COPILOT INTERACTIVE LOGIN")
+    });
+    app.send(ENTER);
+    app.wait_for("authenticated Copilot account models", |screen| {
+        screen.contains("choose GitHub Copilot model")
+            && screen.contains("gpt-5.4")
+            && screen.contains("claude-sonnet-4.6")
+            && !screen.contains("sign in")
+    });
+    app.send(DOWN);
+    app.send(DOWN);
+    app.send(ENTER);
+    app.wait_for("exact Copilot account model selected", |screen| {
+        screen.contains("new task · harness GitHub Copilot · model gpt-5.4")
+            && screen.contains("copilot account task")
+    });
+    app.send(ESC);
+    app.wait_for("Copilot task composer closes", |screen| {
+        screen.contains("describe a task · /help for commands")
+            && !screen.contains("copilot account task")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+fn antigravity_login_model_selection_and_left_background_are_integrated() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("agy");
+        let workspace = home.path().join("antigravity-workspace");
+        fs::create_dir(&workspace).expect("create Antigravity workspace");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+if [ "${1:-}" = "models" ]; then
+  if [ ! -f "$HOME/antigravity-authenticated" ]; then
+    printf '%s\n' 'Authentication required' >&2
+    exit 1
+  fi
+  printf '%s\n' 'gemini-3-pro  Gemini 3 Pro'
+  exit 0
+fi
+if [ "$#" -eq 0 ]; then
+  printf '%s\n' 'ANTIGRAVITY INTERACTIVE LOGIN'
+  IFS= read -r answer
+  : > "$HOME/antigravity-authenticated"
+  exit 0
+fi
+mkdir -p "$HOME/.gemini/antigravity-cli/cache"
+printf '{"%s":"agy-owned-session"}\n' "$PWD" > "$HOME/.gemini/antigravity-cli/cache/last_conversations.json"
+printf '%s\n' "$*" > "$HOME/antigravity-launch-arguments"
+printf '%s\n' 'ANTIGRAVITY FULL SCREEN SESSION'
+while :; do sleep 1; done
+"##,
+        )
+        .expect("write fake Antigravity executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Antigravity executable runnable");
+        command.args([
+            "--cwd",
+            workspace.to_str().expect("UTF-8 Antigravity workspace"),
+            "--launch-cwd",
+            workspace.to_str().expect("UTF-8 Antigravity workspace"),
+            "--antigravity-bin",
+            executable.to_str().expect("UTF-8 fake Antigravity path"),
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("Antigravity-only startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"/harness antigravity");
+    app.send(ENTER);
+    app.send(b"antigravity account task");
+    app.send(SHIFT_TAB);
+    app.wait_for("Antigravity requires native login", |screen| {
+        screen.contains("choose Antigravity model")
+            && screen.contains("not authenticated")
+            && screen.contains("sign in")
+    });
+    app.send(ENTER);
+    app.wait_for("Antigravity native login", |screen| {
+        screen.contains("ANTIGRAVITY INTERACTIVE LOGIN")
+    });
+    app.send(ENTER);
+    app.wait_for("Antigravity account models", |screen| {
+        screen.contains("choose Antigravity model")
+            && screen.contains("gemini-3-pro")
+            && !screen.contains("sign in")
+    });
+    app.send(DOWN);
+    app.send(ENTER);
+    app.wait_for("selected Antigravity model", |screen| {
+        screen.contains("new task · harness Antigravity · model gemini-3-pro")
+            && screen.contains("antigravity account task")
+    });
+    app.send(ENTER);
+    app.wait_for("Antigravity full-screen launch", |screen| {
+        screen.contains("ANTIGRAVITY FULL SCREEN SESSION")
+    });
+    app.send(LEFT);
+    let returned = app.wait_for("owned Antigravity row after Left", |screen| {
+        screen.contains("Open Agent View")
+            && screen.contains("antigravity-workspace")
+            && screen.contains("Most recent Antigravity conversation")
+    });
+    assert!(returned.contains("Antigravity"));
+    let arguments = fs::read_to_string(app.home_path().join("antigravity-launch-arguments"))
+        .expect("read Antigravity launch arguments");
+    assert!(arguments.contains("--model gemini-3-pro"));
+    assert!(arguments.contains("--sandbox"));
+    assert!(!arguments.contains("dangerously-skip-permissions"));
     app.exit_cleanly();
 }
 

@@ -11,7 +11,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
+use crate::control::{
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+};
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
@@ -97,6 +99,16 @@ impl ProviderController for PiController {
             bail!("Pi model catalog exceeded the 4 MiB safety limit");
         }
         parse_pi_model_catalog(output.stdout_text()?)
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        // Pi exposes provider OAuth through its interactive `/login` picker,
+        // not through a provider-neutral `pi auth login` subcommand.
+        run_native_authentication(&self.executable, &["--no-session"], Provider::Pi)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {

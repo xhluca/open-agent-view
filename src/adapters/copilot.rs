@@ -12,7 +12,9 @@ use serde_json::{json, Value};
 
 use super::copilot_managed::CopilotSupervisor;
 use super::{DiscoveryRequest, SessionSource};
-use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
+use crate::control::{
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+};
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
@@ -244,6 +246,22 @@ impl CopilotAcpConnection {
                 "sessionId": session_id,
                 "prompt": [{"type": "text", "text": prompt}]
             }),
+        )
+    }
+
+    pub fn begin_set_config_option(
+        &mut self,
+        session_id: &str,
+        config_id: &str,
+        value: &str,
+    ) -> Result<u64> {
+        require_session_id(session_id)?;
+        if config_id.is_empty() || value.is_empty() {
+            bail!("Copilot ACP config option ID and value must not be empty");
+        }
+        self.send_request(
+            "session/set_config_option",
+            json!({"sessionId": session_id, "configId": config_id, "value": value}),
         )
     }
 
@@ -638,10 +656,30 @@ impl ProviderController for CopilotController {
 
     fn launch_mode(&self) -> LaunchMode {
         if self.supervisor.is_some() {
-            LaunchMode::DefaultModel
+            LaunchMode::SelectableModel
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        list_copilot_models(&self.invocation.executable)
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        let outcome = run_native_authentication(
+            &self.invocation.executable,
+            &["login"],
+            Provider::GitHubCopilot,
+        )?;
+        if let Some(supervisor) = &self.supervisor {
+            supervisor.reset_unowned_connection_after_authentication()?;
+        }
+        Ok(outcome)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -654,9 +692,11 @@ impl ProviderController for CopilotController {
         if request.provider != Provider::GitHubCopilot {
             bail!("the GitHub Copilot controller cannot launch another provider");
         }
-        let session_id = self
-            .managed_supervisor()?
-            .launch(&request.prompt, &request.cwd)?;
+        let session_id = self.managed_supervisor()?.launch_with_model(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
         Ok(ControlOutcome {
             message: format!("launched managed GitHub Copilot session {session_id}"),
             provider_session_hint: Some(session_id),
@@ -734,6 +774,156 @@ impl CopilotController {
         self.supervisor
             .as_deref()
             .context("managed GitHub Copilot ACP control is not configured")
+    }
+}
+
+fn list_copilot_models(executable: &str) -> Result<Vec<String>> {
+    let mut child = Command::new(executable)
+        .args(["--headless", "--no-auto-update", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("failed to start Copilot model catalog from `{executable}`"))?;
+    let mut stdin = child
+        .stdin
+        .take()
+        .context("Copilot headless stdin is unavailable")?;
+    let stdout = child
+        .stdout
+        .take()
+        .context("Copilot headless stdout is unavailable")?;
+    let (sender, receiver) = mpsc::sync_channel(8);
+    let reader = thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            match read_lsp_message(&mut reader) {
+                Ok(Some(value)) => {
+                    if sender.send(Ok(value)).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    let _ = sender.send(Err(format!("{error:#}")));
+                    break;
+                }
+            }
+        }
+    });
+    let operation = (|| -> Result<Vec<String>> {
+        write_lsp_message(
+            &mut stdin,
+            &json!({"jsonrpc":"2.0","id":1,"method":"connect","params":{}}),
+        )?;
+        wait_lsp_response(&receiver, 1).map_err(map_copilot_catalog_error)?;
+        write_lsp_message(
+            &mut stdin,
+            &json!({"jsonrpc":"2.0","id":2,"method":"models.list","params":{}}),
+        )?;
+        let result = wait_lsp_response(&receiver, 2).map_err(map_copilot_catalog_error)?;
+        let models = result
+            .get("models")
+            .and_then(Value::as_array)
+            .context("Copilot models.list omitted models")?;
+        let mut ids = BTreeSet::new();
+        for model in models {
+            let Some(id) = model.get("id").and_then(Value::as_str) else {
+                continue;
+            };
+            if !id.is_empty()
+                && id.len() <= 128
+                && !id
+                    .chars()
+                    .any(|character| character.is_control() || character.is_whitespace())
+            {
+                ids.insert(id.to_owned());
+            }
+        }
+        if ids.is_empty() {
+            bail!("Copilot returned no models for the authenticated account");
+        }
+        Ok(ids.into_iter().collect())
+    })();
+    drop(stdin);
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = reader.join();
+    operation
+}
+
+fn map_copilot_catalog_error(error: anyhow::Error) -> anyhow::Error {
+    if format!("{error:#}").to_ascii_lowercase().contains("auth") {
+        anyhow!("GitHub Copilot is not authenticated; press Enter to sign in")
+    } else {
+        error
+    }
+}
+
+fn write_lsp_message(writer: &mut impl Write, value: &Value) -> Result<()> {
+    let bytes = serde_json::to_vec(value)?;
+    write!(writer, "Content-Length: {}\r\n\r\n", bytes.len())?;
+    writer.write_all(&bytes)?;
+    writer.flush()?;
+    Ok(())
+}
+
+fn read_lsp_message(reader: &mut impl BufRead) -> Result<Option<Value>> {
+    let mut content_length = None;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            return Ok(None);
+        }
+        if line == "\r\n" || line == "\n" {
+            break;
+        }
+        if let Some(value) = line
+            .strip_prefix("Content-Length:")
+            .or_else(|| line.strip_prefix("content-length:"))
+        {
+            content_length = Some(
+                value
+                    .trim()
+                    .parse::<usize>()
+                    .context("invalid Copilot Content-Length header")?,
+            );
+        }
+    }
+    let length = content_length.context("Copilot headless frame omitted Content-Length")?;
+    if length > MAX_MESSAGE_BYTES as usize {
+        bail!("Copilot headless frame exceeded the message size limit");
+    }
+    let mut bytes = vec![0; length];
+    reader.read_exact(&mut bytes)?;
+    Ok(Some(
+        serde_json::from_slice(&bytes).context("invalid Copilot headless JSON-RPC frame")?,
+    ))
+}
+
+fn wait_lsp_response(
+    receiver: &mpsc::Receiver<std::result::Result<Value, String>>,
+    id: u64,
+) -> Result<Value> {
+    let deadline = Instant::now() + REQUEST_TIMEOUT;
+    loop {
+        let value = receiver
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            .map_err(|error| anyhow!("Copilot model catalog response failed: {error}"))?
+            .map_err(|error| anyhow!(error))?;
+        if value.get("id").and_then(Value::as_u64) != Some(id) {
+            continue;
+        }
+        if let Some(error) = value.get("error") {
+            bail!(
+                "Copilot model catalog request failed: {}",
+                compact_json(error)
+            );
+        }
+        return value
+            .get("result")
+            .cloned()
+            .context("Copilot model catalog response omitted result");
     }
 }
 
@@ -1140,6 +1330,48 @@ mod tests {
             .args
             .iter()
             .any(|arg| matches!(arg.as_str(), "--allow-all" | "--allow-all-tools" | "--yolo")));
+    }
+
+    #[test]
+    fn headless_catalog_uses_account_scoped_model_ids_without_creating_a_session() {
+        let directory = tempdir().unwrap();
+        let script = directory.path().join("copilot-models-mock");
+        fs::write(
+            &script,
+            r##"#!/usr/bin/env python3
+import json, sys
+def receive():
+    length = None
+    while True:
+        line = sys.stdin.buffer.readline()
+        if not line: raise SystemExit(0)
+        if line in (b'\n', b'\r\n'): break
+        if line.lower().startswith(b'content-length:'):
+            length = int(line.split(b':', 1)[1])
+    return json.loads(sys.stdin.buffer.read(length))
+def send(value):
+    body = json.dumps(value, separators=(',', ':')).encode()
+    sys.stdout.buffer.write(b'Content-Length: %d\r\n\r\n' % len(body) + body)
+    sys.stdout.buffer.flush()
+request = receive()
+assert request['method'] == 'connect'
+send({'jsonrpc':'2.0','id':request['id'],'result':{'ok':True,'protocolVersion':3,'version':'test'}})
+request = receive()
+assert request['method'] == 'models.list'
+send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
+  {'id':'gpt-5.4','name':'GPT 5.4'}, {'id':'claude-sonnet-4.6','name':'Sonnet'}
+]}})
+"##,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+
+        assert_eq!(
+            list_copilot_models(script.to_str().unwrap()).unwrap(),
+            vec!["claude-sonnet-4.6", "gpt-5.4"]
+        );
     }
 
     #[test]

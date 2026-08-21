@@ -61,6 +61,15 @@ impl CopilotSupervisor {
     /// Create a session and begin its first prompt without enabling broad
     /// permission flags. The ACP process remains owned by this supervisor.
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
+        self.launch_with_model(prompt, cwd, None)
+    }
+
+    pub fn launch_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<String> {
         require_absolute_cwd(cwd)?;
         require_prompt(prompt)?;
         let mut state = self.lock_state()?;
@@ -79,6 +88,20 @@ impl CopilotSupervisor {
             .filter(|id| !id.is_empty())
             .context("Copilot ACP session/new omitted sessionId")?
             .to_owned();
+        if let Some(model) = model {
+            let available = copilot_model_options(&response)?;
+            if !available.iter().any(|candidate| candidate == model) {
+                bail!("Copilot model `{model}` is not available to the authenticated account");
+            }
+            let request_id =
+                state
+                    .connection_mut()?
+                    .begin_set_config_option(&session_id, "model", model)?;
+            state
+                .connection_mut()?
+                .wait_for_response(request_id, RESPONSE_TIMEOUT)
+                .context("Copilot ACP rejected the selected model")?;
+        }
         if state.sessions.contains_key(&session_id) {
             bail!("Copilot ACP reused an already-owned session ID");
         }
@@ -279,11 +302,50 @@ impl CopilotSupervisor {
             .unwrap_or(false)
     }
 
+    pub fn reset_unowned_connection_after_authentication(&self) -> Result<()> {
+        let mut state = self.lock_state()?;
+        if state.sessions.is_empty() {
+            state.connection = None;
+        }
+        Ok(())
+    }
+
     fn lock_state(&self) -> Result<std::sync::MutexGuard<'_, CopilotManagedState>> {
         self.state
             .lock()
             .map_err(|_| anyhow!("Copilot managed connection lock was poisoned"))
     }
+}
+
+fn copilot_model_options(response: &Value) -> Result<Vec<String>> {
+    let options = response
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .and_then(|options| {
+            options.iter().find(|option| {
+                option.get("id").and_then(Value::as_str) == Some("model")
+                    || option.get("category").and_then(Value::as_str) == Some("model")
+            })
+        })
+        .and_then(|option| option.get("options"))
+        .and_then(Value::as_array)
+        .context("Copilot ACP session/new omitted its model configuration options")?;
+    let values = options
+        .iter()
+        .filter_map(|option| option.get("value").and_then(Value::as_str))
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 128
+                && !value
+                    .chars()
+                    .any(|character| character.is_control() || character.is_whitespace())
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        bail!("Copilot ACP returned an empty model configuration");
+    }
+    Ok(values)
 }
 
 impl CopilotManagedState {
@@ -543,6 +605,44 @@ mod tests {
         assert!(message.contains("configured executable: /opt/copilot"));
         assert!(message.contains("authenticate `gh`"));
         assert!(!message.contains("ACP request failed"));
+    }
+
+    #[test]
+    fn selected_model_is_validated_and_set_before_the_first_prompt() {
+        let directory = tempdir().unwrap();
+        let script = directory.path().join("copilot-model-mock");
+        fs::write(
+            &script,
+            r##"#!/bin/sh
+read initialize
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"sessionCapabilities":{}}}}'
+read new_session
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"model-session","configOptions":[{"id":"model","category":"model","type":"select","currentValue":"auto","options":[{"value":"auto","name":"Auto"},{"value":"gpt-5.4","name":"GPT 5.4"}]}]}}'
+read selected
+case "$selected" in
+  *'"method":"session/set_config_option"'*'"configId":"model"'*'"value":"gpt-5.4"'*) ;;
+  *) exit 91 ;;
+esac
+printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"configOptions":[]}}'
+read prompt
+case "$prompt" in *'"method":"session/prompt"'*) ;; *) exit 92 ;; esac
+while read remaining; do :; done
+"##,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let supervisor = CopilotSupervisor::host(script.display().to_string());
+
+        assert_eq!(
+            supervisor
+                .launch_with_model("test model", &workspace, Some("gpt-5.4"))
+                .unwrap(),
+            "model-session"
+        );
     }
 
     #[test]

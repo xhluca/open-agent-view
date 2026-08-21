@@ -48,6 +48,8 @@ struct OwnedCursorSession {
     stdout_path: PathBuf,
     stderr_path: PathBuf,
     process: CursorProcessIdentity,
+    #[serde(default)]
+    model: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -111,13 +113,27 @@ impl CursorSupervisor {
     }
 
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<String> {
+        self.launch_with_model(prompt, cwd, None)
+    }
+
+    pub fn launch_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<String> {
         require_process_identity_support()?;
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the Cursor launch prompt cannot be empty");
         }
         require_absolute_workspace(cwd)?;
-        self.ensure_launch_ready()?;
+        let available_models = self.available_models()?;
+        if let Some(model) = model {
+            if !available_models.iter().any(|candidate| candidate == model) {
+                bail!("Cursor model `{model}` is not available to the authenticated account");
+            }
+        }
         let spec = self.invocation.create_chat(cwd)?;
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
@@ -136,11 +152,11 @@ impl CursorSupervisor {
             );
         }
         let session_id = parse_cursor_chat_id(output.stdout_text()?)?;
-        self.spawn_turn(&session_id, cwd, prompt, true)?;
+        self.spawn_turn(&session_id, cwd, prompt, model, true)?;
         Ok(session_id)
     }
 
-    fn ensure_launch_ready(&self) -> Result<()> {
+    pub fn available_models(&self) -> Result<Vec<String>> {
         let mut request =
             crate::process::CommandRequest::new(self.executable.clone(), vec!["models".into()]);
         request.timeout = MODEL_PREFLIGHT_TIMEOUT;
@@ -165,13 +181,14 @@ impl CursorSupervisor {
                 self.executable
             );
         }
-        if !stdout.chars().any(|character| character.is_alphanumeric()) {
+        let models = parse_cursor_models(stdout);
+        if models.is_empty() {
             bail!(
                 "Cursor returned no model catalog; run `cursor-agent login`, then verify with `cursor-agent models` (configured executable: {})",
                 self.executable
             );
         }
-        Ok(())
+        Ok(models)
     }
 
     pub fn reply(&self, session: &AgentSession, prompt: &str) -> Result<()> {
@@ -184,7 +201,13 @@ impl CursorSupervisor {
         if verify_process(&record.process)? {
             bail!("Cursor session is still working and has no documented live-steer API");
         }
-        self.spawn_turn(&record.session_id, &record.cwd, prompt, false)
+        self.spawn_turn(
+            &record.session_id,
+            &record.cwd,
+            prompt,
+            record.model.as_deref(),
+            false,
+        )
     }
 
     pub fn interrupt(&self, session: &AgentSession) -> Result<()> {
@@ -297,7 +320,14 @@ impl CursorSupervisor {
         }
     }
 
-    fn spawn_turn(&self, session_id: &str, cwd: &Path, prompt: &str, new: bool) -> Result<()> {
+    fn spawn_turn(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        new: bool,
+    ) -> Result<()> {
         require_safe_session_id(session_id)?;
         require_absolute_workspace(cwd)?;
         let existing =
@@ -324,7 +354,7 @@ impl CursorSupervisor {
             .join(format!("{session_id}.stderr.log"));
         let stdout = private_append_file(&stdout_path)?;
         let stderr = private_append_file(&stderr_path)?;
-        let spec = self.invocation.print_turn(session_id, cwd, prompt)?;
+        let spec = self.invocation.print_turn(session_id, cwd, prompt, model)?;
         let mut command = spec.command();
         command
             .stdin(Stdio::null())
@@ -366,6 +396,9 @@ impl CursorSupervisor {
             stdout_path,
             stderr_path,
             process,
+            model: model
+                .map(str::to_owned)
+                .or_else(|| existing.as_ref().and_then(|record| record.model.clone())),
         };
         let process_for_cleanup = record.process.clone();
         if let Err(error) = self.with_locked_registry(|registry| {
@@ -552,6 +585,48 @@ fn prompt_name(prompt: &str) -> String {
         value.push('…');
         value
     }
+}
+
+fn parse_cursor_models(output: &str) -> Vec<String> {
+    let rendered = if output.contains('\x1b') {
+        let mut parser = vt100::Parser::new(200, 240, 0);
+        parser.process(output.as_bytes());
+        parser.screen().contents()
+    } else {
+        output.to_owned()
+    };
+    let mut models = BTreeSet::new();
+    for line in rendered.lines() {
+        let line = line.trim().trim_start_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '-' | '*' | '•' | '›' | '>' | '✓')
+        });
+        let Some(candidate) = line.split_whitespace().next() else {
+            continue;
+        };
+        let candidate = candidate.trim_matches(|character: char| matches!(character, ':' | ','));
+        let lower = candidate.to_ascii_lowercase();
+        if matches!(
+            lower.as_str(),
+            "loading" | "models" | "model" | "available" | "no" | "name" | "id"
+        ) {
+            continue;
+        }
+        if candidate.is_empty()
+            || candidate.len() > 128
+            || !candidate.chars().all(|character| {
+                character.is_ascii_alphanumeric()
+                    || matches!(character, '-' | '_' | '.' | ':' | '/' | '@')
+            })
+        {
+            continue;
+        }
+        models.insert(if candidate.eq_ignore_ascii_case("auto") {
+            "auto".into()
+        } else {
+            candidate.into()
+        });
+    }
+    models.into_iter().collect()
 }
 
 fn private_append_file(path: &Path) -> Result<File> {
@@ -873,6 +948,16 @@ mod tests {
         assert_eq!(state.transcript, "first done");
         assert_eq!(state.summary, "first done");
         assert_eq!(state.terminal_result, Some(false));
+    }
+
+    #[test]
+    fn account_model_catalog_strips_terminal_progress_and_keeps_exact_ids() {
+        assert_eq!(
+            parse_cursor_models(
+                "\x1b[2K\rLoading models…\n  auto  Recommended\n  claude-sonnet-4.6  Sonnet\n"
+            ),
+            vec!["auto", "claude-sonnet-4.6"]
+        );
     }
 
     #[test]

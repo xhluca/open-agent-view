@@ -95,6 +95,30 @@ pub fn shutdown_all() {
     }
 }
 
+/// Move a detached provider frontend from a provisional launch key to the
+/// stable normalized session key learned after the provider creates it.
+pub fn rename_key(from: &str, to: &str) -> Result<()> {
+    if from == to {
+        return Ok(());
+    }
+    #[cfg(unix)]
+    {
+        let Some(registry) = DETACHED.get() else {
+            return Ok(());
+        };
+        let mut registry = registry.lock().map_err(|_| {
+            anyhow!("provider-native background session registry lock was poisoned")
+        })?;
+        if registry.contains_key(to) {
+            bail!("a provider-native frontend already uses the stable session key");
+        }
+        if let Some(session) = registry.remove(from) {
+            registry.insert(to.to_owned(), session);
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn terminal_is_interactive() -> bool {
     unsafe { libc::isatty(libc::STDIN_FILENO) == 1 && libc::isatty(libc::STDOUT_FILENO) == 1 }

@@ -8,7 +8,9 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
-use crate::control::{ControlOutcome, LaunchMode, LaunchRequest, ProviderController};
+use crate::control::{
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+};
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
 };
@@ -107,6 +109,14 @@ impl ProviderController for OpenCodeController {
 
     fn available_models(&self) -> Result<Vec<String>> {
         self.source.available_models()
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        run_native_authentication(&self.executable, &["auth", "login"], Provider::OpenCode)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {

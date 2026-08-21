@@ -32,6 +32,14 @@ pub enum LaunchMode {
     SelectableModel,
 }
 
+/// Whether starting a task stays inside the dashboard or hands the terminal
+/// to the provider's native interactive UI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LaunchPresentation {
+    Background,
+    Foreground,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ControlOutcome {
     pub message: String,
@@ -68,10 +76,32 @@ pub trait ProviderController: Send + Sync {
         Ok(Vec::new())
     }
 
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::Background
+    }
+
+    /// Whether the provider has a native, interactive authentication flow.
+    fn supports_authentication(&self) -> bool {
+        false
+    }
+
+    /// Run the provider's own login UI with inherited terminal I/O. The
+    /// dashboard suspends raw/alternate-screen mode before calling this.
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        bail!(
+            "{} does not expose interactive login",
+            self.provider().label()
+        )
+    }
+
     fn enrich(&self, _snapshot: &mut SessionSnapshot) {}
 
     fn launch(&self, _request: &LaunchRequest) -> Result<ControlOutcome> {
         bail!("{} launch is unavailable", self.provider().label())
+    }
+
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch(request)
     }
 
     fn interrupt(&self, _session: &AgentSession) -> Result<ControlOutcome> {
@@ -238,6 +268,24 @@ impl ControlHub {
         controller.available_models()
     }
 
+    pub fn launch_presentation(&self, provider: &Provider) -> Result<LaunchPresentation> {
+        self.ensure_provider_io()?;
+        Ok(self.controller(provider)?.launch_presentation())
+    }
+
+    pub fn supports_authentication(&self, provider: &Provider) -> bool {
+        self.provider_io_enabled
+            && self
+                .controllers
+                .get(provider)
+                .is_some_and(|controller| controller.supports_authentication())
+    }
+
+    pub fn authenticate(&self, provider: &Provider) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
+        self.controller(provider)?.authenticate()
+    }
+
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
         self.launch_with(self.launch_provider.clone(), None, prompt)
     }
@@ -267,6 +315,32 @@ impl ControlHub {
             cwd: self.launch_cwd.clone(),
         };
         controller.launch(&request)
+    }
+
+    pub fn launch_foreground_with(
+        &self,
+        provider: Provider,
+        model: Option<String>,
+        prompt: String,
+    ) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
+        let controller = self.controller(&provider)?;
+        let model = validate_model(model)?;
+        match (controller.launch_mode(), model.as_ref()) {
+            (LaunchMode::Unavailable, _) => {
+                bail!("{} launch is unavailable", provider.label())
+            }
+            (LaunchMode::DefaultModel, Some(_)) => {
+                bail!("{} does not expose model selection", provider.label())
+            }
+            _ => {}
+        }
+        controller.launch_foreground(&LaunchRequest {
+            provider,
+            model,
+            prompt,
+            cwd: self.launch_cwd.clone(),
+        })
     }
 
     pub fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -459,6 +533,119 @@ impl ClaudeController {
         })
     }
 
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.prompt.trim().is_empty() {
+            bail!("the launch prompt cannot be empty");
+        }
+        if self.runtime != Runtime::Host {
+            bail!("foreground Claude launch is supported only on the host");
+        }
+        let session_id = generate_session_id()?;
+        let mut launch = Command::new(&self.invocation.program);
+        launch.args(&self.invocation.prefix_args);
+        if let Some(model) = &request.model {
+            launch.args(["--model", model]);
+        }
+        launch
+            .args([
+                "--session-id",
+                &session_id,
+                "--background",
+                request.prompt.trim(),
+            ])
+            .current_dir(&request.cwd)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let ownership = OwnedSession {
+            provider: Provider::Claude,
+            runtime_key: runtime_key(&self.runtime),
+            provider_id_prefix: session_id.clone(),
+            created_at_ms: now_millis(),
+        };
+        self.registry
+            .lock()
+            .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
+            .record(ownership.clone())?;
+        let status = launch.status();
+        match status {
+            Ok(status) if status.success() => {}
+            Ok(status) => {
+                self.registry
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
+                    .remove(&ownership)?;
+                bail!("Claude background launch exited with status {status}");
+            }
+            Err(error) => {
+                self.registry
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
+                    .remove(&ownership)?;
+                return Err(error).context("failed to start Claude background session");
+            }
+        }
+        self.wait_until_listed(&session_id)?;
+        let mut attach = Command::new(&self.invocation.program);
+        attach
+            .args(&self.invocation.prefix_args)
+            .args(["attach", &short_claude_id(&session_id)])
+            .current_dir(&request.cwd);
+        let session_key = format!("claude:host:{session_id}");
+        let exit = crate::native_session::run(attach, &session_key)?;
+        match exit {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!(
+                    "backgrounded Claude session {}; Enter/Right resumes it",
+                    &session_id[..8]
+                ),
+                provider_session_hint: Some(session_id),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("Claude session {} finished", &session_id[..8]),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Claude session exited with status {status}")
+            }
+        }
+    }
+
+    fn wait_until_listed(&self, session_id: &str) -> Result<()> {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            let mut args = self.invocation.prefix_args.clone();
+            args.extend(["agents".into(), "--json".into(), "--all".into()]);
+            let mut request = CommandRequest::new(self.invocation.program.clone(), args);
+            request.timeout = Duration::from_secs(3);
+            if let Ok(output) = self.runner.run(&request) {
+                if output.status == 0 {
+                    if let Ok(current) = output
+                        .stdout_text()
+                        .and_then(|text| parse_claude_sessions(text, Runtime::Host))
+                    {
+                        if current.iter().any(|session| {
+                            session.provider_session_id == session_id
+                                || session_id.starts_with(&session.provider_session_id)
+                                || session.provider_session_id.starts_with(session_id)
+                        }) {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            if std::time::Instant::now() >= deadline {
+                bail!(
+                    "Claude accepted background launch {}, but did not list it within 15 seconds",
+                    &session_id[..8]
+                );
+            }
+            std::thread::sleep(Duration::from_millis(150));
+        }
+    }
+
     fn stop(&self, session: &AgentSession) -> Result<ControlOutcome> {
         self.revalidate_interrupt_target(session)?;
         let short_id = short_claude_id(&session.provider_session_id);
@@ -543,6 +730,26 @@ impl ProviderController for ClaudeController {
         parse_claude_model_aliases(output.stdout_text()?)
     }
 
+    fn launch_presentation(&self) -> LaunchPresentation {
+        if self.runtime == Runtime::Host {
+            LaunchPresentation::Foreground
+        } else {
+            LaunchPresentation::Background
+        }
+    }
+
+    fn supports_authentication(&self) -> bool {
+        self.runtime == Runtime::Host
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        run_native_authentication(
+            &self.invocation.program,
+            &["auth", "login"],
+            Provider::Claude,
+        )
+    }
+
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
         let registry = match self.registry.lock() {
             Ok(registry) => registry,
@@ -562,6 +769,10 @@ impl ProviderController for ClaudeController {
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
         ClaudeController::launch(self, request)
+    }
+
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        ClaudeController::launch_foreground(self, request)
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -632,6 +843,14 @@ impl ProviderController for CodexController {
 
     fn available_models(&self) -> Result<Vec<String>> {
         self.supervisor.available_models()
+    }
+
+    fn supports_authentication(&self) -> bool {
+        true
+    }
+
+    fn authenticate(&self) -> Result<ControlOutcome> {
+        run_native_authentication(&self.codex_bin, &["login"], Provider::Codex)
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
@@ -797,6 +1016,30 @@ fn run_interactive(command: Command, session: &AgentSession) -> Result<ControlOu
             bail!("provider session exited with status {status}")
         }
     }
+}
+
+pub(crate) fn run_native_authentication(
+    program: &str,
+    args: &[&str],
+    provider: Provider,
+) -> Result<ControlOutcome> {
+    let status = Command::new(program)
+        .args(args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to start {} login", provider.label()))?;
+    if !status.success() {
+        bail!("{} login exited with status {status}", provider.label());
+    }
+    Ok(ControlOutcome {
+        message: format!(
+            "{} login completed; refreshing available models",
+            provider.label()
+        ),
+        provider_session_hint: None,
+    })
 }
 
 struct ControlInvocation {
@@ -1290,6 +1533,70 @@ mod tests {
         assert!(arguments.contains("--session-id\n"));
         assert!(arguments.contains(outcome.provider_session_hint.as_deref().unwrap()));
         assert!(arguments.ends_with("--background\nslow startup\n"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn foreground_claude_launch_waits_for_the_exact_background_row_then_attaches() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("claude-mock");
+        let state = directory.path().join("session-id");
+        let attached = directory.path().join("attached");
+        fs::write(
+            &executable,
+            format!(
+                r##"#!/bin/sh
+if [ "${{1:-}}" = agents ]; then
+  id=$(cat '{}')
+  printf '[{{"cwd":"{}","kind":"background","sessionId":"%s","name":"test","state":"working"}}]\n' "$id"
+  exit 0
+fi
+if [ "${{1:-}}" = attach ]; then
+  printf '%s' "${{2:-}}" > '{}'
+  exit 0
+fi
+previous=''
+for argument in "$@"; do
+  if [ "$previous" = --session-id ]; then printf '%s' "$argument" > '{}'; fi
+  previous="$argument"
+done
+exit 0
+"##,
+                state.display(),
+                directory.path().display(),
+                attached.display(),
+                state.display(),
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: executable.display().to_string(),
+                prefix_args: Vec::new(),
+            },
+            docker_bin: "must-not-run-docker".into(),
+            runtime: Runtime::Host,
+            runner: Arc::new(ProcessRunner),
+            background_launcher: Arc::new(DetachedBackgroundLauncher),
+            registry: Arc::new(Mutex::new(registry)),
+        };
+
+        let outcome = controller
+            .launch_foreground(&LaunchRequest {
+                provider: Provider::Claude,
+                model: Some("sonnet".into()),
+                prompt: "work in background".into(),
+                cwd: directory.path().to_path_buf(),
+            })
+            .unwrap();
+
+        let id = outcome.provider_session_hint.unwrap();
+        assert_eq!(fs::read_to_string(attached).unwrap(), &id[..8]);
+        assert!(controller.owns(&session(&id)));
     }
 
     #[test]
