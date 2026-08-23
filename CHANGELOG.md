@@ -8,6 +8,36 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.24] - 2026-08-23
+
+### Added
+
+- Terminal is an eighth launch target for OAV-owned process-local interactive
+  shells. Left backgrounds, Enter/Right resumes the exact screen, and two
+  Ctrl+X actions stop then delete the row.
+- `/setup [HARNESS]` opens the install/login wizard in an isolated setup
+  terminal. Backgrounded provider logins appear as Terminal jobs instead of
+  attaching to whichever agent frontend was last active.
+- Option+Backspace/Ctrl+W delete the previous word and
+  Cmd+Backspace/Ctrl+U delete to the current line start in every editable field.
+
+### Fixed
+
+- Antigravity catalog errors are wrapped inside the model picker, retain native
+  login/retry actions, and no longer promote search text to an unverified model
+  ID. The reporting account reproduced the upstream 1.1.19 catalog timeout and
+  empty native `/model` result.
+- Managed Pi rows keep newer durable JSONL summaries and modification times
+  instead of reverting to a stopped supervisor's first-message preview.
+- `/help` opens the full contextual panel, normal local aliases no longer emit
+  a clipped warning, and relative ages repaint on every completed refresh.
+
+### Tests
+
+- Added an actual-binary PTY lifecycle for Terminal and expanded isolated
+  Cursor/Copilot/Antigravity login recovery, model retry, macOS edit-key,
+  eight-provider fixture, and Pi freshness coverage.
+
 ## [0.1.23] - 2026-08-21
 
 ### Changed

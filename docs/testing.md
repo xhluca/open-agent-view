@@ -89,7 +89,8 @@ checks; the guide also contains release gates that are not yet complete.
   surface and use terminal display width for CJK/grapheme-aware row truncation,
   padding, and editable cursor placement. The composer render test asserts the
   cursor immediately follows its typed cells with no phantom left-border
-  column.
+  column. Editable fields also cover Unicode-safe Option+Backspace/Ctrl+W word
+  deletion and Cmd+Backspace/Ctrl+U line deletion.
 - Safety-focused state tests verify that ready-for-review and needs-input
   sessions are treated as live (and therefore require interrupt authority),
   Ctrl+X emits exact stop for an active owned row and exact delete only after
@@ -117,7 +118,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.23, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.24, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -140,6 +141,10 @@ checks; the guide also contains release gates that are not yet complete.
   the exact row on Left, while Antigravity performs
   first-run login, exact model selection, `--sandbox` full-screen launch, cache
   ownership, and Left return without a dangerous bypass flag.
+- A dedicated real PTY selects the eighth Terminal target, launches a private
+  interactive shell, backgrounds it with Left, discovers and resumes its exact
+  preserved screen, stops it with Ctrl+X, and deletes the completed row with a
+  second Ctrl+X. Provider login PTYs use the same isolated registry.
 - `tests/setup_installer.rs` uses an isolated `PATH` and fake curl/bash. It
   proves non-TTY setup refuses before download without `--yes`, confirmed setup
   exposes download/provider progress, uses the exact official URL, executes a
@@ -244,7 +249,7 @@ checks; the guide also contains release gates that are not yet complete.
   was staged mode `0755` and rerun in the same immutable image at a real
   80×24 PTY with the populated fixture. It rendered all state sections and
   explicit Claude/Codex provider columns, opened/closed help, exited through
-  Escape, and restored the alternate screen. The seven-provider fixture then
+  Escape, and restored the alternate screen. The eight-target fixture then
   rendered its full provider header and representative rows at 150×36. Claude
   Code 2.1.209 independently rendered its reference empty dashboard at 120×34,
   opened/closed shortcuts, and exited cleanly under the same
@@ -320,7 +325,7 @@ checks; the guide also contains release gates that are not yet complete.
   an empty store; Antigravity again returned `1.1.14`. Exact image digests,
   commands, and outputs are in
   `docs/exploration/fresh-container-provider-validation.md`.
-- The canonical seven-provider fixture passed
+- The canonical seven-agent-plus-Terminal fixture passed
   `all_supported_providers_coexist_in_one_real_terminal`, including provider
   labels, contextual help, alternate-screen entry, and terminal restoration.
   The same real-PTY test now opens a managed Pi reply composer, a managed
@@ -378,7 +383,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Every current TUI action route, all normalized states, provider onboarding, and large-queue behavior in a real PTY | Serialized `real_tty` harness using canonical/generated fixtures and fake account-scoped provider CLIs | Verified |
 | Default completed-history visibility and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
-| Searchable async model catalogs, native auth retry, and exact modeled launch | All seven provider catalog parsers/transports, mock App Server/RPC/HTTP/ACP/headless payload assertions, and signed-out real-PTY flows | Verified deterministically |
+| Searchable async model catalogs, native auth retry, and exact modeled launch | All seven agent catalog parsers/transports, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |

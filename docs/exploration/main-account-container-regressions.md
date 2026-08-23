@@ -108,10 +108,18 @@ The reporting host was rechecked with Claude 2.1.238, Pi 0.84.2, Cursor Agent
 - Copilot's ACP `session/new` returns `Authentication required`. Direct
   submission now preserves the task and routes into native `copilot login`,
   then reloads the headless account catalog.
-- Antigravity's model catalog timed out. The provider log for the reported
+- Antigravity's model catalog timed out. A later read-only check with 1.1.19
+  reproduced the timeout in both ordinary and PTY execution; native `/model`
+  also reported no available models. The provider log for the reported
   failed task ended with `neither PlanModel nor RequestedModel specified`.
-  OAV now refuses any model-less Antigravity launch and lets the user type an
-  exact model ID when catalog retrieval is unavailable.
+  OAV now refuses any model-less Antigravity launch, opens its private native
+  setup terminal, and retries only the real catalog. It does not treat filter
+  text as an unverified exact model ID.
+
+- A read-only Pi refresh compared the newest owned session row with its durable
+  JSONL file. The row's update timestamp matched the exact file modification
+  time after native conversation activity, confirming that newer persisted
+  content now wins over a stale stopped-supervisor preview.
 
 No credential directories were mounted into containers. That separation is
 intentional: host probes establish the reporting account's observable result;

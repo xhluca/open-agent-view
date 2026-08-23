@@ -79,7 +79,7 @@ directory.
 ## Together in the dashboard
 
 Provider-specific protocol tests prove isolation and authority. Coexistence is
-covered separately by the canonical seven-provider fixture in one real Unix
+covered separately by the canonical seven-agent-plus-Terminal fixture in one real Unix
 PTY:
 
 ```console

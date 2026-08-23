@@ -1,6 +1,6 @@
 # Authentication, model catalogs, setup, and foreground launch
 
-Date: 2026-08-21. This note records the evidence behind the guided onboarding
+Date: 2026-08-23. This note records the evidence behind the guided onboarding
 flow. It distinguishes read-only observations from deterministic fake-account
 tests. No login or provider install was performed. One bounded Claude
 background-contract probe was created and then stopped by its exact returned
@@ -15,8 +15,9 @@ The dashboard follows one sequence for every launch-capable provider:
 2. Shift+Tab asks the installed provider for its account-visible model catalog
    on a worker thread. OAV does not ship a guessed cross-account list.
 3. If the catalog says authentication is required, Enter or `l` suspends the
-   alternate screen and runs the provider's native login UI. `/login` exposes
-   the same handoff explicitly.
+   alternate screen and runs the provider's native login UI in a private PTY.
+   `/login` exposes the same handoff explicitly. Left backgrounds setup as a
+   Terminal row; it never reuses the last agent screen.
 4. On return, OAV restores the dashboard and reloads the same catalog. It never
    reads, copies, or logs the resulting credential.
 5. The exact selected ID is revalidated by the provider adapter and sent on the
@@ -58,8 +59,10 @@ Primary provider references:
   `cursor-agent login` instruction.
 - GitHub Copilot CLI 1.0.80 returned its documented ACP `Authentication
   required` error. No login or session creation was attempted.
-- Antigravity 1.1.17 printed its model-fetching state and did not return a
-  catalog inside the bounded read-only probe. Its redacted native log showed
+- Antigravity 1.1.19 printed its model-fetching state and timed out after ten
+  seconds in both non-TTY and isolated PTY probes. Native `/model` reported no
+  available models and `--print /model` reported no model configuration. Its
+  redacted native log showed
   the reported launch failure was `neither PlanModel nor RequestedModel
   specified`, which OAV now prevents by requiring an exact model. No token or
   account identifier was read or recorded.
@@ -94,11 +97,15 @@ homes and provider executables:
   exact model, launches full-screen with `--sandbox`, selected `--model`, and
   `--prompt-interactive`, then returns on Left to the exact OAV-owned cached
   conversation. The captured argv contains no dangerous permission bypass.
+- A plain Terminal task opens a full-screen shell, Left backgrounds it, the
+  dashboard discovers the exact process-local PTY, Enter resumes the preserved
+  screen, and two Ctrl+X actions stop then delete it.
 
 An isolated installer integration test puts fake `curl` and `bash` in a private
 `PATH`. It proves setup without a TTY and without `--yes` invokes nothing;
 confirmed setup shows both download and provider progress, uses the exact
-official URL, executes a staged file, and removes it afterward.
+official URL, executes a staged file, and removes it afterward. The dashboard's
+`/setup HARNESS` route runs this same wizard in a private setup terminal.
 
 ## Boundaries
 
@@ -111,6 +118,11 @@ official URL, executes a staged file, and removes it afterward.
 - Antigravity's documented cache exposes only the last conversation per
   workspace. OAV cannot truthfully recover an arbitrary older owned
   conversation after that cache entry changes.
+- Antigravity model IDs cannot safely use the generic typed-text fallback: the
+  provider validates them against the same catalog that failed. Recovery stays
+  native and Ctrl+R retries discovery.
+- Terminal and provider-login PTYs are deliberately process-local. Exiting the
+  dashboard stops them; they are not a persistent terminal multiplexer.
 - Pi's setup handoff opens its no-session native TUI because its `pi auth`
   subcommands do not expose a provider-neutral interactive login command.
 - Real-account observations remain on the host. Credential/config directories

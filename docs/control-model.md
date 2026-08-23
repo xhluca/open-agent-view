@@ -55,8 +55,10 @@ exact retained frontend and replays its terminal screen. Left also returns from
 OAV's inline Peek without starting a provider CLI.
 
 Authentication is a terminal handoff, not an OAV credential store. The model
-picker or `/login` may run a provider's own login/setup UI after suspending the
-dashboard. Open Agent View neither reads the resulting token nor persists
+picker, `/login`, or `/setup` may run a provider's own login/setup UI after suspending the
+dashboard. Every handoff has a provider-keyed private PTY; Left backgrounds it
+as a Terminal row and Enter/Right resumes the same screen. Open Agent View
+neither reads the resulting token nor persists
 answers; it only retries the provider-native model catalog after the command
 returns. Providers revalidate an exact selected model at launch.
 
@@ -65,6 +67,13 @@ HARNESS` names the official source and requires a terminal confirmation (or
 literal `--yes`). Downloaded shell installers are staged in a private temporary
 file rather than streamed directly to a shell. Setup installs a CLI; it grants
 no session ownership or control authority.
+
+The Terminal launch target is a convenience controller, not an agent protocol.
+Its prompt becomes only a bounded display name and OAV starts the user's shell
+without evaluating that name. Its authority is the exact process-local PTY
+entry created by this dashboard. Ctrl+X stops that entry; only its completed
+record gains Delete. Normal dashboard shutdown stops all retained Terminal and
+provider-login frontends, so this is not a durable terminal multiplexer.
 
 ## Claude ownership registry
 

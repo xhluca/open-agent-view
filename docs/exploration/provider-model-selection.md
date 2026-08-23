@@ -166,6 +166,13 @@ native authentication/setup handoff. An OAV launch is foreground and includes
 `--sandbox --model MODEL --prompt-interactive PROMPT`; it never adds
 `--dangerously-skip-permissions`.
 
+On the reporting account, Antigravity 1.1.19's own catalog timed out in both a
+non-TTY process and a fresh PTY, while its native `/model` reported no models.
+Because `agy --model` validates against that same catalog, the generic typed-ID
+fallback is unsafe here: OAV keeps the wrapped error visible, Enter/`l` opens
+the isolated native setup terminal, and Ctrl+R retries. Search text cannot be
+submitted as a model.
+
 After the native UI starts, OAV correlates the exact workspace's documented
 last-conversation cache value, records that pair as OAV-owned, and uses it as
 the refresh/selection hint. This remains a last-conversation-per-workspace

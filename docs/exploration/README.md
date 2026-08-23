@@ -29,7 +29,7 @@ as stable contracts.
   — v0.1.17 native-return, executable-identity, launch-latency, and
   authentication reproductions on the reporting account and in isolated
   containers.
-- [`auth-model-onboarding.md`](auth-model-onboarding.md) — the seven-provider
+- [`auth-model-onboarding.md`](auth-model-onboarding.md) — the seven-agent
   installer/authentication/model-selection contract and isolated foreground
   launch validation.
 

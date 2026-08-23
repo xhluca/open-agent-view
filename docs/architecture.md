@@ -69,8 +69,10 @@ implemented by Claude CLI help aliases, Codex App Server `model/list`, Pi's
 offline list, OpenCode's configured-model list, Cursor's account catalog,
 Copilot's short-lived headless SDK catalog, and Antigravity's model command. A
 catalog authentication failure becomes an explicit login action when the
-provider has a native setup surface; the same catalog reloads on return.
-`/harness`, `/model`, `/login`, `/completed`, and the other dashboard slash
+provider has a native setup surface; the same catalog reloads on return. Each
+login/setup flow has a distinct private PTY and appears as a Terminal job when
+backgrounded, so it cannot collide with a previously opened agent frontend.
+`/harness`, `/model`, `/login`, `/setup`, `/completed`, and the other dashboard slash
 commands are reduced locally and never forwarded as a provider prompt.
 
 Launch presentation is explicit in the same controller contract. Background
@@ -78,7 +80,10 @@ controllers run on a worker while the event loop advances a status spinner.
 Foreground controllers suspend the dashboard before provider I/O. Claude
 creates an exact `--background` UUID, verifies it in `claude agents`, and opens
 `attach`; Antigravity starts its sandboxed native UI. Both use the native PTY
-bridge so Left retains the frontend and returns to the dashboard.
+bridge so Left retains the frontend and returns to the dashboard. The built-in
+Terminal controller uses that bridge for process-local interactive shells: the
+task is a display name, Left backgrounds, Enter resumes, and exact stop/delete
+remain limited to PTYs created by this dashboard.
 
 ## Process model
 
@@ -116,7 +121,8 @@ Default discovery is ownership-scoped and includes completed managed work.
 Claude rows are filtered against OAV's private launch registry; Codex, Pi,
 OpenCode, Cursor, and Copilot contribute only exact supervisor-owned records;
 Antigravity contributes only the exact OAV-owned conversation that still
-matches its documented last-conversation cache. Explicit Docker targets remain visible because naming them on the
+matches its documented last-conversation cache; Terminal contributes only the
+current dashboard process's PTY registry. Explicit Docker targets remain visible because naming them on the
 command line is an intentional enrollment action.
 
 `--include-external` adds provider-wide read-only history. Completed sessions

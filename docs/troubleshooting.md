@@ -157,7 +157,8 @@ processes but does not target separately supervised provider backends.
 
 `ctrl+f` is the session filter. `/` starts a local dashboard command: `/help`,
 `/harness`, `/harness NAME`, `/model`, `/model NAME`, `/model default`,
-`/completed show|hide`, or `/filter TEXT`; `/provider` remains an alias. These
+`/login`, `/setup [HARNESS]`, `/completed show|hide`, or `/filter TEXT`;
+`/provider` remains an alias. These
 commands are never forwarded as task prompts. The composer border always
 displays the chosen harness and model.
 
@@ -172,9 +173,12 @@ draft. `/model NAME` remains the escape hatch for an exact valid custom
 identifier that the catalog does not show.
 
 If the picker reports an authentication error, press Enter or `l`. OAV suspends
-the dashboard, runs that provider's native login/setup UI, restores the
-dashboard, and reloads the exact account catalog. `/login` starts the same
-handoff explicitly. OAV never asks you to paste a token into its UI. Pi's setup
+the dashboard, runs that provider's native login/setup UI in its own private
+terminal, restores the dashboard, and reloads the exact account catalog. Left
+backgrounds the login as a visible Terminal row; Enter/Right resumes that
+exact screen rather than attaching to the last agent. `/login` starts the same
+handoff explicitly, while `/setup HARNESS` also checks installation and can run
+the confirmed official installer. OAV never asks you to paste a token into its UI. Pi's setup
 is its no-session TUI; choose `/login` there. Antigravity uses its first-run
 browser login.
 
@@ -196,9 +200,11 @@ If Antigravity previously opened and immediately printed `Agent execution
 terminated due to error`, inspect only its redacted provider error. On the
 reporting account, Antigravity 1.1.17 logged `neither PlanModel nor
 RequestedModel specified`. Current OAV refuses to start Antigravity without an
-exact model. If `agy models` times out, type a known exact model ID in OAV's
-error-state picker and press Enter, or press `l` for Antigravity's native setup.
-OAV does not guess a provider model or bypass its sandbox/permissions.
+exact model. On the same host, Antigravity 1.1.19's own `agy models` timed out
+and its native `/model` showed no available models. OAV cannot manufacture an
+account catalog: press Enter/`l` for native setup and Ctrl+R to retry. It does
+not promote model-search text to an unverified Antigravity ID, guess a provider
+model, or bypass the provider's sandbox/permissions.
 
 ## A newly launched task does not appear
 
@@ -232,6 +238,16 @@ and `codex --version` succeed in the same shell. A nonstandard executable can be
 selected with `--codex-bin /absolute/path/to/codex`. Do the equivalent with
 `--pi-bin` or `--opencode-bin`; do not assume a desktop-launched process has the
 same `PATH` as an interactive shell.
+
+## A Pi summary or age stays on the first message
+
+Upgrade to v0.1.24 or newer. Older builds let a stopped supervisor preview
+overwrite the newer durable Pi JSONL transcript on every refresh. OAV now keeps
+managed ownership/lifecycle from the supervisor while taking newer summary and
+modification time from Pi's own session file. Relative ages are also redrawn on
+refresh even when no other row field changes. A read-only check against the
+reporting account confirmed the displayed update time matched the exact JSONL
+file modification time; no credential or transcript was copied.
 
 ## The text cursor is one column to the right
 

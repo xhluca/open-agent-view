@@ -50,7 +50,7 @@ overrides.
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity uses its native full-screen UI. |
+| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity\|terminal` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity uses its native full-screen UI; Terminal opens the user's shell. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
@@ -89,7 +89,8 @@ open-agent-view setup HARNESS
 open-agent-view setup HARNESS --yes
 ```
 
-`HARNESS` accepts all seven launch values above. Without `--yes`, setup requires
+`HARNESS` accepts the seven coding-agent values plus `terminal` (which is built
+in and needs no installation). Without `--yes`, setup requires
 an interactive terminal confirmation naming the exact download/package source.
 In non-interactive use it refuses before network or installer execution. Shell
 installers are staged in a private temporary directory, download with a visible
@@ -112,7 +113,10 @@ load, **Default** is available alongside the exact account models. An
 authentication/catalog failure does not offer a blind default launch; it
 offers the native sign-in handoff instead. If catalog retrieval itself is
 unavailable but the provider supports an exact identifier, type that ID in the
-error-state picker and press Enter. `/model NAME` accepts an exact custom
+error-state picker and press Enter. Antigravity is deliberately excluded from
+this fallback because its CLI validates `--model` against the same unavailable
+catalog. Press Enter/`l` for native recovery and Ctrl+R to retry instead.
+`/model NAME` accepts an exact custom
 identifier without loading the catalog, and `/model default` resets the
 selection. `/login` hands the terminal to the selected provider's native
 authentication/setup UI. When the catalog reports an authentication failure,
@@ -135,6 +139,16 @@ The native setup surfaces are `claude auth login`, `codex login`, Pi's
 no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,
 `copilot login`, and Antigravity's first-run `agy` flow. OAV suspends its
 alternate screen before these commands and never reads or copies credentials.
+The setup/login UI always gets its own private terminal; Left backgrounds it as
+a visible Terminal row and Enter/Right resumes that exact screen. `/setup
+HARNESS` uses the same terminal for an installation check, confirmed official
+installer, and native login. It never attaches setup to the last agent session.
+
+Select `Terminal` (or `/harness terminal`) to create a plain interactive shell.
+The task text becomes the terminal's display name, not a command. Left returns
+to OAV, Enter/Right resumes, the first Ctrl+X stops it, and the second Ctrl+X
+deletes its completed row. These terminal frontends are process-local and are
+stopped when the dashboard itself exits.
 
 Copilot retains one process-local ACP control connection for sessions launched
 by the current dashboard. A later dashboard may still list a persisted Copilot
@@ -324,7 +338,7 @@ and mount details.
 ## TUI keys and mode behavior
 
 Every session row spells out its provider name: Claude, Codex, Pi, OpenCode,
-Cursor, GitHub Copilot, Antigravity, or the adapter-provided name for a future
+Cursor, GitHub Copilot, Antigravity, Terminal, or the adapter-provided name for a future
 provider. Provider identity takes priority over task summary width on narrow
 terminals. Peek expands the selected row with the full host or container runtime
 label.
@@ -350,15 +364,18 @@ label.
 | Harness picker | `↑` / `↓`, `←` / `→`, or `tab` / `shift+tab` | Preview configured launch-capable harnesses with wraparound. |
 | Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
 | Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
-| New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, or Copilot when its launch controller is available; `/provider` is an alias. |
+| New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, Copilot, Antigravity, or Terminal when its launch controller is available; `/provider` is an alias. |
 | New-task composer | `/model` | Asynchronously load the selected harness's account/catalog model list and open a searchable picker. |
 | Model picker | type, `backspace`, `↑` / `↓`, `tab` / `shift+tab`, `page up` / `page down` | Filter and navigate catalog results; provider discovery stays off the input thread. |
 | Model picker | `enter` / `esc` | Select the highlighted model, or return with the previous model and draft unchanged. |
 | New-task composer | `/model NAME` / `/model default` | Select an exact custom model identifier or reset to the provider default. The provider revalidates it at launch. |
 | New-task composer | `/completed [show\|hide]` | Toggle completed discovery, or set it explicitly. `show` refreshes providers; `hide` immediately removes completed rows and keeps later refreshes active-only. |
 | New-task composer | `/filter TEXT` / `/help` | Apply a session filter or list dashboard slash commands without contacting a provider. |
+| New-task composer | `/setup [HARNESS]` | Open the selected or named harness's isolated install/login terminal. |
 | Writable composer | `ctrl+j` | Insert a newline rather than submit. |
 | Writable composer | `backspace` | Remove the last character. |
+| Writable composer/model filter | `option+backspace` or `ctrl+w` | Remove the previous word. |
+| Writable composer/model filter | `cmd+backspace` or `ctrl+u` | Remove to the beginning of the current line. |
 | Session row | `ctrl+r` | Open the accented `rename session` composer. The `name ❯` mode label is separate from the editable display name; empty submission clears it and follows the latest provider title again. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
 | Session row or Peek | `ctrl+x` | Stop an exact active owned session; after refresh reports it idle, press again to delete it or remove it reversibly from OAV's view. Active rows without stop authority require a local-hide confirmation. |

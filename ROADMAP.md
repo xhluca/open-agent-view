@@ -8,12 +8,13 @@ authenticated fresh-container end-to-end run.
 ## Milestone 0 — Interface archaeology ✅
 
 - [x] Record the observed `claude agents` layout, keymap, and state transitions.
-- [x] Inventory the seven host-provider session surfaces and Docker boundaries.
+- [x] Inventory the seven host-provider session surfaces, the built-in Terminal
+  target, and Docker boundaries.
 - [x] Write provider contracts and safety boundaries.
 
 ## Milestone 1 — Read-only dashboard (in progress)
 
-- [x] Normalize fixture, seven host providers, and Docker-discovered Claude and
+- [x] Normalize fixture, seven host providers, Terminal, and Docker-discovered Claude and
   Codex sessions.
 - [x] Render grouped status sections with responsive terminal layouts.
 - [x] Add navigation, details, help, filtering, and JSON output.
@@ -59,6 +60,8 @@ authenticated fresh-container end-to-end run.
 - [x] Launch exact owned Antigravity conversations through its sandboxed native
   UI with account model selection and Left-to-background, bounded by the
   documented last-conversation-per-workspace cache.
+- [x] Manage process-local full-screen Terminal jobs and isolated provider
+  setup/login terminals with exact Left-return, resume, stop, and delete.
 - [x] Reply/steer, archive, and delete owned Codex threads with explicit
   capability checks and lifecycle-state revalidation.
 - [x] Interrupt owned Claude sessions and exact active Codex turns.

@@ -30,7 +30,8 @@ delete, filter, and refresh.
   confirmation dialogs, filters, and a new-session composer with a visible,
   draft-preserving harness picker and draft-preserving searchable provider
   model picker. Authentication errors hand off to the provider's native login
-  and reload the account catalog; credentials never pass through OAV.
+  in an isolated setup terminal and reload the account catalog; credentials
+  never pass through OAV.
 - A live completed-history toggle, 25-row progressive reveal, and reversible
   local hiding for rows that Open Agent View can observe but does not own.
 - Private local session names keyed by stable normalized ID. Provider-native
@@ -46,6 +47,8 @@ delete, filter, and refresh.
 
 - Host Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity via
   their documented CLI/protocol surfaces and explicit ownership boundaries.
+- A built-in process-local Terminal target for ordinary interactive shells and
+  resumable provider install/login jobs; task text is a name, never evaluated.
 - Native foreground launch where the provider exposes a full-screen interface,
   with Left backgrounding the retained frontend and restoring the dashboard.
 - Confirmed user-local installation of a missing provider harness through its
