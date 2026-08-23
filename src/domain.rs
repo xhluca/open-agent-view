@@ -18,6 +18,7 @@ pub enum Provider {
     #[serde(rename = "github_copilot")]
     GitHubCopilot,
     Antigravity,
+    Terminal,
     Other(String),
 }
 
@@ -31,6 +32,7 @@ impl Provider {
             Self::Cursor => "Cursor",
             Self::GitHubCopilot => "GitHub Copilot",
             Self::Antigravity => "Antigravity",
+            Self::Terminal => "Terminal",
             Self::Other(name) => name,
         }
     }
@@ -283,6 +285,7 @@ mod tests {
                 "GitHub Copilot",
             ),
             (Provider::Antigravity, "\"antigravity\"", "Antigravity"),
+            (Provider::Terminal, "\"terminal\"", "Terminal"),
         ];
 
         for (provider, wire, label) in cases {

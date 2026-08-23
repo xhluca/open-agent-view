@@ -6,7 +6,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -92,8 +92,9 @@ pub trait ProviderController: Send + Sync {
         false
     }
 
-    /// Run the provider's own login UI with inherited terminal I/O. The
-    /// dashboard suspends raw/alternate-screen mode before calling this.
+    /// Run the provider's own login UI in an isolated provider-native PTY.
+    /// The dashboard suspends raw/alternate-screen mode before calling this;
+    /// Left backgrounds the setup UI without colliding with another session.
     fn authenticate(&self) -> Result<ControlOutcome> {
         bail!(
             "{} does not expose interactive login",
@@ -291,6 +292,55 @@ impl ControlHub {
     pub fn authenticate(&self, provider: &Provider) -> Result<ControlOutcome> {
         self.ensure_provider_io()?;
         self.controller(provider)?.authenticate()
+    }
+
+    /// Open the CLI's interactive install/login wizard in the same isolated
+    /// setup PTY used by direct provider authentication. This route is also
+    /// available for a harness that was missing when the dashboard started.
+    pub fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
+        if provider == &Provider::Terminal {
+            return Ok(ControlOutcome {
+                message: "Terminal is built into Open Agent View and needs no setup".into(),
+                provider_session_hint: None,
+            });
+        }
+        let value = match provider {
+            Provider::Claude => "claude",
+            Provider::Codex => "codex",
+            Provider::Pi => "pi",
+            Provider::OpenCode => "opencode",
+            Provider::Cursor => "cursor",
+            Provider::GitHubCopilot => "copilot",
+            Provider::Antigravity => "antigravity",
+            Provider::Terminal => unreachable!("handled above"),
+            Provider::Other(_) => bail!("setup is unavailable for this provider"),
+        };
+        let executable = std::env::current_exe().context("failed to resolve the OAV executable")?;
+        let mut command = Command::new(executable);
+        command.args(["setup", value]);
+        let session_key = format!("setup:{}", provider.label());
+        match crate::native_session::run(command, &session_key)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!(
+                    "backgrounded {} setup; run `/setup {value}` to resume it",
+                    provider.label()
+                ),
+                provider_session_hint: None,
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!(
+                        "{} setup completed; restart OAV if it was newly installed",
+                        provider.label()
+                    ),
+                    provider_session_hint: None,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("{} setup exited with status {status}", provider.label())
+            }
+        }
     }
 
     pub fn launch(&self, prompt: String) -> Result<ControlOutcome> {
@@ -982,23 +1032,32 @@ pub(crate) fn run_native_authentication(
     args: &[&str],
     provider: Provider,
 ) -> Result<ControlOutcome> {
-    let status = Command::new(program)
-        .args(args)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .with_context(|| format!("failed to start {} login", provider.label()))?;
-    if !status.success() {
-        bail!("{} login exited with status {status}", provider.label());
+    let mut command = Command::new(program);
+    command.args(args);
+    let session_key = format!("setup:{}", provider.label());
+    match crate::native_session::run(command, &session_key)
+        .with_context(|| format!("failed to start {} login", provider.label()))?
+    {
+        crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+            message: format!(
+                "backgrounded {} setup; Enter/l resumes the same login terminal",
+                provider.label()
+            ),
+            provider_session_hint: None,
+        }),
+        crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+            Ok(ControlOutcome {
+                message: format!(
+                    "{} login completed; refreshing available models",
+                    provider.label()
+                ),
+                provider_session_hint: None,
+            })
+        }
+        crate::native_session::NativeSessionExit::Exited(status) => {
+            bail!("{} login exited with status {status}", provider.label())
+        }
     }
-    Ok(ControlOutcome {
-        message: format!(
-            "{} login completed; refreshing available models",
-            provider.label()
-        ),
-        provider_session_hint: None,
-    })
 }
 
 struct ControlInvocation {

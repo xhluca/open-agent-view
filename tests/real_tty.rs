@@ -514,7 +514,7 @@ printf '%s\n' '[{"id":"slow","cwd":"/workspace/slow","kind":"background","sessio
 
     let partial = app.wait_for("fast provider partial startup", |screen| {
         screen.contains("fast (last conversation)")
-            && screen.contains("loading remaining providers… (1/2)")
+            && screen.contains("loading remaining providers…")
             && !screen.contains("slow-claude-session")
     });
     assert!(
@@ -628,15 +628,19 @@ fn hundreds_of_sessions_coalesce_arrow_bursts_without_output_backlog() {
     app.send(b"/help");
     app.send(ENTER);
     app.wait_for("dashboard slash-command help", |screen| {
-        screen.contains("commands: /harness [NAME] · /model [NAME|default]")
-            && screen.contains("/completed [show|hide]")
-            && screen.contains("/filter TEXT")
+        screen.contains("/harness [name] switches harness")
+            && screen.contains("/model [name|default] selects a model")
+            && screen.contains("/completed [show|hide] toggles finished sessions")
     });
     assert!(
         command_started.elapsed() < Duration::from_millis(750),
         "slash-command handling stalled with 500 sessions"
     );
 
+    app.send(b"?");
+    app.wait_for("dashboard slash-command help closes", |screen| {
+        !screen.contains("/harness [name] switches harness")
+    });
     app.send(b"\t");
     app.wait_for("stress task composer", |screen| {
         screen.contains("new task · harness Claude · model default")
@@ -701,13 +705,14 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     });
     app.send(b"\t");
     app.wait_for("two-harness picker", |screen| {
-        screen.contains("choose harness · 1/2")
+        screen.contains("choose harness · 1/3")
             && screen.contains("1  Claude")
             && screen.contains("2  Pi")
+            && screen.contains("3  Terminal")
     });
     app.send(DOWN);
     app.wait_for("Pi preview", |screen| {
-        screen.contains("choose harness · 2/2")
+        screen.contains("choose harness · 2/3")
     });
     app.send(ESC);
     app.wait_for("picker cancellation preserves Claude draft", |screen| {
@@ -735,7 +740,7 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     });
     app.send(b"/harness\r");
     app.wait_for("slash-opened harness picker", |screen| {
-        screen.contains("choose harness · 1/2")
+        screen.contains("choose harness · 1/3")
     });
     app.send(ESC);
     app.wait_for("slash picker returns to composer", |screen| {
@@ -745,6 +750,65 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     app.send(ESC);
     app.wait_for("slash harness composer close", |screen| {
         screen.contains("describe a task · /help for commands")
+    });
+    app.exit_cleanly();
+}
+
+#[cfg(unix)]
+#[test]
+fn terminal_harness_backgrounds_resumes_stops_then_deletes_in_a_real_pty() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(100, 28, |command, home| {
+        let shell = home.path().join("oav-test-shell");
+        fs::write(
+            &shell,
+            "#!/bin/sh\nprintf '\\033[2J\\033[HTERMINAL_HARNESS_READY\\n'\nwhile IFS= read -r line; do printf 'shell: %s\\n' \"$line\"; done\n",
+        )
+        .expect("write fake interactive shell");
+        fs::set_permissions(&shell, fs::Permissions::from_mode(0o700))
+            .expect("make fake shell executable");
+        command.env("SHELL", &shell).args([
+            "--no-host-providers",
+            "--harness",
+            "terminal",
+            "--refresh-ms",
+            "250",
+        ]);
+    });
+
+    app.wait_for("Terminal-only dashboard startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"release shell");
+    app.send(ENTER);
+    app.wait_for("foreground Terminal shell", |screen| {
+        screen.contains("TERMINAL_HARNESS_READY")
+    });
+    app.send(LEFT);
+    app.wait_for("backgrounded Terminal row", |screen| {
+        screen.contains("release shell")
+            && screen.contains("Terminal")
+            && screen.contains("Interactive shell")
+    });
+
+    app.send(ENTER);
+    app.wait_for("exact Terminal screen replay", |screen| {
+        screen.contains("TERMINAL_HARNESS_READY")
+    });
+    app.send(LEFT);
+    app.wait_for("second Terminal background", |screen| {
+        screen.contains("release shell") && screen.contains("backgrounded terminal release shell")
+    });
+
+    app.send(b"\x18");
+    app.wait_for("Terminal stopped but retained", |screen| {
+        screen.contains("release shell")
+            && screen.contains("Completed")
+            && screen.contains("Terminal exited")
+    });
+    app.send(b"\x18");
+    app.wait_for("second Ctrl+X deletes Terminal row", |screen| {
+        !screen.contains("release shell") && screen.contains("deleted 1 managed session")
     });
     app.exit_cleanly();
 }
@@ -826,8 +890,25 @@ esac
         leaves_before + 1,
         "dashboard suspension for Cursor login",
     );
-    app.wait_for("Cursor native login prompt", |screen| {
+    let login = app.wait_for("Cursor native login prompt", |screen| {
         screen.contains("CURSOR INTERACTIVE LOGIN")
+    });
+    assert!(
+        !login.contains("Open Agent View"),
+        "Cursor login was painted over the dashboard instead of receiving an isolated screen"
+    );
+    app.send(LEFT);
+    app.wait_for(
+        "Cursor login backgrounds to its actionable model picker",
+        |screen| {
+            screen.contains("choose Cursor model")
+                && screen.contains("Cursor is not authenticated")
+                && screen.contains("native setup")
+        },
+    );
+    app.send(b"l");
+    app.wait_for("Cursor setup resumes the exact login PTY", |screen| {
+        screen.contains("CURSOR INTERACTIVE LOGIN") && !screen.contains("Open Agent View")
     });
     app.send(ENTER);
     app.wait_for("authenticated Cursor account model catalog", |screen| {
@@ -1007,7 +1088,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
     app.wait_for("Copilot account requires login", |screen| {
         screen.contains("choose GitHub Copilot model")
             && screen.contains("GitHub Copilot is not authenticated")
-            && screen.contains("sign in")
+            && screen.contains("native setup")
     });
     app.send(b"l");
     app.wait_for("Copilot native login prompt", |screen| {
@@ -1018,7 +1099,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
         screen.contains("choose GitHub Copilot model")
             && screen.contains("gpt-5.4")
             && screen.contains("claude-sonnet-4.6")
-            && !screen.contains("sign in")
+            && !screen.contains("not authenticated")
     });
     app.send(DOWN);
     app.send(DOWN);
@@ -1343,7 +1424,7 @@ fn real_host_auto_resolves_harnesses_models_and_bounded_history() {
     });
     app.send(b"\t");
     app.wait_for("real host harness palette", |screen| {
-        screen.contains("choose harness · 1/6")
+        screen.contains("choose harness · 1/7")
             && screen.contains("Claude")
             && screen.contains("Codex")
             && screen.contains("Pi")
@@ -1354,7 +1435,7 @@ fn real_host_auto_resolves_harnesses_models_and_bounded_history() {
     for expected in 2..=4 {
         app.send(DOWN);
         app.wait_for("real host harness arrow navigation", |screen| {
-            screen.contains(&format!("choose harness · {expected}/6"))
+            screen.contains(&format!("choose harness · {expected}/7"))
         });
     }
     app.send(ENTER);

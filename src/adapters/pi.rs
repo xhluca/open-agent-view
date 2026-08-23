@@ -459,7 +459,15 @@ impl SessionSource for PiSource {
         }
         if let Some(supervisor) = &self.supervisor {
             for managed in supervisor.list()? {
-                let session = agent_session_from_managed(&managed);
+                let mut session = agent_session_from_managed(&managed);
+                if let Some(observed) = sessions.get_mut(&managed.id) {
+                    // The JSONL transcript is Pi's durable source of truth for
+                    // content and file modification time. The supervisor owns
+                    // liveness/control, but its last in-memory preview can be
+                    // older after a native resume or dashboard reconnect.
+                    overlay_managed_session(observed, &managed);
+                    session = observed.clone();
+                }
                 if (request.include_completed || session.state != SessionState::Completed)
                     && request
                         .cwd
@@ -572,6 +580,13 @@ fn agent_session_from_managed(managed: &ManagedPiSession) -> AgentSession {
 }
 
 fn overlay_managed_session(session: &mut AgentSession, managed: &ManagedPiSession) {
+    let managed_updated_at = millis_to_system_time(managed.updated_at_ms);
+    let observed_is_newer = !managed.alive
+        || session
+            .updated_at
+            .is_some_and(|observed| observed > managed_updated_at);
+    let observed_summary = observed_is_newer.then(|| session.summary.clone());
+    let observed_updated_at = observed_is_newer.then_some(session.updated_at).flatten();
     session.kind = SessionKind::Managed;
     session.name = managed.name.clone();
     session.cwd = managed.cwd.clone();
@@ -584,7 +599,11 @@ fn overlay_managed_session(session: &mut AgentSession, managed: &ManagedPiSessio
     });
     session.pid = Some(managed.pid);
     session.started_at = Some(millis_to_system_time(managed.created_at_ms));
-    session.updated_at = Some(millis_to_system_time(managed.updated_at_ms));
+    session.updated_at = Some(managed_updated_at);
+    if let Some(summary) = observed_summary {
+        session.summary = summary;
+        session.updated_at = observed_updated_at;
+    }
 }
 
 fn grant_managed_capabilities(session: &mut AgentSession, managed: &ManagedPiSession) {
@@ -961,6 +980,40 @@ mod tests {
         assert_eq!(session.summary, "The adapter is ready.");
         assert_eq!(session.cwd, PathBuf::from("/work/project"));
         assert_eq!(session.capabilities, BTreeSet::from([Capability::Inspect]));
+    }
+
+    #[test]
+    fn newer_persisted_history_wins_over_a_stale_managed_preview() {
+        let mut session = parse_pi_session(
+            SESSION,
+            Path::new("/sessions/example.jsonl"),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(10)),
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(30)),
+        )
+        .unwrap();
+        let managed = ManagedPiSession {
+            id: session.provider_session_id.clone(),
+            cwd: session.cwd.clone(),
+            name: session.name.clone(),
+            pid: 123,
+            process_start_token: "start".into(),
+            state: SessionState::Completed,
+            summary: "old managed preview".into(),
+            session_file: None,
+            pending: None,
+            alive: false,
+            created_at_ms: 10_000,
+            updated_at_ms: 20_000,
+        };
+
+        overlay_managed_session(&mut session, &managed);
+
+        assert_eq!(session.summary, "The adapter is ready.");
+        assert_eq!(
+            session.updated_at,
+            Some(SystemTime::UNIX_EPOCH + Duration::from_secs(30))
+        );
+        assert_eq!(session.raw_state.as_deref(), Some("managed_rpc_exited"));
     }
 
     #[test]

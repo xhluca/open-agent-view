@@ -235,6 +235,23 @@
       "updated_at": null,
       "pull_requests": null,
       "capabilities": []
+    },
+    {
+      "id": "terminal:host:terminal-demo",
+      "provider_session_id": "terminal:demo",
+      "provider": "terminal",
+      "runtime": { "kind": "host" },
+      "kind": "managed",
+      "name": "release shell",
+      "cwd": "/workspace/release",
+      "state": "working",
+      "summary": "Interactive shell · Enter resumes · Left returns to OAV",
+      "raw_state": "terminal_backgrounded",
+      "pid": null,
+      "started_at": null,
+      "updated_at": null,
+      "pull_requests": null,
+      "capabilities": ["inspect", "interrupt"]
     }
   ],
   "warnings": []

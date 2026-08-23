@@ -13,6 +13,7 @@ use open_agent_view::adapters::{
     CopilotController, CopilotSource, CopilotSupervisor, CursorController, DiscoveryEngine,
     DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec, ManagedDockerService,
     ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController, PiSource,
+    TerminalHarness,
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
@@ -41,6 +42,7 @@ enum LaunchProvider {
     Cursor,
     Copilot,
     Antigravity,
+    Terminal,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -60,7 +62,7 @@ enum Commands {
         #[command(subcommand)]
         command: SessionCommand,
     },
-    /// Install one coding-agent harness with its official installer.
+    /// Check, install, and sign in to one harness (Terminal is built in).
     Setup {
         #[arg(value_name = "HARNESS", value_enum)]
         harness: LaunchProvider,
@@ -293,7 +295,7 @@ struct Cli {
     #[arg(long, value_name = "PATH", global = true)]
     managed_docker_registry: Option<PathBuf>,
 
-    /// Initial coding-agent harness used by the new-session composer.
+    /// Initial coding-agent or Terminal harness used by the new-session composer.
     #[arg(
         long = "harness",
         visible_alias = "launch-provider",
@@ -346,7 +348,7 @@ fn main() -> Result<()> {
                 cli.json,
             )?,
             Commands::Sessions { command } => run_session_command(command, &cli)?,
-            Commands::Setup { harness, yes } => run_harness_setup(*harness, *yes)?,
+            Commands::Setup { harness, yes } => run_harness_setup(*harness, *yes, &cli)?,
             Commands::PiSupervisor { state_dir, socket } => {
                 run_pi_supervisor_daemon(state_dir.clone(), socket.clone(), cli.pi_bin.clone())?
             }
@@ -388,6 +390,7 @@ fn main() -> Result<()> {
         LaunchProvider::Cursor => Provider::Cursor,
         LaunchProvider::Copilot => Provider::GitHubCopilot,
         LaunchProvider::Antigravity => Provider::Antigravity,
+        LaunchProvider::Terminal => Provider::Terminal,
     };
     let pi_session_dir = if !pi_enabled {
         None
@@ -425,6 +428,7 @@ fn main() -> Result<()> {
     let antigravity_ownership = antigravity_open_enabled
         .then(AntigravityOwnership::load_default)
         .transpose()?;
+    let terminal_harness = provider_io_enabled.then(|| Arc::new(TerminalHarness::new()));
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
             #[cfg(target_os = "linux")]
@@ -482,6 +486,12 @@ fn main() -> Result<()> {
                     .clone(),
             )?))?;
         }
+        control.register_controller(
+            terminal_harness
+                .as_ref()
+                .expect("Terminal harness exists when provider I/O is enabled")
+                .clone(),
+        )?;
     }
 
     let mut engine = DiscoveryEngine::new();
@@ -545,6 +555,9 @@ fn main() -> Result<()> {
                 engine.add_source(AntigravitySource::default_host()?);
             }
         }
+        if let Some(terminal_harness) = terminal_harness {
+            engine.add_source(terminal_harness);
+        }
         for container in cli.docker_containers {
             let target = DockerTarget::inspect(&container, &cli.docker_bin)?;
             let display_image = target.display_image();
@@ -563,7 +576,7 @@ fn main() -> Result<()> {
             control.retain_owned(&mut snapshot);
         }
         hidden_sessions.filter_snapshot(&mut snapshot);
-        session_aliases.apply_snapshot_with_warning(&mut snapshot);
+        session_aliases.apply_snapshot(&mut snapshot);
         serde_json::to_writer_pretty(io::stdout().lock(), &snapshot)?;
         println!();
         return Ok(());
@@ -915,67 +928,78 @@ enum HarnessInstaller {
     Npm { package: &'static str },
 }
 
-fn run_harness_setup(provider: LaunchProvider, confirmed: bool) -> Result<()> {
-    let (label, executable, installer) = match provider {
+fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Result<()> {
+    if provider == LaunchProvider::Terminal {
+        println!(
+            "Terminal is built into Open Agent View; choose it with Tab or `/harness terminal`."
+        );
+        return Ok(());
+    }
+    let (label, executable, login_args, installer) = match provider {
         LaunchProvider::Claude => (
             "Claude Code",
-            "claude",
+            cli.claude_bin.as_str(),
+            vec!["auth", "login"],
             HarnessInstaller::Script {
                 url: "https://claude.ai/install.sh",
             },
         ),
         LaunchProvider::Codex => (
             "Codex CLI",
-            "codex",
+            cli.codex_bin.as_str(),
+            vec!["login"],
             HarnessInstaller::Npm {
                 package: "@openai/codex",
             },
         ),
         LaunchProvider::Pi => (
             "Pi coding agent",
-            "pi",
+            cli.pi_bin.as_str(),
+            vec!["--no-session"],
             HarnessInstaller::Npm {
                 package: "@mariozechner/pi-coding-agent",
             },
         ),
         LaunchProvider::OpenCode => (
             "OpenCode",
-            "opencode",
+            cli.opencode_bin.as_str(),
+            vec!["auth", "login"],
             HarnessInstaller::Script {
                 url: "https://opencode.ai/install",
             },
         ),
         LaunchProvider::Cursor => (
             "Cursor Agent",
-            "cursor-agent",
+            cli.cursor_bin.as_str(),
+            vec!["login"],
             HarnessInstaller::Script {
                 url: "https://cursor.com/install",
             },
         ),
         LaunchProvider::Copilot => (
             "GitHub Copilot CLI",
-            "copilot",
+            cli.copilot_bin.as_str(),
+            vec!["login"],
             HarnessInstaller::Script {
                 url: "https://gh.io/copilot-install",
             },
         ),
         LaunchProvider::Antigravity => (
             "Antigravity CLI",
-            "agy",
+            cli.antigravity_bin.as_str(),
+            Vec::new(),
             HarnessInstaller::Script {
                 url: "https://antigravity.google/cli/install.sh",
             },
         ),
+        LaunchProvider::Terminal => unreachable!("handled above"),
     };
-    if executable_available(executable) {
-        println!("{label} is already installed. Open the model picker in `open-agent-view`; if authentication is needed, press Enter there.");
-        return Ok(());
-    }
+    let already_installed = executable_available(executable);
     let source = match &installer {
         HarnessInstaller::Script { url } => *url,
         HarnessInstaller::Npm { package } => *package,
     };
-    if !confirmed {
+    if !already_installed && !confirmed {
         if !io::stdin().is_terminal() {
             bail!(
                 "setup changes your user installation; rerun with --yes after reviewing {source}"
@@ -990,24 +1014,85 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool) -> Result<()> {
             return Ok(());
         }
     }
-    println!("Installing {label}…");
-    let status = match installer {
-        HarnessInstaller::Script { url } => run_official_script_installer(url)?,
-        HarnessInstaller::Npm { package } => Command::new("npm")
-            .args(["install", "--global", package])
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context(
-                "failed to start npm; install Node.js/npm or use the provider's native installer",
-            )?,
-    };
-    if !status.success() {
-        bail!("{label} installer exited with status {status}");
+    if already_installed {
+        println!("✓ {label} is installed at {executable}");
+    } else {
+        println!("Installing {label}…");
+        let status = match installer {
+            HarnessInstaller::Script { url } => run_official_script_installer(url)?,
+            HarnessInstaller::Npm { package } => Command::new("npm")
+                .args(["install", "--global", package])
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .status()
+                .context(
+                    "failed to start npm; install Node.js/npm or use the provider's native installer",
+                )?,
+        };
+        if !status.success() {
+            bail!("{label} installer exited with status {status}");
+        }
+        println!("✓ {label} installation completed");
     }
-    println!("{label} installation completed. Restart `open-agent-view`, choose {label}, then open the model picker; OAV will hand off login if needed.");
+
+    if !executable_available(executable) {
+        println!(
+            "The installer completed, but `{executable}` is not visible in this process's PATH yet. Open a new terminal, then run `open-agent-view setup {}` to continue login.",
+            launch_provider_value(provider)
+        );
+        return Ok(());
+    }
+    if !io::stdin().is_terminal() {
+        println!(
+            "Installation check passed. Complete authentication interactively with `open-agent-view setup {}`.",
+            launch_provider_value(provider)
+        );
+        return Ok(());
+    }
+    if !confirmed {
+        print!("Open {label}'s interactive login now? [Y/n] ");
+        io::stdout().flush()?;
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        if matches!(answer.trim().to_ascii_lowercase().as_str(), "n" | "no") {
+            println!(
+                "Login deferred. Run `open-agent-view setup {}` when ready.",
+                launch_provider_value(provider)
+            );
+            return Ok(());
+        }
+    }
+    if provider == LaunchProvider::Pi {
+        println!("Pi opens its native no-session UI; run `/login` there, then exit when setup is complete.");
+    } else {
+        println!("Opening {label} login…");
+    }
+    let status = Command::new(executable)
+        .args(login_args)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("failed to start {label} login via {executable}"))?;
+    if !status.success() {
+        bail!("{label} login exited with status {status}");
+    }
+    println!("✓ {label} setup completed. Return to Open Agent View and retry the model picker.");
     Ok(())
+}
+
+fn launch_provider_value(provider: LaunchProvider) -> &'static str {
+    match provider {
+        LaunchProvider::Claude => "claude",
+        LaunchProvider::Codex => "codex",
+        LaunchProvider::Pi => "pi",
+        LaunchProvider::OpenCode => "opencode",
+        LaunchProvider::Cursor => "cursor",
+        LaunchProvider::Copilot => "copilot",
+        LaunchProvider::Antigravity => "antigravity",
+        LaunchProvider::Terminal => "terminal",
+    }
 }
 
 fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> {
@@ -1711,6 +1796,7 @@ mod tests {
             ("cursor", LaunchProvider::Cursor),
             ("copilot", LaunchProvider::Copilot),
             ("antigravity", LaunchProvider::Antigravity),
+            ("terminal", LaunchProvider::Terminal),
         ] {
             let cli =
                 Cli::try_parse_from(["open-agent-view", "--json", "--launch-provider", value])

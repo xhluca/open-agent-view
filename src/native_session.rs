@@ -42,12 +42,7 @@ static DETACHED: OnceLock<Mutex<BTreeMap<String, DetachedSession>>> = OnceLock::
 /// Run or reattach one provider-native client. Non-TTY callers retain the
 /// ordinary inherited-stdio behavior used by scripts and unit-test fixtures.
 pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit> {
-    if session_key.is_empty()
-        || session_key.len() > 512
-        || session_key.chars().any(char::is_control)
-    {
-        bail!("invalid native session key");
-    }
+    validate_session_key(session_key)?;
     #[cfg(unix)]
     if terminal_is_interactive() {
         return run_pty(command, session_key);
@@ -59,6 +54,71 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
         .status()
         .context("failed to open provider session")?;
     Ok(NativeSessionExit::Exited(status))
+}
+
+/// Resume an exact frontend previously backgrounded with Left arrow. Unlike
+/// [`run`], this never starts a replacement command when the key is stale.
+pub fn resume(session_key: &str) -> Result<NativeSessionExit> {
+    validate_session_key(session_key)?;
+    #[cfg(unix)]
+    {
+        if !terminal_is_interactive() {
+            bail!("resuming a native session requires an interactive terminal");
+        }
+        let detached =
+            take_detached(session_key)?.context("the background terminal is no longer running")?;
+        bridge_session(
+            detached.child,
+            detached.master,
+            detached.screen,
+            session_key,
+            false,
+        )
+    }
+    #[cfg(not(unix))]
+    bail!("background terminal resume is unavailable on this platform")
+}
+
+/// List process-local frontend keys for dashboard discovery. Keys never grant
+/// authority over arbitrary processes: every entry was spawned by this OAV
+/// process and is still held by its private PTY registry.
+pub fn detached_session_keys() -> Vec<String> {
+    #[cfg(unix)]
+    {
+        let Some(registry) = DETACHED.get() else {
+            return Vec::new();
+        };
+        return registry
+            .lock()
+            .map(|registry| registry.keys().cloned().collect())
+            .unwrap_or_default();
+    }
+    #[cfg(not(unix))]
+    Vec::new()
+}
+
+/// Stop one exact background frontend owned by this process.
+pub fn terminate(session_key: &str) -> Result<()> {
+    validate_session_key(session_key)?;
+    #[cfg(unix)]
+    {
+        let mut detached =
+            take_detached(session_key)?.context("the background terminal is no longer running")?;
+        terminate_detached(&mut detached);
+        Ok(())
+    }
+    #[cfg(not(unix))]
+    bail!("background terminal control is unavailable on this platform")
+}
+
+fn validate_session_key(session_key: &str) -> Result<()> {
+    if session_key.is_empty()
+        || session_key.len() > 512
+        || session_key.chars().any(char::is_control)
+    {
+        bail!("invalid native session key");
+    }
+    Ok(())
 }
 
 /// Terminate detached native frontends during a normal dashboard shutdown.
@@ -75,22 +135,7 @@ pub fn shutdown_all() {
             Err(_) => return,
         };
         for (_, mut session) in sessions {
-            signal_group(session.child.id(), libc::SIGCONT);
-            signal_group(session.child.id(), libc::SIGTERM);
-            let deadline = Instant::now() + Duration::from_millis(300);
-            loop {
-                match session.child.try_wait() {
-                    Ok(Some(_)) => break,
-                    Ok(None) if Instant::now() < deadline => {
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    Ok(None) | Err(_) => {
-                        signal_group(session.child.id(), libc::SIGKILL);
-                        let _ = session.child.wait();
-                        break;
-                    }
-                }
-            }
+            terminate_detached(&mut session);
         }
     }
 }
@@ -126,22 +171,7 @@ fn terminal_is_interactive() -> bool {
 
 #[cfg(unix)]
 fn run_pty(mut command: Command, session_key: &str) -> Result<NativeSessionExit> {
-    let detached = {
-        let mut registry = detached_registry().lock().map_err(|_| {
-            anyhow!("provider-native background session registry lock was poisoned")
-        })?;
-        registry.remove(session_key)
-    };
-    let detached = match detached {
-        Some(mut detached) => {
-            if detached.child.try_wait()?.is_none() {
-                Some(detached)
-            } else {
-                None
-            }
-        }
-        None => None,
-    };
+    let detached = take_detached(session_key)?;
     let (child, master, screen, fresh) = match detached {
         Some(detached) => (detached.child, detached.master, detached.screen, false),
         None => {
@@ -162,6 +192,44 @@ fn run_pty(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
         }
     };
     bridge_session(child, master, screen, session_key, fresh)
+}
+
+#[cfg(unix)]
+fn take_detached(session_key: &str) -> Result<Option<DetachedSession>> {
+    let detached = detached_registry()
+        .lock()
+        .map_err(|_| anyhow!("provider-native background session registry lock was poisoned"))?
+        .remove(session_key);
+    match detached {
+        Some(mut detached) => {
+            if detached.child.try_wait()?.is_none() {
+                Ok(Some(detached))
+            } else {
+                Ok(None)
+            }
+        }
+        None => Ok(None),
+    }
+}
+
+#[cfg(unix)]
+fn terminate_detached(session: &mut DetachedSession) {
+    signal_group(session.child.id(), libc::SIGCONT);
+    signal_group(session.child.id(), libc::SIGTERM);
+    let deadline = Instant::now() + Duration::from_millis(300);
+    loop {
+        match session.child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) | Err(_) => {
+                signal_group(session.child.id(), libc::SIGKILL);
+                let _ = session.child.wait();
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(unix)]

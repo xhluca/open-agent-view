@@ -68,6 +68,9 @@ pub enum AppAction {
     Authenticate {
         provider: Provider,
     },
+    SetupProvider {
+        provider: Provider,
+    },
     Open {
         session_id: String,
     },
@@ -630,11 +633,11 @@ impl App {
             Err(error) => {
                 self.available_models.clear();
                 self.model_selection = 0;
-                self.models_error = Some(error.clone());
-                self.set_notice(format!(
-                    "failed to list {} models: {error}",
-                    provider.label()
-                ));
+                self.models_error = Some(error);
+                // The picker renders a bounded, wrapped recovery message. A
+                // duplicate one-line notice would be clipped and would hide
+                // its contextual retry/setup keys.
+                self.notice = None;
             }
         }
     }
@@ -694,7 +697,12 @@ impl App {
     }
 
     pub fn has_valid_custom_model_input(&self) -> bool {
-        self.models_error.is_some() && valid_model_name(&self.model_filter)
+        // Antigravity validates every --model value against the same catalog
+        // that just failed. Treating filter text as an exact ID in that state
+        // turns a recovery Enter into another guaranteed launch failure.
+        self.models_error.is_some()
+            && self.launch_provider != Provider::Antigravity
+            && valid_model_name(&self.model_filter)
     }
 
     pub fn move_model_selection(&mut self, delta: isize) {
@@ -719,7 +727,7 @@ impl App {
     }
 
     pub fn confirm_model_selection(&mut self) {
-        if self.models_error.is_some() && valid_model_name(&self.model_filter) {
+        if self.has_valid_custom_model_input() {
             self.launch_model = Some(self.model_filter.clone());
             self.model_filter.clear();
             self.notice = None;
@@ -918,6 +926,51 @@ impl App {
         }
     }
 
+    /// Delete the previous shell-style word in the active text field.
+    ///
+    /// Terminals report Option+Backspace as Alt+Backspace on macOS. Ctrl+W is
+    /// kept as the portable equivalent. Work on Unicode scalar boundaries so
+    /// slicing can never split a UTF-8 code point.
+    pub fn delete_previous_word(&mut self) {
+        let input = if self.overlay == Overlay::ModelPicker {
+            &mut self.model_filter
+        } else {
+            &mut self.input
+        };
+        let mut boundary = input.len();
+        while let Some((index, character)) = input[..boundary].char_indices().next_back() {
+            if !character.is_whitespace() {
+                break;
+            }
+            boundary = index;
+        }
+        while let Some((index, character)) = input[..boundary].char_indices().next_back() {
+            if character.is_whitespace() {
+                break;
+            }
+            boundary = index;
+        }
+        input.truncate(boundary);
+        if self.overlay == Overlay::ModelPicker {
+            self.reconcile_model_selection();
+        }
+    }
+
+    /// Delete from the cursor (which is currently always at the end) to the
+    /// beginning of the current line. Cmd+Backspace and Ctrl+U use this path.
+    pub fn delete_to_line_start(&mut self) {
+        let input = if self.overlay == Overlay::ModelPicker {
+            &mut self.model_filter
+        } else {
+            &mut self.input
+        };
+        let boundary = input.rfind('\n').map_or(0, |index| index + 1);
+        input.truncate(boundary);
+        if self.overlay == Overlay::ModelPicker {
+            self.reconcile_model_selection();
+        }
+    }
+
     pub fn set_notice(&mut self, notice: impl Into<String>) {
         self.notice = Some(notice.into());
     }
@@ -1101,9 +1154,7 @@ impl App {
             .map(|(command, argument)| (command, argument.trim()))
             .unwrap_or((input.as_str(), ""));
         match command.to_ascii_lowercase().as_str() {
-            "/help" => self.set_notice(
-                "commands: /harness [NAME] · /model [NAME|default] · /login · /completed [show|hide] · /filter TEXT",
-            ),
+            "/help" => self.toggle_help(),
             "/harness" | "/provider" if argument.is_empty() => self.open_harness_picker(),
             "/harness" | "/provider" => self.select_launch_provider(argument),
             "/model" => return self.select_launch_model(argument),
@@ -1113,6 +1164,17 @@ impl App {
                 }
             }
             "/login" => self.set_notice("use /login after selecting a harness with /harness"),
+            "/setup" if argument.is_empty() => {
+                return AppAction::SetupProvider {
+                    provider: self.launch_provider.clone(),
+                }
+            }
+            "/setup" => match known_provider(argument) {
+                Some(provider) => return AppAction::SetupProvider { provider },
+                None => self.set_notice(format!(
+                    "unknown harness {argument}; use /help for supported setup names"
+                )),
+            },
             "/completed" => return self.select_completed_visibility(argument),
             "/filter" => {
                 self.set_filter(argument);
@@ -1260,6 +1322,20 @@ fn provider_alias(provider: &Provider) -> String {
         Provider::GitHubCopilot => "copilot".into(),
         Provider::OpenCode => "opencode".into(),
         _ => normalize_provider_name(provider.label()),
+    }
+}
+
+fn known_provider(value: &str) -> Option<Provider> {
+    match normalize_provider_name(value).as_str() {
+        "claude" | "claudecode" => Some(Provider::Claude),
+        "codex" => Some(Provider::Codex),
+        "pi" => Some(Provider::Pi),
+        "opencode" => Some(Provider::OpenCode),
+        "cursor" | "cursoragent" => Some(Provider::Cursor),
+        "copilot" | "githubcopilot" => Some(Provider::GitHubCopilot),
+        "antigravity" | "agy" => Some(Provider::Antigravity),
+        "terminal" | "shell" => Some(Provider::Terminal),
+        _ => None,
     }
 }
 
@@ -2290,6 +2366,30 @@ mod tests {
         app.input = "/filter codex".into();
         assert_eq!(app.activate(), AppAction::None);
         assert_eq!(app.filter, "codex");
+
+        app.start_new_session(None);
+        app.input = "/help".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.overlay, Overlay::Help);
+        assert_eq!(app.notice, None);
+
+        app.start_new_session(None);
+        app.input = "/setup copilot".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::SetupProvider {
+                provider: Provider::GitHubCopilot
+            }
+        );
+
+        app.start_new_session(None);
+        app.input = "/setup shell".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::SetupProvider {
+                provider: Provider::Terminal
+            }
+        );
     }
 
     #[test]
@@ -2526,11 +2626,8 @@ mod tests {
         app.set_available_models(Provider::Claude, Err("command timed out".into()));
         assert!(!app.models_loading);
         assert!(app.model_choices().is_empty());
-        assert!(app
-            .notice
-            .as_deref()
-            .unwrap()
-            .contains("failed to list Claude models"));
+        assert_eq!(app.notice, None);
+        assert_eq!(app.models_error.as_deref(), Some("command timed out"));
 
         app.set_models_auth_available(&Provider::Claude, true);
         assert_eq!(
@@ -2570,7 +2667,7 @@ mod tests {
     fn exact_model_id_is_an_explicit_fallback_when_catalog_loading_fails() {
         let mut app = App::new(SessionSnapshot::default());
         app.require_authentication(
-            Provider::Antigravity,
+            Provider::Claude,
             None,
             "investigate the failure".into(),
             "model catalog timed out".into(),
@@ -2583,5 +2680,29 @@ mod tests {
         assert_eq!(app.launch_model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(app.input, "investigate the failure");
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+    }
+
+    #[test]
+    fn antigravity_catalog_failure_keeps_enter_on_native_recovery() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.require_authentication(
+            Provider::Antigravity,
+            None,
+            "investigate the failure".into(),
+            "agy models timed out".into(),
+        );
+        for character in "gemini".chars() {
+            app.push_input(character);
+        }
+
+        assert!(!app.has_valid_custom_model_input());
+        assert_eq!(
+            app.activate(),
+            AppAction::Authenticate {
+                provider: Provider::Antigravity
+            }
+        );
+        assert_eq!(app.input, "investigate the failure");
+        assert_eq!(app.launch_model, None);
     }
 }

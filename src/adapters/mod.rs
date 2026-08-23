@@ -11,6 +11,7 @@ mod managed_docker;
 mod managed_docker_registry;
 mod opencode;
 mod pi;
+mod terminal_harness;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -53,6 +54,7 @@ pub use opencode::{
     parse_opencode_session_list, OpenCodeController, OpenCodeInvocation, OpenCodeSource,
 };
 pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
+pub use terminal_harness::TerminalHarness;
 
 use crate::domain::{AgentSession, SessionKind, SessionSnapshot, SessionState};
 

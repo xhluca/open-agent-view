@@ -669,7 +669,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
         }
         Overlay::Peek if app.input.is_empty() => "enter to open".into(),
         Overlay::Peek => "enter to send · esc to close".into(),
-        Overlay::Help => String::new(),
+        Overlay::Help => "? to close help · esc to close".into(),
         Overlay::None if matches!(app.selection, Some(SelectionKey::ShowMore(_))) => {
             if width >= 55 {
                 "enter to show more · ↑/↓ to select · ? for shortcuts".into()
@@ -780,8 +780,12 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("ctrl+f to filter".into());
     actions.push("ctrl+l to refresh".into());
     actions.push("tab for new task/harness picker".into());
-    actions.push("/help for task commands".into());
-    actions.push("/completed to show/hide finished sessions".into());
+    actions.push("/harness [name] switches harness".into());
+    actions.push("/model [name|default] selects a model".into());
+    actions.push("/login opens native setup".into());
+    actions.push("/setup [harness] installs/signs in".into());
+    actions.push("/completed [show|hide] toggles finished sessions".into());
+    actions.push("/filter text filters sessions".into());
     if let Some(session) = app.selected_session() {
         if session.capabilities.contains(&Capability::Approve)
             || session.capabilities.contains(&Capability::Decline)
@@ -929,10 +933,32 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
 fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let choices = app.model_choices();
     let popup_width = area.width.saturating_sub(2).min(76).max(28);
+    let error_lines = if choices.is_empty() && !app.models_loading {
+        app.models_error
+            .as_deref()
+            .map(|error| {
+                wrap_inline_bounded(
+                    &sanitize_inline(error),
+                    popup_width.saturating_sub(6) as usize,
+                    4,
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let visible_rows = MODEL_PICKER_PAGE_SIZE
         .min(area.height.saturating_sub(7).max(1) as usize)
         .max(1);
-    let result_rows = choices.len().clamp(1, visible_rows);
+    let empty_rows = error_lines
+        .len()
+        .max(1)
+        .saturating_add(usize::from(app.has_valid_custom_model_input()));
+    let result_rows = if choices.is_empty() {
+        empty_rows
+    } else {
+        choices.len().clamp(1, visible_rows)
+    };
     let popup_height = (result_rows as u16 + 5)
         .min(area.height.saturating_sub(2))
         .max(6);
@@ -963,14 +989,24 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
         ),
     ])];
     if choices.is_empty() {
-        let message = if app.models_loading {
-            "  Loading models…".into()
-        } else if let Some(error) = app.models_error.as_deref() {
-            format!("  {}", sanitize_inline(error))
+        if app.models_loading {
+            lines.push(Line::from(Span::styled(
+                "  ◌ Loading models…",
+                Style::default().fg(ACCENT),
+            )));
+        } else if !error_lines.is_empty() {
+            lines.extend(error_lines.iter().map(|line| {
+                Line::from(Span::styled(
+                    format!("  {line}"),
+                    Style::default().fg(ATTENTION),
+                ))
+            }));
         } else {
-            "  No matching models".into()
-        };
-        lines.push(Line::from(Span::styled(message, Style::default().fg(DIM))));
+            lines.push(Line::from(Span::styled(
+                "  No matching models",
+                Style::default().fg(DIM),
+            )));
+        }
         if app.has_valid_custom_model_input() {
             lines.push(
                 Line::from(format!(
@@ -1023,9 +1059,11 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
     }
     lines.push(
         Line::from(if app.has_valid_custom_model_input() {
-            " enter use exact ID · l sign in/setup · esc back"
+            " enter exact ID · ctrl+r retry · l native setup · esc back"
         } else if app.models_error.is_some() && app.models_auth_available {
-            " enter/l sign in · esc back"
+            " enter/l native setup · ctrl+r retry · esc back"
+        } else if app.models_error.is_some() {
+            " ctrl+r retry · esc back"
         } else if popup_width >= 58 {
             " ↑/↓ move · PgUp/PgDn page · enter select · esc back"
         } else {
@@ -1177,6 +1215,40 @@ fn truncate(input: &str, width: usize) -> String {
     }
     output.push('…');
     output
+}
+
+fn wrap_inline_bounded(input: &str, width: usize, max_lines: usize) -> Vec<String> {
+    if input.is_empty() || width == 0 || max_lines == 0 {
+        return Vec::new();
+    }
+    let words = input.split_whitespace().collect::<Vec<_>>();
+    let mut lines = Vec::new();
+    let mut index = 0;
+    while index < words.len() && lines.len() < max_lines {
+        if lines.len() + 1 == max_lines {
+            lines.push(truncate(&words[index..].join(" "), width));
+            break;
+        }
+        let mut line = String::new();
+        while index < words.len() {
+            let candidate = if line.is_empty() {
+                words[index].to_owned()
+            } else {
+                format!("{line} {}", words[index])
+            };
+            if display_width(&candidate) > width {
+                break;
+            }
+            line = candidate;
+            index += 1;
+        }
+        if line.is_empty() {
+            line = truncate(words[index], width);
+            index += 1;
+        }
+        lines.push(line);
+    }
+    lines
 }
 
 fn pad_to_width(mut input: String, width: usize) -> String {
@@ -1397,6 +1469,7 @@ mod tests {
             (Provider::Cursor, "Cursor"),
             (Provider::GitHubCopilot, "GitHub Copilot"),
             (Provider::Antigravity, "Antigravity"),
+            (Provider::Terminal, "Terminal"),
         ];
 
         for (provider, expected) in providers {
@@ -1599,6 +1672,10 @@ mod tests {
 
         assert!(rendered.contains("ctrl+r to rename"));
         assert!(rendered.contains("ctrl+s to switch views"));
+        assert!(rendered.contains("/harness [name] switches harness"));
+        assert!(rendered.contains("/model [name|default] selects a model"));
+        assert!(rendered.contains("/login opens native setup"));
+        assert!(rendered.contains("? to close help"));
         assert!(rendered.contains("describe a task · /help for commands"));
         assert!(!rendered.contains("ctrl+x to stop"));
         assert!(rendered.contains("ctrl+x to hide locally"));
@@ -1784,6 +1861,40 @@ mod tests {
         assert!(filtered.contains("provider/model-24"));
         assert!(!filtered.contains("provider/model-23"));
         assert_eq!(terminal.get_cursor().unwrap(), (24, 13));
+    }
+
+    #[test]
+    fn model_catalog_failure_wraps_recovery_and_never_promotes_antigravity_filter_text() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            true,
+            Provider::Antigravity,
+            vec![LaunchTarget {
+                provider: Provider::Antigravity,
+                supports_model: true,
+            }],
+        );
+        app.require_authentication(
+            Provider::Antigravity,
+            None,
+            "keep this task".into(),
+            "Antigravity's own `agy models` command timed out. Press Enter/l to open Antigravity and verify that native `/model` lists models, then return and press Ctrl+R to retry".into(),
+        );
+        for character in "gemini".chars() {
+            app.push_input(character);
+        }
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("agy models"));
+        assert!(rendered.contains("/model"));
+        assert!(rendered.contains("enter/l native setup"));
+        assert!(rendered.contains("ctrl+r retry"));
+        assert!(!rendered.contains("Use exact model ID"));
+        assert_eq!(app.notice, None);
     }
 
     #[test]

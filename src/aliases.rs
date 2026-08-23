@@ -107,16 +107,6 @@ impl SessionAliases {
         applied
     }
 
-    pub fn apply_snapshot_with_warning(&self, snapshot: &mut SessionSnapshot) {
-        let applied = self.apply_snapshot(snapshot);
-        if applied > 0 {
-            snapshot.warnings.push(format!(
-                "{applied} local session name{} override provider titles; run `open-agent-view sessions aliases`",
-                if applied == 1 { "" } else { "s" }
-            ));
-        }
-    }
-
     pub fn set_for_session(&self, session: &AgentSession, alias: &str) -> Result<bool> {
         validate_session_id(&session.id)?;
         let alias = normalize_alias(alias)?;

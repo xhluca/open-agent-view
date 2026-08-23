@@ -93,7 +93,7 @@ pub fn run_dashboard(
                                 .warnings
                                 .push(format!("failed to reload local session names: {error:#}"));
                         }
-                        worker_session_aliases.apply_snapshot_with_warning(&mut partial);
+                        worker_session_aliases.apply_snapshot(&mut partial);
                         partial.warnings.push(format!(
                             "loading remaining providers… ({completed}/{total})"
                         ));
@@ -113,7 +113,7 @@ pub fn run_dashboard(
                     .warnings
                     .push(format!("failed to reload local session names: {error:#}"));
             }
-            worker_session_aliases.apply_snapshot_with_warning(&mut snapshot);
+            worker_session_aliases.apply_snapshot(&mut snapshot);
             if snapshot_tx.send((snapshot, true)).is_err() {
                 break;
             }
@@ -216,7 +216,10 @@ pub fn run_dashboard(
                             }
                         }
                     }
-                    needs_draw |= changed;
+                    // Relative ages are computed while drawing. A completed
+                    // refresh must repaint even if provider bytes are
+                    // identical, otherwise the visible age can freeze.
+                    needs_draw |= changed || complete;
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
@@ -751,6 +754,11 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                 app.start_rename();
                 AppAction::None
             }
+            KeyCode::Char('r') if app.overlay == Overlay::ModelPicker => {
+                let provider = app.launch_provider.clone();
+                app.retry_model_load(&provider);
+                AppAction::LoadModels { provider }
+            }
             KeyCode::Char('f') if app.overlay == Overlay::None => {
                 app.start_filter();
                 AppAction::None
@@ -769,8 +777,25 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                 app.push_input('\n');
                 AppAction::None
             }
+            KeyCode::Char('w') | KeyCode::Backspace => {
+                app.delete_previous_word();
+                AppAction::None
+            }
+            KeyCode::Char('u') => {
+                app.delete_to_line_start();
+                AppAction::None
+            }
             _ => AppAction::None,
         };
+    }
+
+    if key.modifiers.contains(KeyModifiers::SUPER) && key.code == KeyCode::Backspace {
+        app.delete_to_line_start();
+        return AppAction::None;
+    }
+    if key.modifiers.contains(KeyModifiers::ALT) && key.code == KeyCode::Backspace {
+        app.delete_previous_word();
+        return AppAction::None;
     }
 
     match key.code {
@@ -936,6 +961,9 @@ trait DashboardControl {
             provider.label()
         ))
     }
+    fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+        Err(anyhow!("{} setup is unavailable", provider.label()))
+    }
     fn supports_authentication(&self, _provider: &Provider) -> bool {
         false
     }
@@ -981,6 +1009,10 @@ impl DashboardControl for ControlHub {
 
     fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
         self.authenticate(provider)
+    }
+
+    fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+        self.setup_provider(provider)
     }
 
     fn supports_authentication(&self, provider: &Provider) -> bool {
@@ -1048,12 +1080,38 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
                     app.set_notice(outcome.message);
                     app.retry_model_load(&provider);
                     ActionEffect {
+                        refresh: true,
                         load_models: Some(provider),
                         ..ActionEffect::default()
                     }
                 }
                 (Err(error), Ok(())) => {
                     app.set_notice(format!("login failed: {error:#}"));
+                    ActionEffect::default()
+                }
+                (_, Err(error)) => {
+                    app.set_notice(format!("failed to restore dashboard: {error:#}"));
+                    ActionEffect::default()
+                }
+            }
+        }
+        AppAction::SetupProvider { provider } => {
+            if let Err(error) = terminal.suspend_dashboard() {
+                app.set_notice(format!("failed to suspend dashboard: {error:#}"));
+                return ActionEffect::default();
+            }
+            let result = control.setup_provider(&provider);
+            let resume = terminal.resume_dashboard();
+            match (result, resume) {
+                (Ok(outcome), Ok(())) => {
+                    app.set_notice(outcome.message);
+                    ActionEffect {
+                        refresh: true,
+                        ..ActionEffect::default()
+                    }
+                }
+                (Err(error), Ok(())) => {
+                    app.set_notice(format!("setup failed: {error:#}"));
                     ActionEffect::default()
                 }
                 (_, Err(error)) => {
@@ -1126,6 +1184,7 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
         | AppAction::SetCompletedVisibility { .. }
         | AppAction::LoadModels { .. }
         | AppAction::Authenticate { .. }
+        | AppAction::SetupProvider { .. }
         | AppAction::Hide { .. } => false,
         AppAction::Refresh => {
             app.set_notice("refreshing provider sessions…");
@@ -1295,7 +1354,10 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
                     return true;
                 }
             }
-            app.set_notice(format!("deleted {count} managed Codex session(s)"));
+            app.set_notice(format!(
+                "deleted {count} managed session{}",
+                if count == 1 { "" } else { "s" }
+            ));
             true
         }
     }
@@ -1435,6 +1497,15 @@ mod tests {
         KeyEvent {
             code: KeyCode::Char(character),
             modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: crossterm::event::KeyEventState::NONE,
+        }
+    }
+
+    fn modified_key(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers,
             kind: KeyEventKind::Press,
             state: crossterm::event::KeyEventState::NONE,
         }
@@ -1834,6 +1905,31 @@ mod tests {
     }
 
     #[test]
+    fn macos_and_shell_deletion_shortcuts_edit_the_active_field() {
+        let mut app = app();
+        app.start_rename();
+        app.input = "greeting message content".into();
+
+        handle_key(
+            &mut app,
+            modified_key(KeyCode::Backspace, KeyModifiers::ALT),
+        );
+        assert_eq!(app.input, "greeting message ");
+        handle_key(&mut app, control_key('w'));
+        assert_eq!(app.input, "greeting ");
+        handle_key(
+            &mut app,
+            modified_key(KeyCode::Backspace, KeyModifiers::SUPER),
+        );
+        assert!(app.input.is_empty());
+
+        app.start_new_session(None);
+        app.input = "first line\nsecond line".into();
+        handle_key(&mut app, control_key('u'));
+        assert_eq!(app.input, "first line\n");
+    }
+
+    #[test]
     fn harness_picker_keys_preview_cancel_and_select_without_editing_the_draft() {
         let mut app = App::with_launch_targets(
             SessionSnapshot::default(),
@@ -1919,6 +2015,27 @@ mod tests {
         assert_eq!(app.input, "x");
     }
 
+    #[test]
+    fn model_picker_error_has_a_direct_retry_key() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.require_authentication(
+            Provider::Antigravity,
+            None,
+            "keep the task".into(),
+            "agy models timed out".into(),
+        );
+
+        assert_eq!(
+            handle_key(&mut app, control_key('r')),
+            AppAction::LoadModels {
+                provider: Provider::Antigravity
+            }
+        );
+        assert!(app.models_loading);
+        assert!(app.models_error.is_none());
+        assert_eq!(app.input, "keep the task");
+    }
+
     #[derive(Default)]
     struct FakeTerminal {
         calls: Vec<&'static str>,
@@ -1990,6 +2107,10 @@ mod tests {
 
         fn authenticate_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
             self.invoke("authenticate", provider.label().into())
+        }
+
+        fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
+            self.invoke("setup", provider.label().into())
         }
 
         fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
@@ -2118,6 +2239,24 @@ mod tests {
             control.calls.lock().unwrap().as_slice(),
             ["authenticate:Claude"]
         );
+
+        let effect = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::SetupProvider {
+                provider: Provider::GitHubCopilot,
+            },
+            &control,
+        );
+        assert!(effect.refresh);
+        assert_eq!(
+            terminal.calls,
+            vec!["suspend", "resume", "suspend", "resume"]
+        );
+        assert_eq!(
+            control.calls.lock().unwrap().as_slice(),
+            ["authenticate:Claude", "setup:GitHub Copilot"]
+        );
     }
 
     #[test]
@@ -2183,10 +2322,7 @@ mod tests {
                 "delete:worker",
             ]
         );
-        assert_eq!(
-            app.notice.as_deref(),
-            Some("deleted 1 managed Codex session(s)")
-        );
+        assert_eq!(app.notice.as_deref(), Some("deleted 1 managed session"));
     }
 
     #[test]

@@ -63,7 +63,7 @@ fn cli_alias_round_trip_changes_only_the_local_presentation_layer() {
         renamed.provider_session_id,
         "11111111-1111-4111-8111-111111111111"
     );
-    assert!(snapshot
+    assert!(!snapshot
         .warnings
         .iter()
         .any(|warning| warning.contains("local session name")));

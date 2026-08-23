@@ -322,19 +322,44 @@ impl AntigravityController {
             CommandRequest::new(self.invocation.executable.clone(), vec!["models".into()]);
         request.timeout = Duration::from_secs(20);
         let output = self.runner.run(&request).map_err(|error| {
-            anyhow!(
-                "Antigravity could not load this account's model catalog: {error:#}. Press l for native setup, or type an exact model ID and press Enter"
-            )
+            let detail = format!("{error:#}");
+            if detail.to_ascii_lowercase().contains("timed out") {
+                anyhow!(
+                    "Antigravity's own `agy models` command timed out. Press Enter/l to open Antigravity and verify that native `/model` lists models, then return and press Ctrl+R to retry"
+                )
+            } else {
+                anyhow!(
+                    "Antigravity could not run its `agy models` catalog command: {detail}. Press Enter/l to open native setup, then Ctrl+R to retry"
+                )
+            }
         })?;
         if output.status != 0 {
-            let detail = output.stderr_lossy();
-            if detail.to_ascii_lowercase().contains("auth")
-                || detail.to_ascii_lowercase().contains("sign in")
+            let detail = [
+                String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+                output.stderr_lossy(),
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" · ");
+            let lower = detail.to_ascii_lowercase();
+            if lower.contains("timed out waiting for available models") {
+                bail!(
+                    "Antigravity's own `agy models` command timed out. Press Enter/l to open Antigravity and verify that native `/model` lists models, then return and press Ctrl+R to retry"
+                )
+            }
+            if lower.contains("no models available")
+                || lower.contains("no model configuration is available")
             {
-                bail!("Antigravity is not authenticated; press Enter to sign in")
+                bail!(
+                    "Antigravity itself reports no models for this account. Press Enter/l to open native setup and verify `/model`, then return and press Ctrl+R to retry"
+                )
+            }
+            if lower.contains("auth") || lower.contains("sign in") || lower.contains("not logged") {
+                bail!("Antigravity is not authenticated; press Enter/l to sign in")
             }
             bail!(
-                "Antigravity model discovery exited with status {}: {}",
+                "Antigravity `agy models` exited with status {}: {}. Press Enter/l for native setup, then Ctrl+R to retry",
                 output.status,
                 detail
             );
@@ -342,7 +367,7 @@ impl AntigravityController {
         let models = parse_antigravity_models(output.stdout_text()?);
         if models.is_empty() {
             bail!(
-                "Antigravity returned no available models. Press l for native setup, or type an exact model ID and press Enter"
+                "Antigravity returned no available models. Press Enter/l to open native setup and verify `/model`, then return and press Ctrl+R to retry"
             )
         }
         Ok(models)
