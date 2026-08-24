@@ -25,7 +25,9 @@ opav upgrade               # alias of update
 runs it for the current install directory. The installer still resolves a
 published release asset and verifies its SHA-256 checksum before replacing the
 binary. `OAV_REPO` and `OAV_INSTALL_DIR` retain their documented installer
-overrides.
+overrides. The final line verifies the binary that was installed and reports
+`Updated Open Agent View from X to Y.`; if both versions match, it reports that
+Open Agent View is already up to date.
 
 | Option | Meaning |
 | --- | --- |

@@ -14,19 +14,19 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The manually published v0.1.24 release currently covers:
+The manually published v0.1.25 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.24 does not claim artifacts for them because they were not built and
+but v0.1.25 does not claim artifacts for them because they were not built and
 tested on native machines:
 
 - Linux ARM64 with glibc 2.35 or newer
 - macOS x86_64
 - macOS Apple silicon
 
-The installer stops with an explicit explanation when v0.1.24 is requested on
+The installer stops with an explicit explanation when v0.1.25 is requested on
 one of those hosts. Use a source build there until a complete native release is
 published; do not reuse the Linux binary.
 
@@ -133,7 +133,9 @@ opav update
 The updater downloads this repository's installer, which resolves the latest
 published release, verifies its SHA-256 checksum, and stages the new binary
 before replacement. Existing provider sessions and Open Agent View state are
-not removed. Re-running the installation command above is equivalent.
+not removed. Its final line reports the verified old-to-new version transition,
+or says that the installed version is already current. Re-running the
+installation command above is equivalent.
 
 Pin `--version` in automation; the default `latest` channel can change whenever
 a new stable release is published.

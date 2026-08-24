@@ -8,6 +8,14 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-08-24
+
+### Fixed
+
+- `opav update` and `opav upgrade` now finish with the verified version
+  transition (`Updated Open Agent View from X to Y.`), or explicitly report
+  that the installed version is already current.
+
 ## [0.1.24] - 2026-08-23
 
 ### Added

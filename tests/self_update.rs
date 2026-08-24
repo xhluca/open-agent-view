@@ -48,6 +48,8 @@ printf '%s\n' '#!/bin/sh' 'exit 0'
             r##"#!/bin/sh
 test -f "$1" || exit 91
 printf '%s\n%s\n%s\n' "$1" "$OAV_REPO" "$OAV_INSTALL_DIR" > "$OAV_TEST_BASH_LOG"
+printf '%s\n' '#!/bin/sh' 'printf '\''open-agent-view 9.8.7\n'\''' > "$OAV_INSTALL_DIR/open-agent-view"
+/bin/chmod 700 "$OAV_INSTALL_DIR/open-agent-view"
 "##,
         );
 
@@ -67,7 +69,17 @@ printf '%s\n%s\n%s\n' "$1" "$OAV_REPO" "$OAV_INSTALL_DIR" > "$OAV_TEST_BASH_LOG"
             "{command_name} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("update completed"));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.lines().last(),
+            Some(
+                format!(
+                    "Updated Open Agent View from {} to 9.8.7.",
+                    env!("CARGO_PKG_VERSION")
+                )
+                .as_str()
+            )
+        );
         let gh = fs::read_to_string(&gh_log).expect("read gh invocation");
         assert!(gh.contains("repos/owner/repository/contents/install.sh"));
         let lines = fs::read_to_string(&bash_log).expect("read bash invocation");
@@ -80,4 +92,51 @@ printf '%s\n%s\n%s\n' "$1" "$OAV_REPO" "$OAV_INSTALL_DIR" > "$OAV_TEST_BASH_LOG"
             "staged updater was not removed"
         );
     }
+}
+
+#[test]
+fn update_reports_when_the_installed_version_is_already_current() {
+    let directory = tempfile::tempdir().expect("create isolated updater home");
+    let bin = directory.path().join("bin");
+    let install = directory.path().join("install");
+    fs::create_dir(&bin).expect("create isolated PATH");
+    fs::create_dir(&install).expect("create install directory");
+
+    make_executable(
+        &bin.join("gh"),
+        "#!/bin/sh\nprintf '%s\\n' '#!/bin/sh' 'exit 0'\n",
+    );
+    make_executable(
+        &bin.join("bash"),
+        &format!(
+            "#!/bin/sh\nprintf '%s\\n' '#!/bin/sh' \"printf 'open-agent-view {}\\\\n'\" > \"$OAV_INSTALL_DIR/open-agent-view\"\n/bin/chmod 700 \"$OAV_INSTALL_DIR/open-agent-view\"\n",
+            env!("CARGO_PKG_VERSION")
+        ),
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_open-agent-view"))
+        .arg("update")
+        .env("HOME", directory.path())
+        .env("PATH", &bin)
+        .env("OAV_REPO", "owner/repository")
+        .env("OAV_INSTALL_DIR", &install)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run isolated updater");
+    assert!(
+        output.status.success(),
+        "update failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.lines().last(),
+        Some(
+            format!(
+                "Open Agent View is already up to date at {}.",
+                env!("CARGO_PKG_VERSION")
+            )
+            .as_str()
+        )
+    );
 }

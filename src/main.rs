@@ -1149,6 +1149,7 @@ fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> 
 }
 
 fn run_self_update() -> Result<()> {
+    let previous_version = env!("CARGO_PKG_VERSION");
     let repository = std::env::var("OAV_REPO").unwrap_or_else(|_| "xhluca/open-agent-view".into());
     if !repository
         .split_once('/')
@@ -1250,12 +1251,53 @@ fn run_self_update() -> Result<()> {
         if !status.success() {
             bail!("Open Agent View update exited with status {status}");
         }
-        println!("Open Agent View update completed.");
+        let installed_version = installed_open_agent_view_version(&install_dir)?;
+        if installed_version == previous_version {
+            println!("Open Agent View is already up to date at {installed_version}.");
+        } else {
+            println!("Updated Open Agent View from {previous_version} to {installed_version}.");
+        }
         Ok(())
     })();
     let _ = std::fs::remove_file(&script);
     let _ = std::fs::remove_dir(&directory);
     result
+}
+
+fn installed_open_agent_view_version(install_dir: &std::path::Path) -> Result<String> {
+    let executable = install_dir.join("open-agent-view");
+    let output = Command::new(&executable)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to verify the updated Open Agent View binary at {}",
+                executable.display()
+            )
+        })?;
+    if !output.status.success() {
+        bail!(
+            "updated Open Agent View binary at {} exited with status {}",
+            executable.display(),
+            output.status
+        );
+    }
+    let reported = std::str::from_utf8(&output.stdout)
+        .context("updated Open Agent View binary returned a non-UTF-8 version")?
+        .trim();
+    let version = reported
+        .strip_prefix("open-agent-view ")
+        .filter(|version| {
+            !version.is_empty()
+                && !version
+                    .chars()
+                    .any(|character| character.is_whitespace() || character.is_control())
+        })
+        .with_context(|| {
+            format!("updated Open Agent View binary reported an unexpected version: {reported}")
+        })?;
+    Ok(version.to_owned())
 }
 
 fn resolve_default_provider_bins(cli: &mut Cli) {
