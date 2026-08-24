@@ -118,7 +118,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.25, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.26, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -138,11 +138,11 @@ checks; the guide also contains release gates that are not yet complete.
   animates launch progress and the resulting managed command contains the exact
   model. Separate PTYs prove Claude's provider-allocated background ID is
   resolved to the exact UUID, immediately attaches full-screen, and returns to
-  the exact row on Left, while Antigravity performs
+  the exact row on Shift+Left, while Antigravity performs
   first-run login, exact model selection, `--sandbox` full-screen launch, cache
-  ownership, and Left return without a dangerous bypass flag.
+  ownership, and Shift+Left return without a dangerous bypass flag.
 - A dedicated real PTY selects the eighth Terminal target, launches a private
-  interactive shell, backgrounds it with Left, discovers and resumes its exact
+  interactive shell, backgrounds it with Shift+Left, discovers and resumes its exact
   preserved screen, stops it with Ctrl+X, and deletes the completed row with a
   second Ctrl+X. Provider login PTYs use the same isolated registry.
 - `tests/setup_installer.rs` uses an isolated `PATH` and fake curl/bash. It
@@ -336,14 +336,14 @@ checks; the guide also contains release gates that are not yet complete.
 - Claude peek was checked against a real host session using read-only logs; the
   VT100 reconstruction surfaced the final assistant screen without escape-code
   leakage.
-- Provider-native handoff is covered by a nested real-PTY regression: Left
+- Provider-native handoff is covered by a nested real-PTY regression: Shift+Left
   backgrounds the exact frontend, the dashboard regains its terminal, and a
-  second open restores the retained VT screen before another Left return.
+  second open restores the retained VT screen before another Shift+Left return.
   Main-account read-only probes repeated the cycle against a managed OpenCode
   session and a managed Codex thread; the OpenCode server and Codex App Server
   remained alive afterward.
 - Four opt-in real-host `openpty` regressions now preserve those reproductions:
-  nested Pi resume/return, completed Claude attach/Left return, and a
+  nested Pi resume/return, completed Claude attach/Shift+Left return, and a
   mutation-free composer route through Pi/Claude provider cycling,
   draft-preserving Shift+Tab Pi/Claude model selection, the dedicated filter,
   manual refresh, plus the six-harness/OpenCode/bounded-history route described

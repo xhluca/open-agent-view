@@ -141,13 +141,13 @@ The native setup surfaces are `claude auth login`, `codex login`, Pi's
 no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,
 `copilot login`, and Antigravity's first-run `agy` flow. OAV suspends its
 alternate screen before these commands and never reads or copies credentials.
-The setup/login UI always gets its own private terminal; Left backgrounds it as
+The setup/login UI always gets its own private terminal; Shift+Left backgrounds it as
 a visible Terminal row and Enter/Right resumes that exact screen. `/setup
 HARNESS` uses the same terminal for an installation check, confirmed official
 installer, and native login. It never attaches setup to the last agent session.
 
 Select `Terminal` (or `/harness terminal`) to create a plain interactive shell.
-The task text becomes the terminal's display name, not a command. Left returns
+The task text becomes the terminal's display name, not a command. Shift+Left returns
 to OAV, Enter/Right resumes, the first Ctrl+X stops it, and the second Ctrl+X
 deletes its completed row. These terminal frontends are process-local and are
 stopped when the dashboard itself exits.
@@ -351,7 +351,7 @@ label.
 | Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
 | Session row | `enter` or `→` | Suspend the dashboard and open the provider's full native interface. The physical screen is cleared before the provider draws. |
-| Provider-native interface | `←` | Stop and retain only the provider frontend, return to Open Agent View, and keep the managed backend alive. `enter` or `→` on the same row reattaches and restores its terminal screen. |
+| Provider-native interface | `shift+←` | Stop and retain only the provider frontend, return to Open Agent View, and keep the managed backend alive. Plain Left/Right remain available for editing. `enter` or `→` on the same row reattaches and restores its terminal screen. |
 | Inline Peek | `←` | Return to the session list without opening the native provider interface. |
 | Session row | `space` | Open the inline Peek panel and inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |

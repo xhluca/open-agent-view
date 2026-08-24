@@ -1,9 +1,10 @@
 //! Provider-neutral native-TUI handoff with a dashboard detach key.
 //!
-//! Interactive provider clients run behind a private pseudo-terminal. A plain
-//! Left arrow is reserved by Open Agent View: it suspends only that frontend,
-//! returns to the dashboard, and keeps the provider's managed backend alive.
-//! Selecting the same row resumes the exact stopped frontend and screen.
+//! Interactive provider clients run behind a private pseudo-terminal.
+//! Shift+Left suspends only that frontend, returns to the dashboard, and keeps
+//! the provider's managed backend alive. Plain Left and Right remain available
+//! to edit the provider's input line. Selecting the same row resumes the exact
+//! stopped frontend and screen.
 
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -56,7 +57,7 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
     Ok(NativeSessionExit::Exited(status))
 }
 
-/// Resume an exact frontend previously backgrounded with Left arrow. Unlike
+/// Resume an exact frontend previously backgrounded with Shift+Left. Unlike
 /// [`run`], this never starts a replacement command when the key is stale.
 pub fn resume(session_key: &str) -> Result<NativeSessionExit> {
     validate_session_key(session_key)?;
@@ -95,6 +96,20 @@ pub fn detached_session_keys() -> Vec<String> {
     }
     #[cfg(not(unix))]
     Vec::new()
+}
+
+/// Whether this process currently retains the exact provider frontend.
+pub fn is_backgrounded(session_key: &str) -> bool {
+    #[cfg(unix)]
+    {
+        return DETACHED
+            .get()
+            .and_then(|registry| registry.lock().ok())
+            .map(|registry| registry.contains_key(session_key))
+            .unwrap_or(false);
+    }
+    #[cfg(not(unix))]
+    false
 }
 
 /// Stop one exact background frontend owned by this process.
@@ -562,7 +577,7 @@ impl DetachParser {
         let mut forward = Vec::with_capacity(bytes.len());
         let mut index = 0;
         while index < bytes.len() {
-            if bytes[index..].starts_with(b"\x1b[D") || bytes[index..].starts_with(b"\x1bOD") {
+            if bytes[index..].starts_with(b"\x1b[1;2D") {
                 return ParsedInput {
                     forward,
                     detach: true,
@@ -604,26 +619,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn detach_parser_handles_fragmented_normal_and_application_left_sequences() {
+    fn detach_parser_handles_fragmented_shift_left_sequences() {
         let mut parser = DetachParser::default();
         let first = parser.push(b"hello\x1b");
         assert_eq!(first.forward, b"hello");
         assert!(!first.detach);
-        let second = parser.push(b"[Dignored");
+        let second = parser.push(b"[1;2Dignored");
         assert!(second.forward.is_empty());
         assert!(second.detach);
-
-        let mut parser = DetachParser::default();
-        let parsed = parser.push(b"\x1bOD");
-        assert!(parsed.detach);
-        assert!(parsed.forward.is_empty());
     }
 
     #[test]
-    fn detach_parser_forwards_other_arrows_and_plain_text_exactly() {
+    fn detach_parser_forwards_plain_and_application_arrows_and_text_exactly() {
         let mut parser = DetachParser::default();
-        let parsed = parser.push(b"abc\x1b[A\x1b[C");
-        assert_eq!(parsed.forward, b"abc\x1b[A\x1b[C");
+        let parsed = parser.push(b"abc\x1b[A\x1b[D\x1bOD\x1b[C\x1b[1;2C");
+        assert_eq!(parsed.forward, b"abc\x1b[A\x1b[D\x1bOD\x1b[C\x1b[1;2C");
         assert!(!parsed.detach);
     }
 }

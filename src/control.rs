@@ -94,7 +94,7 @@ pub trait ProviderController: Send + Sync {
 
     /// Run the provider's own login UI in an isolated provider-native PTY.
     /// The dashboard suspends raw/alternate-screen mode before calling this;
-    /// Left backgrounds the setup UI without colliding with another session.
+    /// Shift+Left backgrounds the setup UI without colliding with another session.
     fn authenticate(&self) -> Result<ControlOutcome> {
         bail!(
             "{} does not expose interactive login",

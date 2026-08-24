@@ -167,16 +167,58 @@ impl OpenCodeSupervisor {
     /// server. Read-only discovery never starts a server as a side effect.
     pub fn list(&self) -> Result<Vec<ManagedOpenCodeSession>> {
         let _lock = StateLock::acquire(&self.lock_path)?;
-        let Some(record) = self.live_record_locked()? else {
+        let Some(mut record) = self.live_record_locked()? else {
             return Ok(Vec::new());
         };
         let mut statuses_by_directory = BTreeMap::new();
+        let mut sessions_by_directory = BTreeMap::new();
         for owned in record.sessions.values() {
             if !statuses_by_directory.contains_key(&owned.cwd) {
                 let path = with_directory_query("/session/status", &owned.cwd);
                 let statuses = self.request_json(&record, "GET", &path, None)?;
                 statuses_by_directory.insert(owned.cwd.clone(), statuses);
+
+                let path = with_directory_query("/session", &owned.cwd);
+                let sessions = self.request_json(&record, "GET", &path, None)?;
+                sessions_by_directory.insert(owned.cwd.clone(), sessions);
             }
+        }
+        let mut refreshed = BTreeMap::new();
+        for owned in record.sessions.values() {
+            let Some((title, updated_at_ms)) = provider_session_metadata(
+                sessions_by_directory
+                    .get(&owned.cwd)
+                    .expect("sessions were fetched for each owned directory"),
+                &owned.id,
+            )?
+            else {
+                continue;
+            };
+            if updated_at_ms <= owned.updated_at_ms && title == owned.title {
+                continue;
+            }
+            let path = with_directory_query(
+                &format!("/session/{}/message", url_path_segment(&owned.id)),
+                &owned.cwd,
+            );
+            let summary = self
+                .request_json(&record, "GET", &path, None)
+                .ok()
+                .and_then(|messages| latest_assistant_summary(&messages));
+            refreshed.insert(owned.id.clone(), (title, summary, updated_at_ms));
+        }
+        if !refreshed.is_empty() {
+            for (id, (title, summary, updated_at_ms)) in refreshed {
+                let Some(owned) = record.sessions.get_mut(&id) else {
+                    continue;
+                };
+                owned.title = title;
+                if let Some(summary) = summary {
+                    owned.summary = summary;
+                }
+                owned.updated_at_ms = updated_at_ms;
+            }
+            save_record(&self.record_path, &record)?;
         }
         Ok(record
             .sessions
@@ -705,6 +747,59 @@ fn render_messages(value: &Value) -> Result<String> {
     Ok(limit_chars(transcript, 32 * 1024))
 }
 
+fn provider_session_metadata(value: &Value, session_id: &str) -> Result<Option<(String, u64)>> {
+    let sessions = value
+        .as_array()
+        .context("OpenCode session endpoint did not return an array")?;
+    let Some(session) = sessions
+        .iter()
+        .find(|session| session.get("id").and_then(Value::as_str) == Some(session_id))
+    else {
+        return Ok(None);
+    };
+    let title = session
+        .get("title")
+        .and_then(Value::as_str)
+        .context("OpenCode session omitted its title")?;
+    let updated_at_ms = session
+        .pointer("/time/updated")
+        .and_then(Value::as_u64)
+        .context("OpenCode session omitted its updated time")?;
+    Ok(Some((title.to_owned(), updated_at_ms)))
+}
+
+fn latest_assistant_summary(value: &Value) -> Option<String> {
+    let messages = value.as_array()?;
+    messages
+        .iter()
+        .filter(|message| {
+            message.pointer("/info/role").and_then(Value::as_str) == Some("assistant")
+        })
+        .filter_map(|message| {
+            let text = message
+                .get("parts")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|part| part.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|part| part.get("text").and_then(Value::as_str))
+                .collect::<Vec<_>>()
+                .join("\n");
+            let text = text.trim();
+            (!text.is_empty()).then(|| {
+                let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                if normalized.chars().count() <= 160 {
+                    normalized
+                } else {
+                    let mut summary = normalized.chars().take(159).collect::<String>();
+                    summary.push('…');
+                    summary
+                }
+            })
+        })
+        .last()
+}
+
 fn capitalize(value: &str) -> String {
     let mut chars = value.chars();
     chars
@@ -1210,6 +1305,31 @@ mod tests {
         assert_eq!(
             render_messages(&value).unwrap(),
             "User: Build\n\nAssistant: Done"
+        );
+    }
+
+    #[test]
+    fn extracts_current_provider_metadata_and_latest_assistant_summary() {
+        let sessions = json!([
+            {"id":"other","title":"other","time":{"updated":2}},
+            {"id":"ses_owned","title":"renamed task","time":{"updated":42}}
+        ]);
+        assert_eq!(
+            provider_session_metadata(&sessions, "ses_owned").unwrap(),
+            Some(("renamed task".into(), 42))
+        );
+        let messages = json!([
+            {"info":{"role":"assistant"},"parts":[{"type":"text","text":"old answer"}]},
+            {"info":{"role":"user"},"parts":[{"type":"text","text":"new question"}]},
+            {"info":{"role":"assistant"},"parts":[
+                {"type":"text","text":"  latest"},
+                {"type":"tool"},
+                {"type":"text","text":"answer  "}
+            ]}
+        ]);
+        assert_eq!(
+            latest_assistant_summary(&messages).as_deref(),
+            Some("latest answer")
         );
     }
 

@@ -26,6 +26,9 @@ struct ManagedCopilotSession {
     transcript: String,
     active_prompt: Option<u64>,
     permission: Option<CopilotPermissionRequest>,
+    /// True only while this supervisor's exact ACP connection owns the
+    /// session. Native resume requires releasing that connection first.
+    connection_owned: bool,
     started_at: SystemTime,
     updated_at: SystemTime,
 }
@@ -117,6 +120,7 @@ impl CopilotSupervisor {
                 transcript: String::new(),
                 active_prompt: None,
                 permission: None,
+                connection_owned: true,
                 started_at: now,
                 updated_at: now,
             },
@@ -138,31 +142,81 @@ impl CopilotSupervisor {
         require_copilot_host(session)?;
         let mut state = self.lock_state()?;
         state.ensure_connection(&self.executable)?;
-        if state.sessions.contains_key(&session.provider_session_id) {
+        if state
+            .sessions
+            .get(&session.provider_session_id)
+            .map(|managed| managed.connection_owned)
+            .unwrap_or(false)
+        {
             return Ok(());
         }
+        let cwd = state
+            .sessions
+            .get(&session.provider_session_id)
+            .map(|managed| managed.cwd.clone())
+            .unwrap_or_else(|| session.cwd.clone());
         let request_id = state
             .connection_mut()?
-            .begin_load_session(&session.provider_session_id, &session.cwd)?;
+            .begin_load_session(&session.provider_session_id, &cwd)?;
         state
             .connection_mut()?
             .wait_for_response(request_id, RESPONSE_TIMEOUT)?;
         let now = SystemTime::now();
-        state.sessions.insert(
-            session.provider_session_id.clone(),
-            ManagedCopilotSession {
-                session_id: session.provider_session_id.clone(),
-                cwd: session.cwd.clone(),
-                name: session.name.clone(),
-                state: SessionState::NeedsInput,
-                summary: "Loaded on Open Agent View's Copilot ACP connection".into(),
-                transcript: String::new(),
-                active_prompt: None,
-                permission: None,
-                started_at: session.started_at.unwrap_or(now),
-                updated_at: now,
-            },
-        );
+        if let Some(managed) = state.sessions.get_mut(&session.provider_session_id) {
+            managed.connection_owned = true;
+            managed.state = SessionState::NeedsInput;
+            managed.summary = "Returned to Open Agent View's Copilot connection".into();
+            managed.updated_at = now;
+        } else {
+            state.sessions.insert(
+                session.provider_session_id.clone(),
+                ManagedCopilotSession {
+                    session_id: session.provider_session_id.clone(),
+                    cwd,
+                    name: session.name.clone(),
+                    state: SessionState::NeedsInput,
+                    summary: "Loaded on Open Agent View's Copilot ACP connection".into(),
+                    transcript: String::new(),
+                    active_prompt: None,
+                    permission: None,
+                    connection_owned: true,
+                    started_at: session.started_at.unwrap_or(now),
+                    updated_at: now,
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Release an idle managed session from the retained ACP connection so a
+    /// provider-native frontend can resume it without two concurrent owners.
+    pub fn release_for_native(&self, session: &AgentSession) -> Result<()> {
+        let mut state = self.lock_state()?;
+        state.drain()?;
+        {
+            let managed = state.require_owned(session)?;
+            if managed.active_prompt.is_some() || managed.permission.is_some() {
+                bail!(
+                    "finish, decline, or cancel the active Copilot request before opening it natively"
+                );
+            }
+        }
+        let request_id = state
+            .connection_mut()?
+            .begin_close_session(&session.provider_session_id)?;
+        state
+            .connection_mut()?
+            .wait_for_response(request_id, RESPONSE_TIMEOUT)
+            .context("Copilot ACP could not release the session for native resume")?;
+        let managed = state
+            .sessions
+            .get_mut(&session.provider_session_id)
+            .expect("ownership checked");
+        managed.connection_owned = false;
+        managed.active_prompt = None;
+        managed.permission = None;
+        managed.state = SessionState::Completed;
+        managed.updated_at = SystemTime::now();
         Ok(())
     }
 
@@ -201,7 +255,7 @@ impl CopilotSupervisor {
     pub fn inspect(&self, session: &AgentSession) -> Result<String> {
         let mut state = self.lock_state()?;
         state.drain()?;
-        let managed = state.require_owned(session)?;
+        let managed = state.require_tracked(session)?;
         if managed.transcript.trim().is_empty() {
             Ok(managed.summary.clone())
         } else {
@@ -297,14 +351,39 @@ impl CopilotSupervisor {
             .map(|state| {
                 session.provider == Provider::GitHubCopilot
                     && session.runtime == Runtime::Host
-                    && state.sessions.contains_key(&session.provider_session_id)
+                    && state
+                        .sessions
+                        .get(&session.provider_session_id)
+                        .map(|managed| managed.connection_owned && managed.cwd == session.cwd)
+                        .unwrap_or(false)
+            })
+            .unwrap_or(false)
+    }
+
+    /// Whether this is an OAV-created/loaded record, including while its ACP
+    /// ownership is temporarily released to a native frontend.
+    pub fn tracks(&self, session: &AgentSession) -> bool {
+        self.state
+            .lock()
+            .map(|state| {
+                session.provider == Provider::GitHubCopilot
+                    && session.runtime == Runtime::Host
+                    && state
+                        .sessions
+                        .get(&session.provider_session_id)
+                        .map(|managed| managed.cwd == session.cwd)
+                        .unwrap_or(false)
             })
             .unwrap_or(false)
     }
 
     pub fn reset_unowned_connection_after_authentication(&self) -> Result<()> {
         let mut state = self.lock_state()?;
-        if state.sessions.is_empty() {
+        if !state
+            .sessions
+            .values()
+            .any(|session| session.connection_owned)
+        {
             state.connection = None;
         }
         Ok(())
@@ -366,6 +445,14 @@ impl CopilotManagedState {
     }
 
     fn require_owned(&self, session: &AgentSession) -> Result<&ManagedCopilotSession> {
+        let managed = self.require_tracked(session)?;
+        if !managed.connection_owned {
+            bail!("Copilot session is currently attached to its native frontend");
+        }
+        Ok(managed)
+    }
+
+    fn require_tracked(&self, session: &AgentSession) -> Result<&ManagedCopilotSession> {
         require_copilot_host(session)?;
         let managed = self
             .sessions
@@ -389,11 +476,18 @@ impl CopilotManagedState {
             match message {
                 CopilotAcpMessage::SessionUpdate { session_id, update } => {
                     if let Some(session) = self.sessions.get_mut(&session_id) {
-                        apply_session_update(session, &update);
+                        if session.connection_owned {
+                            apply_session_update(session, &update);
+                        }
                     }
                 }
                 CopilotAcpMessage::PermissionRequest(request) => {
                     if let Some(session) = self.sessions.get_mut(&request.session_id) {
+                        if !session.connection_owned {
+                            self.connection_mut()?
+                                .respond_permission_cancelled(&request.request_id)?;
+                            continue;
+                        }
                         if session.permission.is_some() {
                             self.connection_mut()?
                                 .respond_permission_cancelled(&request.request_id)?;
@@ -464,7 +558,10 @@ impl CopilotManagedState {
 
 fn normalize_managed(session: &ManagedCopilotSession) -> AgentSession {
     let mut capabilities = BTreeSet::from([Capability::Inspect]);
-    if session.active_prompt.is_some() {
+    if !session.connection_owned {
+        // Opening remains available through the controller's ungated native
+        // path. Inline capabilities belong only to the exact ACP owner.
+    } else if session.active_prompt.is_some() {
         capabilities.insert(Capability::Interrupt);
     } else if session.permission.is_none() {
         capabilities.insert(Capability::Reply);
@@ -497,7 +594,9 @@ fn normalize_managed(session: &ManagedCopilotSession) -> AgentSession {
         cwd: session.cwd.clone(),
         state: session.state,
         summary: session.summary.clone(),
-        raw_state: Some(if session.permission.is_some() {
+        raw_state: Some(if !session.connection_owned {
+            "native".into()
+        } else if session.permission.is_some() {
             "awaiting_permission".into()
         } else if session.active_prompt.is_some() {
             "working".into()

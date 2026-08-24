@@ -740,29 +740,58 @@ impl ProviderController for CopilotController {
         if session.provider != Provider::GitHubCopilot || session.runtime != Runtime::Host {
             bail!("the GitHub Copilot host controller cannot open this session");
         }
-        if self
+        let tracked = self
             .supervisor
             .as_ref()
-            .map(|supervisor| supervisor.owns(session))
-            .unwrap_or(false)
-        {
-            bail!("a connection-owned Copilot session cannot be opened concurrently");
+            .map(|supervisor| supervisor.tracks(session))
+            .unwrap_or(false);
+        if let Some(supervisor) = &self.supervisor {
+            if supervisor.owns(session) {
+                supervisor.release_for_native(session)?;
+            }
         }
         let spec = self
             .invocation
             .resume(&session.provider_session_id, &session.cwd)?;
-        match crate::native_session::run(spec.command(), &session.id)? {
-            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+        let native_result = crate::native_session::run(spec.command(), &session.id);
+        let reclaim = |supervisor: &Arc<CopilotSupervisor>| {
+            supervisor
+                .load(session)
+                .context("could not return the Copilot session to inline control")
+        };
+        match native_result {
+            Err(error) => {
+                if tracked {
+                    if let Some(supervisor) = &self.supervisor {
+                        if let Err(reclaim_error) = reclaim(supervisor) {
+                            return Err(error)
+                                .context(format!("native Copilot open failed; {reclaim_error:#}"));
+                        }
+                    }
+                }
+                Err(error)
+            }
+            Ok(crate::native_session::NativeSessionExit::Backgrounded) => Ok(ControlOutcome {
                 message: format!("backgrounded {}; Enter/Right resumes it", session.name),
                 provider_session_hint: Some(session.provider_session_id.clone()),
             }),
-            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+            Ok(crate::native_session::NativeSessionExit::Exited(status)) if status.success() => {
+                if tracked {
+                    if let Some(supervisor) = &self.supervisor {
+                        reclaim(supervisor)?;
+                    }
+                }
                 Ok(ControlOutcome {
                     message: format!("returned from {}", session.name),
                     provider_session_hint: None,
                 })
             }
-            crate::native_session::NativeSessionExit::Exited(status) => {
+            Ok(crate::native_session::NativeSessionExit::Exited(status)) => {
+                if tracked {
+                    if let Some(supervisor) = &self.supervisor {
+                        let _ = reclaim(supervisor);
+                    }
+                }
                 bail!("GitHub Copilot session exited with status {status}")
             }
         }

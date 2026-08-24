@@ -13,7 +13,7 @@ use open_agent_view::native_session::{self, NativeSessionExit};
 const CHILD_ENV: &str = "OAV_NATIVE_BACKGROUND_CHILD";
 
 #[test]
-fn left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
+fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
     if std::env::var_os(CHILD_ENV).is_some() {
         run_child_scenario();
         return;
@@ -25,7 +25,7 @@ fn left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
     command
         .args([
             "--exact",
-            "left_backgrounds_and_enter_style_reattach_restores_the_native_screen",
+            "shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen",
             "--nocapture",
         ])
         .env(CHILD_ENV, "1")
@@ -52,7 +52,11 @@ fn left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
         b"NATIVE_READY",
         Duration::from_secs(4),
     );
-    master.write_all(b"\x1b[D").unwrap();
+    // Plain arrows must reach the provider so users can edit its input line.
+    master.write_all(b"\x1b[D\x1b[C").unwrap();
+    thread::sleep(Duration::from_millis(50));
+    assert_eq!(occurrence_count(&output, b"DASHBOARD_RETURNED"), 0);
+    master.write_all(b"\x1b[1;2D").unwrap();
     read_until(
         &mut master,
         &mut output,
@@ -67,7 +71,7 @@ fn left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
             Duration::from_secs(4),
         );
     }
-    master.write_all(b"\x1b[D").unwrap();
+    master.write_all(b"\x1b[1;2D").unwrap();
     read_until(
         &mut master,
         &mut output,

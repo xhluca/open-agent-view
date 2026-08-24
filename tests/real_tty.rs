@@ -18,7 +18,7 @@ const ESC: &[u8] = b"\x1b";
 const ENTER: &[u8] = b"\r";
 const UP: &[u8] = b"\x1b[A";
 const DOWN: &[u8] = b"\x1b[B";
-const LEFT: &[u8] = b"\x1b[D";
+const SHIFT_LEFT: &[u8] = b"\x1b[1;2D";
 const SHIFT_TAB: &[u8] = b"\x1b[Z";
 const CTRL_A: &[u8] = b"\x01";
 const CTRL_F: &[u8] = b"\x06";
@@ -784,7 +784,7 @@ fn terminal_harness_backgrounds_resumes_stops_then_deletes_in_a_real_pty() {
     app.wait_for("foreground Terminal shell", |screen| {
         screen.contains("TERMINAL_HARNESS_READY")
     });
-    app.send(LEFT);
+    app.send(SHIFT_LEFT);
     app.wait_for("backgrounded Terminal row", |screen| {
         screen.contains("release shell")
             && screen.contains("Terminal")
@@ -795,7 +795,7 @@ fn terminal_harness_backgrounds_resumes_stops_then_deletes_in_a_real_pty() {
     app.wait_for("exact Terminal screen replay", |screen| {
         screen.contains("TERMINAL_HARNESS_READY")
     });
-    app.send(LEFT);
+    app.send(SHIFT_LEFT);
     app.wait_for("second Terminal background", |screen| {
         screen.contains("release shell") && screen.contains("backgrounded terminal release shell")
     });
@@ -841,8 +841,8 @@ case "${1:-}" in
     ;;
   *)
     printf '%s\n' "$*" > "$HOME/cursor-launch-arguments"
-    printf '%s\n' '{"type":"system","subtype":"init","cwd":"/work","session_id":"cursor-auth-session","model":"claude-sonnet-4.6"}'
-    printf '%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"finished","session_id":"cursor-auth-session"}'
+    printf '%s\n' 'CURSOR NATIVE FOREGROUND'
+    IFS= read -r answer
     ;;
 esac
 "##,
@@ -897,7 +897,7 @@ esac
         !login.contains("Open Agent View"),
         "Cursor login was painted over the dashboard instead of receiving an isolated screen"
     );
-    app.send(LEFT);
+    app.send(SHIFT_LEFT);
     app.wait_for(
         "Cursor login backgrounds to its actionable model picker",
         |screen| {
@@ -927,8 +927,13 @@ esac
     app.wait_for("animated slow Cursor launch", |screen| {
         screen.contains("launching Cursor")
     });
+    app.wait_for("Cursor native foreground after allocation", |screen| {
+        screen.contains("CURSOR NATIVE FOREGROUND") && !screen.contains("Open Agent View")
+    });
+    app.send(SHIFT_LEFT);
     app.wait_for("new managed Cursor row after launch", |screen| {
-        screen.contains("cursor-auth-session")
+        screen.contains("cursor login task")
+            && screen.contains("Cursor native session is backgrounded")
     });
     let arguments = fs::read_to_string(app.home_path().join("cursor-launch-arguments"))
         .expect("read fake Cursor launch arguments");
@@ -992,7 +997,7 @@ printf '%s\n' 'backgrounded · deadbeef'
         screen.contains("CLAUDE FULL SCREEN ATTACH")
     });
     let enters_before = count_bytes(&app.raw, b"\x1b[?1049h");
-    app.send(LEFT);
+    app.send(SHIFT_LEFT);
     app.wait_for_byte_count(
         b"\x1b[?1049h",
         enters_before + 1,
@@ -1200,7 +1205,7 @@ while :; do sleep 1; done
     app.wait_for("Antigravity full-screen launch", |screen| {
         screen.contains("ANTIGRAVITY FULL SCREEN SESSION")
     });
-    app.send(LEFT);
+    app.send(SHIFT_LEFT);
     let returned = app.wait_for("owned Antigravity row after Left", |screen| {
         screen.contains("Open Agent View")
             && screen.contains("antigravity-workspace")
@@ -1551,7 +1556,7 @@ fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
 
 #[test]
 #[ignore = "set OAV_REAL_CLAUDE_HOME, OAV_REAL_CLAUDE_CWD, and OAV_REAL_CLAUDE_SESSION_NAME for a read-only host probe"]
-fn real_claude_attach_explains_and_honors_left_background_return() {
+fn real_claude_attach_explains_and_honors_shift_left_background_return() {
     let _serial = serialize_real_tty_test();
     let claude_home = std::env::var("OAV_REAL_CLAUDE_HOME")
         .expect("OAV_REAL_CLAUDE_HOME must contain the provider state");
@@ -1583,7 +1588,7 @@ fn real_claude_attach_explains_and_honors_left_background_return() {
     app.send(session_name.as_bytes());
     app.send(ENTER);
     app.wait_for("filtered real Claude row", |screen| {
-        screen.contains(&session_name) && screen.contains("enter/right open · ← returns")
+        screen.contains(&session_name) && screen.contains("enter/right open · shift+← returns")
     });
 
     let raw_before_open = app.raw.len();
@@ -1596,11 +1601,11 @@ fn real_claude_attach_explains_and_honors_left_background_return() {
         "dashboard suspension for real Claude",
     );
     thread::sleep(Duration::from_millis(1_000));
-    app.send(b"\x1b[D");
+    app.send(SHIFT_LEFT);
     app.wait_for_byte_count(
         b"\x1b[?1049h",
         enters_before + 1,
-        "dashboard restoration after Claude Left",
+        "dashboard restoration after Claude Shift+Left",
     );
     app.wait_for("returned Open Agent View after Claude", |screen| {
         screen.contains("Open Agent View") && screen.contains(&session_name)

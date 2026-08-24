@@ -234,7 +234,7 @@ fn read_threads(
         .map(|thread_id| {
             let response = transport.request(
                 "thread/read",
-                json!({"threadId": thread_id, "includeTurns": false}),
+                json!({"threadId": thread_id, "includeTurns": true}),
             )?;
             parse_codex_thread_read(&response, runtime.clone())
         })
@@ -282,6 +282,8 @@ struct CodexThread {
     name: Option<String>,
     status: Value,
     source: Value,
+    #[serde(default)]
+    turns: Vec<Value>,
 }
 
 pub struct CodexThreadPage {
@@ -315,6 +317,15 @@ fn parse_codex_thread_read(input: &Value, runtime: Runtime) -> Result<AgentSessi
 }
 
 fn normalize_thread(thread: CodexThread, runtime: Runtime) -> AgentSession {
+    let latest_summary =
+        latest_agent_message(&thread.turns).unwrap_or_else(|| thread.preview.clone());
+    // Some App Server releases leave thread.updatedAt at the first turn even
+    // though thread/read returns newer turns. Turn completion/start timestamps
+    // are provider data and provide the accurate recency without parsing
+    // Codex's private rollout files or SQLite schema.
+    let updated_at = latest_turn_timestamp(&thread.turns)
+        .unwrap_or(thread.updated_at)
+        .max(thread.updated_at);
     let raw_state = thread
         .status
         .get("type")
@@ -369,14 +380,43 @@ fn normalize_thread(thread: CodexThread, runtime: Runtime) -> AgentSession {
         name,
         cwd: thread.cwd,
         state,
-        summary: thread.preview,
+        summary: latest_summary,
         raw_state: Some(raw_state),
         pid: None,
         started_at: unix_seconds(thread.created_at),
-        updated_at: unix_seconds(thread.updated_at),
+        updated_at: unix_seconds(updated_at),
         pull_requests: None,
         capabilities,
     }
+}
+
+fn latest_agent_message(turns: &[Value]) -> Option<String> {
+    turns
+        .iter()
+        .rev()
+        .filter_map(|turn| turn.get("items").and_then(Value::as_array))
+        .flat_map(|items| items.iter().rev())
+        .find_map(|item| {
+            (item.get("type").and_then(Value::as_str) == Some("agentMessage"))
+                .then(|| item.get("text").and_then(Value::as_str))
+                .flatten()
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+                .map(|text| truncate_words(text, 160))
+        })
+}
+
+fn latest_turn_timestamp(turns: &[Value]) -> Option<i64> {
+    turns
+        .iter()
+        .flat_map(|turn| {
+            [
+                turn.get("completedAt").and_then(Value::as_i64),
+                turn.get("startedAt").and_then(Value::as_i64),
+            ]
+        })
+        .flatten()
+        .max()
 }
 
 fn map_status(status: &Value) -> SessionState {
@@ -527,16 +567,76 @@ for line in sys.stdin:
                 "preview": "managed task",
                 "name": null,
                 "status": {"type": "active", "activeFlags": []},
-                "source": {"type": "cli"}
+                "source": {"type": "cli"},
+                "turns": [{"items": [
+                    {"type": "userMessage", "content": [{"type": "text", "text": "managed task"}]},
+                    {"type": "agentMessage", "text": "The current answer replaces the launch preview"}
+                ]}]
             }
         });
         let parsed = parse_codex_thread_read(&response, Runtime::Host).unwrap();
         assert_eq!(parsed.kind, SessionKind::Interactive);
+        assert_eq!(
+            parsed.summary,
+            "The current answer replaces the launch preview"
+        );
 
         let managed = mark_managed_threads(vec![parsed]);
 
         assert_eq!(managed[0].kind, SessionKind::Background);
         assert_eq!(managed[0].provider_session_id, "owned-thread");
+    }
+
+    #[test]
+    fn thread_read_uses_the_latest_nonempty_agent_message_with_preview_fallback() {
+        let response = json!({
+            "thread": {
+                "id": "owned-thread",
+                "cwd": "/work",
+                "createdAt": 1,
+                "updatedAt": 9,
+                "preview": "hello",
+                "name": "model-training",
+                "status": {"type": "idle"},
+                "source": {"type": "appServer"},
+                "turns": [
+                    {"startedAt": 8, "completedAt": 10, "items": [{"type": "agentMessage", "text": "first answer"}]},
+                    {"items": [
+                        {"type": "userMessage", "content": [{"type": "text", "text": "new question"}]},
+                        {"type": "agentMessage", "text": "  latest answer  "}
+                    ], "startedAt": 11, "completedAt": 15}
+                ]
+            }
+        });
+        let session = parse_codex_thread_read(&response, Runtime::Host).unwrap();
+        assert_eq!(session.summary, "latest answer");
+        assert_eq!(
+            session
+                .updated_at
+                .unwrap()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap(),
+            Duration::from_secs(15)
+        );
+
+        let listed = parse_codex_thread_list(
+            &json!({
+                "data": [{
+                    "id": "history",
+                    "cwd": "/work",
+                    "createdAt": 1,
+                    "updatedAt": 2,
+                    "preview": "history preview",
+                    "name": null,
+                    "status": {"type": "idle"},
+                    "source": {"type": "cli"}
+                }],
+                "nextCursor": null
+            }),
+            Runtime::Host,
+        )
+        .unwrap();
+        assert_eq!(listed.sessions[0].summary, "history preview");
     }
 
     #[cfg(unix)]

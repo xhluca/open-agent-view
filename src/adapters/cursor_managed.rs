@@ -5,7 +5,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -47,7 +47,8 @@ struct OwnedCursorSession {
     updated_at_ms: u64,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
-    process: CursorProcessIdentity,
+    #[serde(default)]
+    process: Option<CursorProcessIdentity>,
     #[serde(default)]
     model: Option<String>,
 }
@@ -86,6 +87,9 @@ pub struct CursorSupervisor {
     lock_path: PathBuf,
     invocation: CursorInvocation,
     runner: Arc<dyn CommandRunner>,
+    /// Initial foreground prompts are process-local and are never written to
+    /// the ownership registry or provider logs by OAV.
+    pending_native: Mutex<BTreeMap<String, (String, Option<String>)>>,
 }
 
 impl CursorSupervisor {
@@ -105,6 +109,7 @@ impl CursorSupervisor {
             lock_path: state_dir.join("sessions.lock"),
             state_dir,
             runner: Arc::new(ProcessRunner),
+            pending_native: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -156,6 +161,114 @@ impl CursorSupervisor {
         Ok(session_id)
     }
 
+    /// Allocate and persist an exact Cursor chat without starting a detached
+    /// print-mode worker. The controller immediately resumes this ID in the
+    /// foreground native interface.
+    pub fn allocate_chat_with_model(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<String> {
+        require_process_identity_support()?;
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            bail!("the Cursor launch prompt cannot be empty");
+        }
+        require_absolute_workspace(cwd)?;
+        let available_models = self.available_models()?;
+        if let Some(model) = model {
+            if !available_models.iter().any(|candidate| candidate == model) {
+                bail!("Cursor model `{model}` is not available to the authenticated account");
+            }
+        }
+        let spec = self.invocation.create_chat(cwd)?;
+        let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
+        request.current_dir = Some(spec.current_dir);
+        request.timeout = CREATE_TIMEOUT;
+        let output = self.run_command(&request).with_context(|| {
+            format!(
+                "Cursor create-chat did not complete; sign in before retrying (configured executable: {})",
+                self.executable
+            )
+        })?;
+        if output.status != 0 {
+            bail!(
+                "Cursor create-chat exited with status {}: {}",
+                output.status,
+                output.stderr_lossy()
+            );
+        }
+        let session_id = parse_cursor_chat_id(output.stdout_text()?)?;
+        let stdout_path = self
+            .state_dir
+            .join("logs")
+            .join(format!("{session_id}.ndjson"));
+        let stderr_path = self
+            .state_dir
+            .join("logs")
+            .join(format!("{session_id}.stderr.log"));
+        drop(private_append_file(&stdout_path)?);
+        drop(private_append_file(&stderr_path)?);
+        let now = now_millis();
+        let record = OwnedCursorSession {
+            session_id: session_id.clone(),
+            cwd: cwd.to_owned(),
+            name: prompt_name(prompt),
+            created_at_ms: now,
+            updated_at_ms: now,
+            stdout_path,
+            stderr_path,
+            process: None,
+            model: model.map(str::to_owned),
+        };
+        self.with_locked_registry(|registry| {
+            if registry.sessions.contains_key(&session_id) {
+                bail!("Cursor create-chat returned an already-owned session ID");
+            }
+            registry.sessions.insert(session_id.clone(), record);
+            Ok(())
+        })?;
+        self.pending_native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
+            .insert(
+                session_id.clone(),
+                (prompt.to_owned(), model.map(str::to_owned)),
+            );
+        Ok(session_id)
+    }
+
+    pub fn mark_native_opened(&self, session_id: &str) -> Result<()> {
+        require_safe_session_id(session_id)?;
+        self.with_locked_registry(|registry| {
+            let record = registry
+                .sessions
+                .get_mut(session_id)
+                .with_context(|| format!("Cursor session {session_id} is not owned"))?;
+            record.updated_at_ms = now_millis();
+            Ok(())
+        })?;
+        self.pending_native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
+            .remove(session_id);
+        Ok(())
+    }
+
+    pub fn pending_native_launch(
+        &self,
+        session: &AgentSession,
+    ) -> Result<Option<(String, Option<String>)>> {
+        self.require_owned_host(session)?;
+        Ok(self
+            .pending_native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
+            .get(&session.provider_session_id)
+            .cloned())
+    }
+
     pub fn available_models(&self) -> Result<Vec<String>> {
         let mut request =
             crate::process::CommandRequest::new(self.executable.clone(), vec!["models".into()]);
@@ -203,7 +316,21 @@ impl CursorSupervisor {
             bail!("the Cursor reply cannot be empty");
         }
         let record = self.lookup(&session.provider_session_id)?;
-        if verify_process(&record.process)? {
+        if self
+            .pending_native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
+            .contains_key(&session.provider_session_id)
+        {
+            bail!("open the new Cursor session before sending an inline reply");
+        }
+        if record
+            .process
+            .as_ref()
+            .map(verify_process)
+            .transpose()?
+            .unwrap_or(false)
+        {
             bail!("Cursor session is still working and has no documented live-steer API");
         }
         self.spawn_turn(
@@ -218,7 +345,11 @@ impl CursorSupervisor {
     pub fn interrupt(&self, session: &AgentSession) -> Result<()> {
         self.require_owned_host(session)?;
         let record = self.lookup(&session.provider_session_id)?;
-        signal_verified_process(&record.process, libc::SIGINT)
+        let process = record
+            .process
+            .as_ref()
+            .context("Cursor session has no active owned process to interrupt")?;
+        signal_verified_process(process, libc::SIGINT)
             .context("failed to interrupt the exact owned Cursor process")
     }
 
@@ -245,17 +376,42 @@ impl CursorSupervisor {
     pub fn is_running(&self, session: &AgentSession) -> Result<bool> {
         self.require_owned_host(session)?;
         let record = self.lookup(&session.provider_session_id)?;
-        verify_process(&record.process)
+        record
+            .process
+            .as_ref()
+            .map(verify_process)
+            .transpose()
+            .map(|running| running.unwrap_or(false))
     }
 
     pub fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
         let registry = self.with_locked_registry(|registry| Ok(registry.clone()))?;
+        let pending_native = self
+            .pending_native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
+            .keys()
+            .cloned()
+            .collect::<BTreeSet<_>>();
         let mut sessions = Vec::with_capacity(registry.sessions.len());
         for record in registry.sessions.into_values() {
-            let running = verify_process(&record.process)?;
+            let running = record
+                .process
+                .as_ref()
+                .map(verify_process)
+                .transpose()?
+                .unwrap_or(false);
+            let native_backgrounded = crate::native_session::is_backgrounded(&format!(
+                "cursor:host:{}",
+                record.session_id
+            ));
             let log = read_cursor_log(&record.stdout_path)?;
-            let (state, raw_state) = if running {
+            let (state, raw_state) = if native_backgrounded {
+                (SessionState::NeedsInput, "native_backgrounded")
+            } else if running {
                 (SessionState::Working, "working")
+            } else if record.process.is_none() {
+                (SessionState::Completed, "native_idle")
             } else {
                 match log.terminal_result {
                     Some(false) => (SessionState::Completed, "completed"),
@@ -275,9 +431,12 @@ impl CursorSupervisor {
                 continue;
             }
             let mut capabilities = BTreeSet::from([Capability::Inspect]);
-            if running {
+            if native_backgrounded {
+                // Enter/Right resumes the exact retained native PTY. Inline
+                // reply would create a concurrent provider frontend.
+            } else if running {
                 capabilities.insert(Capability::Interrupt);
-            } else {
+            } else if !pending_native.contains(&record.session_id) {
                 capabilities.insert(Capability::Reply);
             }
             sessions.push(AgentSession {
@@ -289,9 +448,14 @@ impl CursorSupervisor {
                 name: record.name,
                 cwd: record.cwd,
                 state,
-                summary: if log.summary.is_empty() {
+                summary: if native_backgrounded {
+                    "Cursor native session is backgrounded".into()
+                } else if log.summary.is_empty() {
                     match state {
                         SessionState::Working => "Cursor agent is working".into(),
+                        SessionState::Completed if record.process.is_none() => {
+                            "Cursor native session is ready".into()
+                        }
                         SessionState::NeedsInput => "Cursor run exited without success".into(),
                         _ => "Cursor run completed".into(),
                     }
@@ -299,7 +463,9 @@ impl CursorSupervisor {
                     log.summary
                 },
                 raw_state: Some(raw_state.into()),
-                pid: running.then_some(record.process.pid),
+                pid: running
+                    .then(|| record.process.as_ref().map(|process| process.pid))
+                    .flatten(),
                 started_at: millis_to_time(record.created_at_ms),
                 updated_at: file_updated_at(&record.stdout_path)
                     .or_else(|| millis_to_time(record.updated_at_ms)),
@@ -338,7 +504,13 @@ impl CursorSupervisor {
         let existing =
             self.with_locked_registry(|registry| Ok(registry.sessions.get(session_id).cloned()))?;
         if let Some(record) = existing.as_ref() {
-            if verify_process(&record.process)? {
+            if record
+                .process
+                .as_ref()
+                .map(verify_process)
+                .transpose()?
+                .unwrap_or(false)
+            {
                 bail!("Cursor session {session_id} already has an active owned process");
             }
             if new {
@@ -400,7 +572,7 @@ impl CursorSupervisor {
             updated_at_ms: now,
             stdout_path,
             stderr_path,
-            process,
+            process: Some(process),
             model: model
                 .map(str::to_owned)
                 .or_else(|| existing.as_ref().and_then(|record| record.model.clone())),
@@ -410,7 +582,13 @@ impl CursorSupervisor {
             registry.sessions.insert(session_id.into(), record);
             Ok(())
         }) {
-            if verify_process(&process_for_cleanup).unwrap_or(false) {
+            if process_for_cleanup
+                .as_ref()
+                .map(verify_process)
+                .transpose()
+                .unwrap_or_default()
+                .unwrap_or(false)
+            {
                 let _ = child.kill();
             }
             let _ = child.wait();

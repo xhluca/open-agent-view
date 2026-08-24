@@ -80,9 +80,9 @@ controllers run on a worker while the event loop advances a status spinner.
 Foreground controllers suspend the dashboard before provider I/O. Claude
 creates an exact `--background` UUID, verifies it in `claude agents`, and opens
 `attach`; Antigravity starts its sandboxed native UI. Both use the native PTY
-bridge so Left retains the frontend and returns to the dashboard. The built-in
+bridge so Shift+Left retains the frontend and returns to the dashboard. The built-in
 Terminal controller uses that bridge for process-local interactive shells: the
-task is a display name, Left backgrounds, Enter resumes, and exact stop/delete
+task is a display name, Shift+Left backgrounds, Enter resumes, and exact stop/delete
 remain limited to PTYs created by this dashboard.
 
 ## Process model

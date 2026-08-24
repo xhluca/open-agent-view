@@ -87,10 +87,35 @@ reconnect to a process started by an older dashboard:
 | Copilot | ACP authority is process-local and is not reconstructed after restart | Not susceptible |
 | Claude | Background ownership is provider/session based and revalidated through `claude agents --json` | Not susceptible |
 
-All native provider opens now share the same PTY bridge. Plain Left is reserved
-for returning to OAV; other bytes, including Up/Down/Right, are forwarded.
+All native provider opens now share the same PTY bridge. Shift+Left is reserved
+for returning to OAV; plain Left/Right and other bytes are forwarded.
 Stopping the retained frontend is distinct from interrupting or deleting the
 managed provider session.
+
+## Freshness and ownership recheck (2026-08-24)
+
+A later read-only recheck reproduced two additional stale-dashboard failures
+on the reporting account without sending provider input:
+
+- the managed OpenCode server's session/message endpoints reported a newer
+  assistant response and `time.updated`, while OAV still showed the first
+  `hello`; the managed source now refreshes provider metadata and fetches the
+  bounded latest assistant text only when that metadata changes;
+- Codex `thread/read(includeTurns: true)` returned the current final assistant
+  response and a newest turn `completedAt`, while the same response's
+  thread-level `updatedAt` remained at the first turn. OAV now uses the latest
+  provider turn timestamp and message rather than the immutable preview.
+
+The resulting JSON dashboard showed the current data-cleaning and
+model-training summaries and current provider timestamps. No transcript text,
+credential, server password, or private state path is copied into this report.
+
+An isolated Copilot ACP regression also reproduces the reported completed-row
+open refusal. The fixed sequence waits for advertised `session/close`, opens
+the exact native `--resume=ID -C PATH`, and reloads the same ID through
+`session/load` after the native client exits. Active prompts and permissions
+remain non-openable, and a backgrounded native frontend keeps ACP authority
+released until it exits.
 
 ## Follow-up launch/onboarding regressions
 

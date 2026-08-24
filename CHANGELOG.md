@@ -8,6 +8,28 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.26] - 2026-08-24
+
+### Changed
+
+- Plain Left/Right arrows are forwarded to provider-native editors. Shift+Left
+  backgrounds the retained frontend and returns to Open Agent View.
+- Cursor launches now allocate the exact chat and open its interactive native
+  interface in the foreground instead of returning after a print-mode spawn.
+
+### Fixed
+
+- Completed connection-owned Copilot sessions now use the advertised ACP
+  close operation before native resume and reload onto the ACP connection after
+  the native client exits, instead of refusing every open as concurrent.
+- Managed OpenCode and Codex rows derive their summary and recency from current
+  assistant messages/provider timestamps rather than keeping the first prompt.
+
+### Tests
+
+- Added exact Shift+Left byte-forwarding, foreground Cursor allocation, Copilot
+  close/resume/reload, and real-account Codex/OpenCode freshness regressions.
+
 ## [0.1.25] - 2026-08-24
 
 ### Fixed

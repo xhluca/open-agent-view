@@ -703,7 +703,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
             let session = app.selected_session().expect("selection checked");
             let peek = session_peek_suffix(session);
             let control = session_control_suffix(session);
-            let open = "enter/right open · ← returns";
+            let open = "enter/right open · shift+← returns";
             format!("{open}{peek}{control} · ? for shortcuts")
         }
         Overlay::None if app.selected_session().is_some() && width >= 55 => {
@@ -772,7 +772,7 @@ fn help_actions(app: &App) -> Vec<String> {
     }
     if app.selected_session().is_some() {
         actions.push("enter/right to open session".into());
-        actions.push("left returns from native session".into());
+        actions.push("shift+left returns from native session".into());
         actions.push("ctrl+r to rename".into());
     }
     actions.push("ctrl+s to switch views".into());
@@ -2013,7 +2013,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("enter/right open · ← returns"));
+        assert!(rendered.contains("enter/right open · shift+← returns"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

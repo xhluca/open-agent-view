@@ -8,7 +8,8 @@ use serde_json::Value;
 
 use super::cursor_managed::CursorSupervisor;
 use crate::control::{
-    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
+    ProviderController,
 };
 use crate::domain::{AgentSession, Provider, Runtime, SessionSnapshot};
 
@@ -53,6 +54,30 @@ impl CursorInvocation {
             ],
             current_dir: cwd.to_owned(),
         })
+    }
+
+    /// Build an interactive first turn for a preallocated chat. Unlike the
+    /// managed background transport this intentionally omits `--print` so the
+    /// user sees Cursor's native interface immediately.
+    pub fn resume_with_prompt(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<CursorCommandSpec> {
+        require_session_id(session_id)?;
+        require_absolute_cwd(cwd)?;
+        if prompt.trim().is_empty() {
+            bail!("Cursor prompt must not be empty");
+        }
+        let mut spec = self.resume(session_id, cwd)?;
+        if let Some(model) = model {
+            require_model(model)?;
+            spec.args.extend(["--model".into(), model.into()]);
+        }
+        spec.args.push(prompt.trim().into());
+        Ok(spec)
     }
 
     /// Build the documented empty-chat allocator used by managed integrations.
@@ -218,6 +243,12 @@ impl ProviderController for CursorController {
         }
     }
 
+    fn launch_presentation(&self) -> LaunchPresentation {
+        // Account/model preflight and create-chat run on the dashboard worker.
+        // Once the exact returned row appears, the terminal opens it natively.
+        LaunchPresentation::DeferredForeground
+    }
+
     fn available_models(&self) -> Result<Vec<String>> {
         self.managed_supervisor()?.available_models()
     }
@@ -244,7 +275,7 @@ impl ProviderController for CursorController {
             .supervisor
             .as_ref()
             .context("managed Cursor launch is not configured")?;
-        let session_id = supervisor.launch_with_model(
+        let session_id = supervisor.allocate_chat_with_model(
             &request.prompt,
             &request.cwd,
             request.model.as_deref(),
@@ -253,6 +284,47 @@ impl ProviderController for CursorController {
             message: format!("launched managed Cursor session {session_id}"),
             provider_session_hint: Some(session_id),
         })
+    }
+
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::Cursor {
+            bail!("the Cursor controller cannot launch another provider");
+        }
+        let supervisor = self.managed_supervisor()?;
+        let session_id = supervisor.allocate_chat_with_model(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
+        let spec = self.invocation.resume_with_prompt(
+            &session_id,
+            &request.cwd,
+            &request.prompt,
+            request.model.as_deref(),
+        )?;
+        let key = format!("cursor:host:{session_id}");
+        match crate::native_session::run(spec.command(), &key)? {
+            crate::native_session::NativeSessionExit::Backgrounded => {
+                supervisor.mark_native_opened(&session_id)?;
+                Ok(ControlOutcome {
+                    message: format!(
+                        "backgrounded Cursor session {session_id}; Enter/Right resumes it"
+                    ),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                supervisor.mark_native_opened(&session_id)?;
+                Ok(ControlOutcome {
+                    message: format!("returned from Cursor session {session_id}"),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                supervisor.mark_native_opened(&session_id)?;
+                bail!("Cursor session exited with status {status}")
+            }
+        }
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -284,15 +356,41 @@ impl ProviderController for CursorController {
                 bail!("interrupt the active managed Cursor turn before opening it natively");
             }
         }
-        let spec = self
-            .invocation
-            .resume(&session.provider_session_id, &session.cwd)?;
+        let pending_native = self
+            .supervisor
+            .as_ref()
+            .map(|supervisor| supervisor.pending_native_launch(session))
+            .transpose()?
+            .flatten();
+        let spec = if let Some((prompt, model)) = pending_native {
+            self.invocation.resume_with_prompt(
+                &session.provider_session_id,
+                &session.cwd,
+                &prompt,
+                model.as_deref(),
+            )?
+        } else {
+            self.invocation
+                .resume(&session.provider_session_id, &session.cwd)?
+        };
         match crate::native_session::run(spec.command(), &session.id)? {
-            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
-                message: format!("backgrounded {}; Enter/Right resumes it", session.name),
-                provider_session_hint: Some(session.provider_session_id.clone()),
-            }),
+            crate::native_session::NativeSessionExit::Backgrounded => {
+                if let Some(supervisor) = &self.supervisor {
+                    if supervisor.owns(session) {
+                        supervisor.mark_native_opened(&session.provider_session_id)?;
+                    }
+                }
+                Ok(ControlOutcome {
+                    message: format!("backgrounded {}; Enter/Right resumes it", session.name),
+                    provider_session_hint: Some(session.provider_session_id.clone()),
+                })
+            }
             crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                if let Some(supervisor) = &self.supervisor {
+                    if supervisor.owns(session) {
+                        supervisor.mark_native_opened(&session.provider_session_id)?;
+                    }
+                }
                 Ok(ControlOutcome {
                     message: format!("returned from {}", session.name),
                     provider_session_hint: None,
@@ -415,6 +513,27 @@ mod tests {
             .args
             .iter()
             .any(|arg| arg == "--force" || arg == "--yolo"));
+        let foreground = invocation
+            .resume_with_prompt(
+                "chat-id",
+                Path::new("/work/repo"),
+                "check interactively",
+                Some("auto"),
+            )
+            .unwrap();
+        assert_eq!(
+            foreground.args,
+            [
+                "--resume",
+                "chat-id",
+                "--workspace",
+                "/work/repo",
+                "--model",
+                "auto",
+                "check interactively",
+            ]
+        );
+        assert!(!foreground.args.iter().any(|arg| arg == "--print"));
     }
 
     #[test]

@@ -12,13 +12,13 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. The manually published v0.1.25
+> Open Agent View is an early private preview. The manually published v0.1.26
 > binary currently covers Linux x86-64; collaborators authenticate with GitHub
 > to install it. The source remains portable, but macOS and ARM64 artifacts are
 > not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> v0.1.25 was packaged, checksummed, smoke-tested, and published manually after
+> v0.1.26 was packaged, checksummed, smoke-tested, and published manually after
 > the repository's hosted build service remained unavailable. The release page
 > and installer state the exact Linux x86-64 scope.
 
@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 The installer selects a release asset for the current host, verifies its
 SHA-256 checksum, and installs `open-agent-view` under `~/.local/bin`, plus the
 short `opav` command and the legacy `coding-agents` compatibility alias. The current
-manual v0.1.25 release is Linux x86-64 only. See the
+manual v0.1.26 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
@@ -127,7 +127,7 @@ open-agent-view sessions rename 'codex:host:EXACT_ID' 'release captain'
 open-agent-view sessions reset-name 'codex:host:EXACT_ID'
 ```
 
-Inside the dashboard, use `↑`/`↓` to move, `enter` or `→` to open, `←` to
+Inside the dashboard, use `↑`/`↓` to move, `enter` or `→` to open, `shift+←` to
 background the provider UI and return, `space` to inspect, `ctrl+f` to filter,
 and `?` for contextual shortcuts. Start typing to hand off a
 new task, then press `tab` for a visible harness picker. Use arrows or `tab` to
@@ -137,7 +137,7 @@ Terminal; `enter` selects and
 `/harness NAME` selects directly, and `/model` changes supported models
 (`/provider` remains an alias). Antigravity is a launch target when `agy` is
 installed. `/setup NAME` checks installation and opens that harness's own login
-in an isolated terminal; Left backgrounds the setup terminal so it can be
+in an isolated terminal; Shift+Left backgrounds the setup terminal so it can be
 resumed from the dashboard without attaching to an unrelated agent. From the
 task composer, `shift+tab` opens the
 searchable model picker without losing the draft; the installed provider's
@@ -170,14 +170,14 @@ every CLI.
 
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
-| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; asynchronous `--background` bootstrap using Claude's returned ID, then full-screen `attach`, with Left returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
+| Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; asynchronous `--background` bootstrap using Claude's returned ID, then full-screen `attach`, with Shift+Left returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
 | OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
 | Pi | Durable OAV-managed RPC sessions and their persisted OAV-owned history on Linux by default; unrelated host JSONL history with `--include-external` | Catalog-backed owned launch, inspect/reply/request handling, Ctrl+X stop then exact delete, and completed-session handoff to native Pi; unrelated history remains inspect/native-resume only |
 | OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
-| Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog and selected-model launch; discovery, inspect, native resume/reply after idle, and verified interrupt |
-| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Failed launch opens actionable native `copilot login`; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; persisted rows remain observe/native-resume |
-| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, catalog-validated exact model selection, sandboxed full-screen launch, Left-to-background, and native resume; a failed native catalog opens recovery rather than accepting an unverified model ID |
-| Terminal | Process-local shells created by this dashboard | Full-screen interactive shell, Left-to-background, exact resume, Ctrl+X stop, then Ctrl+X delete; provider setup terminals use the same isolated bridge |
+| Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog; selected-model launches open Cursor in the foreground; discovery, inspect, native resume/reply after idle, and verified interrupt |
+| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Failed launch opens actionable native `copilot login`; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; idle owned sessions release ACP ownership for native resume and reclaim it on return |
+| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, catalog-validated exact model selection, sandboxed full-screen launch, Shift+Left-to-background, and native resume; a failed native catalog opens recovery rather than accepting an unverified model ID |
+| Terminal | Process-local shells created by this dashboard | Full-screen interactive shell, Shift+Left-to-background, exact resume, Ctrl+X stop, then Ctrl+X delete; provider setup terminals use the same isolated bridge |
 
 Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
 OAV-owned Cursor control. Copilot control lasts for the dashboard process's

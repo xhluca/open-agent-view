@@ -43,6 +43,8 @@ fn owned_server_survives_dashboard_reconnect_and_rejects_external_sessions() {
     let direct = first.list().unwrap();
     assert_eq!(direct.len(), 1, "managed server lost its owned session");
     assert_eq!(direct[0].state, SessionState::Working);
+    assert_eq!(direct[0].summary, "answer: initial managed task");
+    assert_eq!(direct[0].updated_at_ms, 9_000_000_000_001);
     assert_eq!(
         fs::metadata(directory.path().join("state"))
             .unwrap()
@@ -81,7 +83,7 @@ fn owned_server_survives_dashboard_reconnect_and_rejects_external_sessions() {
     );
     assert_eq!(
         controller.inspect(session).unwrap(),
-        "User: initial managed task"
+        "User: initial managed task\n\nAssistant: answer: initial managed task"
     );
     controller.reply(session, "follow up").unwrap();
 
@@ -269,6 +271,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(200, {"healthy": True, "version": "fake"})
         if parsed.path == "/session/status":
             return self.respond(200, {key: {"type": value} for key, value in statuses.items()})
+        if parsed.path == "/session":
+            return self.respond(200, list(sessions.values()))
         if parsed.path.endswith("/message"):
             session_id = parsed.path.split("/")[2]
             if session_id not in sessions: return self.respond(404, {"error": "missing"})
@@ -286,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
             data = self.body()
             directory = parse_qs(parsed.query).get("directory", [os.getcwd()])[0]
             session_id = "ses_owned"
-            sessions[session_id] = {"id": session_id, "title": data.get("title", "task"), "directory": directory, "time": {"created": 1, "updated": 1}}
+            sessions[session_id] = {"id": session_id, "title": data.get("title", "task"), "directory": directory, "time": {"created": 1, "updated": 9000000000000}}
             statuses[session_id] = "idle"
             messages[session_id] = []
             return self.respond(200, sessions[session_id])
@@ -298,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(422, {"error": "model selector missing or malformed"})
             text = "\n".join(part.get("text", "") for part in data.get("parts", []) if part.get("type") == "text")
             messages[session_id].append({"info": {"role": "user"}, "parts": [{"type": "text", "text": text}]})
+            messages[session_id].append({"info": {"role": "assistant", "time": {"completed": sessions[session_id]["time"]["updated"] + 1}}, "parts": [{"type": "text", "text": "answer: " + text}]})
+            sessions[session_id]["time"]["updated"] += 1
             statuses[session_id] = "busy"
             return self.respond(204)
         if parsed.path.endswith("/abort"):

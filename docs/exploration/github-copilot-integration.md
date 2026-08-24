@@ -117,8 +117,12 @@ dashboard action. Requests for unknown sessions are cancelled.
 This retained connection is not a background daemon. If Open Agent View exits,
 active prompt and permission authority ends with that process. Persisted
 history remains discoverable, but is read-only again until a new controller
-explicitly loads the exact session. Native open is refused while the current
-controller owns a session, avoiding two simultaneous clients.
+explicitly loads the exact session. For an idle current-session open, OAV sends
+advertised `session/close`, starts the exact native resume, and sends
+`session/load` after a normal return. Active prompts or permission requests are
+refused. If the native frontend is backgrounded, ACP authority remains released
+until that exact frontend exits, so two clients never control the session
+concurrently.
 
 ## Capability boundary
 

@@ -48,15 +48,16 @@ Opening a session temporarily suspends the dashboard's alternate screen and
 runs the provider's native interactive client behind a private pseudo-terminal.
 The screen is cleared first, so a Codex or other provider transcript starts at
 the top instead of appending below the previous shell contents. Enter or Right
-opens the selected row directly. A plain Left sequence is reserved by OAV: it
+opens the selected row directly. Shift+Left is reserved by OAV: it
 stops and retains only that native frontend, restores the dashboard, and leaves
 the managed provider backend alive. Enter or Right on the same row resumes the
-exact retained frontend and replays its terminal screen. Left also returns from
+exact retained frontend and replays its terminal screen. Plain arrows continue
+to edit the provider's input line. Left also returns from
 OAV's inline Peek without starting a provider CLI.
 
 Authentication is a terminal handoff, not an OAV credential store. The model
 picker, `/login`, or `/setup` may run a provider's own login/setup UI after suspending the
-dashboard. Every handoff has a provider-keyed private PTY; Left backgrounds it
+dashboard. Every handoff has a provider-keyed private PTY; Shift+Left backgrounds it
 as a Terminal row and Enter/Right resumes the same screen. Open Agent View
 neither reads the resulting token nor persists
 answers; it only retries the provider-native model catalog after the command
@@ -285,8 +286,10 @@ platforms retain CLI history inspection and native resume.
 
 Cursor exposes a TTY-only history picker, not a machine-readable global session
 list. Open Agent View therefore shows only Cursor sessions it launched itself
-on Linux. Launch creates a Cursor chat, runs the turn in detached stream-JSON
-mode, and records the exact process identity and bounded output paths under:
+on Linux. Foreground launch creates an exact Cursor chat, records it, and
+immediately resumes that ID in Cursor's interactive interface. Inline replies
+still use detached stream-JSON mode and record the exact process identity plus
+bounded output paths under:
 
 ```text
 $XDG_STATE_HOME/open-agent-view/cursor/
@@ -301,8 +304,8 @@ never signals a PID merely because it appears in the registry.
 | --- | --- | --- |
 | Discover | Private registry plus bounded stream-JSON logs | Unavailable; the global picker is TTY-only |
 | Inspect | Bounded assistant transcript from the owned log | Disabled |
-| Open | Refused while the owned process is active; native resume after idle | Not listed; use Cursor's own TTY picker |
-| Launch/reply | Create a chat and run a turn; reply only after the prior process exits | Disabled |
+| Open | Refused while an owned print worker is active; native resume otherwise | Not listed; use Cursor's own TTY picker |
+| Launch/reply | Create a chat and open it in the foreground; inline reply only after the prior process/native frontend exits | Disabled |
 | Interrupt | `SIGINT` only after exact live-process verification | Disabled |
 | Permission/archive/delete | Disabled | Disabled |
 
@@ -320,13 +323,15 @@ the current dashboard process and is not written to an OAV ownership file.
 | --- | --- | --- |
 | Discover | In-memory managed state and ACP events | Official `session/list` on the discovery connection |
 | Inspect | Bounded transcript received on the owning connection | Disabled |
-| Open | Refused while connection-owned | `copilot --resume=ID -C PATH` |
+| Open | Idle sessions use ACP `session/close`, native resume, then `session/load` on return; active requests are refused | `copilot --resume=ID -C PATH` |
 | Launch/reply | `session/new`, then `session/prompt`; reply only while idle | Disabled |
 | Interrupt | ACP cancel for the exact active session prompt | Disabled |
 | Permission | Exact offered `allow_once` or `reject_once` option only | Disabled |
 | Archive/delete | Disabled | Disabled |
 
-When the dashboard exits, the retained ACP process and its control authority
+The close/resume/load handoff never overlaps two clients. A backgrounded native
+frontend leaves inline authority released until that exact frontend exits and
+the session is loaded again. When the dashboard exits, the retained ACP process and its control authority
 end. A later `session/list` result remains visible and can be opened natively,
 but it is not silently adopted for inline control. Unknown ACP client requests
 are rejected explicitly, and pending permission requests are never answered
