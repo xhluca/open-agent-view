@@ -1,10 +1,32 @@
 import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import sharp from "sharp";
 
 const root = new URL("../", import.meta.url);
+const escapeCharacter = String.fromCharCode(27);
+const bellCharacter = String.fromCharCode(7);
+const oscSequence = new RegExp(`${escapeCharacter}\\][\\s\\S]*?(?:${bellCharacter}|${escapeCharacter}\\\\)`, "g");
+const csiSequence = new RegExp(`${escapeCharacter}\\[[0-?]*[ -/]*[@-~]`, "g");
+
+const demos = [
+  ["setup", null, null],
+  ["claude", "Claude Code", "Claude"],
+  ["codex", "OpenAI Codex", "OpenAI Codex"],
+  ["pi", "Pi", "Pi"],
+  ["opencode", "OpenCode", "OpenCode"],
+  ["cursor", "Cursor", "Cursor"],
+  ["copilot", "GitHub Copilot", "GitHub Copilot"],
+  ["antigravity", "Antigravity", "Antigravity"],
+  ["terminal", "Terminal", "Terminal"],
+];
+
+const privateMaterial = [
+  /(?:api[_-]?key|access[_-]?token|oauth[_-]?token|authorization\s*[:=]\s*bearer)/i,
+  /(?:gh[pousr]_|sk-(?:proj-)?|AKIA)[A-Za-z0-9_-]{8,}/,
+  /(?:^|[\s"'])\/(?:home|Users|tmp|private\/var)\//m,
+  /(?:^|[\s"'])[A-Z]:\\Users\\/im,
+  /(?:xlu41|@mcgill\.|@mila\.)/i,
+];
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -20,7 +42,20 @@ async function render() {
   );
 }
 
-test("server-renders the complete product story and canonical metadata", async () => {
+function parseCast(source, name) {
+  const lines = source.trim().split("\n");
+  assert.ok(lines.length > 20, `${name}.cast should contain a real terminal timeline`);
+  const header = JSON.parse(lines[0]);
+  const events = lines.slice(1).map((line, index) => {
+    const event = JSON.parse(line);
+    assert.ok(Array.isArray(event), `${name}.cast event ${index + 1} should be an array`);
+    assert.equal(event.length, 3, `${name}.cast event ${index + 1} should be cast v2-shaped`);
+    return event;
+  });
+  return { header, events };
+}
+
+test("server-renders real recording controls, provider tabs, and canonical metadata", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -29,88 +64,114 @@ test("server-renders the complete product story and canonical metadata", async (
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
-  assert.match(html, /Install once/);
-  assert.match(html, /Pick a harness/);
-  assert.match(html, /Small commands/);
-  assert.match(html, /One index/);
-  assert.match(html, /data-story="story-overview"/);
-  assert.match(html, /data-story-tab="antigravity"/);
-  assert.match(html, /data-story-tab="login"/);
+  assert.match(html, /data-story="story-setup"/);
+  assert.match(html, /aria-label="INSTALL · OPEN · \/HARNESS playback controls"/);
+  assert.match(html, /aria-label="Seek through INSTALL · OPEN · \/HARNESS"/);
+  assert.match(html, /role="tablist" aria-label="Harness demos"/);
   assert.match(html, /data-demo-action="back"/);
   assert.match(html, /data-demo-action="pause"/);
   assert.match(html, /data-demo-action="forward"/);
   assert.match(html, /data-demo-action="restart"/);
-  assert.match(html, /data-demo-window/);
-  assert.match(html, /data-demo-last-action/);
+  assert.match(html, /data-copy-command="open-agent-view"/);
   assert.match(html, /https:\/\/open-agent-view\.github\.io\/install\.sh/);
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
+
+  for (const [id, label] of demos.slice(1)) {
+    assert.match(html, new RegExp(`data-story-tab="${id}"`));
+    assert.match(html, new RegExp(`data-story="story-${id}"`));
+    assert.match(html, new RegExp(`data-select-harness="${id}"`));
+    assert.match(html, new RegExp(`Watch the ${label} demo`));
+  }
+
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   assert.doesNotMatch(html, /raw\.githubusercontent\.com/);
-  assert.doesNotMatch(html, /One loop|Run more agents|Never pretend controls|Built to stay honest/);
-  assert.doesNotMatch(html, /data-demo-status/);
-  assert.doesNotMatch(html, /<video\b/);
+  assert.doesNotMatch(html, /<video\b|data-demo-status|data-terminal-(?:row|grid|frame)/);
+});
 
-  for (const provider of [
-    "Claude Code",
-    "OpenAI Codex",
-    "Pi",
-    "OpenCode",
-    "Cursor",
-    "GitHub Copilot",
-    "Antigravity",
-    "Terminal",
-  ]) {
-    assert.match(html, new RegExp(provider));
+test("publishes genuine cast v2 recordings and action timelines for setup and every harness", async () => {
+  for (const [name, , manifestName] of demos) {
+    const [cast, actionsSource] = await Promise.all([
+      readFile(new URL(`public/demos/${name}.cast`, root), "utf8"),
+      readFile(new URL(`public/demos/${name}.actions.json`, root), "utf8"),
+    ]);
+    const { header, events } = parseCast(cast, name);
+    const manifest = JSON.parse(actionsSource);
+    const output = events.filter((event) => event[1] === "o").map((event) => event[2]).join("");
+    const visibleOutput = output
+      .replace(oscSequence, "")
+      .replace(csiSequence, "")
+      .replaceAll("\r", "");
+    const finalTime = events.at(-1)[0];
+
+    assert.equal(header.version, 2, `${name}.cast should use asciinema cast v2`);
+    assert.ok(Number.isInteger(header.width) && header.width >= 80, `${name}.cast should record a useful width`);
+    assert.ok(Number.isInteger(header.height) && header.height >= 24, `${name}.cast should record a useful height`);
+    assert.ok(events.every((event) => Number.isFinite(event[0]) && ["o", "r"].includes(event[1]) && typeof event[2] === "string"));
+    assert.ok(events.every((event, index) => index === 0 || event[0] >= events[index - 1][0]), `${name}.cast timestamps should be ordered`);
+    assert.ok(output.length > 1_000, `${name}.cast should contain substantial real terminal output`);
+    assert.ok(output.includes(`${escapeCharacter}[`), `${name}.cast should preserve terminal control sequences`);
+    assert.match(output, /Open Agent View v\d+\.\d+\.\d+/, `${name}.cast should show the real application`);
+
+    assert.ok(Number.isFinite(manifest.duration) && manifest.duration > 1);
+    assert.ok(Math.abs(manifest.duration - finalTime) < 0.01, `${name} action duration should match its cast`);
+    assert.ok(Array.isArray(manifest.actions) && manifest.actions.length > 1);
+    assert.ok(manifest.actions.every((action, index) => (
+      Number.isFinite(action.at)
+      && action.at >= 0
+      && action.at <= manifest.duration
+      && (index === 0 || action.at >= manifest.actions[index - 1].at)
+      && typeof action.action === "string"
+      && action.action.length > 0
+      && typeof action.window === "string"
+      && action.window.length > 0
+    )), `${name} actions should be ordered, bounded, and labelled`);
+
+    if (name === "setup") {
+      assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
+      assert.match(visibleOutput, /\$ opav\b/);
+    } else {
+      assert.ok(
+        manifest.actions.some((action) => `${action.action} ${action.window}`.includes(manifestName)),
+        `${name} actions should identify ${manifestName}`,
+      );
+    }
+
+    for (const pattern of privateMaterial) {
+      assert.doesNotMatch(`${cast}\n${actionsSource}`, pattern, `${name} must not publish secrets or private machine paths`);
+    }
   }
 });
 
-test("retains the reproducible Docker demo and publishes every local provider mark", async () => {
-  const [cast, video, poster, product, og] = await Promise.all([
-    readFile(new URL("public/oav-demo.cast", root), "utf8"),
-    readFile(new URL("public/oav-demo.mp4", root)),
-    sharp(fileURLToPath(new URL("public/oav-demo.png", root))).metadata(),
-    sharp(fileURLToPath(new URL("public/open-agent-view.png", root))).metadata(),
-    sharp(fileURLToPath(new URL("public/og.png", root))).metadata(),
+test("uses the local asciinema player without a synthetic terminal generator or playback loop", async () => {
+  const [page, player, styles, script, playerBundle] = await Promise.all([
+    readFile(new URL("app/page.tsx", root), "utf8"),
+    readFile(new URL("app/DemoPlayer.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+    readFile(new URL("public/site.js", root), "utf8"),
+    stat(new URL("public/asciinema-player.min.js", root)),
   ]);
 
-  const header = JSON.parse(cast.split("\n", 1)[0]);
-  const escape = String.fromCharCode(27);
-  const visibleCast = cast
-    .trim()
-    .split("\n")
-    .slice(1)
-    .map((line) => JSON.parse(line)[2])
-    .join("")
-    .replace(new RegExp(`${escape}\\[[0-?]*[ -/]*[@-~]`, "g"), "");
-  assert.equal(header.version, 2);
-  assert.equal(header.width, 150);
-  assert.equal(header.height, 42);
-  assert.match(visibleCast, /Open Agent View v0\.1\.33/);
-  assert.match(visibleCast, /GitHub Copilot/);
-  assert.match(visibleCast, /Antigravity/);
-  assert.doesNotMatch(cast, /(?:api[_-]?key|oauth[_-]?token|authorization: bearer|ghp_)/i);
+  assert.ok(playerBundle.size > 50_000, "the local asciinema player bundle should be published");
+  assert.match(script, /class RealCastPlayer/);
+  assert.match(script, /AsciinemaPlayer\.create\(story\.cast/);
+  assert.match(player, /dispatchEvent\(new Event\("oav:react-hydrated"\)\)/);
+  assert.match(script, /window\.addEventListener\("oav:react-hydrated", mountStories/);
+  assert.match(script, /if \(!window\.__oavReactHydrated\)/);
+  assert.match(script, /if \(document\.documentElement\.dataset\.storiesReady === "true"\) return/);
+  assert.match(script, /loop:\s*false/);
+  assert.match(script, /this\.ended = true/);
+  assert.match(script, /this\.pauseButton\.textContent = "Replay"/);
+  assert.doesNotMatch(script, /loop:\s*true|class StoryPlayer|syntheticFrames|terminalRows|renderTerminalFrame/);
+  assert.doesNotMatch(page, /data-terminal-(?:row|grid|frame)|<video\b/);
+  assert.doesNotMatch(player, /data-terminal-(?:row|grid|frame)|<video\b/);
 
-  assert.equal(video.subarray(4, 8).toString("ascii"), "ftyp");
-  assert.ok(video.length > 20_000);
-  assert.deepEqual([poster.width, poster.height], [1190, 784]);
-  assert.deepEqual([product.width, product.height], [1190, 784]);
-  assert.deepEqual([og.width, og.height], [1200, 630]);
-
-  for (const icon of [
-    "claude.svg",
-    "codex.png",
-    "pi.svg",
-    "opencode.svg",
-    "cursor.svg",
-    "copilot.svg",
-    "antigravity.svg",
-    "terminal.svg",
-  ]) {
-    const iconFile = await stat(new URL(`public/providers/${icon}`, root));
-    assert.ok(iconFile.size > 100, `${icon} should be a non-empty local asset`);
-  }
+  const tabUnderline = styles.match(/\.story-tabs button i\s*\{([^}]+)\}/s)?.[1] ?? "";
+  assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
+  assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
+  assert.match(page, /thin\s+cyan\s+line/i);
+  assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {
@@ -119,32 +180,4 @@ test("keeps the public installer byte-identical to the application installer", a
     readFile(new URL("public/install.sh", root)),
   ]);
   assert.deepEqual(published, source);
-});
-
-test("keeps accessible playback, tab cycling, and motion safeguards in source", async () => {
-  const [page, player, styles, copy, layout, script, video] = await Promise.all([
-    readFile(new URL("app/page.tsx", root), "utf8"),
-    readFile(new URL("app/DemoPlayer.tsx", root), "utf8"),
-    readFile(new URL("app/globals.css", root), "utf8"),
-    readFile(new URL("app/CopyCommand.tsx", root), "utf8"),
-    readFile(new URL("app/layout.tsx", root), "utf8"),
-    readFile(new URL("public/site.js", root), "utf8"),
-    stat(new URL("public/oav-demo.mp4", root)),
-  ]);
-  assert.match(page, /aria-label="Choose a harness demo"/);
-  assert.match(page, /role="tablist"/);
-  assert.match(page, /data-select-harness/);
-  assert.match(player, /aria-label={`Seek through \$\{label\}`}/);
-  assert.match(player, /data-demo-action="restart"/);
-  assert.match(script, /class StoryPlayer/);
-  assert.match(script, /IntersectionObserver/);
-  assert.match(script, /\/ 8000/);
-  assert.match(script, /prefers-reduced-motion: reduce/);
-  assert.match(script, /this\.ended = true/);
-  assert.doesNotMatch(script, /loop\s*:/);
-  assert.match(styles, /prefers-reduced-motion:\s*reduce/);
-  assert.match(styles, /:focus-visible/);
-  assert.match(copy, /aria-live="polite"/);
-  assert.match(layout, /summary_large_image/);
-  assert.ok(video.size < 8 * 1024 * 1024, "demo video should stay lightweight");
 });
