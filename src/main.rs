@@ -10,10 +10,10 @@ use clap::{Parser, Subcommand, ValueEnum};
 use open_agent_view::adapters::{
     default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
     AntigravityController, AntigravityOwnership, AntigravitySource, ClaudeSource, CodexSource,
-    CopilotController, CopilotSource, CopilotSupervisor, CursorController, DiscoveryEngine,
-    DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec, ManagedDockerService,
-    ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController, PiSource,
-    TerminalHarness,
+    CopilotController, CopilotOwnedSource, CopilotSource, CopilotSupervisor, CursorController,
+    DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec,
+    ManagedDockerService, ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController,
+    PiSource, TerminalHarness,
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
@@ -415,8 +415,9 @@ fn main() -> Result<()> {
         .as_ref()
         .map(|_| PiSupervisor::host(cli.pi_bin.clone()).map(Arc::new))
         .transpose()?;
-    let copilot_supervisor =
-        copilot_enabled.then(|| Arc::new(CopilotSupervisor::host(cli.copilot_bin.clone())));
+    let copilot_supervisor = copilot_enabled
+        .then(|| CopilotSupervisor::host(cli.copilot_bin.clone()).map(Arc::new))
+        .transpose()?;
     #[cfg(target_os = "linux")]
     let opencode_supervisor = opencode_enabled
         .then(|| OpenCodeSupervisor::host(cli.opencode_bin.clone()).map(Arc::new))
@@ -541,8 +542,23 @@ fn main() -> Result<()> {
             let source = OpenCodeSource::host(cli.opencode_bin);
             engine.add_source(source);
         }
-        if copilot_enabled && request.include_external {
-            engine.add_source(CopilotSource::host(cli.copilot_bin));
+        if copilot_enabled {
+            if request.include_external {
+                engine.add_source(CopilotSource::host(cli.copilot_bin));
+            } else {
+                let locally_named = session_aliases
+                    .list()
+                    .into_iter()
+                    .filter(|record| record.provider == Some(Provider::GitHubCopilot))
+                    .map(|record| record.id);
+                engine.add_source(CopilotOwnedSource::new(
+                    copilot_supervisor
+                        .as_ref()
+                        .expect("Copilot supervisor exists when its source is enabled")
+                        .clone(),
+                    locally_named,
+                ));
+            }
         }
         #[cfg(target_os = "linux")]
         if let Some(supervisor) = cursor_supervisor {

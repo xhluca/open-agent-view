@@ -32,7 +32,7 @@ pub use copilot::{
     CopilotInvocation, CopilotPermissionOption, CopilotPermissionRequest, CopilotSessionInfo,
     CopilotSessionPage, CopilotSource,
 };
-pub use copilot_managed::CopilotSupervisor;
+pub use copilot_managed::{default_copilot_state_dir, CopilotOwnedSource, CopilotSupervisor};
 pub use cursor::{
     parse_cursor_chat_id, parse_cursor_stream_event, CursorCommandSpec, CursorController,
     CursorInvocation, CursorStreamEvent,

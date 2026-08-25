@@ -236,6 +236,37 @@ impl CopilotAcpConnection {
         )
     }
 
+    /// Replay one persisted session without starting a model turn. Copilot
+    /// sends the historical `session/update` frames before the load response;
+    /// this helper returns only updates for the exact requested session and
+    /// safely cancels any unexpected replayed permission request.
+    pub fn load_session_history(&mut self, session_id: &str, cwd: &Path) -> Result<Vec<Value>> {
+        let request_id = self.begin_load_session(session_id, cwd)?;
+        self.wait_for_response(request_id, REQUEST_TIMEOUT)?;
+        let mut updates = Vec::new();
+        while let Some(message) = self.try_receive()? {
+            match message {
+                CopilotAcpMessage::SessionUpdate {
+                    session_id: update_session_id,
+                    update,
+                } if update_session_id == session_id => updates.push(update),
+                CopilotAcpMessage::PermissionRequest(request) => {
+                    self.respond_permission_cancelled(&request.request_id)?;
+                }
+                CopilotAcpMessage::UnsupportedRequest { id, method, .. } => {
+                    self.reject_unsupported_request(
+                        &id,
+                        &format!("history replay does not implement ACP client method `{method}`"),
+                    )?;
+                }
+                CopilotAcpMessage::Response { .. }
+                | CopilotAcpMessage::SessionUpdate { .. }
+                | CopilotAcpMessage::Notification { .. } => {}
+            }
+        }
+        Ok(updates)
+    }
+
     pub fn begin_prompt(&mut self, session_id: &str, prompt: &str) -> Result<u64> {
         require_session_id(session_id)?;
         if prompt.is_empty() {
@@ -1217,7 +1248,10 @@ fn normalize_copilot_session(session: CopilotSessionInfo, runtime: Runtime) -> A
         raw_state: Some("persisted".into()),
         pid: None,
         started_at: None,
-        updated_at: session.updated_at.as_deref().and_then(parse_rfc3339),
+        updated_at: session
+            .updated_at
+            .as_deref()
+            .and_then(parse_copilot_updated_at),
         pull_requests: None,
         // A controller grants capabilities only after it owns an ACP process
         // and has loaded this exact session on that connection.
@@ -1347,7 +1381,7 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn parse_rfc3339(value: &str) -> Option<SystemTime> {
+pub(crate) fn parse_copilot_updated_at(value: &str) -> Option<SystemTime> {
     let (date, rest) = value.split_once('T')?;
     let mut date_parts = date.split('-');
     let year: i64 = date_parts.next()?.parse().ok()?;
@@ -1450,7 +1484,7 @@ mod tests {
     #[test]
     fn parses_timezone_offsets() {
         assert_eq!(
-            parse_rfc3339("1970-01-01T01:00:00+01:00"),
+            parse_copilot_updated_at("1970-01-01T01:00:00+01:00"),
             Some(SystemTime::UNIX_EPOCH)
         );
     }
@@ -1494,7 +1528,13 @@ mod tests {
         fs::set_permissions(&executable, permissions).unwrap();
         let workspace = directory.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
-        let supervisor = Arc::new(CopilotSupervisor::host(executable.display().to_string()));
+        let supervisor = Arc::new(
+            CopilotSupervisor::with_state_dir(
+                executable.display().to_string(),
+                directory.path().join("copilot-state"),
+            )
+            .unwrap(),
+        );
         let controller = CopilotController::managed(supervisor);
         let request = LaunchRequest {
             provider: Provider::GitHubCopilot,
@@ -1566,8 +1606,8 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
     #[test]
     fn rejects_malformed_pages_and_timestamps() {
         assert!(parse_copilot_session_page(&json!({"sessions": "nope"})).is_err());
-        assert_eq!(parse_rfc3339("not-a-time"), None);
-        assert_eq!(parse_rfc3339("2025-99-99T99:99:99Z"), None);
+        assert_eq!(parse_copilot_updated_at("not-a-time"), None);
+        assert_eq!(parse_copilot_updated_at("2025-99-99T99:99:99Z"), None);
     }
 
     #[test]

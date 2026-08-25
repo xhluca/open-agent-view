@@ -194,7 +194,13 @@ while read remaining; do :; done
     );
     let workspace = directory.path().join("workspace");
     fs::create_dir(&workspace).unwrap();
-    let supervisor = Arc::new(CopilotSupervisor::host(executable.display().to_string()));
+    let supervisor = Arc::new(
+        CopilotSupervisor::with_state_dir(
+            executable.display().to_string(),
+            directory.path().join("copilot-state"),
+        )
+        .unwrap(),
+    );
     let controller = CopilotController::managed(supervisor);
 
     let outcome = controller
@@ -215,7 +221,7 @@ while read remaining; do :; done
     assert!(waiting.capabilities.contains(&Capability::Decline));
     assert_eq!(
         controller.inspect(&waiting).unwrap(),
-        "public controller transcript"
+        "Assistant: public controller transcript"
     );
     controller.resolve_approval(&waiting, true).unwrap();
 
@@ -279,7 +285,13 @@ while read remaining; do :; done
     );
     let workspace = directory.path().join("workspace");
     fs::create_dir(&workspace).unwrap();
-    let supervisor = Arc::new(CopilotSupervisor::host(executable.display().to_string()));
+    let supervisor = Arc::new(
+        CopilotSupervisor::with_state_dir(
+            executable.display().to_string(),
+            directory.path().join("copilot-state"),
+        )
+        .unwrap(),
+    );
     let controller = CopilotController::managed(supervisor.clone());
     controller
         .launch(&LaunchRequest {
