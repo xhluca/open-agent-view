@@ -11,9 +11,11 @@ use open_agent_view::adapters::{
     default_managed_docker_registry_path, default_pi_session_dir, generate_managed_instance_id,
     AntigravityController, AntigravityOwnership, AntigravitySource, ClaudeSource, CodexSource,
     CopilotController, CopilotOwnedSource, CopilotSource, CopilotSupervisor, CursorController,
-    DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource, ManagedDockerCreateSpec,
-    ManagedDockerService, ManagedDockerStatus, OpenCodeController, OpenCodeSource, PiController,
-    PiSource, TerminalHarness,
+    DiscoveryEngine, DiscoveryRequest, DockerTarget, FixtureSource, KimiController, KimiOwnership,
+    KimiSource, ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
+    MistralVibeController, MistralVibeOwnership, MistralVibeSource, MuseController, MuseOwnership,
+    MuseSource, OpenCodeController, OpenCodeSource, PiController, PiSource, QwenController,
+    QwenOwnership, QwenSource, TerminalHarness,
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
@@ -42,6 +44,10 @@ enum LaunchProvider {
     Cursor,
     Copilot,
     Antigravity,
+    MistralVibe,
+    Muse,
+    Qwen,
+    Kimi,
     Terminal,
 }
 
@@ -283,6 +289,47 @@ struct Cli {
     #[arg(long)]
     no_host_antigravity: bool,
 
+    /// Mistral Vibe executable used for native launch and resume.
+    #[arg(long, default_value = "vibe", value_name = "PATH", global = true)]
+    mistral_vibe_bin: String,
+
+    /// Mistral Vibe app-server executable used for read-only discovery.
+    #[arg(
+        long,
+        default_value = "vibe-app-server",
+        value_name = "PATH",
+        global = true
+    )]
+    mistral_vibe_app_server_bin: String,
+
+    /// Disable Mistral Vibe discovery and control on the host.
+    #[arg(long)]
+    no_host_mistral_vibe: bool,
+
+    /// Muse Code executable used for native launch and resume.
+    #[arg(long, default_value = "muse", value_name = "PATH", global = true)]
+    muse_bin: String,
+
+    /// Disable Muse Code discovery and control on the host.
+    #[arg(long)]
+    no_host_muse: bool,
+
+    /// Qwen Code executable used for discovery, native launch, and resume.
+    #[arg(long, default_value = "qwen", value_name = "PATH", global = true)]
+    qwen_bin: String,
+
+    /// Disable Qwen Code discovery and control on the host.
+    #[arg(long)]
+    no_host_qwen: bool,
+
+    /// Kimi Code executable used for native launch and resume.
+    #[arg(long, default_value = "kimi", value_name = "PATH", global = true)]
+    kimi_bin: String,
+
+    /// Disable Kimi Code discovery and control on the host.
+    #[arg(long)]
+    no_host_kimi: bool,
+
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
     #[arg(long = "docker-container", value_name = "NAME_OR_ID", global = true)]
     docker_containers: Vec<String>,
@@ -329,6 +376,10 @@ fn main() -> Result<()> {
                     (Provider::Cursor, cli.cursor_bin.clone()),
                     (Provider::GitHubCopilot, cli.copilot_bin.clone()),
                     (Provider::Antigravity, cli.antigravity_bin.clone()),
+                    (Provider::MistralVibe, cli.mistral_vibe_bin.clone()),
+                    (Provider::MuseCode, cli.muse_bin.clone()),
+                    (Provider::QwenCode, cli.qwen_bin.clone()),
+                    (Provider::KimiCode, cli.kimi_bin.clone()),
                 ];
                 let report = diagnose(&provider_bins, &cli.docker_bin, &cli.docker_containers);
                 if cli.json {
@@ -378,6 +429,16 @@ fn main() -> Result<()> {
     let antigravity_enabled = host_providers_enabled && !cli.no_host_antigravity;
     let antigravity_open_enabled =
         antigravity_enabled && executable_available(&cli.antigravity_bin);
+    let mistral_vibe_enabled = host_providers_enabled
+        && !cli.no_host_mistral_vibe
+        && executable_available(&cli.mistral_vibe_bin)
+        && executable_available(&cli.mistral_vibe_app_server_bin);
+    let muse_enabled =
+        host_providers_enabled && !cli.no_host_muse && executable_available(&cli.muse_bin);
+    let qwen_enabled =
+        host_providers_enabled && !cli.no_host_qwen && executable_available(&cli.qwen_bin);
+    let kimi_enabled =
+        host_providers_enabled && !cli.no_host_kimi && executable_available(&cli.kimi_bin);
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,
@@ -390,6 +451,10 @@ fn main() -> Result<()> {
         LaunchProvider::Cursor => Provider::Cursor,
         LaunchProvider::Copilot => Provider::GitHubCopilot,
         LaunchProvider::Antigravity => Provider::Antigravity,
+        LaunchProvider::MistralVibe => Provider::MistralVibe,
+        LaunchProvider::Muse => Provider::MuseCode,
+        LaunchProvider::Qwen => Provider::QwenCode,
+        LaunchProvider::Kimi => Provider::KimiCode,
         LaunchProvider::Terminal => Provider::Terminal,
     };
     let pi_session_dir = if !pi_enabled {
@@ -407,7 +472,7 @@ fn main() -> Result<()> {
         codex_bin: cli.codex_bin.clone(),
         docker_bin: cli.docker_bin.clone(),
         launch_provider,
-        launch_cwd,
+        launch_cwd: launch_cwd.clone(),
         provider_io_enabled,
     })?;
     #[cfg(target_os = "linux")]
@@ -429,6 +494,12 @@ fn main() -> Result<()> {
     let antigravity_ownership = antigravity_open_enabled
         .then(AntigravityOwnership::load_default)
         .transpose()?;
+    let mistral_vibe_ownership = mistral_vibe_enabled
+        .then(MistralVibeOwnership::load_default)
+        .transpose()?;
+    let muse_ownership = muse_enabled.then(MuseOwnership::load_default).transpose()?;
+    let qwen_ownership = qwen_enabled.then(QwenOwnership::load_default).transpose()?;
+    let kimi_ownership = kimi_enabled.then(KimiOwnership::load_default).transpose()?;
     let terminal_harness = provider_io_enabled.then(|| Arc::new(TerminalHarness::new()));
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
@@ -484,6 +555,44 @@ fn main() -> Result<()> {
                 antigravity_ownership
                     .as_ref()
                     .expect("Antigravity ownership exists when its controller is enabled")
+                    .clone(),
+            )?))?;
+        }
+        if mistral_vibe_enabled {
+            control.register_controller(Arc::new(MistralVibeController::host(
+                cli.mistral_vibe_bin.clone(),
+                cli.mistral_vibe_app_server_bin.clone(),
+                mistral_vibe_ownership
+                    .as_ref()
+                    .expect("Mistral Vibe ownership exists when enabled")
+                    .clone(),
+                launch_cwd.clone(),
+            )))?;
+        }
+        if muse_enabled {
+            control.register_controller(Arc::new(MuseController::host_default(
+                cli.muse_bin.clone(),
+                muse_ownership
+                    .as_ref()
+                    .expect("Muse ownership exists when enabled")
+                    .clone(),
+            )?))?;
+        }
+        if qwen_enabled {
+            control.register_controller(Arc::new(QwenController::host(
+                cli.qwen_bin.clone(),
+                qwen_ownership
+                    .as_ref()
+                    .expect("Qwen ownership exists when enabled")
+                    .clone(),
+            )))?;
+        }
+        if kimi_enabled {
+            control.register_controller(Arc::new(KimiController::host_default(
+                cli.kimi_bin.clone(),
+                kimi_ownership
+                    .as_ref()
+                    .expect("Kimi ownership exists when enabled")
                     .clone(),
             )?))?;
         }
@@ -570,6 +679,28 @@ fn main() -> Result<()> {
             } else if request.include_external {
                 engine.add_source(AntigravitySource::default_host()?);
             }
+        }
+        if mistral_vibe_enabled {
+            engine.add_source(MistralVibeSource::host(
+                cli.mistral_vibe_app_server_bin,
+                mistral_vibe_ownership.expect("Mistral Vibe ownership exists when enabled"),
+            ));
+        }
+        if muse_enabled {
+            engine.add_source(MuseSource::host_default(
+                muse_ownership.expect("Muse ownership exists when enabled"),
+            )?);
+        }
+        if qwen_enabled {
+            engine.add_source(QwenSource::host(
+                cli.qwen_bin,
+                qwen_ownership.expect("Qwen ownership exists when enabled"),
+            ));
+        }
+        if kimi_enabled {
+            engine.add_source(KimiSource::host_default(
+                kimi_ownership.expect("Kimi ownership exists when enabled"),
+            )?);
         }
         if let Some(terminal_harness) = terminal_harness {
             engine.add_source(terminal_harness);
@@ -1008,6 +1139,38 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
                 url: "https://antigravity.google/cli/install.sh",
             },
         ),
+        LaunchProvider::MistralVibe => (
+            "Mistral Vibe",
+            cli.mistral_vibe_bin.as_str(),
+            vec!["--setup"],
+            HarnessInstaller::Script {
+                url: "https://mistral.ai/vibe/install.sh",
+            },
+        ),
+        LaunchProvider::Muse => (
+            "Muse Code",
+            cli.muse_bin.as_str(),
+            vec!["login"],
+            HarnessInstaller::Script {
+                url: "https://dev.meta.ai/install.sh",
+            },
+        ),
+        LaunchProvider::Qwen => (
+            "Qwen Code",
+            cli.qwen_bin.as_str(),
+            Vec::new(),
+            HarnessInstaller::Script {
+                url: "https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh",
+            },
+        ),
+        LaunchProvider::Kimi => (
+            "Kimi Code",
+            cli.kimi_bin.as_str(),
+            vec!["login"],
+            HarnessInstaller::Script {
+                url: "https://code.kimi.com/kimi-code/install.sh",
+            },
+        ),
         LaunchProvider::Terminal => unreachable!("handled above"),
     };
     let already_installed = executable_available(executable);
@@ -1081,6 +1244,10 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
     }
     if provider == LaunchProvider::Pi {
         println!("Pi opens its native no-session UI; run `/login` there, then exit when setup is complete.");
+    } else if provider == LaunchProvider::Qwen {
+        println!(
+            "Qwen Code opens its native UI; run `/auth` there, then exit when setup is complete."
+        );
     } else {
         println!("Opening {label} login…");
     }
@@ -1107,6 +1274,10 @@ fn launch_provider_value(provider: LaunchProvider) -> &'static str {
         LaunchProvider::Cursor => "cursor",
         LaunchProvider::Copilot => "copilot",
         LaunchProvider::Antigravity => "antigravity",
+        LaunchProvider::MistralVibe => "mistral-vibe",
+        LaunchProvider::Muse => "muse",
+        LaunchProvider::Qwen => "qwen",
+        LaunchProvider::Kimi => "kimi",
         LaunchProvider::Terminal => "terminal",
     }
 }
@@ -1325,6 +1496,11 @@ fn resolve_default_provider_bins(cli: &mut Cli) {
         &mut cli.copilot_bin,
         &mut cli.cursor_bin,
         &mut cli.antigravity_bin,
+        &mut cli.mistral_vibe_bin,
+        &mut cli.mistral_vibe_app_server_bin,
+        &mut cli.muse_bin,
+        &mut cli.qwen_bin,
+        &mut cli.kimi_bin,
     ] {
         if let Some(path) = resolve_executable(executable) {
             *executable = path.to_string_lossy().into_owned();
@@ -1370,6 +1546,10 @@ fn provider_fallback_directories(program: &str) -> &'static [&'static str] {
         "opencode" => &[".local/bin", ".opencode/bin", ".bun/bin"],
         "cursor-agent" => &[".local/bin", ".cursor/bin"],
         "agy" => &[".local/bin", ".antigravity/bin"],
+        "vibe" | "vibe-app-server" => &[".local/bin"],
+        "muse" => &[".local/bin"],
+        "qwen" => &[".local/bin", ".npm-global/bin"],
+        "kimi" => &[".local/bin"],
         "claude" | "pi" => &[".local/bin", ".npm-global/bin"],
         _ => &[],
     }
@@ -1798,6 +1978,10 @@ mod tests {
             "--no-host-copilot",
             "--no-host-cursor",
             "--no-host-antigravity",
+            "--no-host-mistral-vibe",
+            "--no-host-muse",
+            "--no-host-qwen",
+            "--no-host-kimi",
             "--all",
             "--include-interactive",
             "--include-external",
@@ -1825,6 +2009,10 @@ mod tests {
         assert!(cli.no_host_copilot);
         assert!(cli.no_host_cursor);
         assert!(cli.no_host_antigravity);
+        assert!(cli.no_host_mistral_vibe);
+        assert!(cli.no_host_muse);
+        assert!(cli.no_host_qwen);
+        assert!(cli.no_host_kimi);
         assert!(cli.all);
         assert!(cli.include_interactive);
         assert!(cli.include_external);
@@ -1854,6 +2042,10 @@ mod tests {
             ("cursor", LaunchProvider::Cursor),
             ("copilot", LaunchProvider::Copilot),
             ("antigravity", LaunchProvider::Antigravity),
+            ("mistral-vibe", LaunchProvider::MistralVibe),
+            ("muse", LaunchProvider::Muse),
+            ("qwen", LaunchProvider::Qwen),
+            ("kimi", LaunchProvider::Kimi),
             ("terminal", LaunchProvider::Terminal),
         ] {
             let cli =

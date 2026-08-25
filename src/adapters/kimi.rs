@@ -400,9 +400,7 @@ fn read_kimi_index(data_root: &Path) -> Result<BTreeMap<String, KimiIndexEntry>>
     let sessions_path = data_root.join("sessions");
     let sessions_metadata = match fs::symlink_metadata(&sessions_path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(BTreeMap::new())
-        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
         Err(error) => return Err(error.into()),
     };
     if sessions_metadata.file_type().is_symlink() || !sessions_metadata.is_dir() {

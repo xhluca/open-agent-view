@@ -5,9 +5,9 @@
 //! state.
 
 use std::collections::BTreeSet;
-use std::fs::{self, OpenOptions};
 #[cfg(unix)]
 use std::fs::File;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;

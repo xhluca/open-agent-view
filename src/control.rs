@@ -313,6 +313,10 @@ impl ControlHub {
             Provider::Cursor => "cursor",
             Provider::GitHubCopilot => "copilot",
             Provider::Antigravity => "antigravity",
+            Provider::MistralVibe => "mistral-vibe",
+            Provider::MuseCode => "muse",
+            Provider::QwenCode => "qwen",
+            Provider::KimiCode => "kimi",
             Provider::Terminal => unreachable!("handled above"),
             Provider::Other(_) => bail!("setup is unavailable for this provider"),
         };

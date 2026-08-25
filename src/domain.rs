@@ -18,6 +18,14 @@ pub enum Provider {
     #[serde(rename = "github_copilot")]
     GitHubCopilot,
     Antigravity,
+    #[serde(rename = "mistral_vibe")]
+    MistralVibe,
+    #[serde(rename = "muse_code")]
+    MuseCode,
+    #[serde(rename = "qwen_code")]
+    QwenCode,
+    #[serde(rename = "kimi_code")]
+    KimiCode,
     Terminal,
     Other(String),
 }
@@ -32,6 +40,10 @@ impl Provider {
             Self::Cursor => "Cursor",
             Self::GitHubCopilot => "GitHub Copilot",
             Self::Antigravity => "Antigravity",
+            Self::MistralVibe => "Mistral Vibe",
+            Self::MuseCode => "Muse Code",
+            Self::QwenCode => "Qwen Code",
+            Self::KimiCode => "Kimi Code",
             Self::Terminal => "Terminal",
             Self::Other(name) => name,
         }
@@ -285,6 +297,10 @@ mod tests {
                 "GitHub Copilot",
             ),
             (Provider::Antigravity, "\"antigravity\"", "Antigravity"),
+            (Provider::MistralVibe, "\"mistral_vibe\"", "Mistral Vibe"),
+            (Provider::MuseCode, "\"muse_code\"", "Muse Code"),
+            (Provider::QwenCode, "\"qwen_code\"", "Qwen Code"),
+            (Provider::KimiCode, "\"kimi_code\"", "Kimi Code"),
             (Provider::Terminal, "\"terminal\"", "Terminal"),
         ];
 

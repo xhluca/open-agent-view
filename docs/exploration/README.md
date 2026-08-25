@@ -23,13 +23,24 @@ as stable contracts.
   Copilot ACP discovery and connection-owned control contract.
 - [`antigravity-integration.md`](antigravity-integration.md) — Antigravity's
   documented workspace cache and native-only control boundary.
+- [`mistral-vibe-integration.md`](mistral-vibe-integration.md) — Mistral
+  Vibe's app-server discovery, configured models, native launch, and bounded
+  ownership correlation.
+- [`muse-code-integration.md`](muse-code-integration.md) — Muse Code's native
+  foreground lifecycle, append-only log, model cache, and exact owned-session
+  boundary.
+- [`kimi-code-integration.md`](kimi-code-integration.md) — current Kimi Code's
+  index/state formats, native readiness gate, device login, and model aliases.
+- [`qwen-code-integration.md`](qwen-code-integration.md) — Qwen Code's JSONL
+  history/live inventory, caller-supplied session identity, and exact model-ID
+  boundary.
 - [`fresh-container-provider-validation.md`](fresh-container-provider-validation.md)
   — no-mount official installer and protocol smoke tests.
 - [`main-account-container-regressions.md`](main-account-container-regressions.md)
   — v0.1.17 native-return, executable-identity, launch-latency, and
   authentication reproductions on the reporting account and in isolated
   containers.
-- [`auth-model-onboarding.md`](auth-model-onboarding.md) — the seven-agent
+- [`auth-model-onboarding.md`](auth-model-onboarding.md) — the coding-agent
   installer/authentication/model-selection contract and isolated foreground
   launch validation.
 

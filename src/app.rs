@@ -718,8 +718,10 @@ impl App {
         // Antigravity validates every --model value against the same catalog
         // that just failed. Treating filter text as an exact ID in that state
         // turns a recovery Enter into another guaranteed launch failure.
-        self.models_error.is_some()
-            && self.launch_provider != Provider::Antigravity
+        (self.models_error.is_some() && self.launch_provider != Provider::Antigravity
+            || self.launch_provider == Provider::QwenCode
+                && self.models_error.is_none()
+                && self.available_models.is_empty())
             && valid_model_name(&self.model_filter)
     }
 
@@ -1339,6 +1341,10 @@ fn provider_alias(provider: &Provider) -> String {
     match provider {
         Provider::GitHubCopilot => "copilot".into(),
         Provider::OpenCode => "opencode".into(),
+        Provider::MistralVibe => "vibe".into(),
+        Provider::MuseCode => "muse".into(),
+        Provider::QwenCode => "qwen".into(),
+        Provider::KimiCode => "kimi".into(),
         _ => normalize_provider_name(provider.label()),
     }
 }
@@ -1352,6 +1358,10 @@ fn known_provider(value: &str) -> Option<Provider> {
         "cursor" | "cursoragent" => Some(Provider::Cursor),
         "copilot" | "githubcopilot" => Some(Provider::GitHubCopilot),
         "antigravity" | "agy" => Some(Provider::Antigravity),
+        "mistral" | "mistralvibe" | "vibe" => Some(Provider::MistralVibe),
+        "muse" | "musecode" => Some(Provider::MuseCode),
+        "qwen" | "qwencode" => Some(Provider::QwenCode),
+        "kimi" | "kimicode" => Some(Provider::KimiCode),
         "terminal" | "shell" => Some(Provider::Terminal),
         _ => None,
     }
@@ -2424,6 +2434,21 @@ mod tests {
                 provider: Provider::Terminal
             }
         );
+
+        for (name, provider) in [
+            ("vibe", Provider::MistralVibe),
+            ("muse", Provider::MuseCode),
+            ("qwen", Provider::QwenCode),
+            ("kimi", Provider::KimiCode),
+        ] {
+            app.start_new_session(None);
+            app.input = format!("/setup {name}");
+            assert_eq!(
+                app.activate(),
+                AppAction::SetupProvider { provider },
+                "setup alias {name} did not resolve"
+            );
+        }
     }
 
     #[test]
@@ -2714,6 +2739,36 @@ mod tests {
         assert_eq!(app.launch_model.as_deref(), Some("gemini-3-pro"));
         assert_eq!(app.input, "investigate the failure");
         assert_eq!(app.overlay, Overlay::Composer(ComposerMode::NewSession));
+    }
+
+    #[test]
+    fn exact_model_id_is_available_when_provider_has_no_machine_readable_catalog() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::QwenCode,
+            vec![LaunchTarget {
+                provider: Provider::QwenCode,
+                supports_model: true,
+            }],
+        );
+        app.start_new_session(None);
+        app.input = "keep the native task".into();
+        assert_eq!(
+            app.open_model_picker(),
+            AppAction::LoadModels {
+                provider: Provider::QwenCode
+            }
+        );
+        app.set_available_models(Provider::QwenCode, Ok(Vec::new()));
+        for character in "qwen3-coder-plus".chars() {
+            app.push_input(character);
+        }
+
+        assert!(app.has_valid_custom_model_input());
+        app.confirm_model_selection();
+        assert_eq!(app.launch_model.as_deref(), Some("qwen3-coder-plus"));
+        assert_eq!(app.input, "keep the native task");
     }
 
     #[test]

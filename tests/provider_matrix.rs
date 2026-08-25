@@ -141,6 +141,10 @@ fn canonical_visual_fixture_contains_every_supported_provider_without_id_collisi
         Provider::Cursor,
         Provider::GitHubCopilot,
         Provider::Antigravity,
+        Provider::MistralVibe,
+        Provider::MuseCode,
+        Provider::QwenCode,
+        Provider::KimiCode,
         Provider::Terminal,
     ] {
         assert!(

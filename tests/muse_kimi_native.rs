@@ -11,8 +11,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use open_agent_view::adapters::{
-    DiscoveryRequest, KimiController, KimiOwnership, KimiSource, MuseController,
-    MuseOwnership, MuseSource, SessionSource,
+    DiscoveryRequest, KimiController, KimiOwnership, KimiSource, MuseController, MuseOwnership,
+    MuseSource, SessionSource,
 };
 use open_agent_view::control::{LaunchRequest, ProviderController};
 use open_agent_view::domain::{Capability, Provider, SessionState};
@@ -173,11 +173,7 @@ while :; do sleep 1; done
     );
     let ownership = MuseOwnership::load(directory.path().join("muse-owned.json")).unwrap();
     let source = MuseSource::host(data_root.clone(), ownership.clone());
-    let controller = MuseController::host(
-        executable.display().to_string(),
-        data_root,
-        ownership,
-    );
+    let controller = MuseController::host(executable.display().to_string(), data_root, ownership);
     std::env::set_var("OAV_PROVIDER_ROOT", directory.path().join("data/muse"));
     std::env::set_var("OAV_WORKSPACE", &workspace);
     let request = LaunchRequest {
@@ -247,11 +243,7 @@ while :; do sleep 1; done
     );
     let ownership = KimiOwnership::load(directory.path().join("kimi-owned.json")).unwrap();
     let source = KimiSource::host(data_root.clone(), ownership.clone());
-    let controller = KimiController::host(
-        executable.display().to_string(),
-        data_root,
-        ownership,
-    );
+    let controller = KimiController::host(executable.display().to_string(), data_root, ownership);
     std::env::set_var("OAV_PROVIDER_ROOT", directory.path().join("kimi-home"));
     std::env::set_var("OAV_WORKSPACE", &workspace);
     let request = LaunchRequest {
@@ -433,5 +425,7 @@ fn occurrences(haystack: &[u8], needle: &[u8]) -> usize {
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.windows(needle.len()).any(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }

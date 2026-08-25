@@ -112,14 +112,14 @@ pub fn run_with_initial_input_after_screen(
         if !terminal_is_interactive() {
             bail!("screen-gated native input requires an interactive terminal");
         }
-        return run_pty(
+        run_pty(
             command,
             session_key,
             Some(ScreenTriggeredInput {
                 bytes: initial_input.to_vec(),
                 ready_marker: ready_marker.to_owned(),
             }),
-        );
+        )
     }
     #[cfg(not(unix))]
     {

@@ -49,9 +49,13 @@ Open Agent View is already up to date.
 | `--copilot-bin PATH` / `--no-host-copilot` | Select or disable persisted Copilot discovery and process-local managed ACP control. |
 | `--cursor-bin PATH` / `--no-host-cursor` | Select or disable OAV-owned managed Cursor support on Linux. Cursor has no machine-readable global list. |
 | `--antigravity-bin PATH` / `--no-host-antigravity` | Select or disable host Antigravity discovery. |
+| `--mistral-vibe-bin PATH` / `--mistral-vibe-app-server-bin PATH` / `--no-host-mistral-vibe` | Select or disable Mistral Vibe native control and app-server discovery. |
+| `--muse-bin PATH` / `--no-host-muse` | Select or disable Muse Code native control and owned local-history discovery. |
+| `--qwen-bin PATH` / `--no-host-qwen` | Select or disable Qwen Code native control plus bounded session/live discovery. |
+| `--kimi-bin PATH` / `--no-host-kimi` | Select or disable Kimi Code native control and owned local-index discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity\|terminal` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity uses its native full-screen UI; Terminal opens the user's shell. |
+| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity\|mistral-vibe\|muse\|qwen\|kimi\|terminal` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity, Mistral Vibe, Muse, Qwen, and Kimi use native full-screen UIs; Terminal opens the user's shell. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
@@ -90,7 +94,7 @@ open-agent-view setup HARNESS
 open-agent-view setup HARNESS --yes
 ```
 
-`HARNESS` accepts the seven coding-agent values plus `terminal` (which is built
+`HARNESS` accepts the eleven coding-agent values plus `terminal` (which is built
 in and needs no installation). Without `--yes`, setup requires
 an interactive terminal confirmation naming the exact download/package source.
 In non-interactive use it refuses before network or installer execution. Shell

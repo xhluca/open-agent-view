@@ -12,7 +12,8 @@ application state + commands
 normalized session model
   |
 provider adapters (Claude, Codex, Pi, OpenCode, Cursor, Copilot,
-                   Antigravity, Docker, fixtures)
+                   Antigravity, Mistral Vibe, Muse Code, Qwen Code,
+                   Kimi Code, Docker, fixtures)
 ```
 
 The TUI does not interpret provider-specific JSON or invoke CLIs directly.
@@ -67,7 +68,10 @@ without changing the draft; `/model` opens the same picker as a command, while
 `/model NAME` preserves an exact custom-identifier path. The catalog contract is
 implemented by Claude CLI help aliases, Codex App Server `model/list`, Pi's
 offline list, OpenCode's configured-model list, Cursor's account catalog,
-Copilot's short-lived headless SDK catalog, and Antigravity's model command. A
+Copilot's short-lived headless SDK catalog, Antigravity's model command,
+Mistral Vibe's `config/read`, Muse's bounded local catalog, and Kimi's
+`provider list --json`. Qwen has no stable machine-readable account catalog,
+so its picker exposes an exact typed-ID fallback rather than guessed aliases. A
 catalog authentication failure becomes an explicit login action when the
 provider has a native setup surface; the same catalog reloads on return. Each
 login/setup flow has a distinct private PTY and appears as a Terminal job when
@@ -79,7 +83,8 @@ Launch presentation is explicit in the same controller contract. Background
 controllers run on a worker while the event loop advances a status spinner.
 Foreground controllers suspend the dashboard before provider I/O. Claude
 creates an exact `--background` UUID, verifies it in `claude agents`, and opens
-`attach`; Antigravity starts its sandboxed native UI. Both use the native PTY
+`attach`; Antigravity, Mistral Vibe, Muse Code, Qwen Code, and Kimi Code start
+their native interactive UIs. These paths use the native PTY
 bridge so a boundary double-arrow or Shift+Arrow retains the frontend and
 returns to the dashboard. The built-in Terminal controller uses that bridge
 for process-local interactive shells: the task is a display name, the same
@@ -125,6 +130,13 @@ Antigravity contributes exact OAV-owned launch records correlated from its
 bounded local transcript store; Terminal contributes only the
 current dashboard process's PTY registry. Explicit Docker targets remain visible because naming them on the
 command line is an intentional enrollment action.
+
+Mistral Vibe discovery uses its installed app-server protocol and claims a new
+provider-allocated ID only after bounded, unambiguous same-workspace
+correlation. Qwen Code uses its documented caller-supplied session UUID plus
+JSONL history/live commands. Muse Code and Kimi Code read only their documented
+local session stores. All four keep native launch/resume in the provider TUI,
+default to exact OAV-owned IDs, and withhold controls that cannot be revalidated.
 
 `--include-external` adds provider-wide read-only history. Completed sessions
 remain a separate visibility control: `/completed show` and `/completed hide`

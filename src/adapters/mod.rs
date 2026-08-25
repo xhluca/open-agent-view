@@ -7,10 +7,15 @@ mod cursor;
 mod cursor_managed;
 mod docker;
 mod fixture;
+mod kimi;
 mod managed_docker;
 mod managed_docker_registry;
+mod mistral_vibe;
+mod muse;
+mod native_owned;
 mod opencode;
 mod pi;
+mod qwen;
 mod terminal_harness;
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -40,6 +45,10 @@ pub use cursor::{
 pub use cursor_managed::{default_cursor_state_dir, CursorSource, CursorSupervisor};
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;
+pub use kimi::{
+    default_kimi_data_root, default_kimi_ownership_path, KimiController, KimiInvocation,
+    KimiOwnership, KimiSource,
+};
 pub use managed_docker::{
     DockerAuthority, DockerContainer, DockerProvider, DockerProviderCommand,
     EnrolledDockerContainer, ManagedDockerContainer, ManagedDockerCreateSpec, ManagedDockerOwner,
@@ -50,10 +59,19 @@ pub use managed_docker_registry::{
     default_managed_docker_registry_path, generate_managed_instance_id, ManagedDockerRegistry,
     ManagedDockerService, ManagedDockerState, ManagedDockerStatus,
 };
+pub use mistral_vibe::{
+    default_mistral_vibe_ownership_path, MistralVibeController, MistralVibeOwnership,
+    MistralVibeSource,
+};
+pub use muse::{
+    default_muse_data_root, default_muse_ownership_path, MuseController, MuseInvocation,
+    MuseOwnership, MuseSource,
+};
 pub use opencode::{
     parse_opencode_session_list, OpenCodeController, OpenCodeInvocation, OpenCodeSource,
 };
 pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
+pub use qwen::{default_qwen_ownership_path, QwenController, QwenOwnership, QwenSource};
 pub use terminal_harness::TerminalHarness;
 
 use crate::domain::{AgentSession, SessionKind, SessionSnapshot, SessionState};

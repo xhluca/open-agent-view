@@ -1519,6 +1519,10 @@ mod tests {
             (Provider::Cursor, "Cursor"),
             (Provider::GitHubCopilot, "GitHub Copilot"),
             (Provider::Antigravity, "Antigravity"),
+            (Provider::MistralVibe, "Mistral Vibe"),
+            (Provider::MuseCode, "Muse Code"),
+            (Provider::QwenCode, "Qwen Code"),
+            (Provider::KimiCode, "Kimi Code"),
             (Provider::Terminal, "Terminal"),
         ];
 

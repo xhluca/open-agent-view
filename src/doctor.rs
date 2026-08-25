@@ -40,6 +40,10 @@ impl DoctorReport {
                         | "Cursor"
                         | "GitHub Copilot"
                         | "Antigravity"
+                        | "Mistral Vibe"
+                        | "Muse Code"
+                        | "Qwen Code"
+                        | "Kimi Code"
                 ) && check.status == CheckStatus::Ok
             })
             .count()

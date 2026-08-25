@@ -62,6 +62,32 @@ const SETUP_CASES: &[SetupCase] = &[
         installer: InstallerKind::Script("https://antigravity.google/cli/install.sh"),
         login_args: "",
     },
+    SetupCase {
+        harness: "mistral-vibe",
+        binary_flag: "--mistral-vibe-bin",
+        installer: InstallerKind::Script("https://mistral.ai/vibe/install.sh"),
+        login_args: "--setup",
+    },
+    SetupCase {
+        harness: "muse",
+        binary_flag: "--muse-bin",
+        installer: InstallerKind::Script("https://dev.meta.ai/install.sh"),
+        login_args: "login",
+    },
+    SetupCase {
+        harness: "qwen",
+        binary_flag: "--qwen-bin",
+        installer: InstallerKind::Script(
+            "https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh",
+        ),
+        login_args: "",
+    },
+    SetupCase {
+        harness: "kimi",
+        binary_flag: "--kimi-bin",
+        installer: InstallerKind::Script("https://code.kimi.com/kimi-code/install.sh"),
+        login_args: "login",
+    },
 ];
 
 fn write_executable(path: &Path, body: &str) {

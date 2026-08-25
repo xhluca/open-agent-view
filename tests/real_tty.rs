@@ -60,6 +60,15 @@ impl PtyApp {
                 "--all",
                 "--no-host-claude",
                 "--no-host-codex",
+                "--no-host-pi",
+                "--no-host-opencode",
+                "--no-host-cursor",
+                "--no-host-copilot",
+                "--no-host-antigravity",
+                "--no-host-mistral-vibe",
+                "--no-host-muse",
+                "--no-host-qwen",
+                "--no-host-kimi",
                 "--include-interactive",
                 "--refresh-ms",
                 "60000",
@@ -233,13 +242,16 @@ impl Drop for PtyApp {
 fn all_supported_providers_coexist_in_one_real_terminal() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_fixture(150, 36, "all-providers-sessions.json");
-    let startup = app.wait_for("seven-provider dashboard", |screen| {
-        screen.contains("Antigravity + Claude + Codex + Cursor + GitHub Copilot + OpenCode + Pi")
-            && screen.contains("pi-refactor")
+    let startup = app.wait_for("all-provider dashboard", |screen| {
+        screen.contains("pi-refactor")
             && screen.contains("opencode-api")
             && screen.contains("cursor-owned-chat")
             && screen.contains("copilot-acp-session")
             && screen.contains("antigravity-last-conversa")
+            && screen.contains("vibe-release-check")
+            && screen.contains("muse-ui-pass")
+            && screen.contains("qwen-parser-work")
+            && screen.contains("kimi-test-plan")
     });
     assert_lines_fit(&startup, 150);
     for (session, provider) in [
@@ -250,6 +262,10 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         ("cursor-owned-chat", "Cursor"),
         ("copilot-acp-session", "GitHub Copilot"),
         ("antigravity-last-conversa", "Antigravity"),
+        ("vibe-release-check", "Mistral Vibe"),
+        ("muse-ui-pass", "Muse Code"),
+        ("qwen-parser-work", "Qwen Code"),
+        ("kimi-test-plan", "Kimi Code"),
     ] {
         let row = startup
             .lines()
@@ -718,6 +734,10 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
             "--no-host-copilot",
             "--no-host-cursor",
             "--no-host-antigravity",
+            "--no-host-mistral-vibe",
+            "--no-host-muse",
+            "--no-host-qwen",
+            "--no-host-kimi",
             "--include-external",
             "--refresh-ms",
             "60000",

@@ -58,6 +58,14 @@ checks; the guide also contains release gates that are not yet complete.
   history replay, real latest-message summaries, provider timestamps, and
   visibility when the second process cannot reach ACP. Antigravity tests
   read only a temporary documented cache and build shell-free native commands.
+- Mistral Vibe and Qwen Code have public-controller integration tests backed by
+  isolated executable app-server/CLI fixtures. They exercise model selection,
+  native launch, exact ownership persistence, owned-only discovery, native
+  resume, and unowned interrupt refusal through the same public traits used by
+  the dashboard. An outer real PTY additionally drives foreground launch,
+  native background, exact reattach, verified interrupt, and fresh exact resume
+  for both providers. Vibe also covers bounded delayed correlation and
+  ambiguity refusal; Qwen covers immediate launch-failure rollback.
 - `tests/managed_cursor_copilot.rs` drives the public `ProviderController`
   surface rather than private supervisor helpers. It covers managed launch,
   enrich, inspect, reply, interrupt, exact one-shot approval, duplicate
@@ -152,22 +160,25 @@ checks; the guide also contains release gates that are not yet complete.
   interactive shell, backgrounds it with the native gesture, discovers and resumes its exact
   preserved screen, stops it with Ctrl+X, and deletes the completed row with a
   second Ctrl+X. Provider login PTYs use the same isolated registry.
-- `tests/setup_installer.rs` covers all seven coding-agent installers with an
+- `tests/setup_installer.rs` covers all eleven coding-agent installers with an
   isolated `PATH` and fake curl/bash/npm. For every provider it proves non-TTY
   setup refuses before download without `--yes`, confirmed setup uses only the
   exact official URL or package, creates the configured executable, and emits
   the next authentication step. A second Linux case hands every already
   installed provider's exact login arguments to a real PTY.
 - `scripts/fresh-provider-setup-tests.sh` is the networked, explicitly invoked
-  E2E tier. It starts seven independent containers from the pinned
+  E2E tier. It starts eleven independent containers from the pinned
   `node:22-bookworm-slim` digest with empty homes and no mounted credentials or
   workspaces, lets the real OAV binary run each current official installer,
   verifies the installed executable/version, and requires a native PTY login
   handoff. Browser/device authorization is deliberately bounded rather than
   completed. On 2026-08-25 this passed for Claude Code 2.1.245, Codex 0.149.1,
   Pi 0.73.1, OpenCode 1.18.23, Cursor
-  2026.08.11-e8db854, Copilot 1.0.80, and Antigravity 1.1.20; all disposable
-  containers were removed.
+  2026.08.11-e8db854, Copilot 1.0.80, Antigravity 1.1.20, Mistral Vibe 2.24.3,
+  Muse Code 0.2.1 (0.2.1-R1215.1), Qwen Code 0.22.0, and Kimi Code 0.38.0; all
+  disposable containers were removed. Vibe's real passive app-server RPC,
+  Qwen's real JSONL inventory, Muse's credential-free echo provider, and
+  Kimi's unauthenticated provider catalog are also probed in those containers.
 - `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
   `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
   the exact repository request, install-directory propagation, successful
@@ -184,6 +195,9 @@ checks; the guide also contains release gates that are not yet complete.
   milliseconds. It also asserts that an unchanged frame emits no idle terminal
   output and that cancellation leaves no fake provider child behind. This
   catches accidental provider I/O or unconditional redraws on the input thread.
+- The canonical fixture and a real 150×36 PTY render all eleven coding
+  providers plus Terminal together, require every provider-specific row label,
+  and retain collision-free normalized IDs.
 - A 500-session real-PTY stress case verifies that only the terminal-sized page
   (capped at 25 rows) is initially present, selects the matching Show-more row
   with real arrow keys, reveals the second page, then sends 200 down-arrow

@@ -9,7 +9,7 @@ guest="${repo_root}/scripts/fresh-provider-setup-case.sh"
 if (( $# > 0 )); then
   providers=("$@")
 else
-  providers=(claude codex pi opencode cursor copilot antigravity)
+  providers=(claude codex pi opencode cursor copilot antigravity mistral-vibe muse qwen kimi)
 fi
 staging=""
 
