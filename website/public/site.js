@@ -137,7 +137,7 @@ function dashboard(ids, active = "", composer = "describe a task · /help for co
   }).join("\n");
   const working = ids.length ? ids.length : 0;
   return shell([
-    `  ${cyan("◇◇")}  ${strong("Open Agent View v0.1.34")}`,
+    `  ${cyan("◇◇")}  ${strong("Open Agent View v0.1.35")}`,
     ` ${cyan("◇  ◇")} ${providerOrder.slice(0, Math.max(ids.length, 1)).map((id) => providers[id].label).join(" + ")} · ${dim("/work/acme-dashboard")}`,
     `  ${cyan("◇◇")} 0 awaiting input · ${working} working · 0 completed · status view`,
     "",
@@ -250,8 +250,8 @@ const STORIES = {
     duration: 20,
     frames: [
       storyFrame(0, `${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, "Terminal", "Typed install command"),
-      storyFrame(3, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, dim("open-agent-view: downloading v0.1.34 for x86_64-unknown-linux-gnu")]), "Terminal", "Enter · install"),
-      storyFrame(6, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, green("open-agent-view: checksum verified"), green("open-agent-view: installed open-agent-view 0.1.34"), green("open-agent-view: installed shorthand: opav")]), "Terminal", "Installer completed"),
+      storyFrame(3, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, dim("open-agent-view: downloading v0.1.35 for x86_64-unknown-linux-gnu")]), "Terminal", "Enter · install"),
+      storyFrame(6, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, green("open-agent-view: checksum verified"), green("open-agent-view: installed open-agent-view 0.1.35"), green("open-agent-view: installed shorthand: opav")]), "Terminal", "Installer completed"),
       storyFrame(9, shell([`${prompt("$")} opav`, dim("Opening Open Agent View in /work/acme-dashboard…")]), "Terminal", "Enter · launch opav"),
       storyFrame(11, dashboard([]), "open-agent-view", "Dashboard opened"),
       storyFrame(14, dashboard([], "", `${cyan("/harness")}`), "open-agent-view", "Typed /harness"),

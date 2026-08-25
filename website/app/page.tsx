@@ -89,7 +89,7 @@ export default function Home() {
         </p>
         <div className="hero-actions">
           <CopyCommand command={installCommand} />
-          <code className="launch-command"><span>$</span> open-agent-view <b>or</b> opav</code>
+          <CopyCommand command="open-agent-view" comment="# shorthand: opav" />
         </div>
         <div className="provider-row" aria-label="Choose a harness demo">
           {providers.map((provider) => (

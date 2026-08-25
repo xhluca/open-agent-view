@@ -8,6 +8,21 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.35] - 2026-08-25
+
+### Changed
+
+- The contextual help panel now aligns related shortcuts into stable columns
+  instead of joining them with dot separators, making the key/description
+  pairs easier to scan in wide VS Code terminals.
+- The close instruction appears once in the footer, and `esc` is described as
+  quitting only from the dashboard rather than while help is open.
+
+### Tests
+
+- Strengthened the real VS Code PTY regression to verify aligned dashboard
+  shortcuts and reject duplicate close instructions.
+
 ## [0.1.34] - 2026-08-25
 
 ### Fixed

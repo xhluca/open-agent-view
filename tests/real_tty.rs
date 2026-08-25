@@ -2314,6 +2314,13 @@ fn vscode_wide_terminal_help_preserves_visual_line_breaks() {
             && screen.contains("? to close")
     });
     assert_lines_fit(&help, 220);
+    assert_eq!(help.matches("? to close help").count(), 1);
+    let dashboard_row = help
+        .lines()
+        .find(|line| line.contains("ctrl+s to switch views"))
+        .expect("dashboard shortcut row");
+    assert!(dashboard_row.contains("ctrl+l to refresh"));
+    assert!(!dashboard_row.contains(" · "));
 
     let switch_row = help
         .lines()

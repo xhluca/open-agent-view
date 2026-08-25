@@ -588,13 +588,17 @@ fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines = pack_help_actions(help_actions(app), area.width.saturating_sub(4) as usize)
+    let content_width = area.width.saturating_sub(4) as usize;
+    let column_width = help_column_width(content_width);
+    let lines = pack_help_actions(help_actions(app), content_width)
         .into_iter()
         .map(|actions| {
             let mut spans = vec![Span::raw(" ")];
             for (index, action) in actions.into_iter().enumerate() {
                 if index > 0 {
-                    spans.push(Span::styled("  ·  ", Style::default().fg(DIM)));
+                    let used = spans.iter().map(Span::width).sum::<usize>();
+                    let padding = 1 + column_width.saturating_sub(used.saturating_sub(1));
+                    spans.push(Span::raw(" ".repeat(padding)));
                 }
                 let action = sanitize_inline(&action);
                 if let Some((keys, description)) = action.split_once(" to ") {
@@ -703,7 +707,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
         }
         Overlay::Peek if app.input.is_empty() => "enter to open".into(),
         Overlay::Peek => "enter to send · esc to close".into(),
-        Overlay::Help => "? to close help · esc to close".into(),
+        Overlay::Help => "? to close help · esc also closes".into(),
         Overlay::None if matches!(app.selection, Some(SelectionKey::ShowMore(_))) => {
             if width >= 55 {
                 "enter to show more · ↑/↓ to select · ? for shortcuts".into()
@@ -811,16 +815,16 @@ fn help_actions(app: &App) -> Vec<String> {
         actions.push("ctrl+r to rename".into());
     }
     actions.push("ctrl+s to switch views".into());
-    actions.push("ctrl+j for newline".into());
-    actions.push("ctrl+f to filter".into());
     actions.push("ctrl+l to refresh".into());
+    actions.push("ctrl+f to filter".into());
+    actions.push("/filter text to filter sessions".into());
+    actions.push("ctrl+j for newline".into());
     actions.push("tab for new task/harness picker".into());
     actions.push("/harness [name] switches harness".into());
     actions.push("/model [name|default] selects a model".into());
     actions.push("/login opens native setup".into());
     actions.push("/setup [harness] installs/signs in".into());
     actions.push("/completed [show|hide] toggles finished sessions".into());
-    actions.push("/filter text filters sessions".into());
     if let Some(session) = app.selected_session() {
         if session.capabilities.contains(&Capability::Approve)
             || session.capabilities.contains(&Capability::Decline)
@@ -857,32 +861,37 @@ fn help_actions(app: &App) -> Vec<String> {
     } else if selected_group_can_delete(app) {
         actions.push("ctrl+x to delete all".into());
     }
-    actions.push("esc to quit".into());
-    actions.push("? to close".into());
+    actions.push("esc on dashboard to quit".into());
     actions
 }
 
 fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<Vec<String>> {
-    const GAP_WIDTH: usize = 5;
+    const GAP_WIDTH: usize = 1;
     const MAX_ACTIONS_PER_LINE: usize = 2;
+    let column_width = help_column_width(width);
     let mut lines = vec![Vec::<String>::new()];
-    let mut line_width = 0;
     for action in actions {
         let line = lines.last_mut().expect("help always has one line");
-        let added = if line.is_empty() {
-            action.len()
-        } else {
-            GAP_WIDTH + action.len()
-        };
-        if !line.is_empty() && (line.len() >= MAX_ACTIONS_PER_LINE || line_width + added > width) {
-            line_width = action.len();
+        let action_width = display_width(&action);
+        let paired_width = column_width + GAP_WIDTH + action_width;
+        if !line.is_empty()
+            && (line.len() >= MAX_ACTIONS_PER_LINE
+                || line
+                    .first()
+                    .is_some_and(|first| display_width(first) > column_width)
+                || action_width > column_width
+                || paired_width > width)
+        {
             lines.push(vec![action]);
         } else {
-            line_width += added;
             line.push(action);
         }
     }
     lines
+}
+
+fn help_column_width(width: usize) -> usize {
+    width.saturating_sub(1).saturating_div(2).min(72)
 }
 
 fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
@@ -1728,6 +1737,7 @@ mod tests {
         assert!(rendered.contains("/model [name|default] selects a model"));
         assert!(rendered.contains("/login opens native setup"));
         assert!(rendered.contains("? to close help"));
+        assert_eq!(rendered.matches("? to close help").count(), 1);
         assert!(rendered.contains("describe a task · /help for commands"));
         assert!(!rendered.contains("ctrl+x to stop"));
         assert!(rendered.contains("ctrl+x to hide locally"));
@@ -1746,6 +1756,12 @@ mod tests {
             .position(|line| line.contains("enter/right to open session"))
             .expect("first shortcut row");
         assert!(composer_row < shortcuts_row && shortcuts_row < first_action_row);
+        let dashboard_row = rendered
+            .lines()
+            .find(|line| line.contains("ctrl+s to switch views"))
+            .expect("dashboard shortcut row");
+        assert!(dashboard_row.contains("ctrl+l to refresh"));
+        assert!(!dashboard_row.contains(" · "));
     }
 
     #[test]
@@ -1756,7 +1772,7 @@ mod tests {
                 "ctrl+j for newline".into(),
                 "ctrl+f to filter".into(),
                 "ctrl+l to refresh".into(),
-                "? to close".into(),
+                "esc on dashboard to quit".into(),
             ],
             240,
         );
@@ -1765,7 +1781,7 @@ mod tests {
         assert!(packed.iter().all(|line| line.len() <= 2));
         assert_eq!(packed[0][0], "ctrl+s to switch views");
         assert_eq!(packed[1][0], "ctrl+f to filter");
-        assert_eq!(packed[2][0], "? to close");
+        assert_eq!(packed[2][0], "esc on dashboard to quit");
     }
 
     #[test]
