@@ -12,7 +12,8 @@ use serde_json::Value;
 
 use super::{DiscoveryRequest, SessionSource};
 use crate::control::{
-    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
+    ProviderController,
 };
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
@@ -79,6 +80,10 @@ impl ProviderController for PiController {
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::Foreground
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -160,6 +165,49 @@ impl ProviderController for PiController {
         })
     }
 
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::Pi {
+            bail!("the Pi controller cannot launch another provider");
+        }
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .context("managed Pi launch is not configured")?;
+        let prompt = request.prompt.trim();
+        if prompt.is_empty() {
+            bail!("the Pi launch prompt cannot be empty");
+        }
+        let session_id = crate::native_session::new_session_id()?;
+        let session_dir = supervisor.prepare_session_dir()?;
+        let mut command = Command::new(&self.executable);
+        command
+            .args(["--session-id", &session_id, "--session-dir"])
+            .arg(&session_dir);
+        if let Some(model) = request.model.as_deref() {
+            command.args(["--model", model]);
+        }
+        command.arg(prompt).current_dir(&request.cwd);
+        let key = format!("pi:host:{session_id}");
+        match crate::native_session::run(command, &key)? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: format!(
+                    "backgrounded Pi session {}; Enter/Right resumes it",
+                    &session_id[..8]
+                ),
+                provider_session_hint: Some(session_id),
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: format!("returned from Pi session {}", &session_id[..8]),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Pi session exited with status {status}")
+            }
+        }
+    }
+
     fn inspect(&self, session: &AgentSession) -> Result<String> {
         if let Some(owned) = self.owned_session(session)? {
             if owned.alive {
@@ -189,6 +237,13 @@ impl ProviderController for PiController {
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if crate::native_session::is_backgrounded(&session.id) {
+            crate::native_session::terminate(&session.id)?;
+            return Ok(ControlOutcome {
+                message: format!("stopped native Pi session {}", session.name),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            });
+        }
         let owned = self.require_live_owned(session)?;
         self.supervisor
             .as_ref()
@@ -203,6 +258,9 @@ impl ProviderController for PiController {
     fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.kind != SessionKind::Managed {
             bail!("refusing to delete Pi history not created by Open Agent View");
+        }
+        if crate::native_session::is_backgrounded(&session.id) {
+            bail!("the native Pi frontend must stop before deletion");
         }
         if let Some(owned) = self.owned_session(session)? {
             if owned.alive {
@@ -444,7 +502,13 @@ impl SessionSource for PiSource {
                     .is_some_and(|managed| file.starts_with(managed))
                 {
                     session.kind = SessionKind::Managed;
-                    session.capabilities.insert(Capability::Delete);
+                    if crate::native_session::is_backgrounded(&session.id) {
+                        session.state = SessionState::Working;
+                        session.raw_state = Some("native_backgrounded".into());
+                        session.capabilities.insert(Capability::Interrupt);
+                    } else {
+                        session.capabilities.insert(Capability::Delete);
+                    }
                 }
                 if (request.include_completed || session.state != SessionState::Completed)
                     && request
@@ -957,6 +1021,57 @@ mod tests {
         assert_eq!(
             controller.available_models().unwrap(),
             vec!["openai/gpt-5.4"]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn foreground_launch_uses_native_pi_with_exact_managed_identity() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("pi-foreground-mock");
+        let argv = directory.path().join("argv");
+        fs::write(
+            &executable,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", argv.display()),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable, permissions).unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let supervisor = Arc::new(
+            PiSupervisor::with_state_dir_and_exe(
+                executable.display().to_string(),
+                directory.path().join("state"),
+                std::env::current_exe().unwrap(),
+            )
+            .unwrap(),
+        );
+        let controller = PiController::managed(
+            executable.display().to_string(),
+            directory.path().join("external"),
+            supervisor.clone(),
+        );
+        let request = LaunchRequest {
+            provider: Provider::Pi,
+            model: Some("openai/gpt-5.4".into()),
+            prompt: "show Pi in front".into(),
+            cwd: workspace,
+        };
+
+        assert_eq!(
+            controller.launch_presentation(),
+            LaunchPresentation::Foreground
+        );
+        let outcome = controller.launch_foreground(&request).unwrap();
+        let session_id = outcome.provider_session_hint.unwrap();
+        assert_eq!(
+            fs::read_to_string(argv).unwrap(),
+            format!(
+                "--session-id\n{session_id}\n--session-dir\n{}\n--model\nopenai/gpt-5.4\nshow Pi in front\n",
+                supervisor.session_dir().display()
+            )
         );
     }
 

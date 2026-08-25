@@ -9,7 +9,8 @@ use serde::Deserialize;
 
 use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
 use crate::control::{
-    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
+    ProviderController,
 };
 use crate::domain::{
     AgentSession, Capability, Provider, Runtime, SessionKind, SessionSnapshot, SessionState,
@@ -105,6 +106,10 @@ impl ProviderController for OpenCodeController {
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::DeferredForeground
     }
 
     fn available_models(&self) -> Result<Vec<String>> {

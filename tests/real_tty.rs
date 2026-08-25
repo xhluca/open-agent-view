@@ -1052,13 +1052,18 @@ fn copilot_login_reloads_the_exact_account_model_catalog() {
         fs::write(
             &executable,
             r##"#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 auth = os.path.join(os.environ['HOME'], 'copilot-authenticated')
 if len(sys.argv) > 1 and sys.argv[1] == 'login':
     print('COPILOT INTERACTIVE LOGIN', flush=True)
     input()
     open(auth, 'w').close()
     raise SystemExit(0)
+if '--session-id' in sys.argv:
+    with open(os.path.join(os.environ['HOME'], 'copilot-native-arguments'), 'w') as output:
+        output.write('\n'.join(sys.argv[1:]))
+    print('COPILOT FULL SCREEN SESSION', flush=True)
+    while True: time.sleep(1)
 if '--acp' in sys.argv:
     initialize = json.loads(sys.stdin.readline())
     print(json.dumps({'jsonrpc':'2.0','id':initialize['id'],'result':{
@@ -1118,7 +1123,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
     app.send(b"/harness copilot");
     app.send(ENTER);
     app.send(b"copilot account task");
-    app.send(ENTER);
+    app.send(SHIFT_TAB);
     app.wait_for("Copilot account requires login", |screen| {
         screen.contains("choose GitHub Copilot model")
             && screen.contains("GitHub Copilot is not authenticated")
@@ -1142,10 +1147,99 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
         screen.contains("new task · harness GitHub Copilot · model gpt-5.4")
             && screen.contains("copilot account task")
     });
-    app.send(ESC);
-    app.wait_for("Copilot task composer closes", |screen| {
-        screen.contains("describe a task · /help for commands")
-            && !screen.contains("copilot account task")
+    app.send(ENTER);
+    app.wait_for("Copilot native foreground session", |screen| {
+        screen.contains("COPILOT FULL SCREEN SESSION")
+    });
+    app.send(SHIFT_LEFT);
+    app.wait_for(
+        "Copilot dashboard after backgrounding native session",
+        |screen| {
+            screen.contains("Open Agent View")
+                && screen.contains("copilot account task")
+                && screen.contains("GitHub Copilot")
+        },
+    );
+    let arguments = fs::read_to_string(app.home_path().join("copilot-native-arguments"))
+        .expect("read Copilot native launch arguments");
+    assert!(arguments.contains("--session-id\n"));
+    assert!(arguments.contains("--model\ngpt-5.4"));
+    assert!(arguments.contains("--interactive\ncopilot account task"));
+    assert!(!arguments.contains("--allow-all"));
+    assert!(!arguments.contains("--yolo"));
+    app.send(CTRL_X);
+    app.wait_for("native Copilot Ctrl+X stop", |screen| {
+        screen.contains("stopped native GitHub Copilot session")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
+fn pi_launch_enters_native_foreground_and_returns_to_exact_managed_row() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("pi");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+session_id=
+session_dir=
+previous=
+for argument in "$@"; do
+  if [ "$previous" = "--session-id" ]; then session_id=$argument; fi
+  if [ "$previous" = "--session-dir" ]; then session_dir=$argument; fi
+  previous=$argument
+done
+test -n "$session_id" && test -n "$session_dir" || exit 71
+mkdir -p "$session_dir/native"
+printf '%s\n' "$@" > "$HOME/pi-native-arguments"
+printf '{"type":"session","version":3,"id":"%s","timestamp":"2026-08-24T00:00:00.000Z","cwd":"%s"}\n' "$session_id" "$PWD" > "$session_dir/native/$session_id.jsonl"
+printf '%s\n' '{"type":"message","id":"u1","parentId":null,"timestamp":"2026-08-24T00:00:01.000Z","message":{"role":"user","content":"Pi foreground task","timestamp":1}}' >> "$session_dir/native/$session_id.jsonl"
+printf '%s\n' 'PI FULL SCREEN SESSION'
+while :; do sleep 1; done
+"##,
+        )
+        .expect("write fake Pi executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Pi executable runnable");
+        command.args([
+            "--pi-bin",
+            executable.to_str().expect("UTF-8 fake Pi path"),
+            "--launch-provider",
+            "pi",
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--no-host-antigravity",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("Pi-only startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
+    });
+    app.send(b"Pi foreground task");
+    app.send(ENTER);
+    app.wait_for("Pi native foreground session", |screen| {
+        screen.contains("PI FULL SCREEN SESSION")
+    });
+    app.send(SHIFT_LEFT);
+    app.wait_for("exact managed Pi row after backgrounding", |screen| {
+        screen.contains("Open Agent View")
+            && screen.contains("Pi foreground task")
+            && screen.contains("Pi")
+    });
+    let arguments = fs::read_to_string(app.home_path().join("pi-native-arguments"))
+        .expect("read Pi native launch arguments");
+    assert!(arguments.contains("--session-id\n"));
+    assert!(arguments.contains("--session-dir\n"));
+    assert!(arguments.ends_with("Pi foreground task\n"));
+    app.send(CTRL_X);
+    app.wait_for("native Pi Ctrl+X stop", |screen| {
+        screen.contains("stopped native Pi session")
     });
     app.exit_cleanly();
 }

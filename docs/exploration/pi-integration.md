@@ -100,8 +100,16 @@ Managed sessions use:
 open-agent-view --launch-provider pi
 ```
 
-The first submitted task starts a hidden `open-agent-view` supervisor, which in
-turn launches:
+Dashboard task submission is native-first and launches:
+
+```text
+pi --session-id <uuid> --session-dir <oav-private-sessions> [--model <id>] <prompt>
+```
+
+The full Pi interface owns the terminal until the native return gesture sends
+it to OAV's retained PTY registry. Its exact managed row can be resumed or
+stopped with Ctrl+X. The scriptable/background control path starts a hidden
+`open-agent-view` supervisor, which in turn launches:
 
 ```text
 pi --mode rpc --no-approve --session-dir <oav-private-sessions> --name <task-name>
@@ -135,6 +143,7 @@ Pi's project-trust prompt is not a tool sandbox. In RPC mode, unapproved project
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Existing JSONL history | yes | yes | possible via `pi --session <id>` | no | no | no | no |
 | Existing unrelated live Pi | history only | persisted text | possible | no | no | no | no |
+| OAV-owned native foreground/background | yes | persisted text | exact retained screen | native UI | exact retained PTY | native UI | stop, then delete |
 | OAV-owned live RPC on Linux | yes | live RPC | completed-only handoff after exact stop | yes | yes | yes, exact request ID | stop, then delete |
 | OAV-owned RPC after process exit | persisted owned history | yes | yes | no | no | no | exact delete |
 

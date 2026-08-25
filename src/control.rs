@@ -850,6 +850,10 @@ impl ProviderController for CodexController {
         LaunchMode::SelectableModel
     }
 
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::DeferredForeground
+    }
+
     fn available_models(&self) -> Result<Vec<String>> {
         self.supervisor.available_models()
     }

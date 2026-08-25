@@ -131,14 +131,14 @@ grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.ou
 
 if _OAV_TEST_UNAME_S=Darwin \
   _OAV_TEST_UNAME_M=arm64 \
-  OAV_VERSION=0.1.27 \
+  OAV_VERSION=0.1.28 \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >"${temp_root}/manual-scope.out" 2>&1; then
-  fail "the Linux-only v0.1.27 release accepted a macOS target"
+  fail "the Linux-only v0.1.28 release accepted a macOS target"
 fi
-grep -F "v0.1.27 was manually published only for Linux x86_64" \
+grep -F "v0.1.28 was manually published only for Linux x86_64" \
   "${temp_root}/manual-scope.out" >/dev/null ||
-  fail "the v0.1.27 manual platform scope was not explained"
+  fail "the v0.1.28 manual platform scope was not explained"
 
 platforms=(
   "Linux x86_64"

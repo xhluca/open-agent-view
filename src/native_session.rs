@@ -8,6 +8,7 @@
 //! the same row resumes the exact stopped frontend and screen.
 
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -27,12 +28,34 @@ const ARROW_RETURN_WINDOW: Duration = Duration::from_millis(1600);
 const RETURN_HINT_REFRESH: Duration = Duration::from_millis(100);
 const EMPTY_PROMPT_MAX_COLUMN: u16 = 4;
 #[cfg(unix)]
+const FALLBACK_TERMINAL_ROWS: u16 = 24;
+#[cfg(unix)]
+const FALLBACK_TERMINAL_COLUMNS: u16 = 80;
+#[cfg(unix)]
 const STOP_GRACE: Duration = Duration::from_millis(250);
 
 #[derive(Debug)]
 pub enum NativeSessionExit {
     Backgrounded,
     Exited(ExitStatus),
+}
+
+/// Generate a provider-neutral UUIDv4 for native CLIs that accept a caller-
+/// supplied session identity. Keeping this here ensures a foreground launch
+/// and its later dashboard row use the same unambiguous key.
+pub fn new_session_id() -> Result<String> {
+    let mut bytes = [0_u8; 16];
+    File::open("/dev/urandom")
+        .context("failed to open the operating system random source")?
+        .read_exact(&mut bytes)
+        .context("failed to generate a provider session ID")?;
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Ok(format!(
+        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+    ))
 }
 
 #[cfg(unix)]
@@ -107,11 +130,20 @@ pub fn detached_session_keys() -> Vec<String> {
 pub fn is_backgrounded(session_key: &str) -> bool {
     #[cfg(unix)]
     {
-        return DETACHED
-            .get()
-            .and_then(|registry| registry.lock().ok())
-            .map(|registry| registry.contains_key(session_key))
+        let Some(registry) = DETACHED.get() else {
+            return false;
+        };
+        let Ok(mut registry) = registry.lock() else {
+            return false;
+        };
+        let alive = registry
+            .get_mut(session_key)
+            .map(|session| matches!(session.child.try_wait(), Ok(None)))
             .unwrap_or(false);
+        if !alive {
+            registry.remove(session_key);
+        }
+        alive
     }
     #[cfg(not(unix))]
     false
@@ -139,6 +171,21 @@ fn validate_session_key(session_key: &str) -> Result<()> {
         bail!("invalid native session key");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod id_tests {
+    use super::*;
+
+    #[test]
+    fn generated_native_ids_are_distinct_uuid_v4_values() {
+        let first = new_session_id().unwrap();
+        let second = new_session_id().unwrap();
+        assert_ne!(first, second);
+        assert_eq!(first.len(), 36);
+        assert_eq!(&first[14..15], "4");
+        assert!(matches!(&first[19..20], "8" | "9" | "a" | "b"));
+    }
 }
 
 /// Terminate detached native frontends during a normal dashboard shutdown.
@@ -206,7 +253,7 @@ fn run_pty(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
             (
                 child,
                 master,
-                vt100::Parser::new(size.ws_row.max(1), size.ws_col.max(1), 0),
+                vt100::Parser::new(size.ws_row, size.ws_col, 0),
                 true,
             )
         }
@@ -434,7 +481,7 @@ fn bridge_session(
                 .unwrap_or(true)
             {
                 set_pty_size(master.as_raw_fd(), size)?;
-                screen.set_size(size.ws_row.max(1), size.ws_col.max(1));
+                screen.set_size(size.ws_row, size.ws_col);
                 current_size = Some(size);
             }
         }
@@ -528,7 +575,24 @@ fn terminal_size(fd: libc::c_int) -> Result<libc::winsize> {
     if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ as _, &mut size) } < 0 {
         return Err(std::io::Error::last_os_error()).context("failed to read terminal size");
     }
-    Ok(size)
+    // Some PTY allocators (notably `script` in a fresh container) report a
+    // successful 0x0 size until their parent performs an explicit resize.
+    // Passing that through makes provider TUIs unusable and a one-column
+    // vt100 parser can underflow while processing a double-width glyph.
+    // Treat a missing dimension as unknown, while preserving genuine small
+    // non-zero terminals for the dashboard's compact-layout handling.
+    Ok(normalize_terminal_size(size))
+}
+
+#[cfg(unix)]
+fn normalize_terminal_size(mut size: libc::winsize) -> libc::winsize {
+    if size.ws_row == 0 {
+        size.ws_row = FALLBACK_TERMINAL_ROWS;
+    }
+    if size.ws_col < 2 {
+        size.ws_col = FALLBACK_TERMINAL_COLUMNS;
+    }
+    size
 }
 
 #[cfg(unix)]
@@ -872,6 +936,28 @@ fn truncate_to_columns(value: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn zero_sized_pty_uses_safe_native_terminal_dimensions() {
+        let normalized = normalize_terminal_size(libc::winsize {
+            ws_row: 0,
+            ws_col: 0,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        });
+        assert_eq!(normalized.ws_row, FALLBACK_TERMINAL_ROWS);
+        assert_eq!(normalized.ws_col, FALLBACK_TERMINAL_COLUMNS);
+
+        let tiny = normalize_terminal_size(libc::winsize {
+            ws_row: 1,
+            ws_col: 1,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        });
+        assert_eq!(tiny.ws_row, 1);
+        assert_eq!(tiny.ws_col, FALLBACK_TERMINAL_COLUMNS);
+    }
 
     #[test]
     fn detach_parser_handles_fragmented_shift_left_sequences() {

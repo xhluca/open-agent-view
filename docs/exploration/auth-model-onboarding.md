@@ -21,19 +21,20 @@ The dashboard follows one sequence for every launch-capable provider:
 4. On return, OAV restores the dashboard and reloads the same catalog. It never
    reads, copies, or logs the resulting credential.
 5. The exact selected ID is revalidated by the provider adapter and sent on the
-   launch protocol. Background launches animate in the dashboard; foreground
-   launches own the terminal and use the native return gesture for OAV.
+   launch protocol. Every dashboard launch enters a native provider interface:
+   a safe bootstrap may animate briefly before auto-attach, while native-first
+   launches own the terminal immediately and use the return gesture for OAV.
 
 ## Provider surfaces
 
 | Provider | Native setup/authentication | Account/model surface | Selected-model launch |
 | --- | --- | --- | --- |
 | Claude Code | `claude auth login` | aliases advertised next to `--model` in installed `claude --help` | `--model`; host launch lets `--background` allocate the ID, resolves the exact full row, then `attach` |
-| OpenAI Codex | `codex login` | App Server `model/list` pages | App Server `thread/start` model |
-| Pi | `pi --no-session`, then `/login` in Pi | `pi --offline --list-models` | exact `--model` on the owned RPC child |
-| OpenCode | `opencode auth login` | `opencode models` | exact `providerID`/`modelID` in `prompt_async` |
+| OpenAI Codex | `codex login` | App Server `model/list` pages | App Server `thread/start` model, then exact native remote resume |
+| Pi | `pi --no-session`, then `/login` in Pi | `pi --offline --list-models` | exact `--session-id`, `--session-dir`, and `--model` in the native foreground UI |
+| OpenCode | `opencode auth login` | `opencode models` | exact `providerID`/`modelID` in `prompt_async`, then authenticated native attach |
 | Cursor | `cursor-agent login` | `cursor-agent models` | exact `--model` on the managed stream-JSON turn |
-| GitHub Copilot | `copilot login` | short-lived `copilot --headless --stdio` SDK connection, `models.list` | ACP `session/set_config_option` before the first prompt |
+| GitHub Copilot | `copilot login` | short-lived `copilot --headless --stdio` SDK connection, `models.list` | exact `--session-id`, `--model`, and `--interactive` in the native foreground UI |
 | Antigravity | first-run `agy` browser flow | `agy models` | `agy --sandbox --model ID --prompt-interactive PROMPT` |
 
 Primary provider references:

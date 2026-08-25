@@ -446,12 +446,15 @@ state file to repair. If a managed row loses its ACP connection, preserve the
 provider's persisted session and reopen it natively rather than attempting to
 reconstruct authority from its session ID.
 
-If launch reports `Authentication required`, upgrade to v0.1.18 and run
-`copilot login`. Copilot also documents `gh auth status` and its own GitHub CLI
+If model discovery reports `Authentication required`, press Enter/`l` in the
+picker or run `copilot login`. Copilot also documents `gh auth status` and its own GitHub CLI
 credential fallback, but an authenticated GitHub account can still lack
 Copilot entitlement or organization policy access. OAV leaves authentication
 to Copilot and never reads or persists its token. A failed launch now reports
-these actions without dumping the ACP response payload.
+these actions without dumping the ACP response payload. Current Copilot builds
+may omit optional ACP `session/close`; OAV now negotiates that capability and,
+for an idle owned row, safely releases the retained ACP process before native
+resume. It never drops a connection that still has another active task.
 
 ## Runtime state permissions are refused
 

@@ -205,21 +205,24 @@ No request is answered automatically on receipt, disconnect, or restart.
 
 ## Pi ownership boundary
 
-Pi exposes a documented stdio JSONL RPC mode but no socket for attaching to an
-arbitrary running process. On Linux, Open Agent View starts one detached
-supervisor that retains the exact stdin/stdout pipes for every Pi process it
-launches. Dashboard restarts reconnect through a private Unix socket. Existing
-JSONL history and unrelated live Pi processes never acquire control authority.
+Pi exposes a native TUI plus documented stdio JSONL RPC mode, but no socket for
+attaching to an arbitrary running process. Dashboard task submission generates
+an exact UUID and starts the native TUI with `--session-id`, the private managed
+`--session-dir`, the selected model, and prompt. Scriptable/background control
+uses a detached Linux supervisor that retains exact stdin/stdout pipes for its
+Pi processes. Dashboard restarts reconnect through a private Unix socket.
+Existing JSONL history and unrelated live Pi processes never acquire control
+authority.
 
-| Operation | OAV-owned live Pi RPC | Existing/unrelated Pi history |
+| Operation | OAV-owned native/RPC Pi | Existing/unrelated Pi history |
 | --- | --- | --- |
-| Discover | Supervisor live state plus its private JSONL store | Documented JSONL store |
-| Inspect | Bounded `get_messages` transcript | Bounded persisted transcript |
-| Open | Completed/idle RPC is stopped by closing its exact owned stdin, then `pi --session ID --session-dir DIR`; active work and pending questions are refused | `pi --session ID --session-dir DIR` |
-| Launch/reply | `prompt`; launch may pass an exact catalog/custom `--model`, and active work uses exact `steer` behavior | Disabled |
-| Stop | Ctrl+X closes the exact owned RPC stdin without waiting on a model/abort response | Disabled |
-| Confirmation/input | Exact pending extension request ID; selections require an exact option | Disabled |
-| Delete/archive | Exact managed JSONL deletion only after process exit; archive disabled | Disabled |
+| Discover | Private JSONL store plus exact RPC live state when applicable | Documented JSONL store |
+| Inspect | Bounded persisted transcript, or live `get_messages` for RPC | Bounded persisted transcript |
+| Open | Exact background native screen resumes; completed/idle RPC hands off after exact stop | `pi --session ID --session-dir DIR` |
+| Launch/reply | Dashboard launches native-first; background API uses RPC `prompt`, with exact model selection on both | Disabled |
+| Stop | Ctrl+X terminates the exact retained native PTY or closes the exact RPC stdin | Disabled |
+| Confirmation/input | Native UI handles native requests; RPC uses exact pending extension request ID and exact selections | Disabled |
+| Delete/archive | Exact managed JSONL deletion only after native/RPC process exit; archive disabled | Disabled |
 
 The supervisor state is under `$XDG_STATE_HOME/open-agent-view/pi/`, or
 `~/.local/state/open-agent-view/pi/`. Before any reconnect or control request,
@@ -274,8 +277,8 @@ never grants authority.
 | --- | --- | --- |
 | Discover | Exact owned IDs plus authenticated server status | Read-only global CLI projection |
 | Inspect | Bounded server message transcript | Bounded `opencode export` transcript |
-| Open | Refused while owned by the managed server | `opencode --session ID` |
-| Launch/reply | Create through the owned server; `prompt_async` for new work, with an optional exact `providerID`/`modelID` selector | Disabled |
+| Open | Authenticated native attach to the exact owned server and session | `opencode --session ID` |
+| Launch/reply | Create through the owned server and `prompt_async` with an optional exact `providerID`/`modelID`, then dashboard launch auto-attaches | Disabled |
 | Interrupt | Authenticated abort only for an owned working session | Disabled |
 | Permission/input | Not yet exposed by the dashboard | Disabled |
 | Archive/delete | Disabled | Disabled |
@@ -325,13 +328,16 @@ the current dashboard process and is not written to an OAV ownership file.
 | --- | --- | --- |
 | Discover | In-memory managed state and ACP events | Official `session/list` on the discovery connection |
 | Inspect | Bounded transcript received on the owning connection | Disabled |
-| Open | Idle sessions use ACP `session/close`, native resume, then `session/load` on return; active requests are refused | `copilot --resume=ID -C PATH` |
-| Launch/reply | `session/new`, then `session/prompt`; reply only while idle | Disabled |
+| Open | Idle sessions use advertised `session/close`, or drop the idle owning ACP process when close is absent; native resume then reloads on return | `copilot --resume=ID -C PATH` |
+| Launch/reply | Dashboard launch reserves an exact UUID and starts `copilot --session-id ID --interactive PROMPT` in front; connection-owned reply uses `session/prompt` while idle | Disabled |
 | Interrupt | ACP cancel for the exact active session prompt | Disabled |
 | Permission | Exact offered `allow_once` or `reject_once` option only | Disabled |
 | Archive/delete | Disabled | Disabled |
 
-The close/resume/load handoff never overlaps two clients. A backgrounded native
+The release/resume/load handoff never overlaps two clients. ACP `session/close`
+is optional: when absent, OAV may close its retained ACP process only if every
+connection-owned Copilot task is idle, releasing those idle rows too. An active
+prompt or permission on any other row refuses the handoff. A backgrounded native
 frontend leaves inline authority released until that exact frontend exits and
 the session is loaded again. When the dashboard exits, the retained ACP process and its control authority
 end. A later `session/list` result remains visible and can be opened natively,

@@ -136,6 +136,94 @@ impl CopilotSupervisor {
         Ok(session_id)
     }
 
+    /// Reserve an exact OAV-owned ID for a provider-native foreground launch.
+    /// No ACP process is started: the native Copilot UI is the sole live owner.
+    pub fn reserve_native(&self, prompt: &str, cwd: &Path) -> Result<String> {
+        require_absolute_cwd(cwd)?;
+        require_prompt(prompt)?;
+        let mut state = self.lock_state()?;
+        let session_id = loop {
+            let candidate = crate::native_session::new_session_id()?;
+            if !state.sessions.contains_key(&candidate) {
+                break candidate;
+            }
+        };
+        let now = SystemTime::now();
+        state.sessions.insert(
+            session_id.clone(),
+            ManagedCopilotSession {
+                session_id: session_id.clone(),
+                cwd: cwd.to_owned(),
+                name: prompt_name(prompt),
+                state: SessionState::Working,
+                summary: "Copilot native session is running".into(),
+                transcript: String::new(),
+                active_prompt: None,
+                permission: None,
+                connection_owned: false,
+                started_at: now,
+                updated_at: now,
+            },
+        );
+        Ok(session_id)
+    }
+
+    pub fn mark_native_backgrounded(&self, session_id: &str) -> Result<()> {
+        self.update_native_state(
+            session_id,
+            SessionState::Working,
+            "Copilot native session is backgrounded",
+        )
+    }
+
+    pub fn mark_native_exited(&self, session_id: &str, success: bool) -> Result<()> {
+        self.update_native_state(
+            session_id,
+            if success {
+                SessionState::Completed
+            } else {
+                SessionState::NeedsInput
+            },
+            if success {
+                "Returned from Copilot native session"
+            } else {
+                "Copilot native session exited with an error"
+            },
+        )
+    }
+
+    pub fn discard_native_reservation(&self, session_id: &str) -> Result<()> {
+        let mut state = self.lock_state()?;
+        if state
+            .sessions
+            .get(session_id)
+            .is_some_and(|session| !session.connection_owned)
+        {
+            state.sessions.remove(session_id);
+        }
+        Ok(())
+    }
+
+    fn update_native_state(
+        &self,
+        session_id: &str,
+        state_value: SessionState,
+        summary: &str,
+    ) -> Result<()> {
+        let mut state = self.lock_state()?;
+        let managed = state
+            .sessions
+            .get_mut(session_id)
+            .context("Copilot native session reservation is no longer present")?;
+        if managed.connection_owned {
+            bail!("refusing to overwrite a connection-owned Copilot session");
+        }
+        managed.state = state_value;
+        managed.summary = summary.into();
+        managed.updated_at = SystemTime::now();
+        Ok(())
+    }
+
     /// Explicitly load one persisted session onto this exact connection. This
     /// is the only way an external Copilot record can become connection-owned.
     pub fn load(&self, session: &AgentSession) -> Result<()> {
@@ -201,13 +289,43 @@ impl CopilotSupervisor {
                 );
             }
         }
-        let request_id = state
-            .connection_mut()?
-            .begin_close_session(&session.provider_session_id)?;
-        state
-            .connection_mut()?
-            .wait_for_response(request_id, RESPONSE_TIMEOUT)
-            .context("Copilot ACP could not release the session for native resume")?;
+        let supports_close = state.connection_mut()?.capabilities().close_session;
+        if supports_close {
+            let request_id = state
+                .connection_mut()?
+                .begin_close_session(&session.provider_session_id)?;
+            state
+                .connection_mut()?
+                .wait_for_response(request_id, RESPONSE_TIMEOUT)
+                .context("Copilot ACP could not release the session for native resume")?;
+        } else {
+            let another_active = state.sessions.values().any(|candidate| {
+                candidate.session_id != session.provider_session_id
+                    && candidate.connection_owned
+                    && (candidate.active_prompt.is_some() || candidate.permission.is_some())
+            });
+            if another_active {
+                bail!(
+                    "this Copilot ACP build cannot release one session independently; finish or cancel the other active OAV-controlled Copilot sessions first"
+                );
+            }
+            // `session/close` is optional in ACP. Closing the sole owning ACP
+            // process releases all of its idle sessions without racing another
+            // OAV task; the selected native CLI then becomes the only frontend.
+            state.connection.take();
+            let now = SystemTime::now();
+            for candidate in state
+                .sessions
+                .values_mut()
+                .filter(|candidate| candidate.connection_owned)
+            {
+                candidate.connection_owned = false;
+                candidate.active_prompt = None;
+                candidate.permission = None;
+                candidate.state = SessionState::Completed;
+                candidate.updated_at = now;
+            }
+        }
         let managed = state
             .sessions
             .get_mut(&session.provider_session_id)
@@ -224,6 +342,18 @@ impl CopilotSupervisor {
         let result = (|| -> Result<()> {
             let mut state = self.lock_state()?;
             state.drain()?;
+            for managed in state.sessions.values_mut().filter(|managed| {
+                !managed.connection_owned
+                    && managed.state == SessionState::Working
+                    && managed.summary == "Copilot native session is backgrounded"
+            }) {
+                let key = format!("github_copilot:host:{}", managed.session_id);
+                if !crate::native_session::is_backgrounded(&key) {
+                    managed.state = SessionState::Completed;
+                    managed.summary = "Copilot native session exited".into();
+                    managed.updated_at = SystemTime::now();
+                }
+            }
             for session in snapshot.sessions.iter_mut().filter(|session| {
                 session.provider == Provider::GitHubCopilot
                     && session.runtime == Runtime::Host
@@ -561,6 +691,12 @@ fn normalize_managed(session: &ManagedCopilotSession) -> AgentSession {
     if !session.connection_owned {
         // Opening remains available through the controller's ungated native
         // path. Inline capabilities belong only to the exact ACP owner.
+        if crate::native_session::is_backgrounded(&format!(
+            "github_copilot:host:{}",
+            session.session_id
+        )) {
+            capabilities.insert(Capability::Interrupt);
+        }
     } else if session.active_prompt.is_some() {
         capabilities.insert(Capability::Interrupt);
     } else if session.permission.is_none() {
@@ -865,6 +1001,41 @@ while read remaining; do :; done
         assert!(snapshot.sessions[0]
             .capabilities
             .contains(&Capability::Inspect));
+    }
+
+    #[test]
+    fn sole_idle_session_can_handoff_when_close_is_not_advertised() {
+        let directory = tempdir().unwrap();
+        let script = directory.path().join("copilot-no-close-mock");
+        fs::write(
+            &script,
+            r##"#!/bin/sh
+read initialize
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"sessionCapabilities":{"list":{}}}}}'
+read new_session
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"no-close-owned"}}'
+read prompt
+printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}'
+while read remaining; do :; done
+"##,
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&script).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&script, permissions).unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let supervisor = CopilotSupervisor::host(script.display().to_string());
+        supervisor.launch("complete first", &workspace).unwrap();
+        let mut snapshot = SessionSnapshot::default();
+        let completed = wait_for_state(&supervisor, &mut snapshot, SessionState::Completed);
+
+        supervisor.release_for_native(&completed).unwrap();
+
+        assert!(!supervisor.owns(&completed));
+        snapshot.sessions.clear();
+        supervisor.enrich(&mut snapshot);
+        assert_eq!(snapshot.sessions[0].raw_state.as_deref(), Some("native"));
     }
 
     fn wait_for_state(

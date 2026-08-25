@@ -12,13 +12,13 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. The manually published v0.1.27
+> Open Agent View is an early private preview. The manually published v0.1.28
 > binary currently covers Linux x86-64; collaborators authenticate with GitHub
 > to install it. The source remains portable, but macOS and ARM64 artifacts are
 > not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> v0.1.27 was packaged, checksummed, smoke-tested, and published manually after
+> v0.1.28 was packaged, checksummed, smoke-tested, and published manually after
 > the repository's hosted build service remained unavailable. The release page
 > and installer state the exact Linux x86-64 scope.
 
@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 The installer selects a release asset for the current host, verifies its
 SHA-256 checksum, and installs `open-agent-view` under `~/.local/bin`, plus the
 short `opav` command and the legacy `coding-agents` compatibility alias. The current
-manual v0.1.27 release is Linux x86-64 only. See the
+manual v0.1.28 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
@@ -174,11 +174,11 @@ every CLI.
 | Provider | Sessions shown today | Available actions |
 | --- | --- | --- |
 | Claude Code | OAV-launched host/background sessions and explicit Docker targets by default; other provider history with `--include-external` | Native login; account-advertised model selection; asynchronous `--background` bootstrap using Claude's returned ID, then full-screen `attach`, with boundary-double-arrow or Shift+Arrow returning to OAV; interrupt an exact OAV-owned host background session only after live provider revalidation |
-| OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Inspect/open; catalog-backed launch, reply/steer, request handling, interrupt, archive, and delete |
-| Pi | Durable OAV-managed RPC sessions and their persisted OAV-owned history on Linux by default; unrelated host JSONL history with `--include-external` | Catalog-backed owned launch, inspect/reply/request handling, Ctrl+X stop then exact delete, and completed-session handoff to native Pi; unrelated history remains inspect/native-resume only |
-| OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | External history inspect/native resume; catalog-backed owned launch, discovery, inspect, reply, and interrupt; no inline approval/input yet |
+| OpenAI Codex | Durable OAV-managed host threads and explicit Docker targets | Catalog-backed launch auto-opens the exact native thread; inspect, reply/steer, request handling, interrupt, archive, and delete |
+| Pi | Native foreground tasks saved in OAV's managed history plus durable OAV-managed RPC sessions on Linux; unrelated host JSONL history with `--include-external` | Catalog-backed foreground launch, inspect/reply/request handling for RPC-owned work, Ctrl+X stop then exact delete, and native resume; unrelated history remains inspect/native-resume only |
+| OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | Catalog-backed owned launch auto-attaches the exact native TUI; external history inspect/native resume; managed inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog; selected-model launches open Cursor in the foreground; discovery, inspect, native resume/reply after idle, and verified interrupt |
-| GitHub Copilot CLI | Process-local OAV-owned ACP sessions by default; persisted ACP sessions with `--include-external` | Failed launch opens actionable native `copilot login`; account model catalog without creating a session; selected-model ACP launch/reply, inspect, cancel, and exact one-shot allow/reject; idle owned sessions release ACP ownership for native resume and reclaim it on return |
+| GitHub Copilot CLI | Native foreground tasks with exact OAV-owned IDs plus process-local ACP-controlled sessions; persisted ACP sessions with `--include-external` | Native login and account model catalog; selected-model launches open Copilot's full UI immediately; ACP reply/inspect/cancel and exact one-shot allow/reject remain available for connection-owned rows; native handoff supports ACP builds with or without optional `session/close` |
 | Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, catalog-validated exact model selection, sandboxed full-screen launch, boundary-double-arrow/Shift+Arrow backgrounding, and native resume; a failed native catalog opens recovery rather than accepting an unverified model ID |
 | Terminal | Process-local shells created by this dashboard | Full-screen interactive shell, boundary-double-arrow/Shift+Arrow backgrounding, exact resume, Ctrl+X stop, then Ctrl+X delete; provider setup terminals use the same isolated bridge |
 

@@ -13,7 +13,8 @@ use serde_json::{json, Value};
 use super::copilot_managed::CopilotSupervisor;
 use super::{DiscoveryRequest, SessionSource};
 use crate::control::{
-    run_native_authentication, ControlOutcome, LaunchMode, LaunchRequest, ProviderController,
+    run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
+    ProviderController,
 };
 use crate::domain::{AgentSession, Provider, Runtime, SessionKind, SessionSnapshot, SessionState};
 
@@ -622,6 +623,44 @@ impl CopilotInvocation {
             current_dir: cwd.to_owned(),
         })
     }
+
+    pub fn launch(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<CopilotCommandSpec> {
+        require_session_id(session_id)?;
+        require_absolute_cwd(cwd)?;
+        let prompt = prompt.trim();
+        if prompt.is_empty() {
+            bail!("Copilot prompt must not be empty");
+        }
+        let mut args = vec![
+            "--session-id".into(),
+            session_id.into(),
+            "-C".into(),
+            cwd.display().to_string(),
+        ];
+        if let Some(model) = model {
+            if model.is_empty()
+                || model.len() > 128
+                || model
+                    .chars()
+                    .any(|character| character.is_control() || character.is_whitespace())
+            {
+                bail!("invalid Copilot model ID");
+            }
+            args.extend(["--model".into(), model.into()]);
+        }
+        args.extend(["--interactive".into(), prompt.into()]);
+        Ok(CopilotCommandSpec {
+            program: self.executable.clone(),
+            args,
+            current_dir: cwd.to_owned(),
+        })
+    }
 }
 
 /// Native-open controller for external persisted Copilot sessions.
@@ -660,6 +699,10 @@ impl ProviderController for CopilotController {
         } else {
             LaunchMode::Unavailable
         }
+    }
+
+    fn launch_presentation(&self) -> LaunchPresentation {
+        LaunchPresentation::Foreground
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -703,7 +746,65 @@ impl ProviderController for CopilotController {
         })
     }
 
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::GitHubCopilot {
+            bail!("the GitHub Copilot controller cannot launch another provider");
+        }
+        let supervisor = self.managed_supervisor()?;
+        let session_id = supervisor.reserve_native(&request.prompt, &request.cwd)?;
+        let spec = match self.invocation.launch(
+            &session_id,
+            &request.cwd,
+            &request.prompt,
+            request.model.as_deref(),
+        ) {
+            Ok(spec) => spec,
+            Err(error) => {
+                supervisor.discard_native_reservation(&session_id)?;
+                return Err(error);
+            }
+        };
+        let key = format!("github_copilot:host:{session_id}");
+        let native_result = crate::native_session::run(spec.command(), &key);
+        match native_result {
+            Err(error) => {
+                supervisor.discard_native_reservation(&session_id)?;
+                Err(error)
+            }
+            Ok(crate::native_session::NativeSessionExit::Backgrounded) => {
+                supervisor.mark_native_backgrounded(&session_id)?;
+                Ok(ControlOutcome {
+                    message: format!(
+                        "backgrounded GitHub Copilot session {}; Enter/Right resumes it",
+                        &session_id[..8]
+                    ),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            Ok(crate::native_session::NativeSessionExit::Exited(status)) if status.success() => {
+                supervisor.mark_native_exited(&session_id, true)?;
+                Ok(ControlOutcome {
+                    message: format!("returned from GitHub Copilot session {}", &session_id[..8]),
+                    provider_session_hint: Some(session_id),
+                })
+            }
+            Ok(crate::native_session::NativeSessionExit::Exited(status)) => {
+                supervisor.mark_native_exited(&session_id, false)?;
+                bail!("GitHub Copilot session exited with status {status}")
+            }
+        }
+    }
+
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if crate::native_session::is_backgrounded(&session.id) {
+            crate::native_session::terminate(&session.id)?;
+            self.managed_supervisor()?
+                .mark_native_exited(&session.provider_session_id, true)?;
+            return Ok(ControlOutcome {
+                message: format!("stopped native GitHub Copilot session {}", session.name),
+                provider_session_hint: Some(session.provider_session_id.clone()),
+            });
+        }
         self.managed_supervisor()?.interrupt(session)?;
         Ok(ControlOutcome {
             message: format!("cancelled {}", session.name),
@@ -1376,6 +1477,48 @@ mod tests {
             .args
             .iter()
             .any(|arg| matches!(arg.as_str(), "--allow-all" | "--allow-all-tools" | "--yolo")));
+    }
+
+    #[test]
+    fn foreground_launch_uses_exact_native_identity_prompt_and_model() {
+        let directory = tempdir().unwrap();
+        let executable = directory.path().join("copilot-native-mock");
+        let argv = directory.path().join("argv");
+        fs::write(
+            &executable,
+            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", argv.display()),
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&executable).unwrap().permissions();
+        permissions.set_mode(0o700);
+        fs::set_permissions(&executable, permissions).unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        let supervisor = Arc::new(CopilotSupervisor::host(executable.display().to_string()));
+        let controller = CopilotController::managed(supervisor);
+        let request = LaunchRequest {
+            provider: Provider::GitHubCopilot,
+            model: Some("gpt-5.4".into()),
+            prompt: "show this in front".into(),
+            cwd: workspace.clone(),
+        };
+
+        assert_eq!(
+            controller.launch_presentation(),
+            LaunchPresentation::Foreground
+        );
+        let outcome = controller.launch_foreground(&request).unwrap();
+        let session_id = outcome.provider_session_hint.unwrap();
+        let args = fs::read_to_string(argv).unwrap();
+        assert_eq!(
+            args,
+            format!(
+                "--session-id\n{session_id}\n-C\n{}\n--model\ngpt-5.4\n--interactive\nshow this in front\n",
+                workspace.display()
+            )
+        );
+        assert!(!args.contains("--allow-all"));
+        assert!(!args.contains("--yolo"));
     }
 
     #[test]

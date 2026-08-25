@@ -54,9 +54,9 @@ authenticated fresh-container end-to-end run.
   model selectors; keep external history inspect/native-open only.
 - [x] Own Linux Cursor launch, rediscovery, bounded inspection, idle reply, and
   exact verified-process interrupt without scraping its external TTY picker.
-- [x] Own process-local Copilot ACP launch, prompt/reply, inspection, cancel,
-  and exact one-shot permission response; keep persisted list rows
-  observe/native-open.
+- [x] Own native-first Copilot dashboard launch plus process-local ACP
+  prompt/reply, inspection, cancel, and exact one-shot permission response;
+  keep persisted list rows observe/native-open and negotiate optional close.
 - [x] Launch exact owned Antigravity conversations through its sandboxed native
   UI with account model selection and Left-to-background, bounded by the
   documented last-conversation-per-workspace cache.

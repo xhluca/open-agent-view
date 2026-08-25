@@ -180,6 +180,15 @@ impl PiSupervisor {
         self.state_dir.join("sessions")
     }
 
+    /// Resolve and secure the native/RPC history directory before handing it
+    /// to Pi. This rejects a replaced symlink and keeps OAV-owned history
+    /// private even when the native foreground path creates the first task.
+    pub fn prepare_session_dir(&self) -> Result<PathBuf> {
+        let session_dir = self.session_dir();
+        ensure_private_directory(&session_dir)?;
+        Ok(session_dir)
+    }
+
     pub fn launch(&self, prompt: &str, cwd: &Path) -> Result<ManagedPiSession> {
         self.launch_with_model(prompt, cwd, None)
     }

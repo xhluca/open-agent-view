@@ -106,8 +106,10 @@ reply, interrupt, or approval capability. A replacement ACP process must load
 the session and establish its own active prompt/request state. Open Agent View
 does not reconstruct approvals from disk.
 
-The managed controller retains one ACP process for the lifetime of the
-dashboard. Sessions created with `session/new`, or explicitly adopted with
+The managed controller retains one ACP process for inline-controlled work.
+Dashboard task launch itself is native-first: OAV generates an exact UUID and
+runs `copilot --session-id ID -C CWD [--model MODEL] --interactive PROMPT` in
+the foreground. Sessions created with `session/new`, or explicitly adopted with
 `session/load`, are tracked on that connection with streamed transcript,
 active prompt ID, pending permission request, and normalized state. It grants
 `approve` only when the current request offers `allow_once`, and `decline` only
@@ -118,7 +120,10 @@ This retained connection is not a background daemon. If Open Agent View exits,
 active prompt and permission authority ends with that process. Persisted
 history remains discoverable, but is read-only again until a new controller
 explicitly loads the exact session. For an idle current-session open, OAV sends
-advertised `session/close`, starts the exact native resume, and sends
+advertised `session/close` when it exists. The reporting account's installed
+1.0.80 build advertised only `session/list` under `sessionCapabilities`; in that
+valid optional-capability case OAV closes its retained ACP process only when no
+connection-owned task is active. It then starts exact native resume and sends
 `session/load` after a normal return. Active prompts or permission requests are
 refused. If the native frontend is backgrounded, ACP authority remains released
 until that exact frontend exits, so two clients never control the session
@@ -132,10 +137,10 @@ concurrently.
 | Login/list models | `copilot login`; headless SDK `models.list` | Native login and exact account picker, without session creation |
 | Open externally | `copilot --resume=ID -C PATH` | Native open |
 | Inspect/reply | ACP load/prompt | Only after exact connection ownership |
-| Modeled launch | ACP `session/new` config options and `session/set_config_option` | Validate the exact account value and set before first prompt |
+| Modeled launch | Native `--session-id`, `--model`, and `--interactive`; ACP config remains covered for inline clients | Validate the exact account value, reserve the ID, and enter the full native UI |
 | Interrupt | ACP `session/cancel` | Only active prompt on owning connection |
 | Approval | ACP request/response | Only exact pending request and offered one-shot option |
-| Close | Advertised ACP `session/close` | Release connection resource; not delete |
+| Close | Optional ACP `session/close` | Use when advertised; otherwise close only an idle retained ACP process, never active work |
 | Delete | Not advertised by 1.0.80 | Unsupported |
 | Live state from list | Not present | Never inferred |
 

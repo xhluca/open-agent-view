@@ -154,10 +154,11 @@ Ctrl+X stops it, and the second Ctrl+X
 deletes its completed row. These terminal frontends are process-local and are
 stopped when the dashboard itself exits.
 
-Copilot retains one process-local ACP control connection for sessions launched
-by the current dashboard. A later dashboard may still list a persisted Copilot
-session, but that row is observe/native-open rather than silently inheriting
-control.
+New Copilot dashboard tasks reserve an exact UUID and open Copilot's native
+interactive UI in the foreground. Copilot also retains one process-local ACP
+control connection for rows explicitly created or loaded through its managed
+control path. A later dashboard may still list a persisted Copilot session,
+but that row is observe/native-open rather than silently inheriting control.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -433,7 +434,8 @@ same exact authenticated loopback server/session rather than starting a second
 server. They do not yet expose provider permission or structured-input
 requests. External OpenCode history remains inspect/native-open only.
 
-Managed Pi rows expose Ctrl+X stop while their exact RPC process is alive,
+New Pi dashboard tasks open its full native interface first and save into OAV's
+managed session directory. Managed Pi RPC rows expose Ctrl+X stop while their exact RPC process is alive,
 including an idle process after a completed turn. Stop closes the selected
 supervisor-owned stdin without waiting on a model response. After refresh
 observes exit, the same row exposes exact Delete; the next Ctrl+X removes its

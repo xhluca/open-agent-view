@@ -8,6 +8,36 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.28] - 2026-08-25
+
+### Changed
+
+- Every dashboard launch now enters a provider-native foreground interface:
+  Claude, Codex, OpenCode, and Cursor safely bootstrap an exact managed ID and
+  auto-attach; Pi, Copilot, Antigravity, and Terminal start native-first.
+- Pi foreground launch uses a caller-generated UUID in OAV's managed session
+  directory, avoiding an unnecessary background RPC handoff.
+- Copilot foreground launch uses its documented `--session-id` and
+  `--interactive` options, preserving the selected account model without broad
+  permission flags.
+
+### Fixed
+
+- Copilot 1.0.80 installations that omit optional ACP `session/close` can now
+  open an idle connection-owned row. OAV drops only its retained ACP client,
+  refuses while another task on it is active, and never overlaps native and
+  ACP ownership.
+- Provider-native foreground launch no longer panics when a newly allocated
+  container PTY initially reports a `0x0` terminal size; missing dimensions
+  use a safe `24x80` fallback until the terminal reports its real size.
+
+### Tests
+
+- Reproduced the reporting account's exact Copilot 1.0.80 capability set
+  (`loadSession` and `session/list`, no `session/close`). Added protocol tests
+  for that handoff plus real-PTY foreground launch coverage for Copilot and Pi,
+  and a fresh read-only Docker regression for an initially unsized PTY.
+
 ## [0.1.27] - 2026-08-24
 
 ### Added
