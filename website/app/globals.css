@@ -49,9 +49,10 @@ code, pre { font-family: var(--font-geist-mono), ui-monospace, monospace; }
 h1 { max-width: 1180px; margin: 30px auto 24px; font-size: clamp(56px, 7vw, 92px); line-height: .94; letter-spacing: -.066em; font-weight: 610; }
 h1 span { display: block; }
 .hero-copy { width: min(735px, 100%); margin: 0 auto; color: #b7babf; font-size: clamp(18px, 2vw, 22px); line-height: 1.55; letter-spacing: -.02em; }
-.hero-actions { display: flex; justify-content: center; align-items: stretch; gap: 12px; margin: 36px 0 32px; }
+.hero-actions { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; margin: 36px 0 32px; }
 .copy-command, .launch-command { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: #14191f; box-shadow: 0 24px 70px rgba(0, 0, 0, .32); }
-.copy-command { width: min(485px, 100%); color: inherit; cursor: pointer; }
+.copy-command, .launch-command { width: min(760px, 100%); }
+.copy-command { color: inherit; cursor: pointer; }
 .copy-command code { min-width: 0; overflow: hidden; color: #d7d9da; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .copy-command code span, .launch-command span { color: var(--cyan); }
 .copy-command b { flex: 0 0 auto; color: #a0a4aa; font: 600 10px var(--font-geist-mono), monospace; text-transform: uppercase; letter-spacing: .08em; }

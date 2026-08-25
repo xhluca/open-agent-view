@@ -17,6 +17,16 @@ for (const viewport of viewports) {
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.locator('[data-story="story-overview"] [data-demo-screen]')).toContainText("opav");
 
+    const commandRows = await page.locator(".hero-actions > *").evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, width: rect.width };
+      }),
+    );
+    expect(commandRows).toHaveLength(2);
+    expect(commandRows[1].top).toBeGreaterThan(commandRows[0].bottom);
+    expect(Math.abs(commandRows[0].width - commandRows[1].width)).toBeLessThan(1);
+
     const overflow = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
       content: document.documentElement.scrollWidth,
