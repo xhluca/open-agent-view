@@ -50,7 +50,8 @@ delete, filter, and refresh.
 - A built-in process-local Terminal target for ordinary interactive shells and
   resumable provider install/login jobs; task text is a name, never evaluated.
 - Native foreground launch where the provider exposes a full-screen interface,
-  with Left backgrounding the retained frontend and restoring the dashboard.
+  with a boundary double-arrow or Shift+Arrow retaining the frontend and
+  restoring the dashboard.
 - Confirmed user-local installation of a missing provider harness through its
   official installer, without making Rust or Cargo a user prerequisite.
 - Existing Docker containers with explicit discovery policy.

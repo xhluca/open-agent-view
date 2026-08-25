@@ -48,17 +48,19 @@ Opening a session temporarily suspends the dashboard's alternate screen and
 runs the provider's native interactive client behind a private pseudo-terminal.
 The screen is cleared first, so a Codex or other provider transcript starts at
 the top instead of appending below the previous shell contents. Enter or Right
-opens the selected row directly. Shift+Left is reserved by OAV: it
-stops and retains only that native frontend, restores the dashboard, and leaves
-the managed provider backend alive. Enter or Right on the same row resumes the
-exact retained frontend and replays its terminal screen. Plain arrows continue
-to edit the provider's input line. Left also returns from
+opens the selected row directly. Plain Left/Right arrows first reach the
+provider. If the cursor does not move, OAV displays a 1.6-second return hint;
+repeat the same arrow to stop and retain only that frontend, restore the
+dashboard, and leave the managed backend alive. Shift+Left/Right performs the
+same return immediately. Enter or Right on the same dashboard row resumes the
+exact retained frontend and replays its terminal screen. Left also returns from
 OAV's inline Peek without starting a provider CLI.
 
 Authentication is a terminal handoff, not an OAV credential store. The model
 picker, `/login`, or `/setup` may run a provider's own login/setup UI after suspending the
-dashboard. Every handoff has a provider-keyed private PTY; Shift+Left backgrounds it
-as a Terminal row and Enter/Right resumes the same screen. Open Agent View
+dashboard. Every handoff has a provider-keyed private PTY; the native return
+gesture backgrounds it as a Terminal row and Enter/Right resumes the same
+screen. Open Agent View
 neither reads the resulting token nor persists
 answers; it only retries the provider-native model catalog after the command
 returns. Providers revalidate an exact selected model at launch.

@@ -8,6 +8,24 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.27] - 2026-08-24
+
+### Added
+
+- Working rows now blink between the live star and a quiet dot on a bounded
+  timer without rebuilding session indexes.
+
+### Changed
+
+- Native plain Left/Right remains editor input. When the provider cursor does
+  not move, a 1.6-second bottom-line hint lets the same arrow return to OAV;
+  Shift+Left and Shift+Right return immediately.
+
+### Tests
+
+- Added process-level PTY coverage for forwarded editing, both timed arrow
+  gestures, Shift+Right, exact reattachment, and real-terminal live animation.
+
 ## [0.1.26] - 2026-08-24
 
 ### Changed

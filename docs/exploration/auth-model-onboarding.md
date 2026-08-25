@@ -16,13 +16,13 @@ The dashboard follows one sequence for every launch-capable provider:
    on a worker thread. OAV does not ship a guessed cross-account list.
 3. If the catalog says authentication is required, Enter or `l` suspends the
    alternate screen and runs the provider's native login UI in a private PTY.
-   `/login` exposes the same handoff explicitly. Shift+Left backgrounds setup as a
-   Terminal row; it never reuses the last agent screen.
+   `/login` exposes the same handoff explicitly. A boundary double-arrow or
+   Shift+Arrow backgrounds setup as a Terminal row; it never reuses the last agent screen.
 4. On return, OAV restores the dashboard and reloads the same catalog. It never
    reads, copies, or logs the resulting credential.
 5. The exact selected ID is revalidated by the provider adapter and sent on the
    launch protocol. Background launches animate in the dashboard; foreground
-   launches own the terminal and reserve Shift+Left for returning to OAV.
+   launches own the terminal and use the native return gesture for OAV.
 
 ## Provider surfaces
 
@@ -92,12 +92,12 @@ homes and provider executables:
   a session, and retains/selects the draft/model.
 - Claude accepts a background launch, returns its provider-owned ID, waits for
   the exact UUID in the agent JSON inventory, opens full-screen attach, and returns on
-  Shift+Left to the newly selected row.
+  the native return gesture to the newly selected row.
 - Antigravity begins signed out, completes its first-run handoff, reloads an
   exact model, launches full-screen with `--sandbox`, selected `--model`, and
-  `--prompt-interactive`, then returns on Shift+Left to the exact OAV-owned cached
+  `--prompt-interactive`, then returns with the native gesture to the exact OAV-owned cached
   conversation. The captured argv contains no dangerous permission bypass.
-- A plain Terminal task opens a full-screen shell, Shift+Left backgrounds it, the
+- A plain Terminal task opens a full-screen shell, the native return gesture backgrounds it, the
   dashboard discovers the exact process-local PTY, Enter resumes the preserved
   screen, and two Ctrl+X actions stop then delete it.
 

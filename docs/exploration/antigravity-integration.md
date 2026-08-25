@@ -95,7 +95,7 @@ claim complete history discovery.
 | Last session/workspace | Documented JSON cache | OAV-owned exact entries by default; other cache entries with `--include-external` |
 | List every conversation | Interactive `/resume` picker only | Not claimed |
 | Native resume | `agy --conversation ID` from its workspace | Supported, shell-free open |
-| Models/login/start | `agy models`, first-run `agy`, sandboxed interactive prompt | Native login, exact model picker, OAV ownership record, full-screen launch and Left background |
+| Models/login/start | `agy models`, first-run `agy`, sandboxed interactive prompt | Native login, exact model picker, OAV ownership record, full-screen launch and native return gesture |
 | Read transcript | Undocumented SQLite/protobuf | Not claimed |
 | Live state/subagents | In-process `/agents` and `/tasks` panels | Not claimed externally |
 | Reply/steer/interrupt | No documented external session protocol | Not claimed |

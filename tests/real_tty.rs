@@ -18,6 +18,7 @@ const ESC: &[u8] = b"\x1b";
 const ENTER: &[u8] = b"\r";
 const UP: &[u8] = b"\x1b[A";
 const DOWN: &[u8] = b"\x1b[B";
+const LEFT: &[u8] = b"\x1b[D";
 const SHIFT_LEFT: &[u8] = b"\x1b[1;2D";
 const SHIFT_TAB: &[u8] = b"\x1b[Z";
 const CTRL_A: &[u8] = b"\x01";
@@ -360,6 +361,35 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
 }
 
 #[test]
+fn working_session_marker_blinks_in_a_real_terminal() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn(100, 28);
+
+    app.wait_for("visible working marker", |screen| {
+        screen
+            .lines()
+            .any(|line| line.contains("✳ integration-tests"))
+    });
+    app.wait_for("dimmed working marker", |screen| {
+        screen
+            .lines()
+            .any(|line| line.contains("· integration-tests"))
+    });
+    let visible_again = app.wait_for("working marker visible again", |screen| {
+        screen
+            .lines()
+            .any(|line| line.contains("✳ integration-tests"))
+    });
+    assert!(
+        visible_again
+            .lines()
+            .any(|line| line.contains("• schema-migration")),
+        "completed markers must remain stable while live work blinks"
+    );
+    app.exit_cleanly();
+}
+
+#[test]
 fn slow_provider_refresh_does_not_block_arrow_navigation_or_exit() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_configured(100, 28, |command, home| {
@@ -405,10 +435,9 @@ printf '%s\n' '[{"id":"first","cwd":"/workspace/one","kind":"background","sessio
     let idle_output = app.raw.len();
     thread::sleep(Duration::from_millis(200));
     app.screen();
-    assert_eq!(
-        app.raw.len(),
-        idle_output,
-        "an unchanged dashboard emitted an idle repaint"
+    assert!(
+        app.raw.len().saturating_sub(idle_output) < 1024,
+        "the live indicator emitted an excessive idle repaint"
     );
     let first_navigation_output = app.raw.len();
     app.send(DOWN);
@@ -1556,7 +1585,7 @@ fn real_nested_pi_history_opens_and_returns_without_lookup_error() {
 
 #[test]
 #[ignore = "set OAV_REAL_CLAUDE_HOME, OAV_REAL_CLAUDE_CWD, and OAV_REAL_CLAUDE_SESSION_NAME for a read-only host probe"]
-fn real_claude_attach_explains_and_honors_shift_left_background_return() {
+fn real_claude_attach_explains_and_honors_native_background_return() {
     let _serial = serialize_real_tty_test();
     let claude_home = std::env::var("OAV_REAL_CLAUDE_HOME")
         .expect("OAV_REAL_CLAUDE_HOME must contain the provider state");
@@ -1588,7 +1617,7 @@ fn real_claude_attach_explains_and_honors_shift_left_background_return() {
     app.send(session_name.as_bytes());
     app.send(ENTER);
     app.wait_for("filtered real Claude row", |screen| {
-        screen.contains(&session_name) && screen.contains("enter/right open · shift+← returns")
+        screen.contains(&session_name) && screen.contains("native: ←/→ twice · shift+←/→")
     });
 
     let raw_before_open = app.raw.len();
@@ -1601,11 +1630,18 @@ fn real_claude_attach_explains_and_honors_shift_left_background_return() {
         "dashboard suspension for real Claude",
     );
     thread::sleep(Duration::from_millis(1_000));
-    app.send(SHIFT_LEFT);
+    let hints_before = count_bytes(&app.raw, "Press ← again".as_bytes());
+    app.send(LEFT);
+    app.wait_for_byte_count(
+        "Press ← again".as_bytes(),
+        hints_before + 1,
+        "native boundary return hint for real Claude",
+    );
+    app.send(LEFT);
     app.wait_for_byte_count(
         b"\x1b[?1049h",
         enters_before + 1,
-        "dashboard restoration after Claude Shift+Left",
+        "dashboard restoration after Claude double-Left",
     );
     app.wait_for("returned Open Agent View after Claude", |screen| {
         screen.contains("Open Agent View") && screen.contains(&session_name)

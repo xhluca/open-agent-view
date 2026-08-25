@@ -64,9 +64,10 @@ Cargo dependency cache. The following exact tests passed:
 
 - a bare recorded OpenCode name resolves to the same verified running
   executable, but not to a different executable;
-- the nested real-PTY frontend backgrounds on Left, restores the dashboard,
-  reattaches without spawning a replacement, replays its screen, and
-  backgrounds again; and
+- the nested real-PTY frontend forwards a plain arrow for editing, offers a
+  timed return only at a cursor boundary, restores the dashboard, reattaches
+  without spawning a replacement, replays its screen, and supports both
+  Shift+Arrow shortcuts; and
 - Cursor's no-model result refuses before `create-chat` or ownership-state
   creation.
 
@@ -87,8 +88,9 @@ reconnect to a process started by an older dashboard:
 | Copilot | ACP authority is process-local and is not reconstructed after restart | Not susceptible |
 | Claude | Background ownership is provider/session based and revalidated through `claude agents --json` | Not susceptible |
 
-All native provider opens now share the same PTY bridge. Shift+Left is reserved
-for returning to OAV; plain Left/Right and other bytes are forwarded.
+All native provider opens now share the same PTY bridge. Plain Left/Right is
+forwarded; an unchanged cursor arms a visible same-arrow return window, while
+Shift+Left/Right returns immediately.
 Stopping the retained frontend is distinct from interrupting or deleting the
 managed provider session.
 
@@ -96,6 +98,12 @@ managed provider session.
 
 A later read-only recheck reproduced two additional stale-dashboard failures
 on the reporting account without sending provider input:
+
+- Claude Code 2.1.243 attached to the exact `open-agent-view-dev` row in a
+  real 120×34 PTY. The first plain Left at its empty prompt displayed OAV's
+  timed bottom-line return hint even though Claude redrew its own subview; the
+  second Left restored the dashboard and retained the provider frontend. No
+  prompt, approval, interrupt, or credential operation was sent.
 
 - the managed OpenCode server's session/message endpoints reported a newer
   assistant response and `time.updated`, while OAV still showed the first

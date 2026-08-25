@@ -2,7 +2,8 @@
 //!
 //! The terminal harness deliberately treats the new-task text as a display
 //! name, never as a shell command. OAV opens the user's interactive shell in a
-//! private PTY; Shift+Left backgrounds it, Enter/Right resumes it, and Ctrl+X stops
+//! private PTY; boundary-double-arrow or Shift+Arrow backgrounds it,
+//! Enter/Right resumes it, and Ctrl+X stops
 //! only the exact child held by that PTY registry.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -305,7 +306,7 @@ fn terminal_session(record: &TerminalRecord) -> AgentSession {
         summary: if record.state == SessionState::Completed {
             "Terminal exited · Ctrl+X deletes this row".into()
         } else {
-            "Interactive shell · Enter resumes · Shift+Left returns to OAV".into()
+            "Interactive shell · Enter resumes · ←/→ twice or Shift+Arrow returns to OAV".into()
         },
         raw_state: Some(if record.state == SessionState::Completed {
             "terminal_exited".into()

@@ -28,6 +28,7 @@ const MAX_READY_EVENTS_PER_TICK: usize = 256;
 const LAUNCH_DISCOVERY_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const LAUNCH_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 const LAUNCH_ANIMATION_INTERVAL: Duration = Duration::from_millis(120);
+const LIVE_SESSION_ANIMATION_INTERVAL: Duration = Duration::from_millis(550);
 const LAUNCH_SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧"];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -142,6 +143,7 @@ pub fn run_dashboard(
     let mut launching_provider: Option<Provider> = None;
     let mut launch_animation_tick = 0usize;
     let mut next_launch_animation = Instant::now();
+    let mut next_live_animation = Instant::now() + LIVE_SESSION_ANIMATION_INTERVAL;
     let mut needs_draw = true;
     schedule_refresh(
         &refresh_tx,
@@ -317,6 +319,10 @@ pub fn run_dashboard(
             launch_animation_tick = launch_animation_tick.wrapping_add(1);
             next_launch_animation = Instant::now() + LAUNCH_ANIMATION_INTERVAL;
             needs_draw = true;
+        }
+        if Instant::now() >= next_live_animation {
+            needs_draw |= app.advance_live_animation();
+            next_live_animation = Instant::now() + LIVE_SESSION_ANIMATION_INTERVAL;
         }
         if needs_draw {
             terminal.terminal.draw(|frame| ui::render(frame, &app))?;

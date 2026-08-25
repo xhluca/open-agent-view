@@ -141,17 +141,18 @@ Antigravity's native interface if needed.
 
 ## Returning from a provider-native interface
 
-Provider clients run behind an OAV-owned pseudo-terminal. Press Shift+Left to
-background only that frontend and return to the
-dashboard; the managed backend remains alive. Enter or Right on the same row
-resumes the exact retained frontend and restores its screen. Plain Left/Right
-remain provider input-editing keys. This applies to
+Provider clients run behind an OAV-owned pseudo-terminal. Plain Left/Right
+first reach the provider editor. At a cursor boundary the first arrow displays
+a 1.6-second bottom-line hint; repeat the same arrow to background only that
+frontend and return to the dashboard. Shift+Left/Right returns immediately.
+The managed backend remains alive, and Enter or Right on the same dashboard
+row restores the exact retained screen. This applies to
 Claude, Codex, Pi, OpenCode, Cursor, Copilot, and Antigravity native opens.
 
 Older builds handed the terminal directly to the provider, so Pi/OpenCode Left
 did nothing and Claude consumed it for its own agent view. `ctrl+c` in that
-mode could terminate the provider frontend. Use Shift+Left for the
-OAV return path. If the dashboard itself exits, OAV cleans up retained frontend
+mode could terminate the provider frontend. Use the double-arrow hint or a
+Shift+Arrow for the OAV return path. If the dashboard itself exits, OAV cleans up retained frontend
 processes but does not target separately supervised provider backends.
 
 ## Slash opens the wrong mode or harness/model selection is unclear
@@ -221,8 +222,8 @@ on a worker, captures Claude's returned eight-character ID, resolves the exact
 full UUID from `claude agents --json --all`, records that exact identity, and
 immediately opens `claude attach`. It never supplies `--session-id` alongside
 `--background`, because current Claude explicitly ignores that combination.
-Shift+Left backgrounds only
-the retained frontend and returns to the exact new row. Background-provider
+The native return gesture backgrounds only the retained frontend and returns
+to the exact new row. Background-provider
 launches animate independently of the worker, so arrows, typing, and Escape do
 not wait on startup.
 
@@ -396,8 +397,8 @@ Only sessions created through that authenticated server receive inspect,
 reply, and active-work interrupt controls. Existing CLI history remains
 inspect/native-open only. Version 0.1.18 opens a managed row by attaching the
 native TUI to that exact authenticated loopback server and session; the secret
-is child-local environment, never an argument. Shift+Left returns to OAV without
-stopping the server, and Enter/Right resumes the retained frontend.
+is child-local environment, never an argument. The native return gesture goes
+back to OAV without stopping the server, and Enter/Right resumes the retained frontend.
 
 Version 0.1.18 also accepts a live record written as bare `opencode` when the
 current configured path (for example `~/.opencode/bin/opencode`) and the

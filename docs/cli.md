@@ -141,14 +141,16 @@ The native setup surfaces are `claude auth login`, `codex login`, Pi's
 no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,
 `copilot login`, and Antigravity's first-run `agy` flow. OAV suspends its
 alternate screen before these commands and never reads or copies credentials.
-The setup/login UI always gets its own private terminal; Shift+Left backgrounds it as
-a visible Terminal row and Enter/Right resumes that exact screen. `/setup
+The setup/login UI always gets its own private terminal; Left/Right twice at a
+cursor boundary or Shift+Left/Right anywhere backgrounds it as a visible
+Terminal row, and Enter/Right resumes that exact screen. `/setup
 HARNESS` uses the same terminal for an installation check, confirmed official
 installer, and native login. It never attaches setup to the last agent session.
 
 Select `Terminal` (or `/harness terminal`) to create a plain interactive shell.
-The task text becomes the terminal's display name, not a command. Shift+Left returns
-to OAV, Enter/Right resumes, the first Ctrl+X stops it, and the second Ctrl+X
+The task text becomes the terminal's display name, not a command. A boundary
+double-arrow or Shift+Left/Right returns to OAV, Enter/Right resumes, the first
+Ctrl+X stops it, and the second Ctrl+X
 deletes its completed row. These terminal frontends are process-local and are
 stopped when the dashboard itself exits.
 
@@ -351,7 +353,8 @@ label.
 | Show more row | `enter` | Reveal the next terminal-sized page (at most 25) in that group. |
 | Group heading | `enter` | Collapse or expand the group. |
 | Session row | `enter` or `→` | Suspend the dashboard and open the provider's full native interface. The physical screen is cleared before the provider draws. |
-| Provider-native interface | `shift+←` | Stop and retain only the provider frontend, return to Open Agent View, and keep the managed backend alive. Plain Left/Right remain available for editing. `enter` or `→` on the same row reattaches and restores its terminal screen. |
+| Provider-native interface | `←` / `→` twice at a cursor boundary | The first arrow is forwarded. If the cursor does not move, a 1.6-second bottom-line hint appears; repeat the same arrow to retain the frontend and return to Open Agent View. |
+| Provider-native interface | `shift+←` / `shift+→` | Return immediately from anywhere. Plain arrows otherwise remain available for line editing. `enter` or `→` on the same dashboard row reattaches and restores its terminal screen. |
 | Inline Peek | `←` | Return to the session list without opening the native provider interface. |
 | Session row | `space` | Open the inline Peek panel and inspect transcript/request details when capability is advertised. |
 | Inspect peek | type, `enter` | Send an owned provider reply/steer or the current structured answer. |

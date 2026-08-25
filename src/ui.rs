@@ -209,6 +209,7 @@ fn render_session_list(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 app.view_mode,
                 area.width,
                 is_selected,
+                app.live_animation_visible(),
             ));
         }
         let hidden = app.hidden_session_count(group);
@@ -317,8 +318,9 @@ fn render_session_row(
     view_mode: ViewMode,
     width: u16,
     selected: bool,
+    live_animation_visible: bool,
 ) -> Line<'static> {
-    let symbol = state_symbol(session.state);
+    let symbol = state_symbol(session.state, live_animation_visible);
     let symbol_style = Style::default().fg(state_color(session.state));
     let name_width = if width >= 100 {
         26
@@ -703,7 +705,7 @@ fn contextual_footer(app: &App, width: u16) -> String {
             let session = app.selected_session().expect("selection checked");
             let peek = session_peek_suffix(session);
             let control = session_control_suffix(session);
-            let open = "enter/right open · shift+← returns";
+            let open = "enter/right open · native: ←/→ twice · shift+←/→";
             format!("{open}{peek}{control} · ? for shortcuts")
         }
         Overlay::None if app.selected_session().is_some() && width >= 55 => {
@@ -772,7 +774,8 @@ fn help_actions(app: &App) -> Vec<String> {
     }
     if app.selected_session().is_some() {
         actions.push("enter/right to open session".into());
-        actions.push("shift+left returns from native session".into());
+        actions.push("left/right twice at a boundary returns from native session".into());
+        actions.push("shift+left/right returns immediately".into());
         actions.push("ctrl+r to rename".into());
     }
     actions.push("ctrl+s to switch views".into());
@@ -1150,11 +1153,12 @@ fn styled_line(spans: Vec<Span<'static>>, selected: bool) -> Line<'static> {
     Line::from(spans).style(style)
 }
 
-fn state_symbol(state: SessionState) -> &'static str {
+fn state_symbol(state: SessionState, live_animation_visible: bool) -> &'static str {
     match state {
         SessionState::ReadyForReview => "✱",
         SessionState::NeedsInput => "✱",
-        SessionState::Working => "✳",
+        SessionState::Working if live_animation_visible => "✳",
+        SessionState::Working => "·",
         SessionState::Completed => "•",
         SessionState::Unknown => "?",
     }
@@ -1475,7 +1479,7 @@ mod tests {
         for (provider, expected) in providers {
             let mut item = session("recognizable-session", SessionState::Working);
             item.provider = provider;
-            let row = render_session_row(&item, ViewMode::Status, 120, false);
+            let row = render_session_row(&item, ViewMode::Status, 120, false, true);
             let text: String = row.spans.iter().map(|span| span.content.as_ref()).collect();
 
             assert!(
@@ -1493,13 +1497,26 @@ mod tests {
             SessionState::Working,
         );
         item.provider = Provider::Antigravity;
-        let row = render_session_row(&item, ViewMode::Status, 120, false);
+        let row = render_session_row(&item, ViewMode::Status, 120, false, true);
         let text: String = row.spans.iter().map(|span| span.content.as_ref()).collect();
 
         assert!(
             text.contains("… Antigravity"),
             "provider column touched name: {text:?}"
         );
+    }
+
+    #[test]
+    fn working_marker_blinks_without_changing_other_session_states() {
+        let working = session("worker", SessionState::Working);
+        let visible = render_session_row(&working, ViewMode::Status, 120, false, true);
+        let dimmed = render_session_row(&working, ViewMode::Status, 120, false, false);
+        assert_eq!(visible.spans[0].content, " ✳ ");
+        assert_eq!(dimmed.spans[0].content, " · ");
+
+        let completed = session("done", SessionState::Completed);
+        let completed = render_session_row(&completed, ViewMode::Status, 120, false, false);
+        assert_eq!(completed.spans[0].content, " • ");
     }
 
     #[test]
@@ -2013,7 +2030,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("enter/right open · shift+← returns"));
+        assert!(rendered.contains("native: ←/→ twice · shift+←/→"));
     }
 
     fn session(name: &str, state: SessionState) -> AgentSession {

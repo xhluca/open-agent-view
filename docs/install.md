@@ -14,19 +14,19 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The manually published v0.1.26 release currently covers:
+The manually published v0.1.27 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.26 does not claim artifacts for them because they were not built and
+but v0.1.27 does not claim artifacts for them because they were not built and
 tested on native machines:
 
 - Linux ARM64 with glibc 2.35 or newer
 - macOS x86_64
 - macOS Apple silicon
 
-The installer stops with an explicit explanation when v0.1.26 is requested on
+The installer stops with an explicit explanation when v0.1.27 is requested on
 one of those hosts. Use a source build there until a complete native release is
 published; do not reuse the Linux binary.
 
@@ -58,8 +58,9 @@ new harness is installed, select it with Tab, and use Shift+Tab for models.
 When authentication is required, Enter in the model picker hands the terminal
 to the provider's native login and reloads the account catalog afterward. From
 the dashboard, `/setup HARNESS` runs the same installation/login sequence in a
-private terminal; Shift+Left backgrounds it as a Terminal job and Enter resumes that
-exact screen. This prevents setup from inheriting the last opened agent UI.
+private terminal; the native boundary-double-arrow or Shift+Arrow gesture
+backgrounds it as a Terminal job and Enter resumes that exact screen. This
+prevents setup from inheriting the last opened agent UI.
 
 ## One-line installation
 

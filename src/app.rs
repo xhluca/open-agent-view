@@ -146,6 +146,7 @@ pub struct App {
     session_indices: HashMap<String, usize>,
     session_counts: BTreeMap<SessionState, usize>,
     provider_labels: Vec<String>,
+    live_animation_visible: bool,
     #[cfg(test)]
     group_cache_rebuilds: usize,
     pub notice: Option<String>,
@@ -213,6 +214,7 @@ impl App {
             session_indices: HashMap::new(),
             session_counts: BTreeMap::new(),
             provider_labels: Vec::new(),
+            live_animation_visible: true,
             #[cfg(test)]
             group_cache_rebuilds: 0,
             notice: None,
@@ -295,6 +297,22 @@ impl App {
 
     pub fn session_count(&self, state: SessionState) -> usize {
         self.session_counts.get(&state).copied().unwrap_or(0)
+    }
+
+    /// Advance the low-frequency live-session marker. The snapshot and group
+    /// indexes remain untouched, so animation never rebuilds a large queue.
+    pub fn advance_live_animation(&mut self) -> bool {
+        if self.session_count(SessionState::Working) == 0 {
+            let changed = !self.live_animation_visible;
+            self.live_animation_visible = true;
+            return changed;
+        }
+        self.live_animation_visible = !self.live_animation_visible;
+        true
+    }
+
+    pub fn live_animation_visible(&self) -> bool {
+        self.live_animation_visible
     }
 
     pub fn provider_labels(&self) -> &[String] {
@@ -1547,6 +1565,22 @@ mod tests {
         app.set_filter("session-69999");
         assert_eq!(app.group_cache_rebuilds, rebuilds + 1);
         assert_eq!(app.groups()[0].sessions, vec![69_999]);
+    }
+
+    #[test]
+    fn live_animation_never_rebuilds_session_indexes() {
+        let mut app = app_with(vec![
+            session("live", SessionState::Working),
+            session("done", SessionState::Completed),
+        ]);
+        let rebuilds = app.group_cache_rebuilds;
+        assert!(app.live_animation_visible());
+
+        assert!(app.advance_live_animation());
+        assert!(!app.live_animation_visible());
+        assert!(app.advance_live_animation());
+        assert!(app.live_animation_visible());
+        assert_eq!(app.group_cache_rebuilds, rebuilds);
     }
 
     #[test]

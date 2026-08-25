@@ -60,8 +60,9 @@ interactive login action instead of waiting for launch to time out.
 New-session launch is intentionally foreground-first: OAV calls documented
 `create-chat`, persists that exact ID, then runs interactive `--resume ID`
 with the selected model and initial prompt. It does not add `--print`, so the
-user sees Cursor immediately. Shift+Left retains that frontend and returns to
-the dashboard; plain arrow keys remain Cursor editor input.
+user sees Cursor immediately. At a cursor boundary, repeating the same plain
+arrow during the visible return window retains the frontend; Shift+Left/Right
+does so immediately. Plain arrows otherwise remain Cursor editor input.
 
 Print mode supports `text`, `json`, and `stream-json`. The documented JSON and
 NDJSON events include a stable `session_id`; stream events include:

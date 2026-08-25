@@ -13,7 +13,7 @@ use open_agent_view::native_session::{self, NativeSessionExit};
 const CHILD_ENV: &str = "OAV_NATIVE_BACKGROUND_CHILD";
 
 #[test]
-fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() {
+fn boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen() {
     if std::env::var_os(CHILD_ENV).is_some() {
         run_child_scenario();
         return;
@@ -25,7 +25,7 @@ fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() 
     command
         .args([
             "--exact",
-            "shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen",
+            "boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen",
             "--nocapture",
         ])
         .env(CHILD_ENV, "1")
@@ -52,11 +52,41 @@ fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() 
         b"NATIVE_READY",
         Duration::from_secs(4),
     );
-    // Plain arrows must reach the provider so users can edit its input line.
-    master.write_all(b"\x1b[D\x1b[C").unwrap();
-    thread::sleep(Duration::from_millis(50));
+    // A plain arrow must first reach the provider so line editing still works.
+    master.write_all(b"\x1b[D").unwrap();
+    read_until(
+        &mut master,
+        &mut output,
+        b"PLAIN_LEFT_RECEIVED",
+        Duration::from_secs(4),
+    );
     assert_eq!(occurrence_count(&output, b"DASHBOARD_RETURNED"), 0);
-    master.write_all(b"\x1b[1;2D").unwrap();
+
+    // At the resulting cursor boundary, the first arrow shows a bounded hint
+    // and the same arrow inside the return window backgrounds the frontend.
+    master.write_all(b"\x1b[D").unwrap();
+    read_until(
+        &mut master,
+        &mut output,
+        "Press ← again".as_bytes(),
+        Duration::from_secs(4),
+    );
+    assert_eq!(occurrence_count(&output, b"DASHBOARD_RETURNED"), 0);
+    thread::sleep(Duration::from_millis(1800));
+    drain_for(&mut master, &mut output, Duration::from_millis(100));
+    master.write_all(b"\x1b[D").unwrap();
+    read_until(
+        &mut master,
+        &mut output,
+        "Press ← again".as_bytes(),
+        Duration::from_secs(4),
+    );
+    assert_eq!(
+        occurrence_count(&output, b"DASHBOARD_RETURNED"),
+        0,
+        "an expired return window must forward the next arrow and re-arm"
+    );
+    master.write_all(b"\x1b[D").unwrap();
     read_until(
         &mut master,
         &mut output,
@@ -71,11 +101,33 @@ fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() 
             Duration::from_secs(4),
         );
     }
-    master.write_all(b"\x1b[1;2D").unwrap();
+    master.write_all(b"\x1b[C").unwrap();
+    read_until(
+        &mut master,
+        &mut output,
+        "Press → again".as_bytes(),
+        Duration::from_secs(4),
+    );
+    master.write_all(b"\x1b[C").unwrap();
     read_until(
         &mut master,
         &mut output,
         b"SECOND_RETURN",
+        Duration::from_secs(4),
+    );
+    if occurrence_count(&output, b"NATIVE_READY") < 3 {
+        read_until(
+            &mut master,
+            &mut output,
+            b"NATIVE_READY",
+            Duration::from_secs(4),
+        );
+    }
+    master.write_all(b"\x1b[1;2C").unwrap();
+    read_until(
+        &mut master,
+        &mut output,
+        b"THIRD_RETURN",
         Duration::from_secs(4),
     );
 
@@ -89,17 +141,17 @@ fn shift_left_backgrounds_and_enter_style_reattach_restores_the_native_screen() 
     };
     assert!(status.success(), "{}", String::from_utf8_lossy(&output));
     assert!(
-        occurrence_count(&output, b"NATIVE_READY") >= 2,
+        occurrence_count(&output, b"NATIVE_READY") >= 3,
         "native screen was not replayed on reattach: {}",
         String::from_utf8_lossy(&output)
     );
 }
 
 fn run_child_scenario() {
-    let mut first = Command::new("sh");
+    let mut first = Command::new("bash");
     first.args([
         "-c",
-        r"printf '\033[2J\033[HNATIVE_READY'; while :; do sleep 1; done",
+        r"stty raw -echo; printf '\033[2J\033[HNATIVE_READY'; IFS= read -r -n 3 key; if [[ $key == $'\033[D' ]]; then printf '\r\nPLAIN_LEFT_RECEIVED'; else printf '\r\nWRONG_ARROW_BYTES'; fi; while :; do sleep 1; done",
     ]);
     assert!(matches!(
         native_session::run(first, "provider:host:test").unwrap(),
@@ -115,6 +167,13 @@ fn run_child_scenario() {
         NativeSessionExit::Backgrounded
     ));
     println!("SECOND_RETURN");
+
+    let third = Command::new("definitely-not-a-provider-command");
+    assert!(matches!(
+        native_session::run(third, "provider:host:test").unwrap(),
+        NativeSessionExit::Backgrounded
+    ));
+    println!("THIRD_RETURN");
     native_session::shutdown_all();
 }
 
@@ -177,6 +236,20 @@ fn read_until(master: &mut File, output: &mut Vec<u8>, needle: &[u8], timeout: D
             String::from_utf8_lossy(output)
         );
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn drain_for(master: &mut File, output: &mut Vec<u8>, duration: Duration) {
+    let deadline = Instant::now() + duration;
+    let mut bytes = [0_u8; 4096];
+    while Instant::now() < deadline {
+        match master.read(&mut bytes) {
+            Ok(0) => {}
+            Ok(count) => output.extend_from_slice(&bytes[..count]),
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(error) => panic!("failed to drain outer PTY: {error}"),
+        }
+        thread::sleep(Duration::from_millis(5));
     }
 }
 

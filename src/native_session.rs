@@ -1,10 +1,11 @@
 //! Provider-neutral native-TUI handoff with a dashboard detach key.
 //!
 //! Interactive provider clients run behind a private pseudo-terminal.
-//! Shift+Left suspends only that frontend, returns to the dashboard, and keeps
-//! the provider's managed backend alive. Plain Left and Right remain available
-//! to edit the provider's input line. Selecting the same row resumes the exact
-//! stopped frontend and screen.
+//! Plain Left and Right remain available to edit the provider's input line. At
+//! a cursor boundary, the first arrow is still forwarded and opens a short,
+//! visible return window; pressing the same arrow again backgrounds the
+//! frontend. Shift+Left and Shift+Right are immediate equivalents. Selecting
+//! the same row resumes the exact stopped frontend and screen.
 
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
@@ -21,6 +22,10 @@ use std::time::{Duration, Instant};
 use anyhow::{anyhow, bail, Context, Result};
 
 const ESCAPE_FLUSH_DELAY: Duration = Duration::from_millis(30);
+const ARROW_SETTLE_DELAY: Duration = Duration::from_millis(75);
+const ARROW_RETURN_WINDOW: Duration = Duration::from_millis(1600);
+const RETURN_HINT_REFRESH: Duration = Duration::from_millis(100);
+const EMPTY_PROMPT_MAX_COLUMN: u16 = 4;
 #[cfg(unix)]
 const STOP_GRACE: Duration = Duration::from_millis(250);
 
@@ -57,7 +62,7 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
     Ok(NativeSessionExit::Exited(status))
 }
 
-/// Resume an exact frontend previously backgrounded with Shift+Left. Unlike
+/// Resume an exact frontend previously backgrounded with a return gesture. Unlike
 /// [`run`], this never starts a replacement command when the key is stale.
 pub fn resume(session_key: &str) -> Result<NativeSessionExit> {
     validate_session_key(session_key)?;
@@ -322,6 +327,7 @@ fn bridge_session(
         signal_group(child.id(), libc::SIGWINCH);
     }
     let mut parser = DetachParser::default();
+    let mut return_gesture = ReturnGesture::default();
     let mut current_size = terminal_size(libc::STDIN_FILENO).ok();
     if let Some(size) = current_size {
         set_pty_size(master.as_raw_fd(), size)?;
@@ -362,12 +368,41 @@ fn bridge_session(
                 }
                 std::cmp::Ordering::Equal => {}
                 std::cmp::Ordering::Greater => {
-                    let parsed = parser.push(&input[..read as usize]);
-                    if !parsed.forward.is_empty() {
-                        master.write_all(&parsed.forward)?;
-                        master.flush()?;
+                    let mut detach = false;
+                    for action in parser.push(&input[..read as usize]) {
+                        match action {
+                            InputAction::Forward(bytes) => {
+                                return_gesture.clear(&mut stdout, &screen)?;
+                                master.write_all(&bytes)?;
+                                master.flush()?;
+                            }
+                            InputAction::Arrow(direction, bytes) => {
+                                if return_gesture.should_detach(direction, &screen) {
+                                    detach = true;
+                                    break;
+                                }
+                                return_gesture.clear(&mut stdout, &screen)?;
+                                let cursor = screen.screen().cursor_position();
+                                master.write_all(bytes)?;
+                                master.flush()?;
+                                // Claude and a few other TUIs use Left at an
+                                // empty, left-margin prompt to change their own
+                                // view. Preserve the OAV second-press window in
+                                // that one boundary case even if they redraw.
+                                return_gesture.begin_probe(
+                                    direction,
+                                    cursor,
+                                    direction == ArrowDirection::Left
+                                        && cursor.1 <= EMPTY_PROMPT_MAX_COLUMN,
+                                );
+                            }
+                            InputAction::Detach => {
+                                detach = true;
+                                break;
+                            }
+                        }
                     }
-                    if parsed.detach {
+                    if detach {
                         stop_frontend(&mut child, &mut master, &mut stdout, &mut screen)?;
                         detached_registry()
                             .lock()
@@ -388,9 +423,11 @@ fn bridge_session(
             }
         }
         if let Some(bytes) = parser.flush_expired() {
+            return_gesture.clear(&mut stdout, &screen)?;
             master.write_all(&bytes)?;
             master.flush()?;
         }
+        return_gesture.update(&mut stdout, &screen)?;
         if let Ok(size) = terminal_size(libc::STDIN_FILENO) {
             if current_size
                 .map(|current| !same_terminal_size(current, size))
@@ -558,35 +595,95 @@ impl Drop for RawModeGuard {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ArrowDirection {
+    Left,
+    Right,
+}
+
+impl ArrowDirection {
+    fn symbol(self) -> &'static str {
+        match self {
+            Self::Left => "←",
+            Self::Right => "→",
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum InputAction {
+    Forward(Vec<u8>),
+    Arrow(ArrowDirection, &'static [u8]),
+    Detach,
+}
+
+const SHIFT_LEFT: &[u8] = b"\x1b[1;2D";
+const SHIFT_RIGHT: &[u8] = b"\x1b[1;2C";
+const LEFT: &[u8] = b"\x1b[D";
+const RIGHT: &[u8] = b"\x1b[C";
+const APPLICATION_LEFT: &[u8] = b"\x1bOD";
+const APPLICATION_RIGHT: &[u8] = b"\x1bOC";
+const RECOGNIZED_ARROWS: [&[u8]; 6] = [
+    SHIFT_LEFT,
+    SHIFT_RIGHT,
+    LEFT,
+    RIGHT,
+    APPLICATION_LEFT,
+    APPLICATION_RIGHT,
+];
+
 #[derive(Default)]
 struct DetachParser {
     pending: Vec<u8>,
     pending_since: Option<Instant>,
 }
 
-struct ParsedInput {
-    forward: Vec<u8>,
-    detach: bool,
-}
-
 impl DetachParser {
-    fn push(&mut self, input: &[u8]) -> ParsedInput {
+    fn push(&mut self, input: &[u8]) -> Vec<InputAction> {
         let mut bytes = std::mem::take(&mut self.pending);
         self.pending_since = None;
         bytes.extend_from_slice(input);
-        let mut forward = Vec::with_capacity(bytes.len());
+        let mut actions = Vec::new();
+        let mut forward = Vec::new();
         let mut index = 0;
         while index < bytes.len() {
-            if bytes[index..].starts_with(b"\x1b[1;2D") {
-                return ParsedInput {
-                    forward,
-                    detach: true,
+            let remaining = &bytes[index..];
+            let recognized =
+                if remaining.starts_with(SHIFT_LEFT) || remaining.starts_with(SHIFT_RIGHT) {
+                    Some((InputAction::Detach, SHIFT_LEFT.len()))
+                } else if remaining.starts_with(LEFT) {
+                    Some((InputAction::Arrow(ArrowDirection::Left, LEFT), LEFT.len()))
+                } else if remaining.starts_with(APPLICATION_LEFT) {
+                    Some((
+                        InputAction::Arrow(ArrowDirection::Left, APPLICATION_LEFT),
+                        APPLICATION_LEFT.len(),
+                    ))
+                } else if remaining.starts_with(RIGHT) {
+                    Some((
+                        InputAction::Arrow(ArrowDirection::Right, RIGHT),
+                        RIGHT.len(),
+                    ))
+                } else if remaining.starts_with(APPLICATION_RIGHT) {
+                    Some((
+                        InputAction::Arrow(ArrowDirection::Right, APPLICATION_RIGHT),
+                        APPLICATION_RIGHT.len(),
+                    ))
+                } else {
+                    None
                 };
+            if let Some((action, consumed)) = recognized {
+                if !forward.is_empty() {
+                    actions.push(InputAction::Forward(std::mem::take(&mut forward)));
+                }
+                actions.push(action);
+                index += consumed;
+                continue;
             }
-            if bytes[index] == 0x1b
-                && (index + 1 == bytes.len()
-                    || (matches!(bytes.get(index + 1), Some(b'[' | b'O'))
-                        && index + 2 == bytes.len()))
+
+            if remaining[0] == 0x1b
+                && RECOGNIZED_ARROWS
+                    .iter()
+                    .any(|sequence| sequence.starts_with(remaining))
             {
                 self.pending.extend_from_slice(&bytes[index..]);
                 self.pending_since = Some(Instant::now());
@@ -595,10 +692,10 @@ impl DetachParser {
             forward.push(bytes[index]);
             index += 1;
         }
-        ParsedInput {
-            forward,
-            detach: false,
+        if !forward.is_empty() {
+            actions.push(InputAction::Forward(forward));
         }
+        actions
     }
 
     fn flush_expired(&mut self) -> Option<Vec<u8>> {
@@ -614,6 +711,164 @@ impl DetachParser {
     }
 }
 
+#[derive(Debug)]
+struct ArrowProbe {
+    direction: ArrowDirection,
+    cursor: (u16, u16),
+    allow_cursor_change: bool,
+    started: Instant,
+}
+
+#[derive(Debug)]
+struct ArmedReturn {
+    direction: ArrowDirection,
+    cursor_guard: Option<(u16, u16)>,
+    expires: Instant,
+    last_bucket: Option<u64>,
+}
+
+#[derive(Default)]
+struct ReturnGesture {
+    probe: Option<ArrowProbe>,
+    armed: Option<ArmedReturn>,
+    hint_visible: bool,
+}
+
+impl ReturnGesture {
+    fn begin_probe(
+        &mut self,
+        direction: ArrowDirection,
+        cursor: (u16, u16),
+        allow_cursor_change: bool,
+    ) {
+        self.probe = Some(ArrowProbe {
+            direction,
+            cursor,
+            allow_cursor_change,
+            started: Instant::now(),
+        });
+        self.armed = None;
+    }
+
+    fn should_detach(&mut self, direction: ArrowDirection, screen: &vt100::Parser) -> bool {
+        let Some(armed) = self.armed.as_ref() else {
+            return false;
+        };
+        armed.direction == direction
+            && Instant::now() < armed.expires
+            && armed
+                .cursor_guard
+                .map(|cursor| {
+                    !screen.screen().hide_cursor() && screen.screen().cursor_position() == cursor
+                })
+                .unwrap_or(true)
+    }
+
+    fn update(&mut self, output: &mut impl Write, screen: &vt100::Parser) -> Result<()> {
+        let now = Instant::now();
+        if screen.screen().hide_cursor()
+            && self
+                .probe
+                .as_ref()
+                .map_or(true, |probe| !probe.allow_cursor_change)
+            && self
+                .armed
+                .as_ref()
+                .map_or(true, |armed| armed.cursor_guard.is_some())
+        {
+            self.clear(output, screen)?;
+            return Ok(());
+        }
+        if let Some(probe) = self.probe.as_ref() {
+            if !probe.allow_cursor_change && screen.screen().cursor_position() != probe.cursor {
+                self.clear(output, screen)?;
+                return Ok(());
+            }
+            if now.duration_since(probe.started) >= ARROW_SETTLE_DELAY {
+                self.armed = Some(ArmedReturn {
+                    direction: probe.direction,
+                    cursor_guard: (!probe.allow_cursor_change).then_some(probe.cursor),
+                    expires: now + ARROW_RETURN_WINDOW,
+                    last_bucket: None,
+                });
+                self.probe = None;
+            }
+        }
+
+        let Some(armed) = self.armed.as_mut() else {
+            return Ok(());
+        };
+        if now >= armed.expires
+            || armed
+                .cursor_guard
+                .is_some_and(|cursor| screen.screen().cursor_position() != cursor)
+        {
+            self.clear(output, screen)?;
+            return Ok(());
+        }
+        let remaining = armed.expires.saturating_duration_since(now);
+        let bucket = remaining.as_millis() as u64 / RETURN_HINT_REFRESH.as_millis() as u64;
+        if armed.last_bucket != Some(bucket) {
+            write_return_hint(output, screen, armed.direction, remaining)?;
+            armed.last_bucket = Some(bucket);
+            self.hint_visible = true;
+        }
+        Ok(())
+    }
+
+    fn clear(&mut self, output: &mut impl Write, screen: &vt100::Parser) -> Result<()> {
+        self.probe = None;
+        self.armed = None;
+        if self.hint_visible {
+            restore_bottom_row(output, screen)?;
+            self.hint_visible = false;
+        }
+        Ok(())
+    }
+}
+
+fn write_return_hint(
+    output: &mut impl Write,
+    screen: &vt100::Parser,
+    direction: ArrowDirection,
+    remaining: Duration,
+) -> Result<()> {
+    let (rows, cols) = screen.screen().size();
+    let tenths = remaining.as_millis().div_ceil(100);
+    let message = format!(
+        " Press {} again to return to Open Agent View · {:.1}s · Shift+←/→ anytime",
+        direction.symbol(),
+        tenths as f64 / 10.0
+    );
+    let message = truncate_to_columns(&message, usize::from(cols));
+    write!(
+        output,
+        "\x1b7\x1b[{};1H\x1b[2K\x1b[30;46m{}\x1b[0m\x1b8",
+        rows.max(1),
+        message
+    )?;
+    output.flush()?;
+    Ok(())
+}
+
+fn restore_bottom_row(output: &mut impl Write, screen: &vt100::Parser) -> Result<()> {
+    let (rows, cols) = screen.screen().size();
+    let last_row = screen
+        .screen()
+        .rows_formatted(0, cols)
+        .nth(usize::from(rows.saturating_sub(1)))
+        .unwrap_or_default();
+    write!(output, "\x1b7\x1b[{};1H\x1b[2K", rows.max(1))?;
+    output.write_all(&last_row)?;
+    output.write_all(b"\x1b8")?;
+    output.flush()?;
+    Ok(())
+}
+
+fn truncate_to_columns(value: &str, width: usize) -> String {
+    value.chars().take(width).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,18 +877,54 @@ mod tests {
     fn detach_parser_handles_fragmented_shift_left_sequences() {
         let mut parser = DetachParser::default();
         let first = parser.push(b"hello\x1b");
-        assert_eq!(first.forward, b"hello");
-        assert!(!first.detach);
+        assert_eq!(first, vec![InputAction::Forward(b"hello".to_vec())]);
         let second = parser.push(b"[1;2Dignored");
-        assert!(second.forward.is_empty());
-        assert!(second.detach);
+        assert_eq!(
+            second,
+            vec![
+                InputAction::Detach,
+                InputAction::Forward(b"ignored".to_vec())
+            ]
+        );
     }
 
     #[test]
-    fn detach_parser_forwards_plain_and_application_arrows_and_text_exactly() {
+    fn detach_parser_classifies_plain_arrows_and_preserves_other_input_exactly() {
         let mut parser = DetachParser::default();
-        let parsed = parser.push(b"abc\x1b[A\x1b[D\x1bOD\x1b[C\x1b[1;2C");
-        assert_eq!(parsed.forward, b"abc\x1b[A\x1b[D\x1bOD\x1b[C\x1b[1;2C");
-        assert!(!parsed.detach);
+        let parsed = parser.push(b"abc\x1b[A\x1b[D\x1bOD\x1b[C\x1bOC\x1b[1;2C");
+        assert_eq!(
+            parsed,
+            vec![
+                InputAction::Forward(b"abc\x1b[A".to_vec()),
+                InputAction::Arrow(ArrowDirection::Left, LEFT),
+                InputAction::Arrow(ArrowDirection::Left, APPLICATION_LEFT),
+                InputAction::Arrow(ArrowDirection::Right, RIGHT),
+                InputAction::Arrow(ArrowDirection::Right, APPLICATION_RIGHT),
+                InputAction::Detach,
+            ]
+        );
+    }
+
+    #[test]
+    fn return_hint_is_bounded_to_the_terminal_width() {
+        assert_eq!(truncate_to_columns("Press ← again", 7), "Press ←");
+    }
+
+    #[test]
+    fn empty_left_margin_prompt_keeps_return_window_across_provider_redraw() {
+        let mut screen = vt100::Parser::new(6, 40, 0);
+        screen.process(b"\x1b[1;3H> \x1b[?25h");
+        let cursor = screen.screen().cursor_position();
+        assert!(cursor.1 <= EMPTY_PROMPT_MAX_COLUMN);
+
+        let mut gesture = ReturnGesture::default();
+        gesture.begin_probe(ArrowDirection::Left, cursor, true);
+        screen.process(b"\x1b[2J\x1b[6;20Hprovider subview\x1b[?25l");
+        std::thread::sleep(ARROW_SETTLE_DELAY + Duration::from_millis(10));
+        let mut output = Vec::new();
+        gesture.update(&mut output, &screen).unwrap();
+
+        assert!(gesture.should_detach(ArrowDirection::Left, &screen));
+        assert!(String::from_utf8_lossy(&output).contains("Press ← again"));
     }
 }
