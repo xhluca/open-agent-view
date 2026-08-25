@@ -864,6 +864,7 @@ fn help_actions(app: &App) -> Vec<String> {
 
 fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<Vec<String>> {
     const GAP_WIDTH: usize = 5;
+    const MAX_ACTIONS_PER_LINE: usize = 2;
     let mut lines = vec![Vec::<String>::new()];
     let mut line_width = 0;
     for action in actions {
@@ -873,7 +874,7 @@ fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<Vec<String>> {
         } else {
             GAP_WIDTH + action.len()
         };
-        if !line.is_empty() && line_width + added > width {
+        if !line.is_empty() && (line.len() >= MAX_ACTIONS_PER_LINE || line_width + added > width) {
             line_width = action.len();
             lines.push(vec![action]);
         } else {
@@ -1745,6 +1746,26 @@ mod tests {
             .position(|line| line.contains("enter/right to open session"))
             .expect("first shortcut row");
         assert!(composer_row < shortcuts_row && shortcuts_row < first_action_row);
+    }
+
+    #[test]
+    fn wide_help_keeps_shortcuts_on_distinct_rows() {
+        let packed = pack_help_actions(
+            vec![
+                "ctrl+s to switch views".into(),
+                "ctrl+j for newline".into(),
+                "ctrl+f to filter".into(),
+                "ctrl+l to refresh".into(),
+                "? to close".into(),
+            ],
+            240,
+        );
+
+        assert_eq!(packed.len(), 3);
+        assert!(packed.iter().all(|line| line.len() <= 2));
+        assert_eq!(packed[0][0], "ctrl+s to switch views");
+        assert_eq!(packed[1][0], "ctrl+f to filter");
+        assert_eq!(packed[2][0], "? to close");
     }
 
     #[test]

@@ -2282,6 +2282,68 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
 }
 
 #[test]
+fn vscode_wide_terminal_help_preserves_visual_line_breaks() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(220, 24, |command, _| {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("populated-sessions.json");
+        command
+            .env("TERM_PROGRAM", "vscode")
+            .env("COLORTERM", "truecolor")
+            .args([
+                "--fixture",
+                fixture.to_str().expect("UTF-8 fixture path"),
+                "--all",
+                "--no-host-claude",
+                "--no-host-codex",
+                "--include-interactive",
+                "--refresh-ms",
+                "60000",
+            ]);
+    });
+    app.wait_for("VS Code-style terminal startup", |screen| {
+        screen.contains("Open Agent View") && screen.contains("? for shortcuts")
+    });
+
+    app.send(b"?");
+    let help = app.wait_for("VS Code-style multiline shortcuts", |screen| {
+        screen.contains("shortcuts")
+            && screen.contains("ctrl+s to switch views")
+            && screen.contains("ctrl+f to filter")
+            && screen.contains("? to close")
+    });
+    assert_lines_fit(&help, 220);
+
+    let switch_row = help
+        .lines()
+        .position(|line| line.contains("ctrl+s to switch views"))
+        .expect("switch shortcut row");
+    let filter_row = help
+        .lines()
+        .position(|line| line.contains("ctrl+f to filter"))
+        .expect("filter shortcut row");
+    let close_row = help
+        .lines()
+        .position(|line| line.contains("? to close"))
+        .expect("close shortcut row");
+    assert!(switch_row < filter_row && filter_row < close_row);
+    assert!(
+        help.lines()
+            .filter(|line| line.contains(" to ") || line.contains(" for "))
+            .count()
+            >= 8,
+        "help should use multiple visual rows in a wide VS Code terminal:\n{help}"
+    );
+
+    app.send(b"?");
+    app.wait_for("VS Code-style help close", |screen| {
+        !screen.contains("? to close")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
 fn arrow_navigation_and_group_collapse_are_real_terminal_events() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn(90, 24);

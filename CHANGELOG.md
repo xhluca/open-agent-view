@@ -8,6 +8,19 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.34] - 2026-08-25
+
+### Fixed
+
+- The contextual `?` panel now caps each visual row at two shortcut entries,
+  so very wide VS Code terminals retain deliberate line breaks instead of
+  collapsing most of the help into a few hard-to-scan rows.
+
+### Tests
+
+- Added a real 220-column PTY regression with `TERM_PROGRAM=vscode` that opens
+  the help panel, verifies ordered shortcut rows, and closes it cleanly.
+
 ## [0.1.33] - 2026-08-25
 
 ### Added
