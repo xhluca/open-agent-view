@@ -1,26 +1,69 @@
 import { CopyCommand } from "./CopyCommand";
+import { DemoPlayer } from "./DemoPlayer";
 
 const installCommand = "curl -fsSL https://open-agent-view.github.io/install.sh | bash";
 
 const providers = [
-  { name: "Claude Code", scope: "Managed + native", actions: "Launch · attach · stop" },
-  { name: "OpenAI Codex", scope: "Managed", actions: "Reply · approve · interrupt · archive" },
-  { name: "Pi", scope: "Managed + native", actions: "Reply · input · stop · delete" },
-  { name: "OpenCode", scope: "Managed + history", actions: "Inspect · reply · interrupt" },
-  { name: "Cursor", scope: "OAV-owned", actions: "Models · launch · resume · interrupt" },
-  { name: "GitHub Copilot", scope: "OAV-owned + ACP", actions: "Reply · cancel · one-shot approval" },
-  { name: "Antigravity", scope: "OAV-owned", actions: "Models · launch · resume · stop" },
-  { name: "Terminal", scope: "OAV-owned", actions: "Background · resume · stop · delete" },
-];
-
-const workflow = [
-  ["01", "Discover", "See managed work across every enabled harness in one responsive queue."],
-  ["02", "Follow", "Read current state, recent output, and requests for input without terminal hopping."],
-  ["03", "Intervene", "Reply, approve, interrupt, or archive only where the provider safely supports it."],
-  ["04", "Return", "Open the exact native session with its history and ownership intact."],
+  { id: "claude", name: "Claude Code", icon: "/providers/claude.svg" },
+  { id: "codex", name: "OpenAI Codex", icon: "/providers/codex.png" },
+  { id: "pi", name: "Pi", icon: "/providers/pi.svg" },
+  { id: "opencode", name: "OpenCode", icon: "/providers/opencode.svg" },
+  { id: "cursor", name: "Cursor", icon: "/providers/cursor.svg" },
+  { id: "copilot", name: "GitHub Copilot", icon: "/providers/copilot.svg" },
+  { id: "antigravity", name: "Antigravity", icon: "/providers/antigravity.svg" },
+  { id: "terminal", name: "Terminal", icon: "/providers/terminal.svg" },
 ] as const;
 
+const controlTabs = [
+  ["rename", "Rename"],
+  ["switch", "Switch sessions"],
+  ["model", "Model selection"],
+  ["login", "Login & setup"],
+] as const;
+
+function ProviderMark({ provider }: { provider: (typeof providers)[number] }) {
+  return (
+    <span className={`provider-mark provider-${provider.id}`} aria-hidden="true">
+      {/* Local provider marks avoid third-party requests at runtime. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={provider.icon} alt="" />
+    </span>
+  );
+}
+
+function StoryTabs({
+  name,
+  tabs,
+  initial,
+}: {
+  name: string;
+  tabs: readonly (readonly [string, string])[];
+  initial: string;
+}) {
+  return (
+    <div className="story-tabs" role="tablist" aria-label={name} data-story-tabs>
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={id === initial}
+          tabIndex={id === initial ? 0 : -1}
+          data-story-tab={id}
+          data-story={`story-${id}`}
+        >
+          {label}
+          <i aria-hidden="true" />
+        </button>
+      ))}
+      <span className="tab-hold" aria-hidden="true"><i data-tab-hold-progress /></span>
+    </div>
+  );
+}
+
 export default function Home() {
+  const harnessTabs = providers.map(({ id, name }) => [id, name] as const);
+
   return (
     <main>
       <nav className="nav shell" aria-label="Main navigation">
@@ -29,130 +72,130 @@ export default function Home() {
           <strong>Open Agent View</strong>
         </a>
         <div className="nav-links">
-          <a href="#demo">Demo</a>
-          <a href="#workflow">Workflow</a>
-          <a href="#harnesses">Harnesses</a>
+          <a href="#start">Start</a>
+          <a href="#harness-demo">Harnesses</a>
+          <a href="#controls">Controls</a>
+          <a href="#architecture">Architecture</a>
           <a href="https://github.com/xhluca/open-agent-view">GitHub</a>
         </div>
       </nav>
 
       <section className="hero shell" id="top">
-        <p className="eyebrow"><span /> Local agents, one queue</p>
+        <p className="eyebrow"><span /> Local agents, one workspace</p>
         <h1>See every agent.<br />Step in when it matters.</h1>
         <p className="hero-copy">
-          Launch, follow, and safely control your local coding-agent sessions
-          from one terminal—then return to the native harness whenever you want.
+          Launch, name, follow, and return to every local coding-agent session
+          from one terminal—without losing the native harness.
         </p>
         <div className="hero-actions">
           <CopyCommand command={installCommand} />
-          <a className="primary-link" href="https://github.com/xhluca/open-agent-view">
-            View on GitHub <span>↗</span>
-          </a>
+          <code className="launch-command"><span>$</span> open-agent-view <b>or</b> opav</code>
         </div>
-        <div className="provider-row" aria-label="Supported harnesses">
-          {providers.map(({ name }) => <span key={name}>{name}</span>)}
+        <div className="provider-row" aria-label="Choose a harness demo">
+          {providers.map((provider) => (
+            <a
+              href="#harness-demo"
+              data-select-harness={provider.id}
+              aria-label={`Watch the ${provider.name} demo`}
+              key={provider.id}
+            >
+              <ProviderMark provider={provider} />
+              <span>{provider.name}</span>
+            </a>
+          ))}
         </div>
-        <figure className="product-frame">
-          <div className="window-bar"><i /><i /><i /><span>open-agent-view</span><em>LIVE</em></div>
-          {/* A plain image keeps the GitHub Pages export independent of a
-              server-side Next image optimizer. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/open-agent-view.png"
-            width={1190}
-            height={784}
-            alt="Open Agent View showing local coding-agent sessions grouped by status"
+        <DemoPlayer
+          story="story-overview"
+          label="ONE WORKSPACE · EIGHT HARNESSES"
+          caption="Launch · converse · return · rename · stop on the complete dashboard"
+        />
+      </section>
+
+      <section className="guided section shell" id="start">
+        <div className="section-heading">
+          <div><p className="section-label">01 · START</p><h2>Install once.<br />Choose any harness.</h2></div>
+          <p>
+            The installer downloads a verified prebuilt binary. Launch with
+            <code> opav</code>, type <code>/harness</code>, and the picker shows
+            every available backend in the same workspace.
+          </p>
+        </div>
+        <DemoPlayer
+          story="story-setup"
+          label="INSTALL · OPEN · /HARNESS"
+          caption="A finite walkthrough—play, pause, seek, or restart it"
+        />
+      </section>
+
+      <section className="guided section shell" id="harness-demo">
+        <div className="section-heading">
+          <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
+          <p>
+            Each tab starts from the same picker, launches a task, shows a
+            short back-and-forth, then returns to the shared dashboard. Choose
+            a logo above and this demo opens to that exact harness.
+          </p>
+        </div>
+        <div className="tabbed-story" data-tabbed-story>
+          <StoryTabs name="Harness demos" tabs={harnessTabs} initial="claude" />
+          <DemoPlayer
+            story="story-claude"
+            label="HARNESS WALKTHROUGH"
+            caption="A deterministic walkthrough of each provider-native handoff"
           />
-        </figure>
+        </div>
       </section>
 
-      <section className="demo section shell" id="demo">
+      <section className="guided section shell" id="controls">
         <div className="section-heading">
-          <div><p className="section-label">REAL TUI · FRESH CONTAINER</p><h2>One loop.<br />Every harness.</h2></div>
+          <div><p className="section-label">03 · CONTROL</p><h2>Small commands.<br />Fast context switches.</h2></div>
           <p>
-            A real Open Agent View binary discovers concurrent work, navigates
-            the queue, reveals contextual controls, and switches grouping views
-            without contacting any provider.
+            Rename locally, cross the native-session boundary, choose a model,
+            or complete setup. When a story ends, its separate eight-second tab
+            timer advances to the next control.
           </p>
         </div>
-        <figure className="demo-frame">
-          <video controls muted preload="metadata" poster="/oav-demo.png">
-            <source src="/oav-demo.mp4" type="video/mp4" />
-            <track kind="captions" src="/oav-demo.vtt" srcLang="en" label="English" default />
-            Your browser does not support embedded video.
-          </video>
-          <figcaption><span><i /> Recorded from an isolated Docker environment</span><a href="https://github.com/xhluca/open-agent-view/blob/main/docs/tui-validation.md">Reproduce it ↗</a></figcaption>
-        </figure>
-      </section>
-
-      <section className="workflow section shell" id="workflow">
-        <p className="section-label">THE SUPERVISOR LOOP</p>
-        <h2>Run more agents.<br />Lose less context.</h2>
-        <div className="workflow-grid">
-          {workflow.map(([number, title, copy]) => (
-            <article key={number}><b>{number}</b><h3>{title}</h3><p>{copy}</p></article>
-          ))}
+        <div className="tabbed-story" data-tabbed-story>
+          <StoryTabs name="Common control demos" tabs={controlTabs} initial="rename" />
+          <DemoPlayer
+            story="story-rename"
+            label="EVERYDAY CONTROLS"
+            caption="The story timeline and the next-tab countdown are independent"
+          />
         </div>
       </section>
 
-      <section className="harnesses section shell" id="harnesses">
+      <section className="architecture section shell" id="architecture">
         <div className="section-heading">
-          <div><p className="section-label">CAPABILITY-AWARE BY DESIGN</p><h2>The right controls.<br />Never pretend controls.</h2></div>
+          <div><p className="section-label">TECHNICAL MODEL</p><h2>One index.<br />Native boundaries intact.</h2></div>
           <p>
-            Every integration declares what it can safely do. Unsupported
-            actions stay unavailable instead of being guessed or simulated.
+            Open Agent View does not replace provider state. It normalizes
+            verified observations into one index, grants controls only for
+            sessions it can prove it owns, and hands foreground control back to
+            the original CLI.
           </p>
         </div>
-        <div className="capability-grid" aria-label="Supported harness capabilities">
-          {providers.map(({ name, scope, actions }) => (
-            <article key={name}>
-              <i aria-hidden="true" />
-              <div><h3>{name}</h3><p>{scope}</p><span>{actions}</span></div>
-            </article>
-          ))}
+        <div className="architecture-map" aria-label="Open Agent View architecture">
+          <div className="provider-stack">
+            <span>Provider CLIs</span>
+            <div>{providers.slice(0, 7).map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
+            <small>Native history · auth · models · process state</small>
+          </div>
+          <div className="flow-arrow"><b>observe</b><i>→</i><em>documented APIs / verified files</em></div>
+          <div className="oav-core">
+            <span>Open Agent View</span>
+            <strong>Session index</strong>
+            <div><b>identity</b><b>state</b><b>capabilities</b><b>ownership</b></div>
+            <small>Pre-indexed, paged, asynchronously refreshed</small>
+          </div>
+          <div className="flow-arrow return"><b>act</b><i>→</i><em>only when authority is exact</em></div>
+          <div className="native-stack">
+            <span>Native foreground</span>
+            <strong>Exact session</strong>
+            <small>Enter opens · ← twice returns · Shift+← returns immediately</small>
+          </div>
         </div>
-        <a className="text-link" href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md">Read the exact ownership and capability model ↗</a>
-      </section>
-
-      <section className="ownership section shell">
-        <div className="ownership-copy">
-          <p className="section-label">NATIVE OWNERSHIP</p>
-          <h2>Your sessions stay yours.</h2>
-          <p>
-            Open Agent View coordinates through verified provider boundaries.
-            The native harness remains authoritative, external history is
-            opt-in, and mutating actions fail closed when ownership is unclear.
-          </p>
-        </div>
-        <div className="ownership-flow" aria-label="Native ownership flow">
-          <div><span>01</span><strong>Native harness</strong><small>Source of truth</small></div>
-          <i>↓ observe</i>
-          <div className="active"><span>02</span><strong>Open Agent View</strong><small>Capability-gated control</small></div>
-          <i>↓ explicit action</i>
-          <div><span>03</span><strong>Native harness</strong><small>History stays intact</small></div>
-        </div>
-      </section>
-
-      <section className="install section shell" id="install">
-        <div>
-          <p className="section-label">INSTALL</p>
-          <h2>One command.<br />Then keep moving.</h2>
-          <p>Open Agent View installs as a prebuilt binary. No Rust or Cargo required.</p>
-        </div>
-        <div className="install-panel">
-          <span>Linux x86-64 · private preview</span>
-          <CopyCommand command={installCommand} />
-          <code>open-agent-view</code>
-          <small>The installer uses your existing GitHub authentication for the private release and verifies its checksum.</small>
-        </div>
-      </section>
-
-      <section className="faq section shell" id="faq">
-        <p className="section-label">COMMON QUESTIONS</p>
-        <h2>Built to stay honest.</h2>
-        <details><summary>Does Open Agent View replace the native CLIs?</summary><p>No. It gives you a shared queue and verified controls, then opens the exact native session when you want its full interface.</p></details>
-        <details><summary>Does it scan every conversation on my machine?</summary><p>No. The default queue contains OAV-managed work. Provider-wide history requires the explicit <code>--include-external</code> flag.</p></details>
-        <details><summary>Why are controls different across harnesses?</summary><p>Providers expose different documented surfaces. OAV shows only the actions it can safely verify for the selected session.</p></details>
+        <a className="text-link" href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md">Read the complete ownership and capability model ↗</a>
       </section>
 
       <footer className="footer shell">

@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.33] - 2026-08-25
+
 ### Added
 
 - Added the tested static project site for `open-agent-view.github.io`, a real
@@ -23,7 +25,14 @@ and future released versions are intended to follow Semantic Versioning.
 - Reworked the README into a concise product overview with one-command install,
   short examples, a compact capability matrix, and links to detailed operator
   documentation.
-- The website-served installer now recognizes v0.1.32's Linux-only asset scope
+- Replaced the landing page's repeated feature sections with three finite,
+  controllable terminal stories: install and harness discovery, an eight-harness
+  conversation gallery, and tabbed rename/switch/model/login workflows. Provider
+  marks deep-link into their exact demo, all stories use one workspace, and the
+  technical ownership model is now shown as a compact architecture diagram.
+- The contextual `?` panel now has a dedicated high-contrast `shortcuts` heading,
+  clear line separation, accent-colored keys, and brighter action descriptions.
+- The website-served installer now recognizes v0.1.33's Linux-only asset scope
   and remains byte-identical to the repository installer.
 
 ## [0.1.32] - 2026-08-25

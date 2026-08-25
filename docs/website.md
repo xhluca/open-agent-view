@@ -19,9 +19,34 @@ npm run export
 
 `npm run export` writes the deployable site to `website/dist/static`. Browser
 tests render both 1440×900 and 390×844 viewports, reject horizontal overflow,
-exercise keyboard copy and FAQ controls, run Axe, and check reduced-motion
-behavior. Rendered-HTML tests also require canonical Open Graph metadata, local
-media, all eight harness targets, and a byte-identical public installer.
+exercise every timeline control, provider deep links, keyboard-accessible tabs,
+the separate eight-second tab handoff, clipboard copy, and reduced motion, then
+run Axe. Rendered-HTML tests also require canonical Open Graph metadata, all
+eight local provider marks, the finite/non-looping story engine, and a
+byte-identical public installer.
+
+## Interactive product stories
+
+The page has three finite, deterministic terminal walkthroughs implemented by
+[`website/public/site.js`](../website/public/site.js):
+
+1. the hero opens `opav`, creates sessions for all eight launch targets in
+   `/work/acme-dashboard`, renames one, and stops on the complete dashboard;
+2. the start story installs from the public URL, opens the app, types
+   `/harness`, and stops with every option visible;
+3. tabbed harness and common-control stories demonstrate a bounded
+   provider-specific conversation, rename, native-session switching, model
+   selection, and login/setup.
+
+Every player has independent −5s, pause/resume, +5s, restart, and scrub
+controls. Harness tabs can be opened directly from the provider marks in the
+hero. Control tabs advance only after the current story has ended and a separate
+eight-second countdown has elapsed. Reduced-motion mode disables autoplay and
+automatic tab changes.
+
+These walkthroughs contain scripted, credential-free copy so they are fast,
+repeatable, and safe to publish. The separate Docker recording below remains
+the executable proof that the shipped TUI renders and handles a real PTY.
 
 ## Real Docker demo
 
@@ -35,7 +60,8 @@ provider action.
 The recording navigates the real queue, opens contextual help, switches between
 status and directory grouping, then exits through the application's terminal
 restoration path. It produces a local Asciinema cast, GIF, MP4, and poster; tests
-reject credential-shaped text and oversized media.
+reject credential-shaped text and oversized media. It is deliberately not used
+as a hidden looping replacement for the interactive stories.
 
 ## Manual publication
 

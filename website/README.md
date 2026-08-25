@@ -23,8 +23,14 @@ npm run export
 ```
 
 The tests cover rendered product copy and metadata, installer parity, media
-dimensions and credential-shaped text, desktop/phone overflow, keyboard copy,
-FAQ behavior, reduced motion, and Axe accessibility checks.
+dimensions and credential-shaped text, desktop/phone overflow, all playback
+controls, finite final frames, provider deep links, keyboard tabs, the delayed
+tab handoff, clipboard copy, reduced motion, and Axe accessibility checks.
+
+The website stories are deterministic and credential-free. They all use the
+single `/work/acme-dashboard` workspace and share one small player runtime in
+`public/site.js`; the independent Docker demo below validates the actual binary
+and PTY rendering path.
 
 The real TUI demo is regenerated from an isolated Docker environment with:
 

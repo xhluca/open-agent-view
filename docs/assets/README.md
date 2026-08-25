@@ -1,7 +1,7 @@
 # Demo asset provenance
 
 `open-agent-view.gif` and `open-agent-view.png` were captured from the real
-v0.1.32 release-mode binary on 2026-08-25. The session data comes from the
+v0.1.33 release-mode binary on 2026-08-25. The session data comes from the
 committed deterministic
 [`fixtures/all-providers-sessions.json`](../../fixtures/all-providers-sessions.json),
 which covers all seven coding agents plus OAV's Terminal target.

@@ -29,16 +29,25 @@ test("server-renders the complete product story and canonical metadata", async (
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /See every agent/);
   assert.match(html, /Step in when it matters/);
-  assert.match(html, /Discover/);
-  assert.match(html, /Follow/);
-  assert.match(html, /Intervene/);
-  assert.match(html, /Return/);
+  assert.match(html, /Install once/);
+  assert.match(html, /Pick a harness/);
+  assert.match(html, /Small commands/);
+  assert.match(html, /One index/);
+  assert.match(html, /data-story="story-overview"/);
+  assert.match(html, /data-story-tab="antigravity"/);
+  assert.match(html, /data-story-tab="login"/);
+  assert.match(html, /data-demo-action="back"/);
+  assert.match(html, /data-demo-action="pause"/);
+  assert.match(html, /data-demo-action="forward"/);
+  assert.match(html, /data-demo-action="restart"/);
   assert.match(html, /https:\/\/open-agent-view\.github\.io\/install\.sh/);
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   assert.doesNotMatch(html, /raw\.githubusercontent\.com/);
+  assert.doesNotMatch(html, /One loop|Run more agents|Never pretend controls|Built to stay honest/);
+  assert.doesNotMatch(html, /<video\b/);
 
   for (const provider of [
     "Claude Code",
@@ -54,7 +63,7 @@ test("server-renders the complete product story and canonical metadata", async (
   }
 });
 
-test("publishes real local demo media with no credential-shaped text", async () => {
+test("retains the reproducible Docker demo and publishes every local provider mark", async () => {
   const [cast, video, poster, product, og] = await Promise.all([
     readFile(new URL("public/oav-demo.cast", root), "utf8"),
     readFile(new URL("public/oav-demo.mp4", root)),
@@ -75,7 +84,7 @@ test("publishes real local demo media with no credential-shaped text", async () 
   assert.equal(header.version, 2);
   assert.equal(header.width, 150);
   assert.equal(header.height, 42);
-  assert.match(visibleCast, /Open Agent View v0\.1\.32/);
+  assert.match(visibleCast, /Open Agent View v0\.1\.33/);
   assert.match(visibleCast, /GitHub Copilot/);
   assert.match(visibleCast, /Antigravity/);
   assert.doesNotMatch(cast, /(?:api[_-]?key|oauth[_-]?token|authorization: bearer|ghp_)/i);
@@ -85,6 +94,20 @@ test("publishes real local demo media with no credential-shaped text", async () 
   assert.deepEqual([poster.width, poster.height], [1190, 784]);
   assert.deepEqual([product.width, product.height], [1190, 784]);
   assert.deepEqual([og.width, og.height], [1200, 630]);
+
+  for (const icon of [
+    "claude.svg",
+    "codex.png",
+    "pi.svg",
+    "opencode.svg",
+    "cursor.svg",
+    "copilot.svg",
+    "antigravity.svg",
+    "terminal.svg",
+  ]) {
+    const iconFile = await stat(new URL(`public/providers/${icon}`, root));
+    assert.ok(iconFile.size > 100, `${icon} should be a non-empty local asset`);
+  }
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {
@@ -95,16 +118,27 @@ test("keeps the public installer byte-identical to the application installer", a
   assert.deepEqual(published, source);
 });
 
-test("keeps accessibility and motion safeguards in source", async () => {
-  const [page, styles, copy, layout, video] = await Promise.all([
+test("keeps accessible playback, tab cycling, and motion safeguards in source", async () => {
+  const [page, player, styles, copy, layout, script, video] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
+    readFile(new URL("app/DemoPlayer.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("app/CopyCommand.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
+    readFile(new URL("public/site.js", root), "utf8"),
     stat(new URL("public/oav-demo.mp4", root)),
   ]);
-  assert.match(page, /aria-label="Supported harness capabilities"/);
-  assert.match(page, /video controls/);
+  assert.match(page, /aria-label="Choose a harness demo"/);
+  assert.match(page, /role="tablist"/);
+  assert.match(page, /data-select-harness/);
+  assert.match(player, /aria-label={`Seek through \$\{label\}`}/);
+  assert.match(player, /data-demo-action="restart"/);
+  assert.match(script, /class StoryPlayer/);
+  assert.match(script, /IntersectionObserver/);
+  assert.match(script, /\/ 8000/);
+  assert.match(script, /prefers-reduced-motion: reduce/);
+  assert.match(script, /this\.ended = true/);
+  assert.doesNotMatch(script, /loop\s*:/);
   assert.match(styles, /prefers-reduced-motion:\s*reduce/);
   assert.match(styles, /:focus-visible/);
   assert.match(copy, /aria-live="polite"/);

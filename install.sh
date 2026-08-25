@@ -118,7 +118,7 @@ version="${tag#v}"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   fail "release version must have the form MAJOR.MINOR.PATCH (received: ${tag})"
 
-if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" || "$version" == "0.1.20" || "$version" == "0.1.21" || "$version" == "0.1.22" || "$version" == "0.1.23" || "$version" == "0.1.24" || "$version" == "0.1.25" || "$version" == "0.1.26" || "$version" == "0.1.27" || "$version" == "0.1.28" || "$version" == "0.1.29" || "$version" == "0.1.30" || "$version" == "0.1.31" || "$version" == "0.1.32" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
+if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" || "$version" == "0.1.20" || "$version" == "0.1.21" || "$version" == "0.1.22" || "$version" == "0.1.23" || "$version" == "0.1.24" || "$version" == "0.1.25" || "$version" == "0.1.26" || "$version" == "0.1.27" || "$version" == "0.1.28" || "$version" == "0.1.29" || "$version" == "0.1.30" || "$version" == "0.1.31" || "$version" == "0.1.32" || "$version" == "0.1.33" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
   fail "v${version} was manually published only for Linux x86_64; use a source build on ${target} or install a release that provides that target"
 fi
 
