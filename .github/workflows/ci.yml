@@ -3,6 +3,7 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -45,3 +46,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.75.0
       - run: cargo test --locked
       - run: cargo build --release --locked
+
+  website:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:visual
+      - run: npm run export
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: website-playwright-results
+          path: |
+            website/playwright-report
+            website/test-results
+          if-no-files-found: ignore

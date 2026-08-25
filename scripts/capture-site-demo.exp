@@ -1,0 +1,80 @@
+#!/usr/bin/expect -f
+
+if {$argc != 4} {
+    puts stderr "usage: capture-site-demo.exp BINARY FIXTURE IMAGE CONTAINER"
+    exit 2
+}
+
+set timeout 25
+fconfigure stdout -buffering none
+
+proc flush_output {} {
+    set saved_timeout $::timeout
+    set ::timeout 1
+    expect {
+        -re ".+" {}
+        timeout {}
+        eof {}
+    }
+    set ::timeout $saved_timeout
+}
+set binary [lindex $argv 0]
+set fixture [lindex $argv 1]
+set image [lindex $argv 2]
+set container [lindex $argv 3]
+
+spawn docker run --rm -it \
+    --name $container \
+    --network none \
+    --read-only \
+    --user 65534:65534 \
+    --cap-drop ALL \
+    --security-opt no-new-privileges:true \
+    --pids-limit 128 \
+    --tmpfs /tmp:rw,nosuid,nodev,size=64m \
+    --env HOME=/tmp/home \
+    --env XDG_STATE_HOME=/tmp/state \
+    --volume $binary:/usr/local/bin/open-agent-view:ro \
+    --volume $fixture:/fixtures/sessions.json:ro \
+    --entrypoint /usr/local/bin/open-agent-view \
+    $image \
+    --fixture /fixtures/sessions.json \
+    --all \
+    --include-interactive \
+    --refresh-ms 10000
+
+# Wait for the real binary and the asynchronous fixture discovery to draw the
+# complete all-provider queue before sending any input.
+expect -re "release-reviewer"
+after 1200
+
+# Select the Codex approval row. Fixture mode prevents every provider mutation,
+# so the recording can exercise real navigation without touching a provider.
+send -- "\033\[B"
+after 500
+send -- "\033\[B"
+after 1800
+flush_output
+
+# Show the contextual key map, then return to the status queue.
+send -- "?"
+after 2400
+flush_output
+send -- "?"
+after 800
+flush_output
+
+# Demonstrate the alternate directory grouping and switch back.
+send -- "\023"
+after 2000
+flush_output
+send -- "\023"
+after 1300
+flush_output
+
+# Exit through the application's own terminal-restoration path.
+send -- "\033"
+expect eof
+
+set result [wait]
+exit [lindex $result 3]

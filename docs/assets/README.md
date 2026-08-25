@@ -1,28 +1,26 @@
 # Demo asset provenance
 
-`open-agent-view.gif` and a static populated frame, `open-agent-view.png`, were
-captured from the real release-mode `open-agent-view` binary on 2026-08-23. The
-session data comes from the committed deterministic fixture
+`open-agent-view.gif` and `open-agent-view.png` were captured from the real
+v0.1.32 release-mode binary on 2026-08-25. The session data comes from the
+committed deterministic
 [`fixtures/all-providers-sessions.json`](../../fixtures/all-providers-sessions.json),
-whose seven coding agents plus Terminal are also exercised through a real PTY test.
+which covers all seven coding agents plus OAV's Terminal target.
 
 The capture is not a mockup and contains no user credentials or real agent
-history. It was recorded at 150 columns by 42 rows with:
+history. [`scripts/capture-site-demo.sh`](../../scripts/capture-site-demo.sh)
+records the actual binary through a real PTY in a fresh container pinned by
+immutable image ID. That container is network-disabled, unprivileged,
+read-only, capability-dropped, PID-limited, and given only a tmpfs home plus the
+fixture. Fixture mode fences every provider action.
+
+Reproduce all website media with:
 
 ```console
-cargo build --release --locked
-asciinema rec --overwrite --quiet --cols 150 --rows 42 \
-  --idle-time-limit 1 \
-  -c './target/release/open-agent-view \
-      --fixture fixtures/all-providers-sessions.json \
-      --all \
-      --include-interactive --refresh-ms 10000' \
-  open-agent-view.cast
-agg --theme github-dark --font-size 13 --idle-time-limit 1 \
-  --last-frame-duration 2 open-agent-view.cast open-agent-view.gif
+scripts/capture-site-demo.sh
 ```
 
-The recorded interaction opens contextual help, moves selection, switches the
-grouping view twice, and exits.
-Fixture mode fences all provider I/O, so replaying the capture cannot mutate a
-provider session.
+The interaction waits for asynchronous discovery, navigates to a Codex request,
+opens and closes contextual help, switches between status and directory views,
+returns to status view, and exits through OAV's own terminal-restoration path.
+The script emits an Asciinema cast, GIF, MP4, poster, and caption track, and verifies that
+the disposable container is gone afterward.

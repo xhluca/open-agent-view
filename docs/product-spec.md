@@ -7,10 +7,11 @@ Status: approved on 2026-08-17.
 Build an open reproduction of the workflow exposed by `claude agents`, named
 **open-agent-view** and launched from the shell as `open-agent-view`.
 
-The primary experience is a terminal UI that discovers and supervises Claude
-and Codex sessions running either on the host or in Docker. It supports the
-full lifecycle: launch, inspect, reply or steer, resume, interrupt, archive or
-delete, filter, and refresh.
+The primary experience is a terminal UI that discovers and supervises local
+coding-agent sessions on the host or in explicitly enrolled Docker targets. It
+offers launch, inspect, reply or steer, resume, interrupt, archive or delete,
+filter, and refresh only where the selected provider exposes a verified
+capability; no integration is described as having a uniform full lifecycle.
 
 ## Priorities
 

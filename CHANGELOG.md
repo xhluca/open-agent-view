@@ -8,6 +8,24 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Added the tested static project site for `open-agent-view.github.io`, a real
+  Docker-recorded TUI demo, local poster/video/captions, manual Pages publisher,
+  and a dedicated website CI gate for rendered HTML, desktop/phone layout,
+  keyboard behavior, reduced motion, and Axe accessibility.
+- Added all-provider setup coverage: deterministic missing/install/login PTY
+  tests for every coding-agent harness and an explicitly invoked fresh-container
+  E2E matrix that runs the current official installers without host credentials.
+
+### Changed
+
+- Reworked the README into a concise product overview with one-command install,
+  short examples, a compact capability matrix, and links to detailed operator
+  documentation.
+- The website-served installer now recognizes v0.1.32's Linux-only asset scope
+  and remains byte-identical to the repository installer.
+
 ## [0.1.32] - 2026-08-25
 
 ### Fixed

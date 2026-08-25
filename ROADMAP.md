@@ -18,14 +18,14 @@ authenticated fresh-container end-to-end run.
   Codex sessions.
 - [x] Render grouped status sections with responsive terminal layouts.
 - [x] Add navigation, details, help, filtering, and JSON output.
-- [x] Keep completed discovery opt-in at startup and allow a live
-  `/completed show|hide` transition without restarting the dashboard.
+- [x] Show completed managed sessions by default with bounded paging, and allow
+  a live `/completed show|hide` transition without restarting the dashboard.
 - [x] Keep ordinary discovery restricted to OAV-created/managed sessions, with
   explicit bounded `--include-external` provider-history review.
 - [x] Provide reversible local hide/unhide for observe-only provider history,
   distinct from provider-native archive/delete.
 - [x] Cover parsers and layout with deterministic tests.
-- [ ] Enrich Claude rows with supported latest-message metadata when available.
+- [x] Enrich Claude rows with supported latest-message metadata when available.
 - [x] Retain one reconnectable host Codex App Server across dashboard restarts.
 
 ## Milestone 2 — Managed sessions (in progress)
@@ -39,8 +39,8 @@ authenticated fresh-container end-to-end run.
   the provider's native login UI.
 - [x] Persist Claude ownership metadata across dashboard restarts.
 - [x] Open provider-native sessions from selected rows where the provider
-  exposes an exact resume command, using Enter or Right; Left returns from
-  inline Peek and Claude documents Ctrl+Z return.
+  exposes an exact resume command, using Enter or Right; provider foreground
+  bridges use boundary-double-arrow or Shift+Arrow to return.
 - [x] Stop only exact provider-listed active host Claude background sessions,
   with a fresh full-UUID/state/kind revalidation immediately before mutation.
 - [x] Own host Codex launch and exact-turn interrupt through a durable,
@@ -118,5 +118,9 @@ authenticated fresh-container end-to-end run.
   explicitly rather than filled with untested artifacts.
 - [x] Provide confirmed provider-CLI setup with native progress, private script
   staging, and no Rust/Cargo prerequisite for ordinary users.
+- [x] Exercise all seven official installers from empty fresh containers and
+  verify each provider's native PTY login handoff without mounting credentials.
+- [x] Publish a responsive project site from one tested source, with a real
+  isolated-Docker TUI demo, desktop/mobile/Axe checks, and manual Pages deploy.
 - [ ] Decide public-repository/package publication only after the private
   release gates and security review pass.

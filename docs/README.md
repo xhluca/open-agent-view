@@ -1,6 +1,6 @@
 # Documentation index
 
-Open Agent View is a private pre-alpha. Start with the guide for the job you
+Open Agent View is an early private preview. Start with the guide for the job you
 are doing; do not infer release readiness from the package version in
 `Cargo.toml`.
 
@@ -15,6 +15,7 @@ are doing; do not infer release readiness from the package version in
 
 - [Validation record and test layers](testing.md)
 - [Reproduce real-TTY and fresh-container checks](tui-validation.md)
+- [Build, validate, and manually publish the website](website.md)
 - [Product specification](product-spec.md)
 
 ## Understand or maintain the implementation
