@@ -132,6 +132,12 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       && action.window.length > 0
     )), `${name} actions should be ordered, bounded, and labelled`);
 
+    if (manifestName) {
+      const actionTimes = [0, ...manifest.actions.map((action) => action.at), manifest.duration];
+      const longestGap = Math.max(...actionTimes.slice(1).map((at, index) => at - actionTimes[index]));
+      assert.ok(longestGap <= 3.001, `${name} should shorten provider waits without dropping frames`);
+    }
+
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
@@ -180,6 +186,7 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
   assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
   assert.match(page, /thin\s+cyan\s+line/i);
+  assert.match(page, /Actual provider TUI output · waits shortened · no HTML terminal simulation/);
   assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
 });
 

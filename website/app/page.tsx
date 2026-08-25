@@ -135,7 +135,7 @@ export default function Home() {
           <DemoPlayer
             story="story-claude"
             label="HARNESS WALKTHROUGH"
-            caption="Actual provider TUI output · no HTML terminal simulation"
+            caption="Actual provider TUI output · waits shortened · no HTML terminal simulation"
           />
         </div>
       </section>

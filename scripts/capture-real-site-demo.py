@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from compact_real_recordings import compact_recording
+
 
 COLS = 132
 ROWS = 34
@@ -696,6 +698,7 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             encoding="utf-8",
         )
         action_path.chmod(0o644)
+        compact_recording(target, action_path)
         required = ["Open Agent View v0.1.35", "choose harness", spec.label]
         required.extend(["One dashboard, every harness.", "Session still here."])
         validate_public_cast(target, required)
@@ -955,6 +958,7 @@ def capture_claude(repo: Path, output: Path) -> None:
             encoding="utf-8",
         )
         action_path.chmod(0o644)
+        compact_recording(target, action_path)
         validate_public_cast(
             target,
             [

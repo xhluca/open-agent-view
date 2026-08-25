@@ -1,5 +1,5 @@
 {
-  "duration": 23.313667000000002,
+  "duration": 17.580667,
   "actions": [
     {
       "at": 0.0,
@@ -42,37 +42,37 @@
       "window": "open-agent-view"
     },
     {
-      "at": 9.691,
+      "at": 7.97,
       "action": "A \u00b7 trust disposable demo workspace",
       "window": "native harness"
     },
     {
-      "at": 16.703,
+      "at": 10.97,
       "action": "Enter \u00b7 send follow-up",
       "window": "Cursor"
     },
     {
-      "at": 16.859,
+      "at": 11.126,
       "action": "Enter",
       "window": "Cursor"
     },
     {
-      "at": 18.644,
+      "at": 12.911,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Cursor"
     },
     {
-      "at": 20.729,
+      "at": 14.996,
       "action": "\u2192 \u00b7 reopen Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 20.729,
+      "at": 14.996,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Cursor"
     },
     {
-      "at": 22.91,
+      "at": 17.177,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

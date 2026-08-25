@@ -1,5 +1,5 @@
 {
-  "duration": 18.03686,
+  "duration": 13.18986,
   "actions": [
     {
       "at": 1.703,
@@ -27,32 +27,32 @@
       "window": "open-agent-view"
     },
     {
-      "at": 11.449,
+      "at": 6.602,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenAI Codex"
     },
     {
-      "at": 11.661,
+      "at": 6.814,
       "action": "Enter",
       "window": "OpenAI Codex"
     },
     {
-      "at": 13.513,
+      "at": 8.666,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenAI Codex"
     },
     {
-      "at": 15.527,
+      "at": 10.68,
       "action": "\u2192 \u00b7 reopen OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 15.527,
+      "at": 10.68,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenAI Codex"
     },
     {
-      "at": 17.59,
+      "at": 12.743,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

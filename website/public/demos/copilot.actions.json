@@ -1,5 +1,5 @@
 {
-  "duration": 21.894545,
+  "duration": 18.674545,
   "actions": [
     {
       "at": 2.153,
@@ -27,42 +27,42 @@
       "window": "open-agent-view"
     },
     {
-      "at": 7.531,
+      "at": 7.041,
       "action": "Confirm \u00b7 trust disposable demo workspace",
       "window": "native harness"
     },
     {
-      "at": 13.261,
+      "at": 10.041,
       "action": "Esc \u00b7 keep terminal settings unchanged",
       "window": "GitHub Copilot"
     },
     {
-      "at": 14.936,
+      "at": 11.716,
       "action": "Type follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 15.18,
+      "at": 11.96,
       "action": "Enter \u00b7 send follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 17.158,
+      "at": 13.938,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "GitHub Copilot"
     },
     {
-      "at": 19.214,
+      "at": 15.994,
       "action": "\u2192 \u00b7 reopen GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 20.144,
+      "at": 16.924,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "GitHub Copilot"
     },
     {
-      "at": 21.087,
+      "at": 17.867,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

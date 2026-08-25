@@ -43,42 +43,42 @@ const STORIES = {
   "story-claude": {
     cast: "/demos/claude.cast",
     actions: "/demos/claude.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-codex": {
     cast: "/demos/codex.cast",
     actions: "/demos/codex.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-pi": {
     cast: "/demos/pi.cast",
     actions: "/demos/pi.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-opencode": {
     cast: "/demos/opencode.cast",
     actions: "/demos/opencode.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-cursor": {
     cast: "/demos/cursor.cast",
     actions: "/demos/cursor.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-copilot": {
     cast: "/demos/copilot.cast",
     actions: "/demos/copilot.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-antigravity": {
     cast: "/demos/antigravity.cast",
     actions: "/demos/antigravity.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-terminal": {
     cast: "/demos/terminal.cast",
     actions: "/demos/terminal.actions.json",
-    speed: 1.35,
+    speed: 1.5,
   },
   "story-rename": {
     cast: "/demos/rename.cast",

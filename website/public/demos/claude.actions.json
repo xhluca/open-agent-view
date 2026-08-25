@@ -1,5 +1,5 @@
 {
-  "duration": 30.713375000000003,
+  "duration": 13.994375,
   "actions": [
     {
       "at": 1.852,
@@ -27,32 +27,32 @@
       "window": "open-agent-view"
     },
     {
-      "at": 23.608,
+      "at": 6.889,
       "action": "Enter \u00b7 send follow-up",
       "window": "Claude Code"
     },
     {
-      "at": 23.79,
+      "at": 7.071,
       "action": "Enter",
       "window": "Claude Code"
     },
     {
-      "at": 26.085,
+      "at": 9.366,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Claude Code"
     },
     {
-      "at": 27.58,
+      "at": 10.861,
       "action": "\u2192 \u00b7 reopen Claude",
       "window": "open-agent-view"
     },
     {
-      "at": 27.58,
+      "at": 10.861,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Claude Code"
     },
     {
-      "at": 29.917,
+      "at": 13.198,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

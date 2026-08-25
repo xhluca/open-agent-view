@@ -1,5 +1,5 @@
 {
-  "duration": 26.684623000000002,
+  "duration": 14.509623,
   "actions": [
     {
       "at": 2.159,
@@ -37,32 +37,32 @@
       "window": "open-agent-view"
     },
     {
-      "at": 20.376,
+      "at": 8.201,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenCode"
     },
     {
-      "at": 20.519,
+      "at": 8.344,
       "action": "Enter",
       "window": "OpenCode"
     },
     {
-      "at": 21.909,
+      "at": 9.734,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenCode"
     },
     {
-      "at": 23.906,
+      "at": 11.731,
       "action": "\u2192 \u00b7 reopen OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 23.906,
+      "at": 11.731,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenCode"
     },
     {
-      "at": 25.335,
+      "at": 13.16,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

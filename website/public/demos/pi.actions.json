@@ -1,5 +1,5 @@
 {
-  "duration": 15.996357000000001,
+  "duration": 13.662357,
   "actions": [
     {
       "at": 0.0,
@@ -32,32 +32,32 @@
       "window": "open-agent-view"
     },
     {
-      "at": 9.387,
+      "at": 7.053,
       "action": "Type follow-up",
       "window": "Pi"
     },
     {
-      "at": 9.613,
+      "at": 7.279,
       "action": "Enter \u00b7 send follow-up",
       "window": "Pi"
     },
     {
-      "at": 10.928,
+      "at": 8.594,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Pi"
     },
     {
-      "at": 12.913,
+      "at": 10.579,
       "action": "\u2192 \u00b7 reopen Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 12.913,
+      "at": 10.579,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Pi"
     },
     {
-      "at": 15.098,
+      "at": 12.764,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }

@@ -50,7 +50,11 @@ The keystrokes are scripted, but every pixel comes from the real shell, release
 binary, or provider TUI recorded through tmux and Asciinema. Authenticated clips
 use the minimum existing login state copied into disposable private homes; the
 capture deletes those homes and validates the sanitized cast before publishing.
-No HTML terminal simulation is used.
+No HTML terminal simulation is used. Provider spinners can repaint continuously
+while a model or CLI starts, so the harness stories cap the time between labelled
+actions at three seconds. [`scripts/compact_real_recordings.py`](../scripts/compact_real_recordings.py)
+applies one time map to the genuine cast and its action labels; it never changes,
+reorders, or invents terminal output.
 
 ## Recording and README media
 

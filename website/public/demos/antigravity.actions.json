@@ -1,5 +1,5 @@
 {
-  "duration": 30.326235,
+  "duration": 16.199235,
   "actions": [
     {
       "at": 2.166,
@@ -37,32 +37,32 @@
       "window": "open-agent-view"
     },
     {
-      "at": 20.692,
+      "at": 8.215,
       "action": "Type follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 20.909,
+      "at": 8.432,
       "action": "Enter \u00b7 send follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 25.559,
+      "at": 11.432,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Antigravity"
     },
     {
-      "at": 27.244,
+      "at": 13.117,
       "action": "\u2192 \u00b7 reopen Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 27.575,
+      "at": 13.448,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Antigravity"
     },
     {
-      "at": 29.434,
+      "at": 15.307,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }
