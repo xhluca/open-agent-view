@@ -152,10 +152,21 @@ checks; the guide also contains release gates that are not yet complete.
   interactive shell, backgrounds it with the native gesture, discovers and resumes its exact
   preserved screen, stops it with Ctrl+X, and deletes the completed row with a
   second Ctrl+X. Provider login PTYs use the same isolated registry.
-- `tests/setup_installer.rs` uses an isolated `PATH` and fake curl/bash. It
-  proves non-TTY setup refuses before download without `--yes`, confirmed setup
-  exposes download/provider progress, uses the exact official URL, executes a
-  staged regular file, and removes that file afterward.
+- `tests/setup_installer.rs` covers all seven coding-agent installers with an
+  isolated `PATH` and fake curl/bash/npm. For every provider it proves non-TTY
+  setup refuses before download without `--yes`, confirmed setup uses only the
+  exact official URL or package, creates the configured executable, and emits
+  the next authentication step. A second Linux case hands every already
+  installed provider's exact login arguments to a real PTY.
+- `scripts/fresh-provider-setup-tests.sh` is the networked, explicitly invoked
+  E2E tier. It starts seven independent containers from the pinned
+  `node:22-bookworm-slim` digest with empty homes and no mounted credentials or
+  workspaces, lets the real OAV binary run each current official installer,
+  verifies the installed executable/version, and requires a native PTY login
+  handoff. Browser/device authorization is deliberately bounded rather than
+  completed. On 2026-08-25 this passed for Claude Code 2.1.245, current Codex,
+  Pi 0.73.1, OpenCode 1.18.23, Cursor 2026.08.11-e8db854, current Copilot, and
+  Antigravity 1.1.20; all disposable containers were removed.
 - `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
   `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
   the exact repository request, install-directory propagation, successful
