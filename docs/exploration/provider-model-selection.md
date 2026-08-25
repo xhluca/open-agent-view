@@ -163,8 +163,14 @@ Primary references:
 Antigravity exposes account models through `agy models` and selection through
 `--model`. The adapter parses bounded exact IDs and uses first-run `agy` as the
 native authentication/setup handoff. An OAV launch is foreground and includes
-`--sandbox --model MODEL --prompt-interactive PROMPT`; it never adds
+`--sandbox --new-project --model MODEL --prompt-interactive PROMPT`; it never adds
 `--dangerously-skip-permissions`.
+
+Successful catalogs are stored in a user-private `0600` cache for 24 hours,
+keyed by the configured executable. Authentication invalidates the cache. If a
+later live request fails, a last-known-good result up to seven days old remains
+usable. This makes the normal picker immediate after the first provider fetch
+without persisting credentials or model responses.
 
 On the reporting account, Antigravity 1.1.19's own catalog timed out in both a
 non-TTY process and a fresh PTY, while its native `/model` reported no models.
@@ -173,10 +179,12 @@ fallback is unsafe here: OAV keeps the wrapped error visible, Enter/`l` opens
 the isolated native setup terminal, and Ctrl+R retries. Search text cannot be
 submitted as a model.
 
-After the native UI starts, OAV correlates the exact workspace's documented
-last-conversation cache value, records that pair as OAV-owned, and uses it as
-the refresh/selection hint. This remains a last-conversation-per-workspace
-surface, not a complete model/session management protocol.
+After the native UI starts, OAV correlates the new bounded transcript directory
+and exact initial prompt, records the resulting conversation ID as OAV-owned,
+and uses it as the refresh/selection hint. A provisional OAV-owned row is
+visible until correlation completes. External discovery remains a
+last-conversation-per-workspace surface, not a complete model/session
+management protocol.
 
 Primary reference:
 
@@ -185,7 +193,7 @@ Primary reference:
 ## Safety and performance boundaries
 
 - Catalog commands have provider-bounded timeouts (four seconds for Cursor,
-  eight seconds for Pi/OpenCode, request-bounded App Server/SDK calls, and 20
+  eight seconds for Pi/OpenCode, request-bounded App Server/SDK calls, and 10
   seconds for Antigravity's network-backed catalog).
 - stdout is rejected above 4 MiB.
 - Parsed catalogs are rejected above 20,000 distinct models.

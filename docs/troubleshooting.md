@@ -208,6 +208,12 @@ account catalog: press Enter/`l` for native setup and Ctrl+R to retry. It does
 not promote model-search text to an unverified Antigravity ID, guess a provider
 model, or bypass the provider's sandbox/permissions.
 
+Current builds privately cache a successful Antigravity account catalog for 24
+hours and retain a last-known-good result for up to seven days when a refresh
+fails. Native login invalidates it. If the picker appears to use an outdated
+catalog after an account change, run `/login` for Antigravity or remove
+`~/.cache/open-agent-view/antigravity/models.json`, then reopen `/model`.
+
 ## A newly launched task does not appear
 
 Managed task submission runs in a worker so the composer, arrows, and Escape
@@ -216,6 +222,12 @@ and selects the exact new provider/session ID. Providers that persist
 asynchronously are retried every 250 ms for up to five seconds. If the footer
 eventually asks for a manual refresh, press `ctrl+l`, then compare the relevant
 provider in `open-agent-view --json --all`.
+
+Antigravity is a special case: its documented last-conversation cache is
+written only when the native UI exits. OAV therefore shows a provisional
+managed row immediately, correlates the exact new local transcript in the
+background, and replaces the provisional ID without waiting for exit. A task
+that returned with Shift+Left should be visible and stoppable at once.
 
 The current foreground Claude path runs the documented `--background` launch
 on a worker, captures Claude's returned eight-character ID, resolves the exact

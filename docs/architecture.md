@@ -121,8 +121,8 @@ the full history, and ready key/typing bursts produce one final frame.
 Default discovery is ownership-scoped and includes completed managed work.
 Claude rows are filtered against OAV's private launch registry; Codex, Pi,
 OpenCode, Cursor, and Copilot contribute only exact supervisor-owned records;
-Antigravity contributes only the exact OAV-owned conversation that still
-matches its documented last-conversation cache; Terminal contributes only the
+Antigravity contributes exact OAV-owned launch records correlated from its
+bounded local transcript store; Terminal contributes only the
 current dashboard process's PTY registry. Explicit Docker targets remain visible because naming them on the
 command line is an intentional enrollment action.
 
@@ -204,11 +204,12 @@ without creating a session; ACP applies the selected model before the first
 prompt.
 
 Antigravity exposes no documented all-conversation listing protocol. OAV
-records exact conversations it launches and correlates them with the documented
-workspace-to-last-conversation cache. Launch uses `--sandbox`, an optional exact
-`--model`, and `--prompt-interactive`; it never adds the dangerous
-permission-bypass flag. An older conversation can no longer be rediscovered
-after the provider replaces that workspace's last-conversation entry.
+records exact conversations it launches by matching a newly created bounded
+local transcript to the exact launch prompt. A provisional process-local row
+bridges the short period before the ID is available. Launch uses `--sandbox`,
+`--new-project`, an exact `--model`, and `--prompt-interactive`; it never adds
+the dangerous permission-bypass flag. The documented workspace cache remains
+the only source for external last-conversation discovery.
 
 Direct Docker Codex discovery uses a bounded stdio App Server and remains
 observe/open-only.

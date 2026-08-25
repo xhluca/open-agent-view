@@ -12,13 +12,13 @@ The interaction model is inspired by `claude agents`, rebuilt as an independent,
 open, provider-neutral project.
 
 > [!NOTE]
-> Open Agent View is an early private preview. The manually published v0.1.28
+> Open Agent View is an early private preview. The manually published v0.1.29
 > binary currently covers Linux x86-64; collaborators authenticate with GitHub
 > to install it. The source remains portable, but macOS and ARM64 artifacts are
 > not claimed until they can be built and tested natively.
 
 > [!IMPORTANT]
-> v0.1.28 was packaged, checksummed, smoke-tested, and published manually after
+> v0.1.29 was packaged, checksummed, smoke-tested, and published manually after
 > the repository's hosted build service remained unavailable. The release page
 > and installer state the exact Linux x86-64 scope.
 
@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/xhluca/open-agent-view/main/install
 The installer selects a release asset for the current host, verifies its
 SHA-256 checksum, and installs `open-agent-view` under `~/.local/bin`, plus the
 short `opav` command and the legacy `coding-agents` compatibility alias. The current
-manual v0.1.28 release is Linux x86-64 only. See the
+manual v0.1.29 release is Linux x86-64 only. See the
 [installation guide](docs/install.md) for supported platforms, version pinning,
 upgrades, the current pre-release boundary, and contributor source builds.
 
@@ -179,14 +179,15 @@ every CLI.
 | OpenCode | Durable OAV-managed authenticated loopback sessions on Linux by default; persisted host history with `--include-external` | Catalog-backed owned launch auto-attaches the exact native TUI; external history inspect/native resume; managed inspect, reply, and interrupt; no inline approval/input yet |
 | Cursor | OAV-owned managed runs on Linux; no external/global list because the provider exposes only a TTY picker | Native login; exact account model catalog; selected-model launches open Cursor in the foreground; discovery, inspect, native resume/reply after idle, and verified interrupt |
 | GitHub Copilot CLI | Native foreground tasks with exact OAV-owned IDs plus process-local ACP-controlled sessions; persisted ACP sessions with `--include-external` | Native login and account model catalog; selected-model launches open Copilot's full UI immediately; ACP reply/inspect/cancel and exact one-shot allow/reject remain available for connection-owned rows; native handoff supports ACP builds with or without optional `session/close` |
-| Antigravity CLI | Exact OAV-launched most-recent workspace conversations by default; other documented last-workspace entries with `--include-external` | First-run login, catalog-validated exact model selection, sandboxed full-screen launch, boundary-double-arrow/Shift+Arrow backgrounding, and native resume; a failed native catalog opens recovery rather than accepting an unverified model ID |
+| Antigravity CLI | Every exact OAV-launched conversation by default; other documented last-workspace entries with `--include-external` | First-run login, private cached account model catalog, sandboxed full-screen launch, immediate live-row correlation, boundary-double-arrow/Shift+Arrow backgrounding, stop, and native resume; a failed native catalog opens recovery rather than accepting an unverified model ID |
 | Terminal | Process-local shells created by this dashboard | Full-screen interactive shell, boundary-double-arrow/Shift+Arrow backgrounding, exact resume, Ctrl+X stop, then Ctrl+X delete; provider setup terminals use the same isolated bridge |
 
 Claude and Codex have managed paths. Linux adds durable Pi and OpenCode plus
 OAV-owned Cursor control. Copilot control lasts for the dashboard process's
 retained ACP connection. Unrelated provider records remain read-only/native-open.
-Antigravity can rediscover only the provider's documented last conversation per
-workspace. On non-Linux platforms, Pi and OpenCode keep their
+Antigravity's external discovery remains limited to the provider's documented
+last conversation per workspace; OAV-owned launches use their exact local
+conversation IDs. On non-Linux platforms, Pi and OpenCode keep their
 history/native-open paths. See the [provider exploration notes](docs/exploration/README.md)
 for tested versions, isolation setup, protocol observations, and boundaries.
 

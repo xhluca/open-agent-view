@@ -8,6 +8,29 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.29] - 2026-08-25
+
+### Changed
+
+- Antigravity launches now always request a distinct `--new-project`, show a
+  provisional managed row immediately, and correlate the exact live
+  conversation from its bounded local JSONL transcript rather than waiting for
+  the workspace cache to update on exit.
+- OAV-owned Antigravity rows retain every exact owned conversation and derive
+  their current summary and timestamp from the bounded transcript.
+- Successful Antigravity account model catalogs are cached privately for 24
+  hours, with a bounded seven-day last-known-good fallback and a shorter live
+  request timeout.
+
+### Tests
+
+- Added exact live-transcript correlation, provisional-row, private model-cache,
+  and foreground PTY regressions.
+- Revalidated Antigravity 1.1.20 with the reporting account's existing login in
+  isolated OAV state: 14 models, exact selected-model response, immediate
+  Working row after Shift+Left, exact Ctrl+X stop, and fresh-process rediscovery.
+  No authentication material was read or copied.
+
 ## [0.1.28] - 2026-08-25
 
 ### Changed

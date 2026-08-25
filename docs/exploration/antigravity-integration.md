@@ -1,8 +1,13 @@
 # Antigravity CLI integration exploration
 
-Observed on 2026-08-18 with `agy 1.1.14`. Installation, help, and storage
+Observed initially on 2026-08-18 with `agy 1.1.14`. Installation, help, and storage
 probes used a disposable home and install directory. They did not use a Google
 login, keyring, real conversation, or workspace.
+
+The managed-launch behavior was revalidated on 2026-08-25 with `agy 1.1.20`
+using the reporting account's already authenticated CLI. The provider process
+used its existing login normally; the probe did not read, print, copy, or
+persist Google cookies, OAuth tokens, keyring entries, or session secrets.
 
 ## Primary sources
 
@@ -55,7 +60,8 @@ conversations. `/agents` shows live subagents, while `/tasks` shows and can
 terminate background terminal tasks. Those are TUI panels, not documented
 external management protocols.
 
-`agy models`, `--model ID`, and `--prompt-interactive PROMPT` are also exposed.
+`agy models`, `--model ID`, `--new-project`, and `--prompt-interactive PROMPT`
+are also exposed.
 `--dangerously-skip-permissions` is an explicit authority bypass. Open Agent
 View never adds it. Its new-session builder selects `--sandbox`, the exact
 account-selected model, and an interactive initial prompt.
@@ -83,34 +89,65 @@ approval requests, or lifecycle state. The adapter validates absolute paths
 and IDs, returns at most the documented last conversation for each workspace,
 and normalizes every entry as `unknown` with no inline capabilities.
 
-Antigravity also uses SQLite conversation databases, but their tables and
-protobuf payloads are not a documented compatibility contract. Open Agent
-View deliberately does not reverse-engineer them. Consequently it cannot yet
-claim complete history discovery.
+Antigravity also uses internal conversation state that is not a documented
+compatibility contract. Open Agent View does not parse its SQLite/protobuf
+stores and consequently cannot claim complete external history discovery.
+
+For an OAV-owned launch only, version 1.1.20 creates a bounded JSONL transcript
+at `~/.gemini/antigravity-cli/brain/<conversation-id>/.system_generated/logs/`
+as soon as the first prompt is recorded. The documented workspace cache is not
+updated until the native UI exits. OAV snapshots the conversation-directory
+names before `--new-project`, then accepts only a new regular directory whose
+bounded transcript contains the exact launch prompt. This supplies the exact
+conversation ID while the native UI is still live. The reader is deliberately
+bounded to 8 MiB and 20,000 candidate directories and rejects symlinked or
+malformed paths. This is a tested local compatibility shim, not a claim that
+Google documents an all-conversation API.
 
 ## Capability boundary
 
 | Operation | Verified surface | Open Agent View policy |
 | --- | --- | --- |
-| Last session/workspace | Documented JSON cache | OAV-owned exact entries by default; other cache entries with `--include-external` |
+| Last session/workspace | Documented JSON cache | External last-workspace entries only with `--include-external` |
+| OAV-launched session | New local brain directory plus exact launch prompt; provisional OAV record while pending | Every exact OAV-owned launch appears immediately and remains resumable/stoppable |
 | List every conversation | Interactive `/resume` picker only | Not claimed |
 | Native resume | `agy --conversation ID` from its workspace | Supported, shell-free open |
-| Models/login/start | `agy models`, first-run `agy`, sandboxed interactive prompt | Native login, exact model picker, OAV ownership record, full-screen launch and native return gesture |
-| Read transcript | Undocumented SQLite/protobuf | Not claimed |
+| Models/login/start | `agy models`, first-run `agy`, sandboxed interactive prompt | Native login, private 24-hour catalog cache with bounded last-known-good fallback, exact model picker, OAV ownership record, full-screen launch and native return gesture |
+| Read transcript | Bounded local JSONL for an exact OAV-owned ID | Latest summary/time only; no arbitrary external transcript browsing |
 | Live state/subagents | In-process `/agents` and `/tasks` panels | Not claimed externally |
-| Reply/steer/interrupt | No documented external session protocol | Not claimed |
+| Reply/steer/interrupt | No documented external session protocol | Native UI handles replies; OAV can stop only its exact retained native frontend |
 | Approve/decline | Native TUI permission cards | Leave to native client |
 | Rename/delete | Native `/resume` picker | Not claimed externally |
 
 The limitation is intentional: displaying one documented cached session is
 useful, but labeling it “all Antigravity sessions” would be incorrect.
 
-OAV persists only `(workspace, conversation ID)` pairs it correlates after its
-own foreground launch. The registry is atomic and user-private and rejects
-symlinks or group/other-readable state. This proves which cache entry OAV
-created; it does not add transcript, lifecycle, approval, or delete authority.
-When Antigravity replaces a workspace's last-conversation value, the older
-owned conversation is no longer discoverable through the documented surface.
+OAV persists only `(workspace, conversation ID, local task name)` records it
+correlates after its own foreground launch. The registry is atomic and
+user-private and rejects symlinks or group/other-readable state. A process-local
+provisional row makes an immediately backgrounded launch visible before its
+exact ID is learned. This proves OAV launch ownership; it does not add approval,
+arbitrary process-control, or delete authority.
+
+## Authenticated 1.1.20 regression
+
+The 2026-08-25 probe used an isolated workspace and isolated OAV state/cache,
+while allowing the installed `agy` process to use the reporting account's
+existing authentication. Verified results:
+
+- `agy models` returned 14 exact account model IDs; the first live request took
+  about 2.2 seconds and the resulting OAV cache was mode `0600`;
+- a sandboxed `gemini-3.7-flash-high` foreground launch returned the exact
+  marker `OAV_MANAGED_AGY_OK`;
+- Shift+Left restored OAV and immediately displayed the new Working row with
+  provider `Antigravity`, its exact conversation ID, current answer summary,
+  and current transcript timestamp;
+- Ctrl+X stopped only that retained native frontend and moved the row to
+  Completed;
+- a fresh OAV process using the isolated state rediscovered the exact completed
+  conversation without `--include-external`.
+
+No account credential or browser secret was extracted for these checks.
 
 ## Repeatable checks
 

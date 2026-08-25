@@ -118,7 +118,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.28, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.29, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -180,6 +180,12 @@ checks; the guide also contains release gates that are not yet complete.
   separate startup case makes Claude discovery sleep for two seconds and
   requires an immediately available Antigravity row within 750 ms, proving
   that the first screen is not gated on the slowest provider.
+- An authenticated Antigravity 1.1.20 regression (isolated workspace plus OAV
+  state/cache) verified a 14-model live catalog, exact selected-model launch,
+  foreground response, Shift+Left return, immediate exact managed row,
+  transcript-derived current summary/time, exact Ctrl+X stop, and rediscovery
+  from a fresh OAV process. The CLI reused its existing login internally; the
+  test did not read or copy authentication material.
 - A separate default-mode PTY supplies 1,000 completed fixture records without
   a visibility flag, requires the bounded Completed page within 750 ms, then
   sends 208 arrow events in one burst and requires the exact destination within

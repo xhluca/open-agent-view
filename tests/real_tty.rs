@@ -1328,18 +1328,25 @@ while :; do sleep 1; done
     app.wait_for("Antigravity full-screen launch", |screen| {
         screen.contains("ANTIGRAVITY FULL SCREEN SESSION")
     });
+    let return_started = Instant::now();
     app.send(SHIFT_LEFT);
     let returned = app.wait_for("owned Antigravity row after Left", |screen| {
         screen.contains("Open Agent View")
-            && screen.contains("antigravity-workspace")
-            && screen.contains("Most recent Antigravity conversation")
+            && screen.contains("antigravity account task")
+            && screen.contains("Antigravity native session is backgrounded")
     });
+    assert!(return_started.elapsed() < Duration::from_secs(2));
     assert!(returned.contains("Antigravity"));
     let arguments = fs::read_to_string(app.home_path().join("antigravity-launch-arguments"))
         .expect("read Antigravity launch arguments");
     assert!(arguments.contains("--model gemini-3-pro"));
     assert!(arguments.contains("--sandbox"));
+    assert!(arguments.contains("--new-project"));
     assert!(!arguments.contains("dangerously-skip-permissions"));
+    app.send(CTRL_X);
+    app.wait_for("native Antigravity Ctrl+X stop", |screen| {
+        screen.contains("stopped native Antigravity session")
+    });
     app.exit_cleanly();
 }
 
