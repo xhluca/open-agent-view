@@ -1,4 +1,5 @@
 /target/
+/dist/
 /.idea/
 /.vscode/
 *.swp
@@ -8,4 +9,3 @@
 # Runtime state and local exploration artifacts.
 /.open-agent-view/
 /tmp/
-
