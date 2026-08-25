@@ -36,7 +36,7 @@ Environment variables:
   GH_TOKEN               Token used by gh or curl for a private repository
 
 The installer downloads a prebuilt archive and verifies its SHA-256 checksum.
-It installs open-agent-view plus the opav and coding-agents symlinks.
+It installs open-agent-view plus the opav shorthand symlink.
 It never installs Rust, invokes Cargo, or edits shell configuration files.
 EOF
 }
@@ -118,7 +118,7 @@ version="${tag#v}"
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   fail "release version must have the form MAJOR.MINOR.PATCH (received: ${tag})"
 
-if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" || "$version" == "0.1.20" || "$version" == "0.1.21" || "$version" == "0.1.22" || "$version" == "0.1.23" || "$version" == "0.1.24" || "$version" == "0.1.25" || "$version" == "0.1.26" || "$version" == "0.1.27" || "$version" == "0.1.28" || "$version" == "0.1.29" || "$version" == "0.1.30" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
+if [[ ( "$version" == "0.1.13" || "$version" == "0.1.14" || "$version" == "0.1.15" || "$version" == "0.1.16" || "$version" == "0.1.17" || "$version" == "0.1.18" || "$version" == "0.1.19" || "$version" == "0.1.20" || "$version" == "0.1.21" || "$version" == "0.1.22" || "$version" == "0.1.23" || "$version" == "0.1.24" || "$version" == "0.1.25" || "$version" == "0.1.26" || "$version" == "0.1.27" || "$version" == "0.1.28" || "$version" == "0.1.29" || "$version" == "0.1.30" || "$version" == "0.1.31" ) && "$target" != "x86_64-unknown-linux-gnu" ]]; then
   fail "v${version} was manually published only for Linux x86_64; use a source build on ${target} or install a release that provides that target"
 fi
 
@@ -188,12 +188,6 @@ install_alias() {
     local replace_existing=false
     if [[ -L "$destination" && "$(readlink "$destination")" == "open-agent-view" ]]; then
       replace_existing=true
-    elif [[ "$alias" == "coding-agents" ]]; then
-      local existing_version=""
-      existing_version="$("$destination" --version 2>/dev/null || true)"
-      if [[ "$existing_version" == open-agent-view\ * || "$existing_version" == coding-agents\ * ]]; then
-        replace_existing=true
-      fi
     fi
     if [[ "$replace_existing" != true ]]; then
       say "left unrelated existing command in place: ${destination}"
@@ -207,10 +201,17 @@ install_alias() {
 }
 
 install_alias opav
-install_alias coding-agents
+
+# Retire only the exact relative compatibility symlink created by older OAV
+# installers. Never remove an unrelated file, executable, or differently
+# targeted symlink at this path.
+obsolete_alias="${install_dir}/coding-agents"
+if [[ -L "$obsolete_alias" && "$(readlink "$obsolete_alias")" == "open-agent-view" ]]; then
+  rm -f -- "$obsolete_alias"
+fi
 
 say "installed open-agent-view ${version} to ${install_dir}/open-agent-view"
-say "installed shorthand: opav (legacy alias: coding-agents)"
+say "installed shorthand: opav"
 case ":${PATH}:" in
   *":${install_dir}:"*) ;;
   *) say "add ${install_dir} to PATH, then run: open-agent-view (or opav)" ;;

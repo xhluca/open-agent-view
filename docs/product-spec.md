@@ -70,8 +70,7 @@ delete, filter, and refresh.
 ## Delivery
 
 - Rust and Ratatui, with Rust 1.75 as the initial MSRV.
-- A single binary named `open-agent-view`, installed with `opav` as a shorthand
-  and `coding-agents` as a compatibility alias.
+- A single binary named `open-agent-view`, installed with `opav` as a shorthand.
 - Private development repository at `xhluca/open-agent-view`, suitable for a
   later public release under the MIT license.
 - Frequent coherent commits, exploration records, architectural decisions,

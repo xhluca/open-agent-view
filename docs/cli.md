@@ -2,8 +2,7 @@
 
 This reference describes the current checkout. `open-agent-view --help` and
 `open-agent-view <subcommand> --help` remain authoritative for the installed
-binary. `opav` is the installed shorthand; `coding-agents` remains a guarded
-legacy alias. All three execute the same canonical binary and report
+binary. `opav` is the installed shorthand. Both commands execute the same canonical binary and report
 `open-agent-view VERSION`.
 
 ## Dashboard and JSON options

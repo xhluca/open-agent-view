@@ -1,8 +1,7 @@
 # Installation
 
 Open Agent View installs one canonical executable named `open-agent-view`. It
-also creates `opav` as a short symlink and preserves `coding-agents` as a legacy
-compatibility symlink. The normal installation downloads a verified prebuilt
+also creates `opav` as a short symlink. The normal installation downloads a verified prebuilt
 binary: Rust and Cargo are not user prerequisites. An unrelated existing
 `opav` command is never overwritten.
 
@@ -14,19 +13,19 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The manually published v0.1.30 release currently covers:
+The manually published v0.1.31 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.30 does not claim artifacts for them because they were not built and
+but v0.1.31 does not claim artifacts for them because they were not built and
 tested on native machines:
 
 - Linux ARM64 with glibc 2.35 or newer
 - macOS x86_64
 - macOS Apple silicon
 
-The installer stops with an explicit explanation when v0.1.30 is requested on
+The installer stops with an explicit explanation when v0.1.31 is requested on
 one of those hosts. Use a source build there until a complete native release is
 published; do not reuse the Linux binary.
 
@@ -144,7 +143,7 @@ a new stable release is published.
 ## Uninstall
 
 Remove the executable installed at `~/.local/bin/open-agent-view` and its
-`opav`/`coding-agents` symlinks, or their equivalents under the custom path
+`opav` symlink, or their equivalents under the custom path
 passed to `--install-dir`.
 
 Uninstalling does not stop or delete provider sessions, containers,

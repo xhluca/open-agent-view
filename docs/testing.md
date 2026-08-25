@@ -111,14 +111,14 @@ checks; the guide also contains release gates that are not yet complete.
   persistence, and refusal of control characters, oversized values, symlinks,
   wrong owners, and permissive files. The real PTY renames, filters by the new
   name, resets it, and observes the fixture's canonical provider name again.
-- Installer tests execute `open-agent-view`, `opav`, and the legacy
-  `coding-agents` alias and prove an unrelated pre-existing `opav` is retained.
+- Installer tests execute `open-agent-view` and `opav`, prove an unrelated
+  pre-existing `opav` is retained, and retire only OAV's exact obsolete symlink.
 - `cargo build --release --locked`: release-mode compilation against the
   committed lock file and Rust 1.75 minimum-version dependency set.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.30, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.31, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they

@@ -84,8 +84,8 @@ authenticated fresh-container end-to-end run.
 
 - [x] Build and install a single `open-agent-view` binary from an authorized
   checkout with the locked Rust 1.75 dependency set.
-- [x] Install `opav` as a shorthand and preserve `coding-agents` as a guarded
-  compatibility alias without overwriting an unrelated command.
+- [x] Install `opav` as the only shorthand, retire OAV's obsolete compatibility
+  symlink on upgrade, and never overwrite an unrelated command.
 - [x] Run locked CI tests/release builds on Rust 1.75.0 and stable.
 - [x] Prepare a tag-gated archive/checksum workflow for Linux x86_64/aarch64
   and macOS x86_64/aarch64, plus a checksum-verifying binary installer, and

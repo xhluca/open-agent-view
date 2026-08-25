@@ -8,6 +8,23 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.31] - 2026-08-25
+
+### Changed
+
+- `open-agent-view` is the sole canonical command and `opav` is its only
+  installed shorthand. New installs no longer create the retired
+  `coding-agents` alias or mention it in success output.
+- Upgrades silently remove only the exact relative `coding-agents ->
+  open-agent-view` symlink created by older OAV installers. Unrelated files,
+  executables, and differently targeted symlinks are preserved.
+
+### Tests
+
+- Installer coverage now starts from an older OAV-managed symlink, proves it is
+  removed, asserts the success message names only `opav`, and retains the
+  unrelated-command collision guard.
+
 ## [0.1.30] - 2026-08-25
 
 ### Fixed
@@ -205,8 +222,8 @@ and future released versions are intended to follow Semantic Versioning.
   reset-name` expose the same non-provider-mutating layer to scripts. A local
   name wins over native provider title changes until it is explicitly cleared.
 - The canonical installed command is now `open-agent-view`, with `opav` as the
-  short alias. The installer retains `coding-agents` as a compatibility alias
-  and refuses to replace an unrelated existing `opav` command.
+  short alias. The installer refuses to replace an unrelated existing `opav`
+  command.
 
 ### Security
 
@@ -217,7 +234,7 @@ and future released versions are intended to follow Semantic Versioning.
 ### Tests
 
 - Added unit, CLI, installer, and real-PTY coverage for alias precedence/reset,
-  cross-process reload, file modes, canonical/shorthand/legacy commands, and
+  cross-process reload, file modes, canonical/shorthand commands, and
   unrelated-command collision refusal.
 
 ## [0.1.20] - 2026-08-20
@@ -232,7 +249,7 @@ and future released versions are intended to follow Semantic Versioning.
   handoff. Enter or `l` suspends OAV, runs the provider login, restores the
   dashboard, and reloads the catalog. `/login` exposes the same setup route for
   Claude, Codex, Pi, OpenCode, Cursor, Copilot, and Antigravity.
-- `coding-agents setup HARNESS` installs any of the seven supported provider
+- `open-agent-view setup HARNESS` installs any of the seven supported provider
   CLIs with its official user-local installer, explicit confirmation, native
   progress, and private staging for downloaded scripts.
 - Antigravity is now a launch target. OAV records exact conversations it starts,
@@ -435,7 +452,7 @@ and future released versions are intended to follow Semantic Versioning.
 
 - `/completed [show|hide]` changes completed-history discovery from inside the
   running dashboard; `--all` remains the initial CLI opt-in.
-- `coding-agents sessions hide`, `unhide`, and `hidden` provide reversible
+- `open-agent-view sessions hide`, `unhide`, and `hidden` provide reversible
   local suppression for external/observe-only rows without modifying provider
   history or live processes. Ctrl+X offers the same confirmed fallback from a
   session row or Peek when provider stop/delete authority is absent.
@@ -553,7 +570,7 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Added
 
-- `coding-agents sessions archive` previews bounded batches of exact OAV-owned
+- `open-agent-view sessions archive` previews bounded batches of exact OAV-owned
   completed Codex threads, with optional directory, age, and limit scopes.
   Literal `--yes` is required to execute; JSON reporting and per-thread failure
   details are available.

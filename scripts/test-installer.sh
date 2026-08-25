@@ -61,6 +61,8 @@ for target in \
 done
 
 home="${temp_root}/home"
+install -d "${home}/.local/bin"
+ln -s open-agent-view "${home}/.local/bin/coding-agents"
 output="$({
   HOME="$home" \
     PATH="/usr/bin:/bin" \
@@ -72,12 +74,13 @@ output="$({
 [[ "$("${home}/.local/bin/open-agent-view" --version)" == "open-agent-view ${version}" ]] ||
   fail "default binary reports the wrong version"
 [[ -L "${home}/.local/bin/opav" ]] || fail "opav shorthand was not installed"
-[[ -L "${home}/.local/bin/coding-agents" ]] || fail "legacy alias was not installed"
 [[ "$("${home}/.local/bin/opav" --version)" == "open-agent-view ${version}" ]] ||
   fail "opav shorthand reports the wrong version"
-[[ "$("${home}/.local/bin/coding-agents" --version)" == "open-agent-view ${version}" ]] ||
-  fail "legacy alias reports the wrong version"
+[[ ! -e "${home}/.local/bin/coding-agents" && ! -L "${home}/.local/bin/coding-agents" ]] ||
+  fail "the retired OAV-managed compatibility symlink was retained"
+[[ "$output" != *"coding-agents"* ]] || fail "success output names the retired alias"
 [[ "$output" == *"installed open-agent-view ${version}"* ]] || fail "success output is missing"
+[[ "$output" == *"installed shorthand: opav"* ]] || fail "shorthand output is missing"
 [[ "$output" == *"add ${home}/.local/bin to PATH"* ]] || fail "PATH guidance is missing"
 
 custom_bin="${temp_root}/custom/bin"
@@ -93,6 +96,11 @@ cat >"${collision_bin}/opav" <<'EOF'
 echo unrelated-opav
 EOF
 chmod 0755 "${collision_bin}/opav"
+cat >"${collision_bin}/coding-agents" <<'EOF'
+#!/usr/bin/env sh
+echo unrelated-coding-agents
+EOF
+chmod 0755 "${collision_bin}/coding-agents"
 collision_output="$(OAV_VERSION="$version" \
   OAV_INSTALL_DIR="$collision_bin" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
@@ -101,8 +109,8 @@ collision_output="$(OAV_VERSION="$version" \
   fail "installer replaced an unrelated opav command"
 [[ "$collision_output" == *"left unrelated existing command in place"* ]] ||
   fail "opav collision was not explained"
-[[ -L "${collision_bin}/coding-agents" ]] ||
-  fail "legacy alias was not installed beside an opav collision"
+[[ "$("${collision_bin}/coding-agents")" == "unrelated-coding-agents" ]] ||
+  fail "installer removed an unrelated command at the retired alias path"
 
 printf 'old binary\n' >"${custom_bin}/open-agent-view"
 chmod 0755 "${custom_bin}/open-agent-view"
@@ -131,14 +139,14 @@ grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.ou
 
 if _OAV_TEST_UNAME_S=Darwin \
   _OAV_TEST_UNAME_M=arm64 \
-  OAV_VERSION=0.1.30 \
+  OAV_VERSION=0.1.31 \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >"${temp_root}/manual-scope.out" 2>&1; then
-  fail "the Linux-only v0.1.30 release accepted a macOS target"
+  fail "the Linux-only v0.1.31 release accepted a macOS target"
 fi
-grep -F "v0.1.30 was manually published only for Linux x86_64" \
+grep -F "v0.1.31 was manually published only for Linux x86_64" \
   "${temp_root}/manual-scope.out" >/dev/null ||
-  fail "the v0.1.30 manual platform scope was not explained"
+  fail "the v0.1.31 manual platform scope was not explained"
 
 platforms=(
   "Linux x86_64"
