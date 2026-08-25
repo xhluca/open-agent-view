@@ -6,13 +6,13 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.31 is the current published private preview. Hosted jobs were
+Version 0.1.32 is the current published private preview. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
 release. Its release page contains only:
 
 ```text
-open-agent-view-0.1.31-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.31-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.32-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.32-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
