@@ -9,6 +9,11 @@ trap 'rm -rf -- "$temp_root"' EXIT HUP INT TERM
 version="0.1.0"
 tag="v${version}"
 release_dir="${temp_root}/releases/${tag}"
+current_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "${repo_dir}/Cargo.toml" | head -n 1)"
+[[ -n "$current_version" ]] || {
+  printf 'installer tests could not read the current package version\n' >&2
+  exit 1
+}
 
 case "$(uname -s)/$(uname -m)" in
   Linux/x86_64 | Linux/amd64) host_target="x86_64-unknown-linux-gnu" ;;
@@ -139,14 +144,14 @@ grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.ou
 
 if _OAV_TEST_UNAME_S=Darwin \
   _OAV_TEST_UNAME_M=arm64 \
-  OAV_VERSION=0.1.31 \
+  OAV_VERSION="$current_version" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >"${temp_root}/manual-scope.out" 2>&1; then
-  fail "the Linux-only v0.1.31 release accepted a macOS target"
+  fail "the Linux-only v${current_version} release accepted a macOS target"
 fi
-grep -F "v0.1.31 was manually published only for Linux x86_64" \
+grep -F "v${current_version} was manually published only for Linux x86_64" \
   "${temp_root}/manual-scope.out" >/dev/null ||
-  fail "the v0.1.31 manual platform scope was not explained"
+  fail "the v${current_version} manual platform scope was not explained"
 
 platforms=(
   "Linux x86_64"

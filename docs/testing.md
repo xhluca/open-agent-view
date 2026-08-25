@@ -364,7 +364,7 @@ checks; the guide also contains release gates that are not yet complete.
   an empty store; Antigravity again returned `1.1.14`. Exact image digests,
   commands, and outputs are in
   `docs/exploration/fresh-container-provider-validation.md`.
-- The canonical seven-agent-plus-Terminal fixture passed
+- The canonical eleven-agent-plus-Terminal fixture passed
   `all_supported_providers_coexist_in_one_real_terminal`, including provider
   labels, contextual help, alternate-screen entry, and terminal restoration.
   The same real-PTY test now opens a managed Pi reply composer, a managed
@@ -424,10 +424,10 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Every current TUI action route, all normalized states, provider onboarding, and large-queue behavior in a real PTY | Serialized `real_tty` harness using canonical/generated fixtures and fake account-scoped provider CLIs | Verified |
 | Default completed-history visibility and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
-| Searchable async model catalogs, native auth retry, and exact modeled launch | All seven agent catalog parsers/transports, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
+| Searchable async model catalogs, native auth retry, and exact modeled launch | All eleven agent catalog parsers/transports or explicit exact-ID fallbacks, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
-| Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 13 parsed cast/action pairs plus desktop/phone Playwright and Axe gates | Verified |
+| Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 17 parsed cast/action pairs, 170 extracted audit frames, and desktop/phone Playwright and Axe gates | Verified |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
 | OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |

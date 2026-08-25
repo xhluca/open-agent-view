@@ -8,6 +8,44 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.37] - 2026-08-25
+
+### Added
+
+- Added Mistral Vibe, Muse Code, Qwen Code, and Kimi Code as selectable
+  harnesses with native foreground launch, exact resume, model/setup surfaces,
+  OAV-owned discovery, and strictly bounded interrupt authority.
+- Added all eleven coding-harness installers to the confirmed setup flow and
+  the fresh-container validation matrix. The ordinary Terminal target remains
+  available alongside them.
+
+### Changed
+
+- Rebuilt the README and project site around concise product guidance and 17
+  genuine terminal stories. Provider tabs now include all eleven coding
+  harnesses plus Terminal, use native ANSI color at literal 1× speed, retain the
+  previous frame while seeking, show an explicit key/action badge, expose the
+  full terminal viewport, and advance finitely without looping.
+- Mistral Vibe and Qwen discovery use their documented machine-readable
+  app-server/session surfaces. Muse and Kimi use bounded provider-owned stores.
+  All four show only OAV-owned rows by default; opt-in external rows remain
+  inspect-only and never inherit lifecycle authority.
+- Kimi submits a queued task only after its exact authenticated native welcome
+  screen appears. Logged-out and setup screens never receive task text.
+
+### Tests
+
+- Added deterministic adapter, ownership, parser, model, setup, and real-PTY
+  lifecycle tests for all four new harnesses, including launch, background,
+  reopen, exact resume, interrupt, failure cleanup, and unowned-session refusal.
+- Verified the current official installers in credential-free disposable
+  containers: Mistral Vibe 2.24.3, Muse Code 0.2.1, Qwen Code 0.22.0, and Kimi
+  Code 0.38.0. Native login/setup was reached but browser/device OAuth was not
+  completed or claimed.
+- Added privacy and action-manifest checks for every recording, ten browser
+  interaction/accessibility tests, and a 170-frame desktop/mobile crop, flash,
+  and keycap audit.
+
 ## [0.1.36] - 2026-08-25
 
 ### Fixed

@@ -8,13 +8,13 @@ authenticated fresh-container end-to-end run.
 ## Milestone 0 — Interface archaeology ✅
 
 - [x] Record the observed `claude agents` layout, keymap, and state transitions.
-- [x] Inventory the seven host-provider session surfaces, the built-in Terminal
+- [x] Inventory the eleven host-provider session surfaces, the built-in Terminal
   target, and Docker boundaries.
 - [x] Write provider contracts and safety boundaries.
 
 ## Milestone 1 — Read-only dashboard (in progress)
 
-- [x] Normalize fixture, seven host providers, Terminal, and Docker-discovered Claude and
+- [x] Normalize fixture, eleven host providers, Terminal, and Docker-discovered Claude and
   Codex sessions.
 - [x] Render grouped status sections with responsive terminal layouts.
 - [x] Add navigation, details, help, filtering, and JSON output.
@@ -34,7 +34,7 @@ authenticated fresh-container end-to-end run.
 - [x] Select every configured launch-capable harness from a visible,
   draft-preserving keyboard palette, with explicit model state.
 - [x] Load searchable provider-native model catalogs asynchronously for all
-  seven launch-capable providers through a draft-preserving Shift+Tab route,
+  launch-capable providers through a draft-preserving Shift+Tab route,
   retain exact custom model identifiers, and hand authentication failures to
   the provider's native login UI.
 - [x] Persist Claude ownership metadata across dashboard restarts.
@@ -113,12 +113,12 @@ authenticated fresh-container end-to-end run.
   archive/checksum set through the published installer workflow (through
   v0.1.10).
 - [x] Manually publish the fully gated Linux x86-64 archive/checksum through
-  v0.1.33 after hosted jobs became unavailable, with unsupported platforms
+  v0.1.37 after hosted jobs became unavailable, with unsupported platforms
   stated explicitly rather than filled with untested artifacts and no
   tag-triggered publisher retaining release authority.
 - [x] Provide confirmed provider-CLI setup with native progress, private script
   staging, and no Rust/Cargo prerequisite for ordinary users.
-- [x] Exercise all seven official installers from empty fresh containers and
+- [x] Exercise all eleven official installers from empty fresh containers and
   verify each provider's native PTY login handoff without mounting credentials.
 - [x] Publish a responsive project site from one tested source, with a real
   isolated-Docker TUI demo, desktop/mobile/Axe checks, and manual Pages deploy.
