@@ -28,7 +28,7 @@ python3 scripts/capture-real-site-demo.py claude
 python3 scripts/capture-real-site-demo.py rename
 ```
 
-The website publishes 13 real recordings: install/setup, all eight selectable
+The website publishes 17 real recordings: install/setup, all twelve selectable
 targets, and rename/switch/model/login controls. Static tests parse every cast
 and action manifest, reject private material, and browser tests mount the real
 vendored Asciinema player at desktop and phone sizes.

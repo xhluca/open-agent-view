@@ -1,0 +1,51 @@
+{
+  "duration": 14.341,
+  "proof": "setup",
+  "actions": [
+    {
+      "at": 2.608,
+      "action": "Type /setup mistral-vibe",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.732,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.859,
+      "action": "Y \u00b7 install Mistral Vibe",
+      "window": "Harness setup"
+    },
+    {
+      "at": 2.983,
+      "action": "Enter \u00b7 confirm install",
+      "window": "Harness setup"
+    },
+    {
+      "at": 5.983,
+      "action": "Install check complete",
+      "window": "Harness setup"
+    },
+    {
+      "at": 7.916,
+      "action": "Enter \u00b7 open Mistral Vibe login",
+      "window": "Harness setup"
+    },
+    {
+      "at": 8.039,
+      "action": "Native login ready",
+      "window": "Mistral Vibe login"
+    },
+    {
+      "at": 10.965,
+      "action": "Shift+\u2190 \u00b7 background setup",
+      "window": "Mistral Vibe login"
+    },
+    {
+      "at": 11.341,
+      "action": "Returned to dashboard",
+      "window": "open-agent-view"
+    }
+  ]
+}

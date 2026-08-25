@@ -32,7 +32,17 @@ from compact_real_recordings import compact_recording
 
 COLS = 132
 ROWS = 34
-EXPECTED_VERSION = "0.1.35"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_VERSION_MATCH = re.search(
+    r'^version\s*=\s*"([^"]+)"',
+    (PROJECT_ROOT / "Cargo.toml").read_text(encoding="utf-8"),
+    re.MULTILINE,
+)
+if EXPECTED_VERSION_MATCH is None:
+    raise RuntimeError("could not read the package version from Cargo.toml")
+EXPECTED_VERSION = EXPECTED_VERSION_MATCH.group(1)
+APP_HEADER = f"Open Agent View v{EXPECTED_VERSION}"
+APP_HEADER_PATTERN = re.escape(APP_HEADER)
 INSTALL_COMMAND = "curl -fsSL https://open-agent-view.github.io/install.sh | bash"
 SECRET_PATTERN = re.compile(
     r"api[_-]?key|oauth[_-]?token|authorization:\s*bearer|ghp_|sk-[A-Za-z0-9]",
@@ -46,6 +56,11 @@ ANSI_EMAIL_PATTERN = re.compile(
     r"(\x1b\[[0-9;?]*m)([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})",
     re.I,
 )
+ONE_TIME_LOGIN_URL_PATTERN = re.compile(
+    r"https://[^\s\x1b\"']*(?:oauth|authorize|login|signin|sign-in)[^\s\x1b\"']*",
+    re.I,
+)
+DEVICE_CODE_PATTERN = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b")
 
 
 def run(
@@ -107,7 +122,12 @@ def write_trimmed_cast(
             str(event[2]),
         )
         event[2] = EMAIL_PATTERN.sub("signed-in account", str(event[2]))
-    kept.append([round(float(kept[-1][0]) + 1.35, 6), "o", "\x1b[0m"])
+        event[2] = ONE_TIME_LOGIN_URL_PATTERN.sub(
+            "[one-time sign-in link redacted]",
+            str(event[2]),
+        )
+        event[2] = DEVICE_CODE_PATTERN.sub("[device code redacted]", str(event[2]))
+    kept.append([round(end - start + 1.35, 6), "o", "\x1b[0m"])
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         "\n".join(json.dumps(record, ensure_ascii=False) for record in (header, *kept))
@@ -179,13 +199,15 @@ class RealTerminal:
         inner_shell = f"env {exports} bash --noprofile --norc"
         command = (
             f"{shlex.quote(require_program('asciinema'))} rec "
-            f"--overwrite --quiet --idle-time-limit 0.65 "
+            f"--overwrite --quiet "
             f"--command {shlex.quote(inner_shell)} "
             f"{shlex.quote(str(self.raw_cast))}"
         )
         run(["tmux", "send-keys", "-t", self.session, "-l", command])
         run(["tmux", "send-keys", "-t", self.session, "Enter"])
         self.wait_for_recorded("OAV-DEMO-READY", 20)
+        self.clock_wall = time.monotonic()
+        self.clock_cast = cast_time(self.raw_cast)
 
     def pane(self, history: int = 120) -> str:
         return run(
@@ -268,11 +290,14 @@ class RealTerminal:
         time.sleep(0.12)
         self.actions.append(
             {
-                "at": round(cast_time(self.raw_cast), 3),
+                "at": round(self.timeline_time(), 3),
                 "action": label,
                 "window": window,
             }
         )
+
+    def timeline_time(self) -> float:
+        return self.clock_cast + (time.monotonic() - self.clock_wall)
 
     def repaint_start(self) -> float:
         before = cast_time(self.raw_cast)
@@ -328,16 +353,30 @@ def base_environment(root: Path) -> dict[str, str]:
         "This is a disposable Open Agent View demo workspace.\n",
         encoding="utf-8",
     )
+    # Keep provider discovery isolated from the host PATH. Only recording
+    # prerequisites are linked in; provider executables are added explicitly
+    # by expose_installed_providers or by their real setup installer.
+    for tool in ("gh", "uv"):
+        if executable := shutil.which(tool):
+            (bin_dir / tool).symlink_to(Path(executable).resolve())
     values = {key: str(value) for key, value in directories.items()}
     values.update(
         {
-            "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+            "PATH": (
+                f"{bin_dir}:{root / 'bin'}:{root / 'home' / '.kimi-code' / 'bin'}:"
+                "/usr/local/pkgs/bin:/usr/local/bin:/usr/bin:/bin"
+            ),
             # The OSC marker is invisible in the terminal, but lets the driver
             # prove that asciinema's inner shell—not tmux's outer shell—is ready.
             "PS1": "$ \\[\\e]777;OAV-DEMO-READY\\a\\]",
             "TERM": "xterm-256color",
-            "NO_COLOR": "0",
             "OAV_INSTALL_DIR": str(bin_dir),
+            "MUSE_INSTALL_DIR": str(bin_dir),
+            "MUSE_NO_MODIFY_PATH": "1",
+            "QWEN_INSTALL_BIN_DIR": str(bin_dir),
+            "QWEN_NO_MODIFY_PATH": "1",
+            "KIMI_INSTALL_DIR": str(root / "home" / ".kimi-code"),
+            "KIMI_NO_MODIFY_PATH": "1",
             # The application repository is currently private.  The public
             # installer uses gh for its authenticated release fallback; this
             # points at the existing config without copying it into the demo.
@@ -352,8 +391,8 @@ def base_environment(root: Path) -> dict[str, str]:
     return values
 
 
-def expose_installed_providers(root: Path) -> None:
-    """Expose the real installed CLIs inside the disposable demo home."""
+def expose_installed_providers(root: Path, required: tuple[str, ...]) -> None:
+    """Expose only the real CLIs needed by this isolated recording."""
 
     candidates = {
         "claude": [Path.home() / ".local/bin/claude"],
@@ -363,10 +402,23 @@ def expose_installed_providers(root: Path) -> None:
         "cursor-agent": [Path.home() / ".local/bin/cursor-agent"],
         "copilot": [Path.home() / ".npm-global/bin/copilot", Path.home() / ".local/bin/copilot"],
         "agy": [Path.home() / ".local/bin/agy"],
+        "vibe": [Path.home() / ".local/bin/vibe"],
+        "vibe-app-server": [Path.home() / ".local/bin/vibe-app-server"],
+        "muse": [Path.home() / ".local/bin/muse"],
+        "qwen": [
+            Path.home() / ".local/bin/qwen",
+            Path.home() / ".npm-global/bin/qwen",
+        ],
+        "kimi": [Path.home() / ".local/bin/kimi"],
     }
     destination = root / "home" / ".local" / "bin"
-    for name, paths in candidates.items():
-        source = next((path for path in paths if path.is_file() and os.access(path, os.X_OK)), None)
+    for name in required:
+        paths = candidates[name]
+        resolved = shutil.which(name)
+        source = Path(resolved) if resolved else next(
+            (path for path in paths if path.is_file() and os.access(path, os.X_OK)),
+            None,
+        )
         if source is None:
             raise RuntimeError(f"real demo requires installed provider executable: {name}")
         (destination / name).symlink_to(source.resolve())
@@ -381,6 +433,8 @@ def validate_public_cast(path: Path, required: list[str]) -> None:
     raw = path.read_text(encoding="utf-8")
     if SECRET_PATTERN.search(raw) or EMAIL_PATTERN.search(raw):
         raise RuntimeError(f"refusing to publish credential-like text in {path.name}")
+    if DEVICE_CODE_PATTERN.search(raw):
+        raise RuntimeError(f"refusing to publish a one-time device code in {path.name}")
     hostname = socket.gethostname()
     for identity in (os.environ.get("USER", ""), hostname, hostname.split(".", 1)[0]):
         if identity and identity in raw:
@@ -407,20 +461,19 @@ def capture_setup(repo: Path, output: Path) -> None:
     terminal: RealTerminal | None = None
     try:
         environment = base_environment(root)
-        expose_installed_providers(root)
         terminal = RealTerminal("setup", root, environment)
         terminal.type_line(INSTALL_COMMAND, "Enter · install", "Terminal", 0.012)
         terminal.wait_for(r"installed shorthand:\s*opav", 120)
         time.sleep(0.6)
         terminal.type_line("opav", "Enter · launch opav", "Terminal", 0.08)
-        terminal.wait_for(r"Open Agent View v0\.1\.35", 45)
+        terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(1.0)
         terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.08)
         terminal.wait_for(r"choose harness", 20)
         terminal.key("Down", "↓ · highlight Codex", "open-agent-view")
         terminal.key("Up", "↑ · highlight Claude", "open-agent-view")
         time.sleep(1.0)
-        end = cast_time(terminal.raw_cast)
+        end = terminal.timeline_time()
         terminal.key("Escape", "Esc · close picker", "open-agent-view")
         terminal.key("Escape", "Esc · quit", "open-agent-view")
         terminal.finish()
@@ -449,7 +502,23 @@ def capture_setup(repo: Path, output: Path) -> None:
         actions.chmod(0o644)
         validate_public_cast(
             target,
-            [INSTALL_COMMAND, "Open Agent View v0.1.35", "choose harness", "GitHub Copilot", "Terminal"],
+            [
+                INSTALL_COMMAND,
+                APP_HEADER,
+                "choose harness",
+                "Claude",
+                "Codex",
+                "Pi",
+                "OpenCode",
+                "Cursor",
+                "GitHub Copilot",
+                "Antigravity",
+                "Mistral Vibe",
+                "Muse Code",
+                "Qwen Code",
+                "Kimi Code",
+                "Terminal",
+            ],
         )
         print(f"captured real installer and Open Agent View TUI: {target}")
     finally:
@@ -541,13 +610,18 @@ class ProviderDemo:
     cli_value: str
     ready_pattern: str
     model: str | None = None
+    setup_only: bool = False
 
 
 PROVIDER_DEMOS = {
     "codex": ProviderDemo("codex", "OpenAI Codex", "codex", r"Codex|OpenAI"),
     "pi": ProviderDemo("pi", "Pi", "pi", r"Pi|pi"),
     "opencode": ProviderDemo(
-        "opencode", "OpenCode", "opencode", r"OpenCode|opencode", "openai/gpt-5.6-luna"
+        "opencode",
+        "OpenCode",
+        "opencode",
+        r"OpenCode|opencode",
+        "github-copilot/gpt-5.6-luna",
     ),
     "cursor": ProviderDemo("cursor", "Cursor", "cursor", r"Cursor|cursor", "auto"),
     "copilot": ProviderDemo("copilot", "GitHub Copilot", "copilot", r"Copilot|copilot"),
@@ -558,6 +632,12 @@ PROVIDER_DEMOS = {
         r"Antigravity|antigravity",
         "gemini-3.1-pro-high",
     ),
+    "mistral-vibe": ProviderDemo(
+        "mistral-vibe", "Mistral Vibe", "mistral-vibe", r"Mistral Vibe|vibe", setup_only=True
+    ),
+    "muse": ProviderDemo("muse", "Muse Code", "muse", r"Muse Code|Muse", setup_only=True),
+    "qwen": ProviderDemo("qwen", "Qwen Code", "qwen", r"Qwen Code|Qwen", setup_only=True),
+    "kimi": ProviderDemo("kimi", "Kimi Code", "kimi", r"Kimi Code|Kimi", setup_only=True),
     "terminal": ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
 }
 
@@ -566,10 +646,98 @@ CONTROL_DEMOS = ("rename", "switch", "model", "login")
 
 def provider_disable_flags(active: str) -> list[str]:
     flags = []
-    for provider in ("claude", "codex", "pi", "opencode", "cursor", "copilot", "antigravity"):
+    for provider in (
+        "claude", "codex", "pi", "opencode", "cursor", "copilot", "antigravity",
+        "mistral-vibe", "muse", "qwen", "kimi",
+    ):
         if provider != active:
             flags.append(f"--no-host-{provider}")
     return flags
+
+
+def capture_provider_setup(terminal: RealTerminal, spec: ProviderDemo) -> None:
+    """Record a real, credential-free provider setup/login flow."""
+
+    terminal.type_line(
+        f"/setup {spec.cli_value}",
+        f"Type /setup {spec.cli_value}",
+        "open-agent-view",
+        0.045,
+    )
+    terminal.wait_screen(rf"Install {re.escape(spec.label)}.*\[y/N\]", 45)
+    terminal.key("y", f"Y · install {spec.label}", "Harness setup")
+    terminal.key("Enter", "Enter · confirm install", "Harness setup")
+    terminal.wait_screen(
+        rf"{re.escape(spec.label)} installation completed|interactive login now\?",
+        240,
+    )
+    terminal.wait_screen(r"interactive login now\?", 45)
+    terminal.remember("Install check complete", "Harness setup")
+    time.sleep(1.8)
+    terminal.key("Enter", f"Enter · open {spec.label} login", "Harness setup")
+
+    provider_ready = {
+        "mistral-vibe": r"setup|provider|model|API|Mistral|login|sign[ -]?in",
+        "muse": r"auth|browser|device|code|login|sign[ -]?in|Muse",
+        "qwen": r"Qwen|/auth|auth|theme|workspace|trust",
+        "kimi": r"device|code|login|browser|https://|Kimi",
+    }[spec.id]
+    terminal.wait_screen(provider_ready, 90)
+    if spec.id == "qwen":
+        # Qwen performs authentication from its native slash-command surface.
+        if "Workspace Trust" in terminal.screen():
+            terminal.key("a", "A · trust disposable workspace", spec.label)
+            time.sleep(0.8)
+        terminal.type_line("/auth", "Type /auth", spec.label, 0.08)
+        terminal.wait_screen(r"auth|login|browser|device|code", 60)
+    terminal.remember("Native login ready", f"{spec.label} login")
+    time.sleep(2.8)
+    terminal.key("S-Left", "Shift+← · background setup", f"{spec.label} login")
+    terminal.wait_screen(APP_HEADER_PATTERN, 30)
+    terminal.remember("Returned to dashboard", "open-agent-view")
+    time.sleep(2.0)
+
+
+def write_provider_recording(
+    root: Path,
+    output: Path,
+    terminal: RealTerminal,
+    spec: ProviderDemo,
+    start: float,
+    end: float,
+    proof: str,
+) -> tuple[Path, Path]:
+    target = output / f"{spec.id}.cast"
+    write_trimmed_cast(
+        terminal.raw_cast,
+        target,
+        start,
+        end,
+        public_path_replacements(root),
+    )
+    actions = [
+        {**item, "at": max(0.0, round(float(item["at"]) - start, 3))}
+        for item in terminal.actions
+        if start <= float(item["at"]) <= end
+    ]
+    action_path = output / f"{spec.id}.actions.json"
+    action_path.write_text(
+        json.dumps(
+            {"duration": end - start + 1.35, "proof": proof, "actions": actions},
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    action_path.chmod(0o644)
+    compact_recording(target, action_path)
+    required = [APP_HEADER, spec.label]
+    if proof == "conversation":
+        required.extend(["choose harness", "One dashboard, every harness.", "Session still here."])
+    else:
+        required.extend(["Install", "login"])
+    validate_public_cast(target, required)
+    return target, action_path
 
 
 def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
@@ -577,8 +745,18 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
     terminal: RealTerminal | None = None
     try:
         environment = base_environment(root)
-        expose_installed_providers(root)
-        prepare_provider_login(spec.id, root, environment)
+        executable_names = {
+            "codex": ("codex",),
+            "pi": ("pi",),
+            "opencode": ("opencode",),
+            "cursor": ("cursor-agent",),
+            "copilot": ("copilot",),
+            "antigravity": ("agy",),
+            "terminal": (),
+        }
+        if not spec.setup_only:
+            expose_installed_providers(root, executable_names[spec.id])
+            prepare_provider_login(spec.id, root, environment)
         binary = repo / "target" / "release" / "open-agent-view"
         if not binary.is_file():
             raise RuntimeError("build target/release/open-agent-view before recording providers")
@@ -603,9 +781,17 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
         terminal.type_line(
             shlex.join(command), "Enter · launch opav", "Terminal", 0.001
         )
-        terminal.wait_for(r"Open Agent View v0\.1\.35", 45)
+        terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(0.8)
         start = terminal.repaint_start()
+        if spec.setup_only:
+            capture_provider_setup(terminal, spec)
+            end = terminal.timeline_time()
+            terminal.key("Escape", "Esc · quit", "open-agent-view")
+            terminal.finish()
+            write_provider_recording(root, output, terminal, spec, start, end, "setup")
+            print(f"captured real Open Agent View → {spec.label} setup TUI")
+            return
         terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
         terminal.wait_for(r"choose harness", 20)
         terminal.key("Enter", f"Enter · choose {spec.label}", "open-agent-view")
@@ -628,6 +814,7 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             second_command = "printf 'Session still here.\\n'"
             terminal.type_line(second_command, "Enter · run follow-up", "Terminal", 0.02)
             terminal.wait_screen(r"Session still here\.", 15)
+            terminal.remember("Command finished", "Terminal")
         else:
             first_prompt = "Reply exactly: One dashboard, every harness."
             terminal.type_line(
@@ -664,44 +851,26 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             terminal.wait_screen(re.escape(second_prompt), 15)
             terminal.key("Enter", "Enter · send follow-up", spec.label)
             terminal.wait_screen_occurrences("Session still here.", timeout=150)
+            terminal.remember("Response ready", spec.label)
 
-        time.sleep(0.8)
+        time.sleep(2.2)
         terminal.key("S-Left", "Shift+← · return to opav", spec.label)
-        terminal.wait_screen(r"Open Agent View v0\.1\.35", 30)
-        time.sleep(0.8)
+        terminal.wait_screen(APP_HEADER_PATTERN, 30)
+        time.sleep(1.6)
         terminal.key("Right", f"→ · reopen {spec.label}", "open-agent-view")
         terminal.wait_screen(spec.ready_pattern, 60)
-        time.sleep(0.8)
+        terminal.remember("Session reopened", spec.label)
+        time.sleep(2.2)
         terminal.key("S-Left", "Shift+← · return to opav", spec.label)
-        terminal.wait_screen(r"Open Agent View v0\.1\.35", 30)
-        time.sleep(0.8)
-        end = cast_time(terminal.raw_cast)
+        terminal.wait_screen(APP_HEADER_PATTERN, 30)
+        time.sleep(1.2)
+        end = terminal.timeline_time()
 
         terminal.key("Escape", "Esc · quit", "open-agent-view")
         terminal.finish()
-        target = output / f"{spec.id}.cast"
-        write_trimmed_cast(
-            terminal.raw_cast,
-            target,
-            start,
-            end,
-            public_path_replacements(root),
+        target, _ = write_provider_recording(
+            root, output, terminal, spec, start, end, "conversation"
         )
-        actions = [
-            {**item, "at": max(0.0, round(float(item["at"]) - start, 3))}
-            for item in terminal.actions
-            if start <= float(item["at"]) <= end
-        ]
-        action_path = output / f"{spec.id}.actions.json"
-        action_path.write_text(
-            json.dumps({"duration": end - start + 1.35, "actions": actions}, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        action_path.chmod(0o644)
-        compact_recording(target, action_path)
-        required = ["Open Agent View v0.1.35", "choose harness", spec.label]
-        required.extend(["One dashboard, every harness.", "Session still here."])
-        validate_public_cast(target, required)
         print(f"captured real Open Agent View → {spec.label} TUI: {target}")
     finally:
         if terminal is not None:
@@ -726,7 +895,12 @@ def start_control_dashboard(
     active_provider: str,
 ) -> RealTerminal:
     environment = base_environment(root)
-    expose_installed_providers(root)
+    required_executables = {
+        "all": ("claude",),
+        "pi": ("pi",),
+        "terminal": (),
+    }[active_provider]
+    expose_installed_providers(root, required_executables)
     if active_provider not in ("terminal", "all"):
         prepare_provider_login(active_provider, root, environment)
     install_local_binary(repo, root)
@@ -747,7 +921,7 @@ def start_control_dashboard(
         *disabled,
     ]
     terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
-    terminal.wait_for(r"Open Agent View v0\.1\.35", 45)
+    terminal.wait_for(APP_HEADER_PATTERN, 45)
     time.sleep(0.8)
     return terminal
 
@@ -771,7 +945,7 @@ def prepare_real_terminal_session(terminal: RealTerminal) -> None:
     )
     terminal.wait_screen(r"Managed terminal ready\.", 15)
     terminal.key("S-Left", "Shift+← · return to opav", "Terminal")
-    terminal.wait_screen(r"Open Agent View v0\.1\.35", 30)
+    terminal.wait_screen(APP_HEADER_PATTERN, 30)
     terminal.wait_screen(r"workspace shell", 20)
     time.sleep(0.8)
 
@@ -799,17 +973,23 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             )
             terminal.key("Enter", "Enter · save name", "open-agent-view")
             terminal.wait_screen(r"release workspace", 15)
+            terminal.remember("Renamed row visible", "open-agent-view")
+            time.sleep(2.0)
         elif demo == "switch":
             terminal.key("Right", "→ · enter selected session", "open-agent-view")
             terminal.wait_screen(r"Managed terminal ready\.", 20)
             terminal.key("Left", "← · arm return", "Terminal")
             terminal.wait_screen(r"Press ← again", 10)
+            time.sleep(1.5)
             terminal.key("Left", "← · return to opav", "Terminal")
-            terminal.wait_screen(r"Open Agent View v0\.1\.35", 20)
+            terminal.wait_screen(APP_HEADER_PATTERN, 20)
+            time.sleep(1.5)
             terminal.key("Right", "→ · reopen session", "open-agent-view")
             terminal.wait_screen(r"Managed terminal ready\.", 20)
+            terminal.remember("Session reopened", "Terminal")
+            time.sleep(2.0)
             terminal.key("S-Left", "Shift+← · return immediately", "Terminal")
-            terminal.wait_screen(r"Open Agent View v0\.1\.35", 20)
+            terminal.wait_screen(APP_HEADER_PATTERN, 20)
         elif demo == "model":
             terminal.type_line("/model", "Type /model", "open-agent-view", 0.07)
             terminal.wait_screen(r"choose Pi model", 45)
@@ -818,14 +998,26 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             terminal.key("Down", "↓ · next model", "open-agent-view")
             terminal.key("Enter", "Enter · select exact model", "open-agent-view")
             terminal.wait_screen(r"model", 15)
+            terminal.remember("Selected model visible", "open-agent-view")
+            time.sleep(1.8)
         elif demo == "login":
             terminal.type_line("/setup", "Type /setup", "open-agent-view", 0.07)
             terminal.wait_screen(r"interactive login now\?", 45)
+            terminal.remember("Setup check complete", "Harness setup")
+            time.sleep(1.8)
+            terminal.key("Enter", "Enter · open native login", "Harness setup")
+            terminal.wait_screen(r"Opening Claude Code login|browser|sign[ -]?in|log[ -]?in", 60)
+            terminal.remember("Native login ready", "Claude Code login")
+            time.sleep(2.5)
+            terminal.key("S-Left", "Shift+← · background setup", "Claude Code login")
+            terminal.wait_screen(APP_HEADER_PATTERN, 30)
+            terminal.remember("Returned to dashboard", "open-agent-view")
+            time.sleep(1.8)
         else:
             raise RuntimeError(f"unknown control recording: {demo}")
 
         time.sleep(1.2)
-        end = cast_time(terminal.raw_cast)
+        end = terminal.timeline_time()
         terminal.key("Escape", "Esc · close", "open-agent-view")
         terminal.finish()
         target = output / f"{demo}.cast"
@@ -848,13 +1040,14 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             encoding="utf-8",
         )
         action_path.chmod(0o644)
+        compact_recording(target, action_path)
         required = {
             "rename": ["rename session", "release workspace"],
             "switch": ["Managed terminal ready.", "Press ← again"],
             "model": ["choose Pi model"],
-            "login": ["interactive login now?"],
+            "login": ["interactive login now?", "Opening Claude Code login"],
         }[demo]
-        validate_public_cast(target, ["Open Agent View v0.1.35", *required])
+        validate_public_cast(target, [APP_HEADER, *required])
         print(f"captured real Open Agent View {demo} controls: {target}")
     finally:
         if terminal is not None:
@@ -868,7 +1061,7 @@ def capture_claude(repo: Path, output: Path) -> None:
     terminal: RealTerminal | None = None
     try:
         environment = base_environment(root)
-        expose_installed_providers(root)
+        expose_installed_providers(root, ("claude",))
         binary = repo / "target" / "release" / "open-agent-view"
         if not binary.is_file():
             raise RuntimeError("build target/release/open-agent-view before recording Claude")
@@ -907,7 +1100,7 @@ def capture_claude(repo: Path, output: Path) -> None:
             ]
         )
         terminal.type_line(command, "Enter · launch opav", "Terminal", 0.001)
-        terminal.wait_for(r"Open Agent View v0\.1\.35", 45)
+        terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(0.8)
         start = terminal.repaint_start()
         terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
@@ -924,18 +1117,20 @@ def capture_claude(repo: Path, output: Path) -> None:
         follow_up = "Now reply exactly: Return without losing the session."
         terminal.type_line(follow_up, "Enter · send follow-up", "Claude Code", 0.016)
         terminal.wait_screen_occurrences("Return without losing the session.")
-        time.sleep(1.0)
+        terminal.remember("Response ready", "Claude Code")
+        time.sleep(2.2)
 
         terminal.key("S-Left", "Shift+← · return to opav", "Claude Code")
-        terminal.wait_screen(r"Open Agent View v0\.1\.35", 20)
-        time.sleep(0.8)
+        terminal.wait_screen(APP_HEADER_PATTERN, 20)
+        time.sleep(1.6)
         terminal.key("Right", "→ · reopen Claude", "open-agent-view")
         terminal.wait_screen(r"Claude Code v", 45)
-        time.sleep(1.0)
+        terminal.remember("Session reopened", "Claude Code")
+        time.sleep(2.2)
         terminal.key("S-Left", "Shift+← · return to opav", "Claude Code")
-        terminal.wait_screen(r"Open Agent View v0\.1\.35", 20)
-        time.sleep(0.8)
-        end = cast_time(terminal.raw_cast)
+        terminal.wait_screen(APP_HEADER_PATTERN, 20)
+        time.sleep(1.2)
+        end = terminal.timeline_time()
 
         terminal.key("Escape", "Esc · quit", "open-agent-view")
         terminal.finish()
@@ -962,7 +1157,7 @@ def capture_claude(repo: Path, output: Path) -> None:
         validate_public_cast(
             target,
             [
-                "Open Agent View v0.1.35",
+                APP_HEADER,
                 "choose harness",
                 "Claude Code v",
                 "One view for every coding agent",

@@ -7,6 +7,7 @@ const escapeCharacter = String.fromCharCode(27);
 const bellCharacter = String.fromCharCode(7);
 const oscSequence = new RegExp(`${escapeCharacter}\\][\\s\\S]*?(?:${bellCharacter}|${escapeCharacter}\\\\)`, "g");
 const csiSequence = new RegExp(`${escapeCharacter}\\[[0-?]*[ -/]*[@-~]`, "g");
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const demos = [
   ["setup", null, null],
@@ -17,6 +18,10 @@ const demos = [
   ["cursor", "Cursor", "Cursor"],
   ["copilot", "GitHub Copilot", "GitHub Copilot"],
   ["antigravity", "Antigravity", "Antigravity"],
+  ["mistral-vibe", "Mistral Vibe", "Mistral Vibe"],
+  ["muse", "Muse Code", "Muse Code"],
+  ["qwen", "Qwen Code", "Qwen Code"],
+  ["kimi", "Kimi Code", "Kimi Code"],
   ["terminal", "Terminal", "Terminal"],
   ["rename", null, null],
   ["switch", null, null],
@@ -82,7 +87,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
 
-  for (const [id, label] of demos.slice(1, 9)) {
+  for (const [id, label] of demos.slice(1, 13)) {
     assert.match(html, new RegExp(`data-story-tab="${id}"`));
     assert.match(html, new RegExp(`data-story="story-${id}"`));
     assert.match(html, new RegExp(`data-select-harness="${id}"`));
@@ -116,6 +121,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(events.every((event, index) => index === 0 || event[0] >= events[index - 1][0]), `${name}.cast timestamps should be ordered`);
     assert.ok(output.length > 1_000, `${name}.cast should contain substantial real terminal output`);
     assert.ok(output.includes(`${escapeCharacter}[`), `${name}.cast should preserve terminal control sequences`);
+    assert.ok(output.includes(`${escapeCharacter}[38;`), `${name}.cast should preserve native terminal colors`);
     assert.match(output, /Open Agent View v\d+\.\d+\.\d+/, `${name}.cast should show the real application`);
 
     assert.ok(Number.isFinite(manifest.duration) && manifest.duration > 1);
@@ -141,16 +147,58 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
+      // Follow-up after the release containing the four new adapters is public:
+      // recapture setup.cast through the public installer and add Mistral Vibe,
+      // Muse Code, Qwen Code, and Kimi Code to this required list.
+      for (const choice of [
+        "Claude", "Codex", "Pi", "OpenCode", "Cursor", "GitHub Copilot",
+        "Antigravity", "Terminal",
+      ]) {
+        // Full-screen terminal renders may position words with cursor movement rather
+        // than literal spaces, so assert the complete label while tolerating that.
+        const terminalLabel = choice.split(" ").map((part) => escapeRegExp(part)).join("\\s*");
+        assert.match(visibleOutput, new RegExp(terminalLabel), `setup picker should show ${choice}`);
+      }
+    } else if (manifestName && manifest.proof === "setup") {
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Native login ready"),
+        `${name} should show the provider's native login/setup UI`,
+      );
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Returned to dashboard"),
+        `${name} should visibly return from provider setup`,
+      );
+      assert.match(visibleOutput, /install|setup/i);
     } else if (manifestName) {
       assert.ok(
         manifest.actions.some((action) => `${action.action} ${action.window}`.includes(manifestName)),
         `${name} actions should identify ${manifestName}`,
+      );
+      assert.ok(
+        manifest.actions.some((action) => /(?:Response|Command) ready|finished/i.test(action.action)),
+        `${name} should hold on a meaningful completed state`,
+      );
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Session reopened"),
+        `${name} should prove the native session can be reopened`,
       );
     } else {
       assert.ok(
         manifest.actions.some((action) => action.window === "open-agent-view"),
         `${name} controls should visibly use the real Open Agent View TUI`,
       );
+    }
+
+    if (name === "rename") {
+      assert.match(visibleOutput, /rename session/i);
+      assert.match(visibleOutput, /release workspace/i);
+      assert.ok(manifest.actions.some((action) => action.action === "Renamed row visible"));
+    }
+    if (name === "login") {
+      assert.match(visibleOutput, /interactive login now\?/i);
+      assert.match(visibleOutput, /Opening Claude Code login/i);
+      assert.ok(manifest.actions.some((action) => action.action === "Native login ready"));
+      assert.ok(manifest.actions.some((action) => action.action === "Returned to dashboard"));
     }
 
     for (const pattern of privateMaterial) {
@@ -176,6 +224,13 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(script, /if \(!window\.__oavReactHydrated\)/);
   assert.match(script, /if \(document\.documentElement\.dataset\.storiesReady === "true"\) return/);
   assert.match(script, /loop:\s*false/);
+  const playbackSpeeds = [...script.matchAll(/speed:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
+  assert.ok(playbackSpeeds.length >= demos.length);
+  assert.ok(playbackSpeeds.every((speed) => speed === 1), "every story should play at literal 1×");
+  assert.match(script, /retainFrame\(\)/);
+  assert.match(script, /story-frame-cover/);
+  assert.match(script, /this\.autoAdvance/);
+  assert.match(script, /stalledAtEnd/);
   assert.match(script, /this\.ended = true/);
   assert.match(script, /this\.pauseButton\.textContent = "Replay"/);
   assert.doesNotMatch(script, /loop:\s*true|class StoryPlayer|syntheticFrames|terminalRows|renderTerminalFrame/);
@@ -186,8 +241,11 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
   assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
   assert.match(page, /thin\s+cyan\s+line/i);
-  assert.match(page, /Actual provider TUI output · waits shortened · no HTML terminal simulation/);
+  assert.match(page, /Actual provider TUI output · idle waits shortened · playback at 1×/);
   assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
+
+  const recorder = await readFile(new URL("../scripts/capture-real-site-demo.py", root), "utf8");
+  assert.doesNotMatch(recorder, /["']NO_COLOR["']\s*:/, "capture must not disable provider colors");
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {

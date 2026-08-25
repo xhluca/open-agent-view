@@ -1,6 +1,18 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+type BrowserPlayer = {
+  finish(): void;
+  manifest: { duration: number };
+  pause(): void;
+  seekTo(seconds: number): void;
+  update(seconds: number): void;
+};
+
+type BrowserTabbedStory = { holdDelay: number };
+type PlayerNode = HTMLElement & { _realCastPlayer: BrowserPlayer };
+type TabbedStoryNode = HTMLElement & { _tabbedStory: BrowserTabbedStory };
+
 const harnesses = [
   ["claude", "Claude Code"],
   ["codex", "OpenAI Codex"],
@@ -9,6 +21,10 @@ const harnesses = [
   ["cursor", "Cursor"],
   ["copilot", "GitHub Copilot"],
   ["antigravity", "Antigravity"],
+  ["mistral-vibe", "Mistral Vibe"],
+  ["muse", "Muse Code"],
+  ["qwen", "Qwen Code"],
+  ["kimi", "Kimi Code"],
   ["terminal", "Terminal"],
 ] as const;
 
@@ -30,7 +46,8 @@ for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await openReady(page);
     await expect(page.getByRole("heading", { name: /Monitor every agent/ })).toBeVisible();
-    await expect(page.locator(".provider-row img")).toHaveCount(8);
+    await expect(page.locator(".provider-row > a")).toHaveCount(12);
+    await expect(page.locator(".provider-row img")).toHaveCount(10);
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.locator("#start .ap-wrapper")).toHaveCount(1);
     await expect(page.locator("#harness-demo .ap-wrapper")).toHaveCount(1);
@@ -92,6 +109,8 @@ test("every provider logo jumps to its real recording and tabs support arrow nav
   const antigravity = section.getByRole("tab", { name: "Antigravity" });
   await antigravity.click();
   await antigravity.press("ArrowRight");
+  await expect(section.getByRole("tab", { name: "Mistral Vibe" })).toHaveAttribute("aria-selected", "true");
+  await section.getByRole("tab", { name: "Mistral Vibe" }).press("End");
   await expect(section.getByRole("tab", { name: "Terminal" })).toHaveAttribute("aria-selected", "true");
   await section.getByRole("tab", { name: "Terminal" }).press("Home");
   await expect(section.getByRole("tab", { name: "Claude Code" })).toHaveAttribute("aria-selected", "true");
@@ -156,6 +175,98 @@ test("selected tabs use a cyan underline as the eight-second countdown", async (
   expect(during.width).toBeGreaterThan(0);
   expect(during.width).toBeLessThan(before.width);
   await expect(controls.getByRole("tab", { name: "Switch sessions" })).toHaveAttribute("aria-selected", "true", { timeout: 9_000 });
+});
+
+test("harness stories advance after the final frame and stop after the last tab", async ({ page }) => {
+  await openReady(page);
+  const section = page.locator("#harness-demo");
+  const claude = section.getByRole("tab", { name: "Claude Code" });
+  await claude.click();
+  await section.locator("[data-tabbed-story]").evaluate((node) => {
+    (node as TabbedStoryNode)._tabbedStory.holdDelay = 220;
+    (node.querySelector("[data-demo-player]") as PlayerNode)._realCastPlayer.finish();
+  });
+  await expect(section.getByRole("tab", { name: "OpenAI Codex" })).toHaveAttribute("aria-selected", "true", { timeout: 1_500 });
+
+  const terminal = section.getByRole("tab", { name: "Terminal" });
+  await terminal.click();
+  await section.locator("[data-tabbed-story]").evaluate((node) => {
+    (node as TabbedStoryNode)._tabbedStory.holdDelay = 100;
+    (node.querySelector("[data-demo-player]") as PlayerNode)._realCastPlayer.finish();
+  });
+  await page.waitForTimeout(250);
+  await expect(terminal).toHaveAttribute("aria-selected", "true");
+});
+
+test("every story keeps the complete terminal and a clear action keycap", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openReady(page);
+  const stories = [
+    ["setup", "#start"],
+    ...harnesses.map(([id]) => [id, "#harness-demo"]),
+    ["rename", "#controls"],
+    ["switch", "#controls"],
+    ["model", "#controls"],
+    ["login", "#controls"],
+  ] as const;
+
+  for (const [id, sectionSelector] of stories) {
+    const section = page.locator(sectionSelector);
+    if (id !== "setup") await section.locator(`[data-story-tab="${id}"]`).click();
+    const player = section.locator("[data-demo-player]");
+    await expect(player).toHaveAttribute("data-story", `story-${id}`);
+    await expect(player.locator(".ap-wrapper")).toHaveCount(1);
+    await player.evaluate((node) => {
+      const controller = (node as PlayerNode)._realCastPlayer;
+      controller.pause();
+      const target = controller.manifest.duration * 0.72;
+      controller.seekTo(target);
+      controller.update(target);
+    });
+    await page.waitForTimeout(180);
+    const geometry = await player.evaluate((node) => {
+      const screen = node.querySelector("[data-demo-screen]").getBoundingClientRect();
+      const terminal = node.querySelector(".ap-player").getBoundingClientRect();
+      const grid = node.querySelector(".ap-term").getBoundingClientRect();
+      const badge = node.querySelector("[data-demo-last-action]");
+      const style = getComputedStyle(badge);
+      return {
+        badge: badge.textContent.trim(),
+        badgeBackground: style.backgroundColor,
+        badgeBorder: style.borderTopStyle,
+        covers: node.querySelectorAll(".story-frame-cover").length,
+        screen: { top: screen.top, bottom: screen.bottom },
+        terminal: { top: terminal.top, bottom: terminal.bottom },
+        grid: { top: grid.top, bottom: grid.bottom },
+      };
+    });
+    expect(geometry.badge, `${id} action keycap`).not.toBe("");
+    expect(geometry.badgeBorder, `${id} action keycap border`).toBe("solid");
+    expect(geometry.badgeBackground, `${id} action keycap background`).not.toBe("rgba(0, 0, 0, 0)");
+    expect(geometry.covers, `${id} retained frame cleanup`).toBe(0);
+    expect(geometry.terminal.top, `${id} terminal top`).toBeGreaterThanOrEqual(geometry.screen.top - 1);
+    expect(geometry.terminal.bottom, `${id} terminal bottom`).toBeLessThanOrEqual(geometry.screen.bottom + 1);
+    expect(geometry.grid.bottom, `${id} final terminal row`).toBeLessThanOrEqual(geometry.screen.bottom + 1);
+  }
+});
+
+test("seeking retains the previous frame until the terminal has repainted", async ({ page }) => {
+  await openReady(page);
+  const player = page.locator("#harness-demo [data-demo-player]");
+  const immediate = await player.evaluate((node) => {
+    const controller = (node as PlayerNode)._realCastPlayer;
+    controller.pause();
+    controller.seekTo(controller.manifest.duration * 0.6);
+    return {
+      covers: node.querySelectorAll(".story-frame-cover").length,
+      wrappers: node.querySelectorAll(".ap-wrapper").length,
+    };
+  });
+  expect(immediate.covers).toBe(1);
+  expect(immediate.wrappers).toBe(2);
+  await page.waitForTimeout(180);
+  await expect(player.locator(".story-frame-cover")).toHaveCount(0);
+  await expect(player.locator(".ap-wrapper")).toHaveCount(1);
 });
 
 test("keyboard focus, reduced motion, and accessibility remain intact", async ({ browser }) => {

@@ -1,111 +1,121 @@
+<div align="center">
+
+<img src="website/public/favicon.svg" alt="Open Agent View" width="76" height="76">
+
 # Open Agent View
 
-**One control surface for all your local coding agents.**
+**The open agent view for every local coding harness.**
 
-Open Agent View turns concurrent agent sessions into one live terminal queue.
-See what needs input, follow work in progress, review completed tasks, and open
-the exact native session without losing its history.
+Monitor parallel sessions, see what needs input, and step back into each
+provider's native terminal—all from one queue.
 
-![Open Agent View supervising eight local harness targets](docs/assets/open-agent-view.gif)
+[Website](https://open-agent-view.github.io/) ·
+[Install](docs/install.md) ·
+[Keyboard guide](docs/cli.md) ·
+[Provider notes](docs/exploration/README.md) ·
+[Roadmap](ROADMAP.md)
 
-The interaction model is inspired by `claude agents`, rebuilt as an independent,
-open, provider-neutral project.
+[![CI](https://github.com/xhluca/open-agent-view/actions/workflows/ci.yml/badge.svg)](https://github.com/xhluca/open-agent-view/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/xhluca/open-agent-view?display_name=tag&sort=semver)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
-## Install
+</div>
 
-Install the prebuilt binary—no Rust or Cargo required:
+![A real Open Agent View terminal walkthrough: launch, open a native harness, return, and rename the session](docs/assets/open-agent-view.gif)
+
+> [!NOTE]
+> Open Agent View is an early preview. Prebuilt releases currently target
+> Linux x86-64 and use your existing GitHub CLI authentication to download the
+> private release.
+
+## Why Open Agent View?
+
+Claude Code users already know the value of an agent view: one place to follow
+background work and notice when an agent needs help. Other coding harnesses
+should not require a separate pile of terminal tabs.
+
+Open Agent View brings Claude Code, Codex, Cursor, GitHub Copilot, OpenCode, Pi,
+Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, and ordinary terminal
+jobs into one open-source dashboard. The conversation still lives in the tool
+that created it; selecting a row opens that tool's native interface.
+
+- **Know where to look.** Sessions are grouped as waiting for input, working,
+  completed, or unknown, with the harness shown on every row.
+- **Return without killing the task.** Open a native session, then move back to
+  the dashboard while its work continues.
+- **Stay fast as the list grows.** Discovery runs concurrently and the TUI only
+  renders the page that fits the terminal.
+- **Use controls OAV can prove.** Stop, reply, archive, and delete are offered
+  only when the selected provider and session support them safely.
+
+## Quick start
+
+Install the prebuilt binary—no Rust toolchain or Cargo required:
 
 ```console
 curl -fsSL https://open-agent-view.github.io/install.sh | bash
 ```
 
-Then open any project and run:
+Open a project and launch the dashboard:
 
 ```console
+cd your-project
 open-agent-view
 ```
 
-The short `opav` command is installed too. This is an early private preview;
-the current manually published release supports Linux x86-64 and uses your
-existing GitHub CLI authentication to download the private release. See the
-[installation guide](docs/install.md) for version pinning, updates, and source
-builds.
+The installer also adds the shorter `opav` command. Start typing a task, press
+`Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
+available models.
 
-## Why Open Agent View?
+## The everyday workflow
 
-- **One attention queue.** Ready-for-review, needs-input, working, completed,
-  and unknown sessions stay visible without terminal hopping.
-- **Native when it matters.** Press Enter or Right to foreground the selected
-  harness. Return to the queue without killing its work.
-- **Fast at scale.** Provider discovery is concurrent; grouping and lookup are
-  pre-indexed; large queues render terminal-sized pages instead of tens of
-  thousands of rows.
-- **Honest controls.** Reply, approve, interrupt, archive, and delete appear
-  only when OAV can verify the provider and exact session authority.
-- **Managed by default.** OAV shows work it created or explicitly manages.
-  Provider-wide history is an explicit `--include-external` opt-in.
+| Do this | In the dashboard |
+| --- | --- |
+| Move through sessions | `↑` / `↓` |
+| Open the selected native session | `Enter` or `→` |
+| Return to OAV | `Shift+←`, or `←` twice at an empty prompt |
+| Rename a session in OAV | `Ctrl+R` |
+| Filter the session list | `Ctrl+F` |
+| Stop, then delete or hide a managed session | `Ctrl+X`, then `Ctrl+X` again |
+| See the complete contextual key map | `?` |
 
-## Quick examples
-
-```console
-# Focus discovery on this project.
-open-agent-view --cwd "$PWD"
-
-# Diagnose installed harnesses and authentication state.
-open-agent-view doctor
-
-# Guided install/login for one harness.
-open-agent-view setup cursor
-
-# Show bounded external provider history when you need it.
-open-agent-view --include-external --history-limit 500
-
-# Upgrade to the latest checksummed release.
-opav update
-```
-
-Inside the dashboard:
-
-- `↑` / `↓` navigate; `enter` or `→` foregrounds a session; `space` inspects.
-- Start typing a task, then use `tab` to choose a harness and `shift+tab` to
-  choose an account-advertised model.
-- `ctrl+x` stops an active managed session. On the same idle row, the next
-  `ctrl+x` deletes it where supported or hides it locally.
-- `ctrl+f` filters, `ctrl+r` gives a private OAV display name, and `?` opens the
-  complete contextual key map.
-
-The [CLI and keyboard guide](docs/cli.md) documents setup, model selection,
-foreground/background gestures, completed visibility, paging, and bulk session
+See the [CLI and keyboard guide](docs/cli.md) for model selection, login/setup,
+completed-session visibility, paging, bulk actions, and non-interactive CLI
 commands.
 
-## Harness support
+## Harnesses
 
-Support is capability-aware rather than pretending every CLI exposes the same
-API.
+OAV keeps the integration honest: a harness can be visible without necessarily
+supporting every mutation another harness exposes.
 
-| Harness | Default discovery | Managed path |
-| --- | --- | --- |
-| Claude Code | OAV-launched sessions | Native attach and verified stop |
-| OpenAI Codex | Durable OAV threads | Reply, requests, interrupt, archive, delete |
-| Pi | Native OAV tasks; durable RPC on Linux | Reply, input, stop, delete, resume |
-| OpenCode | Durable loopback sessions on Linux | Inspect, reply, interrupt, native resume |
-| Cursor | OAV-owned runs on Linux | Models, launch, resume, interrupt |
-| GitHub Copilot | OAV-owned native/ACP sessions | Reply, cancel, one-shot approval |
-| Antigravity | Exact OAV-launched conversations | Models, launch, resume, stop |
-| Terminal | OAV-owned shells | Background, resume, stop, delete |
+| Harness | OAV integration |
+| --- | --- |
+| Claude Code | Managed launch, native attach, verified stop |
+| OpenAI Codex | Durable threads, reply, requests, interrupt, archive, delete |
+| Cursor | Models, managed launch, native resume, interrupt |
+| GitHub Copilot | Managed native/ACP sessions, reply, cancel, approval |
+| OpenCode | Durable loopback sessions, inspect, reply, interrupt, resume |
+| Pi | Native tasks and durable RPC on Linux, reply, stop, delete, resume |
+| Antigravity | Exact managed conversations, models, launch, resume, stop |
+| Mistral Vibe | Managed discovery, launch, and native resume |
+| Muse Code | Managed discovery, launch, and native resume |
+| Qwen Code | Managed discovery, launch, and native resume |
+| Kimi Code | Managed discovery, launch, and native resume |
+| Terminal | Managed shells, background, resume, stop, delete |
 
-External history, when requested, remains read-only or native-open unless its
-provider offers a separately verified control boundary. Exact versions,
-protocol evidence, platform limits, and unsupported actions live in the
-[provider notes](docs/exploration/README.md).
+Exact CLI versions, model discovery, authentication behavior, platform limits,
+and provider-specific caveats live in the [provider notes](docs/exploration/README.md).
 
-## Safety
+## Sessions stay with their tools
 
-Visibility never implies authority. OAV does not copy credentials into the
-project, does not silently scan containers, and refuses mutations when exact
-ownership cannot be revalidated. Demo fixtures fence all provider I/O.
+OAV reads each installed harness's session state and builds one local index.
+Opening a row hands the terminal to that harness; returning brings the shared
+queue back. Provider credentials and conversation history are not copied into
+the project.
 
-Read the [control and ownership model](docs/control-model.md) for the full
+By default, OAV shows sessions it created or explicitly manages. Use
+`--include-external` only when you want bounded, provider-wide history. Read the
+[control and ownership model](docs/control-model.md) for the complete safety
 contract.
 
 ## Documentation
@@ -115,7 +125,7 @@ contract.
 - [Troubleshooting and recovery](docs/troubleshooting.md)
 - [Architecture](docs/architecture.md)
 - [Testing and real-TTY evidence](docs/testing.md)
-- [Roadmap](ROADMAP.md)
+- [Demo provenance and reproduction](docs/website.md)
 - [Documentation index](docs/README.md)
 
 Contributions are welcome through [CONTRIBUTING.md](CONTRIBUTING.md). Report
@@ -124,5 +134,4 @@ security-sensitive findings through [SECURITY.md](SECURITY.md).
 ## License
 
 [MIT](LICENSE). Open Agent View is independent and is not affiliated with or
-endorsed by Anthropic, OpenAI, GitHub, Cursor, the OpenCode project, the Pi
-project, or Google.
+endorsed by the providers or CLI projects listed above.

@@ -1,0 +1,51 @@
+{
+  "duration": 13.929,
+  "proof": "setup",
+  "actions": [
+    {
+      "at": 2.204,
+      "action": "Type /setup kimi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.328,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.454,
+      "action": "Y \u00b7 install Kimi Code",
+      "window": "Harness setup"
+    },
+    {
+      "at": 2.578,
+      "action": "Enter \u00b7 confirm install",
+      "window": "Harness setup"
+    },
+    {
+      "at": 5.578,
+      "action": "Install check complete",
+      "window": "Harness setup"
+    },
+    {
+      "at": 7.504,
+      "action": "Enter \u00b7 open Kimi Code login",
+      "window": "Harness setup"
+    },
+    {
+      "at": 7.627,
+      "action": "Native login ready",
+      "window": "Kimi Code login"
+    },
+    {
+      "at": 10.553,
+      "action": "Shift+\u2190 \u00b7 background setup",
+      "window": "Kimi Code login"
+    },
+    {
+      "at": 10.929,
+      "action": "Returned to dashboard",
+      "window": "open-agent-view"
+    }
+  ]
+}

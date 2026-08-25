@@ -1,60 +1,65 @@
 {
-  "duration": 13.18986,
+  "duration": 17.752065,
   "actions": [
     {
-      "at": 1.703,
+      "at": 1.855,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 1.898,
+      "at": 1.979,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.026,
+      "at": 2.105,
       "action": "Enter \u00b7 choose OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 3.46,
+      "at": 3.547,
       "action": "Enter \u00b7 start OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 3.602,
+      "at": 3.671,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 6.602,
+      "at": 6.671,
+      "action": "Type follow-up",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 6.8,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenAI Codex"
     },
     {
-      "at": 6.814,
-      "action": "Enter",
+      "at": 8.189,
+      "action": "Response ready",
       "window": "OpenAI Codex"
     },
     {
-      "at": 8.666,
+      "at": 10.514,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenAI Codex"
     },
     {
-      "at": 10.68,
+      "at": 12.496,
       "action": "\u2192 \u00b7 reopen OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 10.68,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 12.619,
+      "action": "Session reopened",
       "window": "OpenAI Codex"
     },
     {
-      "at": 12.743,
-      "action": "Esc \u00b7 quit",
-      "window": "open-agent-view"
+      "at": 14.945,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenAI Codex"
     }
   ]
 }

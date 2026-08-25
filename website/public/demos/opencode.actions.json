@@ -1,70 +1,80 @@
 {
-  "duration": 14.509623,
+  "duration": 21.096751,
   "actions": [
     {
-      "at": 2.159,
+      "at": 0.01,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.288,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.354,
+      "at": 2.412,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.481,
+      "at": 2.539,
       "action": "Enter \u00b7 choose OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 3.448,
-      "action": "Select model \u00b7 openai/gpt-5.6-luna",
+      "at": 3.644,
+      "action": "Select model \u00b7 github-copilot/gpt-5.6-luna",
       "window": "open-agent-view"
     },
     {
-      "at": 3.586,
+      "at": 3.768,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.059,
+      "at": 5.26,
       "action": "Enter \u00b7 start OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 5.201,
+      "at": 5.384,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 8.201,
+      "at": 8.384,
+      "action": "Type follow-up",
+      "window": "OpenCode"
+    },
+    {
+      "at": 8.536,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenCode"
     },
     {
-      "at": 8.344,
-      "action": "Enter",
+      "at": 11.536,
+      "action": "Response ready",
       "window": "OpenCode"
     },
     {
-      "at": 9.734,
+      "at": 13.862,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenCode"
     },
     {
-      "at": 11.731,
+      "at": 15.843,
       "action": "\u2192 \u00b7 reopen OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 11.731,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 15.966,
+      "action": "Session reopened",
       "window": "OpenCode"
     },
     {
-      "at": 13.16,
-      "action": "Esc \u00b7 quit",
-      "window": "open-agent-view"
+      "at": 18.291,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenCode"
     }
   ]
 }

@@ -1,70 +1,80 @@
 {
-  "duration": 11.744646,
+  "duration": 16.000168817215922,
   "actions": [
     {
-      "at": 2.156,
+      "at": 0.031,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.311,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.351,
+      "at": 2.435,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.479,
+      "at": 2.562,
       "action": "Enter \u00b7 choose Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 4.015,
+      "at": 4.023,
       "action": "Enter \u00b7 open Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 4.214,
+      "at": 4.147,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.432,
+      "at": 5.225,
       "action": "Enter \u00b7 run command",
       "window": "Terminal"
     },
     {
-      "at": 5.577,
+      "at": 5.349,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 6.398,
+      "at": 6.188,
       "action": "Enter \u00b7 run follow-up",
       "window": "Terminal"
     },
     {
-      "at": 6.544,
+      "at": 6.312,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 6.544,
+      "at": 6.435,
+      "action": "Command finished",
+      "window": "Terminal"
+    },
+    {
+      "at": 8.759,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Terminal"
     },
     {
-      "at": 8.659,
+      "at": 10.743,
       "action": "\u2192 \u00b7 reopen Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 8.659,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 10.866,
+      "action": "Session reopened",
       "window": "Terminal"
     },
     {
-      "at": 10.395,
-      "action": "Esc \u00b7 quit",
-      "window": "open-agent-view"
+      "at": 13.191,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Terminal"
     }
   ]
 }

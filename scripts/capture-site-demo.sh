@@ -31,9 +31,9 @@ agg \
   --no-loop \
   --theme github-dark \
   --font-size 13 \
-  --speed 1.5 \
-  --idle-time-limit 1 \
-  --last-frame-duration 2 \
+  --speed 1 \
+  --idle-time-limit 3 \
+  --last-frame-duration 3 \
   "$cast" "$gif"
 
 ffmpeg -hide_banner -loglevel error -y \

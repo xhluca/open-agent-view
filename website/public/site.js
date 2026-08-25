@@ -38,67 +38,87 @@ const STORIES = {
   "story-setup": {
     cast: "/demos/setup.cast",
     actions: "/demos/setup.actions.json",
-    speed: 1.45,
+    speed: 1,
   },
   "story-claude": {
     cast: "/demos/claude.cast",
     actions: "/demos/claude.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-codex": {
     cast: "/demos/codex.cast",
     actions: "/demos/codex.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-pi": {
     cast: "/demos/pi.cast",
     actions: "/demos/pi.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-opencode": {
     cast: "/demos/opencode.cast",
     actions: "/demos/opencode.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-cursor": {
     cast: "/demos/cursor.cast",
     actions: "/demos/cursor.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-copilot": {
     cast: "/demos/copilot.cast",
     actions: "/demos/copilot.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-antigravity": {
     cast: "/demos/antigravity.cast",
     actions: "/demos/antigravity.actions.json",
-    speed: 1.5,
+    speed: 1,
+  },
+  "story-mistral-vibe": {
+    cast: "/demos/mistral-vibe.cast",
+    actions: "/demos/mistral-vibe.actions.json",
+    speed: 1,
+  },
+  "story-muse": {
+    cast: "/demos/muse.cast",
+    actions: "/demos/muse.actions.json",
+    speed: 1,
+  },
+  "story-qwen": {
+    cast: "/demos/qwen.cast",
+    actions: "/demos/qwen.actions.json",
+    speed: 1,
+  },
+  "story-kimi": {
+    cast: "/demos/kimi.cast",
+    actions: "/demos/kimi.actions.json",
+    speed: 1,
   },
   "story-terminal": {
     cast: "/demos/terminal.cast",
     actions: "/demos/terminal.actions.json",
-    speed: 1.5,
+    speed: 1,
   },
   "story-rename": {
     cast: "/demos/rename.cast",
     actions: "/demos/rename.actions.json",
-    speed: 1.25,
+    speed: 1,
   },
   "story-switch": {
     cast: "/demos/switch.cast",
     actions: "/demos/switch.actions.json",
-    speed: 1.25,
+    speed: 1,
   },
   "story-model": {
     cast: "/demos/model.cast",
     actions: "/demos/model.actions.json",
-    speed: 1.25,
+    speed: 1,
   },
   "story-login": {
     cast: "/demos/login.cast",
     actions: "/demos/login.actions.json",
-    speed: 1.25,
+    speed: 1,
   },
 };
 
@@ -126,6 +146,8 @@ class RealCastPlayer {
     this.visible = true;
     this.ended = false;
     this.generation = 0;
+    this.lastObservedTime = 0;
+    this.lastMovementAt = performance.now();
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     for (const button of root.querySelectorAll("[data-demo-action]")) {
@@ -135,8 +157,9 @@ class RealCastPlayer {
     this.progress.addEventListener("input", () => {
       if (!this.manifest || !this.player) return;
       const seconds = Number(this.progress.value) / 1000 * this.manifest.duration;
-      safe(() => this.player.seek(seconds));
-      this.ended = seconds >= this.manifest.duration - 0.05;
+      this.seekTo(seconds);
+      this.ended = seconds >= this.manifest.duration - 0.2;
+      this.pauseButton.textContent = this.ended ? "Replay" : "Play";
       this.update(seconds);
     });
 
@@ -155,15 +178,15 @@ class RealCastPlayer {
     const story = STORIES[storyId];
     const generation = ++this.generation;
     this.root.dataset.story = storyId;
-    safe(() => this.player?.dispose());
-    this.player = null;
-    this.manifest = null;
-    this.playing = false;
-    this.ended = false;
-    this.progress.value = "0";
-    this.mount.replaceChildren();
 
     if (!story) {
+      safe(() => this.player?.dispose());
+      this.player = null;
+      this.manifest = null;
+      this.playing = false;
+      this.ended = false;
+      this.progress.value = "0";
+      this.mount.replaceChildren();
       const unavailable = document.createElement("p");
       unavailable.className = "recording-unavailable";
       unavailable.textContent = "This real native recording has not been published yet.";
@@ -180,13 +203,23 @@ class RealCastPlayer {
       if (!response.ok) throw new Error(`actions returned ${response.status}`);
       const manifest = await response.json();
       if (generation !== this.generation) return;
+
+      const retained = this.retainFrame();
+      safe(() => this.player?.dispose());
+      this.player = null;
       this.manifest = manifest;
+      this.playing = false;
+      this.ended = false;
+      this.lastObservedTime = 0;
+      this.lastMovementAt = performance.now();
+      this.progress.value = "0";
+      this.mount.replaceChildren();
+      if (retained) this.mount.append(retained);
       this.player = window.AsciinemaPlayer.create(story.cast, this.mount, {
         autoPlay: !this.reducedMotion && this.root.dataset.autoPlay === "true",
         controls: false,
         cursorMode: "blinking",
-        fit: "width",
-        idleTimeLimit: 1,
+        fit: "both",
         loop: false,
         speed: story.speed,
         theme: "asciinema",
@@ -197,13 +230,58 @@ class RealCastPlayer {
       this.pauseButton.textContent = this.playing ? "Pause" : "Play";
       this.player.addEventListener("ended", () => this.finish());
       this.update(0);
+      this.releaseRetainedFrame(retained);
     } catch (error) {
       if (generation !== this.generation) return;
+      safe(() => this.player?.dispose());
+      this.player = null;
+      this.manifest = null;
+      this.playing = false;
       const failure = document.createElement("p");
       failure.className = "recording-unavailable";
       failure.textContent = `Could not load the real terminal recording: ${error.message}`;
       this.mount.replaceChildren(failure);
     }
+  }
+
+  retainFrame() {
+    const wrapper = this.mount.querySelector(".ap-wrapper");
+    if (!wrapper) return null;
+    const cover = document.createElement("div");
+    cover.className = "story-frame-cover";
+    cover.setAttribute("aria-hidden", "true");
+    const clone = wrapper.cloneNode(true);
+    clone.removeAttribute("tabindex");
+    const sourceCanvases = wrapper.querySelectorAll("canvas");
+    const clonedCanvases = clone.querySelectorAll("canvas");
+    sourceCanvases.forEach((source, index) => {
+      const target = clonedCanvases[index];
+      if (!target) return;
+      target.width = source.width;
+      target.height = source.height;
+      safe(() => target.getContext("2d").drawImage(source, 0, 0));
+    });
+    cover.append(clone);
+    return cover;
+  }
+
+  releaseRetainedFrame(cover) {
+    if (!cover) return;
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(() => cover.remove(), 90);
+      });
+    });
+  }
+
+  seekTo(seconds) {
+    if (!this.player) return;
+    const retained = this.retainFrame();
+    if (retained) this.mount.append(retained);
+    safe(() => this.player.seek(seconds));
+    this.lastObservedTime = seconds;
+    this.lastMovementAt = performance.now();
+    this.releaseRetainedFrame(retained);
   }
 
   currentTime() {
@@ -218,7 +296,7 @@ class RealCastPlayer {
       return;
     }
     if (action === "restart") {
-      safe(() => this.player.seek(0));
+      this.seekTo(0);
       this.ended = false;
       this.play();
       this.update(0);
@@ -226,14 +304,15 @@ class RealCastPlayer {
     }
     const delta = action === "back" ? -5 : 5;
     const next = Math.max(0, Math.min(this.manifest.duration, this.currentTime() + delta));
-    safe(() => this.player.seek(next));
-    this.ended = next >= this.manifest.duration - 0.05;
+    this.seekTo(next);
+    this.ended = next >= this.manifest.duration - 0.2;
+    if (this.ended) this.pauseButton.textContent = "Replay";
     this.update(next);
   }
 
   play() {
     if (!this.player) return;
-    if (this.ended) safe(() => this.player.seek(0));
+    if (this.ended) this.seekTo(0);
     this.ended = false;
     this.playing = true;
     this.pauseButton.textContent = "Pause";
@@ -272,7 +351,16 @@ class RealCastPlayer {
     if (this.player && this.manifest) {
       const current = this.currentTime();
       this.update(current);
-      if (!this.ended && current >= this.manifest.duration - 0.05) this.finish();
+      const now = performance.now();
+      if (current > this.lastObservedTime + 0.005) {
+        this.lastObservedTime = current;
+        this.lastMovementAt = now;
+      }
+      const nearEnd = current >= this.manifest.duration - 0.35;
+      const stalledAtEnd = this.playing && nearEnd && now - this.lastMovementAt > 600;
+      if (!this.ended && (current >= this.manifest.duration - 0.02 || stalledAtEnd)) {
+        this.finish();
+      }
     }
     window.requestAnimationFrame(() => this.tick());
   }
@@ -285,6 +373,9 @@ class TabbedStory {
     this.player = root.querySelector("[data-demo-player]")._realCastPlayer;
     this.holdFrame = 0;
     this.holdStarted = 0;
+    this.autoAdvance = root.dataset.autoAdvance === "true";
+    this.holdDelay = Number(root.dataset.autoAdvanceDelay || 8000);
+    this.loop = root.dataset.autoAdvanceLoop === "true";
     this.tabs.forEach((tab, index) => {
       tab.addEventListener("click", () => this.select(index));
       tab.addEventListener("keydown", (event) => {
@@ -299,7 +390,7 @@ class TabbedStory {
       });
     });
     root.addEventListener("demo-ended", () => {
-      if (root.closest("#controls")) this.startHold();
+      if (this.autoAdvance) this.startHold();
     });
   }
 
@@ -323,13 +414,21 @@ class TabbedStory {
   startHold() {
     window.cancelAnimationFrame(this.holdFrame);
     const tab = this.tabs[this.selectedIndex()];
+    const isLast = this.selectedIndex() === this.tabs.length - 1;
+    if (isLast && !this.loop) {
+      tab.style.setProperty("--tab-progress", "0");
+      return;
+    }
     this.holdStarted = performance.now();
     const advance = (now) => {
       const elapsed = now - this.holdStarted;
-      const remaining = Math.max(0, 1 - elapsed / 8000);
+      const remaining = Math.max(0, 1 - elapsed / this.holdDelay);
       tab.style.setProperty("--tab-progress", String(remaining));
       if (remaining > 0) this.holdFrame = window.requestAnimationFrame(advance);
-      else this.select((this.selectedIndex() + 1) % this.tabs.length);
+      else {
+        const next = this.selectedIndex() + 1;
+        this.select(next < this.tabs.length ? next : 0);
+      }
     };
     this.holdFrame = window.requestAnimationFrame(advance);
   }

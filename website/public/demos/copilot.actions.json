@@ -1,70 +1,80 @@
 {
-  "duration": 18.674545,
+  "duration": 23.483722,
   "actions": [
     {
-      "at": 2.153,
+      "at": 0.009,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.29,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.348,
+      "at": 2.414,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.475,
+      "at": 2.541,
       "action": "Enter \u00b7 choose GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 3.899,
+      "at": 3.983,
       "action": "Enter \u00b7 start GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 4.041,
+      "at": 4.107,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.041,
+      "at": 7.107,
       "action": "Confirm \u00b7 trust disposable demo workspace",
       "window": "native harness"
     },
     {
-      "at": 10.041,
+      "at": 10.107,
       "action": "Esc \u00b7 keep terminal settings unchanged",
       "window": "GitHub Copilot"
     },
     {
-      "at": 11.716,
+      "at": 11.898,
       "action": "Type follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 11.96,
+      "at": 12.025,
       "action": "Enter \u00b7 send follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 13.938,
+      "at": 13.92,
+      "action": "Response ready",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 16.246,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "GitHub Copilot"
     },
     {
-      "at": 15.994,
+      "at": 18.227,
       "action": "\u2192 \u00b7 reopen GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 16.924,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 18.35,
+      "action": "Session reopened",
       "window": "GitHub Copilot"
     },
     {
-      "at": 17.867,
-      "action": "Esc \u00b7 quit",
-      "window": "open-agent-view"
+      "at": 20.674,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "GitHub Copilot"
     }
   ]
 }

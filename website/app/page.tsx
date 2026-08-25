@@ -11,6 +11,10 @@ const providers = [
   { id: "cursor", name: "Cursor", icon: "/providers/cursor.svg" },
   { id: "copilot", name: "GitHub Copilot", icon: "/providers/copilot.svg" },
   { id: "antigravity", name: "Antigravity", icon: "/providers/antigravity.svg" },
+  { id: "mistral-vibe", name: "Mistral Vibe", icon: "/providers/mistral-vibe.svg" },
+  { id: "muse", name: "Muse Code", mark: "Mu" },
+  { id: "qwen", name: "Qwen Code", icon: "/providers/qwen.svg" },
+  { id: "kimi", name: "Kimi Code", mark: "K" },
   { id: "terminal", name: "Terminal", icon: "/providers/terminal.svg" },
 ] as const;
 
@@ -24,9 +28,13 @@ const controlTabs = [
 function ProviderMark({ provider }: { provider: (typeof providers)[number] }) {
   return (
     <span className={`provider-mark provider-${provider.id}`} aria-hidden="true">
-      {/* Local provider marks avoid third-party requests at runtime. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={provider.icon} alt="" />
+      {"icon" in provider ? (
+        <>
+          {/* Local provider marks avoid third-party requests at runtime. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={provider.icon} alt="" />
+        </>
+      ) : <b>{provider.mark}</b>}
     </span>
   );
 }
@@ -125,17 +133,24 @@ export default function Home() {
         <div className="section-heading">
           <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
           <p>
-            Each tab records Open Agent View launching the real native CLI,
-            sending a short conversation, returning to the dashboard, and
-            reopening the same session. Choose a logo above to jump here.
+            Each tab follows a genuine native flow. Authenticated harnesses
+            exchange a short conversation and reopen it; first-run harnesses
+            use their official installer and native login screen, then return
+            to the dashboard. Choose a logo above to jump here.
           </p>
         </div>
-        <div className="tabbed-story" data-tabbed-story>
+        <div
+          className="tabbed-story"
+          data-tabbed-story
+          data-auto-advance="true"
+          data-auto-advance-delay="7000"
+          data-auto-advance-loop="false"
+        >
           <StoryTabs name="Harness demos" tabs={harnessTabs} initial="claude" />
           <DemoPlayer
             story="story-claude"
             label="HARNESS WALKTHROUGH"
-            caption="Actual provider TUI output · waits shortened · no HTML terminal simulation"
+            caption="Actual provider TUI output · idle waits shortened · playback at 1×"
           />
         </div>
       </section>
@@ -150,7 +165,13 @@ export default function Home() {
             the next example.
           </p>
         </div>
-        <div className="tabbed-story" data-tabbed-story>
+        <div
+          className="tabbed-story"
+          data-tabbed-story
+          data-auto-advance="true"
+          data-auto-advance-delay="8000"
+          data-auto-advance-loop="false"
+        >
           <StoryTabs name="Common control demos" tabs={controlTabs} initial="rename" />
           <DemoPlayer
             story="story-rename"
@@ -160,45 +181,33 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="why section shell" id="why">
-        <div className="section-heading">
-          <div><p className="section-label">WHY OPEN AGENT VIEW</p><h2>The agent view,<br />for every harness.</h2></div>
-          <p>
-            Claude Code users already rely on its agent view to keep background
-            work organized. Codex, Pi, OpenCode, Cursor, Copilot, and
-            Antigravity should not each become a separate pile of terminal tabs.
-            Open Agent View gives all of them one open-source panel.
-          </p>
-        </div>
-      </section>
-
       <section className="architecture section shell" id="architecture">
         <div className="section-heading">
-          <div><p className="section-label">HOW IT WORKS</p><h2>One list.<br />The real CLIs underneath.</h2></div>
+          <div><p className="section-label">HOW IT WORKS</p><h2>One list.<br />Your CLIs underneath.</h2></div>
           <p>
             Your conversations stay in Claude, Codex, Pi, and the other tools
             that created them. Open Agent View reads their session lists and
             puts them on one screen. When you open a session, you use that
-            tool&apos;s real interface. When you go back, the task keeps running.
+            tool&apos;s native interface. When you go back, the task keeps running.
           </p>
         </div>
         <div className="architecture-map" aria-label="Open Agent View architecture">
           <div className="provider-stack">
             <span>Provider CLIs</span>
-            <div>{providers.slice(0, 7).map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
+            <div>{providers.filter((provider) => provider.id !== "terminal").map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
             <small>Each CLI keeps its own login, models, and conversation history.</small>
           </div>
           <div className="flow-arrow"><b>read</b><i>→</i><em>session names, status, and recent activity</em></div>
           <div className="oav-core">
             <span>Open Agent View</span>
             <strong>One dashboard</strong>
-            <div><b>which harness</b><b>what needs you</b><b>what is running</b><b>what finished</b></div>
+            <div><b>which harness</b><b>waiting for input</b><b>what is running</b><b>what finished</b></div>
             <small>Fast navigation, filtering, naming, and model selection in one place.</small>
           </div>
           <div className="flow-arrow return"><b>open</b><i>→</i><em>enter the selected session in its original CLI</em></div>
           <div className="native-stack">
             <span>Original harness</span>
-            <strong>The real session</strong>
+            <strong>Your session</strong>
             <small>Talk to the agent normally, then return to the shared list without stopping it.</small>
           </div>
         </div>

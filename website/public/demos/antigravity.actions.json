@@ -1,70 +1,80 @@
 {
-  "duration": 16.199235,
+  "duration": 20.956298,
   "actions": [
     {
-      "at": 2.166,
+      "at": 0.001,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.286,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.361,
+      "at": 2.41,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.489,
+      "at": 2.536,
       "action": "Enter \u00b7 choose Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 3.457,
+      "at": 3.515,
       "action": "Select model \u00b7 gemini-3.1-pro-high",
       "window": "open-agent-view"
     },
     {
-      "at": 3.594,
+      "at": 3.639,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.074,
+      "at": 5.142,
       "action": "Enter \u00b7 start Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 5.215,
+      "at": 5.266,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 8.215,
+      "at": 8.266,
       "action": "Type follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 8.432,
+      "at": 8.393,
       "action": "Enter \u00b7 send follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 11.432,
+      "at": 11.393,
+      "action": "Response ready",
+      "window": "Antigravity"
+    },
+    {
+      "at": 13.719,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Antigravity"
     },
     {
-      "at": 13.117,
+      "at": 15.7,
       "action": "\u2192 \u00b7 reopen Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 13.448,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 15.824,
+      "action": "Session reopened",
       "window": "Antigravity"
     },
     {
-      "at": 15.307,
-      "action": "Esc \u00b7 quit",
-      "window": "open-agent-view"
+      "at": 18.149,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Antigravity"
     }
   ]
 }
