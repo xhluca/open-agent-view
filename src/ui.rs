@@ -46,9 +46,9 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
             .min(area.height.saturating_sub(5)),
         Overlay::Help => {
             let help_lines =
-                pack_help_actions(help_actions(app), area.width.saturating_sub(2) as usize).len()
+                pack_help_actions(help_actions(app), area.width.saturating_sub(4) as usize).len()
                     as u16;
-            (3 + help_lines).min(area.height.saturating_sub(5))
+            (4 + help_lines).min(area.height.saturating_sub(5))
         }
         Overlay::HarnessPicker => (3 + input_line_count(&app.input).saturating_sub(1))
             .min(7)
@@ -577,13 +577,45 @@ fn input_line_count(input: &str) -> u16 {
 }
 
 fn render_help(frame: &mut Frame<'_>, app: &App, area: Rect) {
-    let lines = pack_help_actions(help_actions(app), area.width.saturating_sub(2) as usize)
+    let block = Block::default()
+        .borders(Borders::TOP)
+        .border_style(Style::default().fg(ACCENT))
+        .title(Span::styled(
+            " shortcuts ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ))
+        .style(Style::default().bg(BG));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines = pack_help_actions(help_actions(app), area.width.saturating_sub(4) as usize)
         .into_iter()
-        .map(|line| Line::from(format!("  {}", sanitize_inline(&line))))
+        .map(|actions| {
+            let mut spans = vec![Span::raw(" ")];
+            for (index, action) in actions.into_iter().enumerate() {
+                if index > 0 {
+                    spans.push(Span::styled("  ·  ", Style::default().fg(DIM)));
+                }
+                let action = sanitize_inline(&action);
+                if let Some((keys, description)) = action.split_once(" to ") {
+                    spans.push(Span::styled(
+                        keys.to_owned(),
+                        Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::styled(
+                        format!(" to {description}"),
+                        Style::default().fg(FG),
+                    ));
+                } else {
+                    spans.push(Span::styled(action, Style::default().fg(FG)));
+                }
+            }
+            Line::from(spans)
+        })
         .collect::<Vec<_>>();
     frame.render_widget(
-        Paragraph::new(lines).style(Style::default().bg(BG).fg(DIM)),
-        area,
+        Paragraph::new(lines).style(Style::default().bg(BG).fg(FG)),
+        inner,
     );
 }
 
@@ -830,22 +862,23 @@ fn help_actions(app: &App) -> Vec<String> {
     actions
 }
 
-fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<String> {
-    let mut lines = vec![String::new()];
+fn pack_help_actions(actions: Vec<String>, width: usize) -> Vec<Vec<String>> {
+    const GAP_WIDTH: usize = 5;
+    let mut lines = vec![Vec::<String>::new()];
+    let mut line_width = 0;
     for action in actions {
         let line = lines.last_mut().expect("help always has one line");
         let added = if line.is_empty() {
             action.len()
         } else {
-            4 + action.len()
+            GAP_WIDTH + action.len()
         };
-        if !line.is_empty() && line.len() + added > width {
-            lines.push(action);
+        if !line.is_empty() && line_width + added > width {
+            line_width = action.len();
+            lines.push(vec![action]);
         } else {
-            if !line.is_empty() {
-                line.push_str("    ");
-            }
-            line.push_str(&action);
+            line_width += added;
+            line.push(action);
         }
     }
     lines
@@ -1687,6 +1720,7 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
+        assert!(rendered.contains("shortcuts"));
         assert!(rendered.contains("ctrl+r to rename"));
         assert!(rendered.contains("ctrl+s to switch views"));
         assert!(rendered.contains("/harness [name] switches harness"));
@@ -1697,6 +1731,20 @@ mod tests {
         assert!(!rendered.contains("ctrl+x to stop"));
         assert!(rendered.contains("ctrl+x to hide locally"));
         assert!(!rendered.contains("j/k"));
+
+        let composer_row = rendered
+            .lines()
+            .position(|line| line.contains("describe a task"))
+            .expect("composer row");
+        let shortcuts_row = rendered
+            .lines()
+            .position(|line| line.contains("shortcuts"))
+            .expect("shortcuts heading row");
+        let first_action_row = rendered
+            .lines()
+            .position(|line| line.contains("enter/right to open session"))
+            .expect("first shortcut row");
+        assert!(composer_row < shortcuts_row && shortcuts_row < first_action_row);
     }
 
     #[test]

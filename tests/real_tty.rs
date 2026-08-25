@@ -1908,7 +1908,8 @@ fn wide_real_tty_exercises_primary_interactions_and_restores_terminal() {
 
     app.send(b"?");
     let help = app.wait_for("contextual help", |screen| {
-        screen.contains("ctrl+s to switch views")
+        screen.contains("shortcuts")
+            && screen.contains("ctrl+s to switch views")
             && screen.contains("space to inspect")
             && screen.contains("? to close")
     });
@@ -2260,7 +2261,9 @@ fn narrow_and_tiny_real_ttys_have_bounded_fallback_layouts() {
 
     narrow.send(b"?");
     let help = narrow.wait_for("wrapped narrow help", |screen| {
-        screen.contains("ctrl+s to switch views") && screen.contains("? to close")
+        screen.contains("shortcuts")
+            && screen.contains("ctrl+s to switch views")
+            && screen.contains("? to close")
     });
     assert_lines_fit(&help, 55);
     narrow.send(b"?");
