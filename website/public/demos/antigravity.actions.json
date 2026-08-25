@@ -1,78 +1,74 @@
 {
-  "duration": 20.956298,
+  "duration": 21.191208,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 0.001,
-      "action": "Enter",
-      "window": "Terminal"
-    },
-    {
-      "at": 2.286,
+      "at": 2.255,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.41,
+      "at": 2.379,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.536,
+      "at": 2.507,
       "action": "Enter \u00b7 choose Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 3.515,
+      "at": 3.749,
       "action": "Select model \u00b7 gemini-3.1-pro-high",
       "window": "open-agent-view"
     },
     {
-      "at": 3.639,
+      "at": 3.877,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.142,
+      "at": 5.375,
       "action": "Enter \u00b7 start Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 5.266,
+      "at": 5.499,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 8.266,
+      "at": 8.499,
       "action": "Type follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 8.393,
+      "at": 8.628,
       "action": "Enter \u00b7 send follow-up",
       "window": "Antigravity"
     },
     {
-      "at": 11.393,
+      "at": 11.628,
       "action": "Response ready",
       "window": "Antigravity"
     },
     {
-      "at": 13.719,
+      "at": 13.954,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Antigravity"
     },
     {
-      "at": 15.7,
+      "at": 15.938,
       "action": "\u2192 \u00b7 reopen Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 15.824,
+      "at": 16.06,
       "action": "Session reopened",
       "window": "Antigravity"
     },
     {
-      "at": 18.149,
+      "at": 18.386,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Antigravity"
     }

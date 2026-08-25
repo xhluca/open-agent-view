@@ -267,9 +267,15 @@ class RealCastPlayer {
 
   releaseRetainedFrame(cover) {
     if (!cover) return;
+    // Keep the prior canvas across the repaint, but never let a throttled
+    // requestAnimationFrame leave the cover sitting over a ready player.
+    const fallback = window.setTimeout(() => cover.remove(), 160);
     window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => {
-        window.setTimeout(() => cover.remove(), 90);
+        window.setTimeout(() => {
+          window.clearTimeout(fallback);
+          cover.remove();
+        }, 70);
       });
     });
   }

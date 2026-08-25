@@ -1,38 +1,38 @@
 {
-  "duration": 9.987,
+  "duration": 10.069,
   "actions": [
     {
-      "at": 1.688,
+      "at": 1.771,
       "action": "Type /setup",
       "window": "open-agent-view"
     },
     {
-      "at": 1.812,
+      "at": 1.895,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 1.935,
+      "at": 2.018,
       "action": "Setup check complete",
       "window": "Harness setup"
     },
     {
-      "at": 3.86,
+      "at": 3.944,
       "action": "Enter \u00b7 open native login",
       "window": "Harness setup"
     },
     {
-      "at": 3.984,
+      "at": 4.068,
       "action": "Native login ready",
       "window": "Claude Code login"
     },
     {
-      "at": 6.611,
+      "at": 6.692,
       "action": "Shift+\u2190 \u00b7 background setup",
       "window": "Claude Code login"
     },
     {
-      "at": 6.987,
+      "at": 7.069,
       "action": "Returned to dashboard",
       "window": "open-agent-view"
     }

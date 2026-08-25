@@ -1,68 +1,69 @@
 {
-  "duration": 19.84055,
+  "duration": 17.499433,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 0.057,
+      "at": 0.047,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 2.331,
+      "at": 2.323,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.455,
+      "at": 2.447,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.581,
+      "at": 2.573,
       "action": "Enter \u00b7 choose Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 4.023,
+      "at": 4.036,
       "action": "Enter \u00b7 start Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 4.147,
+      "at": 4.16,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.147,
+      "at": 7.16,
       "action": "Type follow-up",
       "window": "Pi"
     },
     {
-      "at": 7.273,
+      "at": 7.288,
       "action": "Enter \u00b7 send follow-up",
       "window": "Pi"
     },
     {
-      "at": 10.273,
+      "at": 7.917,
       "action": "Response ready",
       "window": "Pi"
     },
     {
-      "at": 12.6,
+      "at": 10.257,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Pi"
     },
     {
-      "at": 14.584,
+      "at": 12.243,
       "action": "\u2192 \u00b7 reopen Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 14.707,
+      "at": 12.366,
       "action": "Session reopened",
       "window": "Pi"
     },
     {
-      "at": 17.033,
+      "at": 14.692,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Pi"
     }

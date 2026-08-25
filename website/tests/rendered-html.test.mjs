@@ -100,6 +100,10 @@ test("server-renders real recording controls, provider tabs, and canonical metad
 });
 
 test("publishes genuine cast v2 recordings and action timelines for setup and every harness", async () => {
+  const cargo = await readFile(new URL("../Cargo.toml", root), "utf8");
+  const currentVersion = cargo.match(/^version = "([^"]+)"$/m)?.[1];
+  assert.ok(currentVersion, "Cargo.toml should declare the release version");
+
   for (const [name, , manifestName] of demos) {
     const [cast, actionsSource] = await Promise.all([
       readFile(new URL(`public/demos/${name}.cast`, root), "utf8"),
@@ -122,7 +126,14 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(output.length > 1_000, `${name}.cast should contain substantial real terminal output`);
     assert.ok(output.includes(`${escapeCharacter}[`), `${name}.cast should preserve terminal control sequences`);
     assert.ok(output.includes(`${escapeCharacter}[38;`), `${name}.cast should preserve native terminal colors`);
-    assert.match(output, /Open Agent View v\d+\.\d+\.\d+/, `${name}.cast should show the real application`);
+    const renderedVersions = [...output.matchAll(/Open Agent View v(\d+\.\d+\.\d+)/g)]
+      .map((match) => match[1]);
+    assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
+    assert.deepEqual(
+      [...new Set(renderedVersions)],
+      [currentVersion],
+      `${name}.cast should contain only the current Open Agent View release`,
+    );
 
     assert.ok(Number.isFinite(manifest.duration) && manifest.duration > 1);
     assert.ok(Math.abs(manifest.duration - finalTime) < 0.01, `${name} action duration should match its cast`);
@@ -202,6 +213,16 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       assert.doesNotMatch(`${cast}\n${actionsSource}`, pattern, `${name} must not publish secrets or private machine paths`);
     }
   }
+
+  const readmeCast = await readFile(new URL("public/oav-demo.cast", root), "utf8");
+  const readmeVersions = [...readmeCast.matchAll(/Open Agent View v(\d+\.\d+\.\d+)/g)]
+    .map((match) => match[1]);
+  assert.ok(readmeVersions.length > 0, "README source cast should show Open Agent View");
+  assert.deepEqual(
+    [...new Set(readmeVersions)],
+    [currentVersion],
+    "README media should contain only the current Open Agent View release",
+  );
 });
 
 test("uses the local asciinema player without a synthetic terminal generator or playback loop", async () => {

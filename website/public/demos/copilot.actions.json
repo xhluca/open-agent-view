@@ -1,78 +1,79 @@
 {
-  "duration": 23.483722,
+  "duration": 23.252069,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 0.009,
+      "at": 0.027,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 2.29,
+      "at": 2.301,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.414,
+      "at": 2.425,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.541,
+      "at": 2.552,
       "action": "Enter \u00b7 choose GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 3.983,
+      "at": 3.993,
       "action": "Enter \u00b7 start GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 4.107,
+      "at": 4.117,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.107,
+      "at": 7.117,
       "action": "Confirm \u00b7 trust disposable demo workspace",
       "window": "native harness"
     },
     {
-      "at": 10.107,
+      "at": 10.117,
       "action": "Esc \u00b7 keep terminal settings unchanged",
       "window": "GitHub Copilot"
     },
     {
-      "at": 11.898,
+      "at": 11.915,
       "action": "Type follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 12.025,
+      "at": 12.043,
       "action": "Enter \u00b7 send follow-up",
       "window": "GitHub Copilot"
     },
     {
-      "at": 13.92,
+      "at": 13.683,
       "action": "Response ready",
       "window": "GitHub Copilot"
     },
     {
-      "at": 16.246,
+      "at": 16.009,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "GitHub Copilot"
     },
     {
-      "at": 18.227,
+      "at": 17.992,
       "action": "\u2192 \u00b7 reopen GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 18.35,
+      "at": 18.115,
       "action": "Session reopened",
       "window": "GitHub Copilot"
     },
     {
-      "at": 20.674,
+      "at": 20.445,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "GitHub Copilot"
     }

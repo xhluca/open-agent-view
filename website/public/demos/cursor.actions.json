@@ -1,78 +1,79 @@
 {
-  "duration": 21.84543,
+  "duration": 22.843909,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 2.26,
+      "at": 2.259,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.384,
+      "at": 2.383,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.511,
+      "at": 2.512,
       "action": "Enter \u00b7 choose Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 3.256,
+      "at": 3.255,
       "action": "Select model \u00b7 auto",
       "window": "open-agent-view"
     },
     {
-      "at": 3.38,
+      "at": 3.379,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 4.875,
+      "at": 4.871,
       "action": "Enter \u00b7 start Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 4.999,
+      "at": 4.995,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.999,
+      "at": 7.995,
       "action": "Confirm \u00b7 trust disposable demo workspace",
       "window": "native harness"
     },
     {
-      "at": 10.999,
+      "at": 10.995,
       "action": "Type follow-up",
       "window": "Cursor"
     },
     {
-      "at": 11.126,
+      "at": 11.122,
       "action": "Enter \u00b7 send follow-up",
       "window": "Cursor"
     },
     {
-      "at": 12.261,
+      "at": 13.278,
       "action": "Response ready",
       "window": "Cursor"
     },
     {
-      "at": 14.588,
+      "at": 15.603,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Cursor"
     },
     {
-      "at": 16.571,
+      "at": 17.586,
       "action": "\u2192 \u00b7 reopen Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 16.694,
+      "at": 17.709,
       "action": "Session reopened",
       "window": "Cursor"
     },
     {
-      "at": 19.027,
+      "at": 20.035,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Cursor"
     }

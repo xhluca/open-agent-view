@@ -1,59 +1,59 @@
 {
-  "duration": 14.641,
+  "duration": 14.606,
   "proof": "setup",
   "actions": [
     {
-      "at": 2.216,
+      "at": 2.208,
       "action": "Type /setup qwen",
       "window": "open-agent-view"
     },
     {
-      "at": 2.34,
+      "at": 2.332,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.467,
+      "at": 2.459,
       "action": "Y \u00b7 install Qwen Code",
       "window": "Harness setup"
     },
     {
-      "at": 2.591,
+      "at": 2.583,
       "action": "Enter \u00b7 confirm install",
       "window": "Harness setup"
     },
     {
-      "at": 5.591,
+      "at": 5.583,
       "action": "Install check complete",
       "window": "Harness setup"
     },
     {
-      "at": 7.517,
+      "at": 7.511,
       "action": "Enter \u00b7 open Qwen Code login",
       "window": "Harness setup"
     },
     {
-      "at": 8.069,
+      "at": 8.055,
       "action": "Type /auth",
       "window": "Qwen Code"
     },
     {
-      "at": 8.204,
+      "at": 8.179,
       "action": "Enter",
       "window": "Qwen Code"
     },
     {
-      "at": 8.337,
+      "at": 8.302,
       "action": "Native login ready",
       "window": "Qwen Code login"
     },
     {
-      "at": 11.264,
+      "at": 11.229,
       "action": "Shift+\u2190 \u00b7 background setup",
       "window": "Qwen Code login"
     },
     {
-      "at": 11.641,
+      "at": 11.606,
       "action": "Returned to dashboard",
       "window": "open-agent-view"
     }

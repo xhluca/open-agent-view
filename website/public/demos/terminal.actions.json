@@ -1,23 +1,24 @@
 {
-  "duration": 16.000168817215922,
+  "duration": 16.00613955918789,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 0.031,
+      "at": 0.046,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 2.311,
+      "at": 2.323,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.435,
+      "at": 2.447,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.562,
+      "at": 2.574,
       "action": "Enter \u00b7 choose Terminal",
       "window": "open-agent-view"
     },
@@ -32,47 +33,47 @@
       "window": "open-agent-view"
     },
     {
-      "at": 5.225,
+      "at": 5.229,
       "action": "Enter \u00b7 run command",
       "window": "Terminal"
     },
     {
-      "at": 5.349,
+      "at": 5.353,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 6.188,
+      "at": 6.195,
       "action": "Enter \u00b7 run follow-up",
       "window": "Terminal"
     },
     {
-      "at": 6.312,
+      "at": 6.319,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 6.435,
+      "at": 6.442,
       "action": "Command finished",
       "window": "Terminal"
     },
     {
-      "at": 8.759,
+      "at": 8.768,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Terminal"
     },
     {
-      "at": 10.743,
+      "at": 10.749,
       "action": "\u2192 \u00b7 reopen Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 10.866,
+      "at": 10.874,
       "action": "Session reopened",
       "window": "Terminal"
     },
     {
-      "at": 13.191,
+      "at": 13.2,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "Terminal"
     }

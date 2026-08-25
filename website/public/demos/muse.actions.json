@@ -1,54 +1,54 @@
 {
-  "duration": 13.947,
+  "duration": 13.965,
   "proof": "setup",
   "actions": [
     {
-      "at": 0.002,
+      "at": 0.011,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 2.223,
+      "at": 2.232,
       "action": "Type /setup muse",
       "window": "open-agent-view"
     },
     {
-      "at": 2.347,
+      "at": 2.356,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.474,
+      "at": 2.483,
       "action": "Y \u00b7 install Muse Code",
       "window": "Harness setup"
     },
     {
-      "at": 2.597,
+      "at": 2.607,
       "action": "Enter \u00b7 confirm install",
       "window": "Harness setup"
     },
     {
-      "at": 5.597,
+      "at": 5.607,
       "action": "Install check complete",
       "window": "Harness setup"
     },
     {
-      "at": 7.523,
+      "at": 7.537,
       "action": "Enter \u00b7 open Muse Code login",
       "window": "Harness setup"
     },
     {
-      "at": 7.646,
+      "at": 7.661,
       "action": "Native login ready",
       "window": "Muse Code login"
     },
     {
-      "at": 10.571,
+      "at": 10.587,
       "action": "Shift+\u2190 \u00b7 background setup",
       "window": "Muse Code login"
     },
     {
-      "at": 10.947,
+      "at": 10.965,
       "action": "Returned to dashboard",
       "window": "open-agent-view"
     }

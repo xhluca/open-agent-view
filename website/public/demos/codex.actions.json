@@ -1,63 +1,64 @@
 {
-  "duration": 17.752065,
+  "duration": 17.812601,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 1.855,
+      "at": 1.651,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 1.979,
+      "at": 1.775,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.105,
+      "at": 1.902,
       "action": "Enter \u00b7 choose OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 3.547,
+      "at": 3.357,
       "action": "Enter \u00b7 start OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 3.671,
+      "at": 3.482,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 6.671,
+      "at": 6.482,
       "action": "Type follow-up",
       "window": "OpenAI Codex"
     },
     {
-      "at": 6.8,
+      "at": 6.609,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenAI Codex"
     },
     {
-      "at": 8.189,
+      "at": 8.25,
       "action": "Response ready",
       "window": "OpenAI Codex"
     },
     {
-      "at": 10.514,
+      "at": 10.576,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenAI Codex"
     },
     {
-      "at": 12.496,
+      "at": 12.557,
       "action": "\u2192 \u00b7 reopen OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 12.619,
+      "at": 12.68,
       "action": "Session reopened",
       "window": "OpenAI Codex"
     },
     {
-      "at": 14.945,
+      "at": 15.005,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenAI Codex"
     }

@@ -1,78 +1,79 @@
 {
-  "duration": 21.096751,
+  "duration": 19.20403,
+  "proof": "conversation",
   "actions": [
     {
-      "at": 0.01,
+      "at": 0.002,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 2.288,
+      "at": 2.277,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.412,
+      "at": 2.401,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.539,
+      "at": 2.528,
       "action": "Enter \u00b7 choose OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 3.644,
+      "at": 3.64,
       "action": "Select model \u00b7 github-copilot/gpt-5.6-luna",
       "window": "open-agent-view"
     },
     {
-      "at": 3.768,
+      "at": 3.764,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.26,
+      "at": 5.253,
       "action": "Enter \u00b7 start OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 5.384,
+      "at": 5.377,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 8.384,
+      "at": 8.377,
       "action": "Type follow-up",
       "window": "OpenCode"
     },
     {
-      "at": 8.536,
+      "at": 8.504,
       "action": "Enter \u00b7 send follow-up",
       "window": "OpenCode"
     },
     {
-      "at": 11.536,
+      "at": 9.64,
       "action": "Response ready",
       "window": "OpenCode"
     },
     {
-      "at": 13.862,
+      "at": 11.966,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenCode"
     },
     {
-      "at": 15.843,
+      "at": 13.947,
       "action": "\u2192 \u00b7 reopen OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 15.966,
+      "at": 14.07,
       "action": "Session reopened",
       "window": "OpenCode"
     },
     {
-      "at": 18.291,
+      "at": 16.395,
       "action": "Shift+\u2190 \u00b7 return to opav",
       "window": "OpenCode"
     }
