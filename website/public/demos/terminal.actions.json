@@ -1,0 +1,70 @@
+{
+  "duration": 11.744646,
+  "actions": [
+    {
+      "at": 2.156,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.351,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.479,
+      "action": "Enter \u00b7 choose Terminal",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.015,
+      "action": "Enter \u00b7 open Terminal",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.214,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.432,
+      "action": "Enter \u00b7 run command",
+      "window": "Terminal"
+    },
+    {
+      "at": 5.577,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 6.398,
+      "action": "Enter \u00b7 run follow-up",
+      "window": "Terminal"
+    },
+    {
+      "at": 6.544,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 6.544,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Terminal"
+    },
+    {
+      "at": 8.659,
+      "action": "\u2192 \u00b7 reopen Terminal",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 8.659,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Terminal"
+    },
+    {
+      "at": 10.395,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

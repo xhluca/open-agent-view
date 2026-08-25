@@ -1,26 +1,34 @@
 # Demo asset provenance
 
-`open-agent-view.gif` and `open-agent-view.png` were captured from the real
-v0.1.33 release-mode binary on 2026-08-25. The session data comes from the
-committed deterministic
-[`fixtures/all-providers-sessions.json`](../../fixtures/all-providers-sessions.json),
-which covers all seven coding agents plus OAV's Terminal target.
+`open-agent-view.gif` and `open-agent-view.png` are composed exclusively from
+genuine terminal recordings made with the v0.1.35 release binary on
+2026-08-25. The sequence shows the public installer and real OAV harness picker,
+a short conversation in the real Claude Code TUI, the return to OAV, and an OAV
+session rename. It does not generate HTML rows that imitate a terminal.
 
-The capture is not a mockup and contains no user credentials or real agent
-history. [`scripts/capture-site-demo.sh`](../../scripts/capture-site-demo.sh)
-records the actual binary through a real PTY in a fresh container pinned by
-immutable image ID. That container is network-disabled, unprivileged,
-read-only, capability-dropped, PID-limited, and given only a tmpfs home plus the
-fixture. Fixture mode fences every provider action.
+The source casts live in [`website/public/demos`](../../website/public/demos).
+[`scripts/capture-real-site-demo.py`](../../scripts/capture-real-site-demo.py)
+records the actual shell, OAV binary, and provider CLIs through private tmux and
+Asciinema sessions. For the authenticated provider clips it copies the minimum
+existing login state into a disposable mode-0700 home, removes it after capture,
+and refuses to publish account email addresses, host identities, private paths,
+or credential-like text. No credential value is printed or committed.
 
-Reproduce all website media with:
+Recompose the README and website media from the reviewed real casts with:
 
 ```console
 scripts/capture-site-demo.sh
 ```
 
-The interaction waits for asynchronous discovery, navigates to a Codex request,
-opens and closes contextual help, switches between status and directory views,
-returns to status view, and exits through OAV's own terminal-restoration path.
-The script emits an Asciinema cast, GIF, MP4, poster, and caption track, and verifies that
-the disposable container is gone afterward.
+Recapture an individual source story explicitly—for example:
+
+```console
+python3 scripts/capture-real-site-demo.py setup
+python3 scripts/capture-real-site-demo.py claude
+python3 scripts/capture-real-site-demo.py rename
+```
+
+The website publishes 13 real recordings: install/setup, all eight selectable
+targets, and rename/switch/model/login controls. Static tests parse every cast
+and action manifest, reject private material, and browser tests mount the real
+vendored Asciinema player at desktop and phone sizes.

@@ -1,0 +1,35 @@
+{
+  "duration": 4.948368,
+  "actions": [
+    {
+      "at": 2.006,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.203,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.348,
+      "action": "\u2193 \u00b7 next model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.472,
+      "action": "\u2193 \u00b7 next model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.599,
+      "action": "Enter \u00b7 select exact model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.931,
+      "action": "Esc \u00b7 close",
+      "window": "open-agent-view"
+    }
+  ]
+}

@@ -3,57 +3,36 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${OAV_DEMO_IMAGE:-sha256:8f170f660813ac358f347fa8a3580139972f3ea7a9fb087834f1da44669d9392}"
-output_dir="${OAV_DEMO_OUTPUT_DIR:-${repo_root}/website/public}"
-container="oav-site-demo-$$"
-cast="${output_dir}/oav-demo.cast"
-gif="${output_dir}/oav-demo.gif"
-video="${output_dir}/oav-demo.mp4"
-poster="${output_dir}/oav-demo.png"
-binary="${repo_root}/target/release/open-agent-view"
-fixture="${repo_root}/fixtures/all-providers-sessions.json"
-staging=""
+public_dir="$repo_root/website/public"
+cast="$public_dir/oav-demo.cast"
+gif="$public_dir/oav-demo.gif"
+video="$public_dir/oav-demo.mp4"
+poster="$public_dir/oav-demo.png"
 
-for command in docker asciinema agg expect ffmpeg; do
+for command in python3 agg ffmpeg; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'missing required demo tool: %s\n' "$command" >&2
     exit 1
   }
 done
 
-cargo build --release --locked
-mkdir -p "$output_dir"
-docker image inspect "$image" >/dev/null
+for clip in setup claude rename; do
+  test -s "$public_dir/demos/$clip.cast" || {
+    printf 'missing genuine recording: %s\n' "$public_dir/demos/$clip.cast" >&2
+    printf 'capture it with: python3 scripts/capture-real-site-demo.py %s\n' "$clip" >&2
+    exit 1
+  }
+done
 
-cleanup() {
-  docker rm -f "$container" >/dev/null 2>&1 || true
-  if [[ -n "$staging" && -d "$staging" ]]; then
-    rm -rf -- "$staging"
-  fi
-}
-trap cleanup EXIT HUP INT TERM
-
-# The repository is intentionally private by default (umask 077). Stage exact
-# copies so the unprivileged container can read only these two demo inputs.
-staging="$(mktemp -d "${TMPDIR:-/tmp}/oav-site-demo.XXXXXX")"
-install -m 0755 "$binary" "${staging}/open-agent-view"
-install -m 0644 "$fixture" "${staging}/sessions.json"
-binary="${staging}/open-agent-view"
-fixture="${staging}/sessions.json"
-
-asciinema rec \
-  --overwrite \
-  --quiet \
-  --cols 150 \
-  --rows 42 \
-  --idle-time-limit 2 \
-  --command "expect '${repo_root}/scripts/capture-site-demo.exp' '${binary}' '${fixture}' '${image}' '${container}'" \
-  "$cast"
+python3 "$repo_root/scripts/compose-readme-demo.py"
 
 agg \
+  --quiet \
+  --no-loop \
   --theme github-dark \
   --font-size 13 \
-  --idle-time-limit 2 \
+  --speed 1.5 \
+  --idle-time-limit 1 \
   --last-frame-duration 2 \
   "$cast" "$gif"
 
@@ -65,17 +44,18 @@ ffmpeg -hide_banner -loglevel error -y \
   "$video"
 
 ffmpeg -hide_banner -loglevel error -y \
-  -sseof -1.5 \
+  -sseof -0.1 \
   -i "$video" \
   -frames:v 1 \
   "$poster"
 
-cp "$poster" "${output_dir}/open-agent-view.png"
-chmod 0644 "$cast" "$gif" "$video" "$poster" "${output_dir}/open-agent-view.png"
+cp "$gif" "$repo_root/docs/assets/open-agent-view.gif"
+cp "$poster" "$repo_root/docs/assets/open-agent-view.png"
+cp "$poster" "$public_dir/open-agent-view.png"
+chmod 0644 \
+  "$cast" "$gif" "$video" "$poster" \
+  "$repo_root/docs/assets/open-agent-view.gif" \
+  "$repo_root/docs/assets/open-agent-view.png" \
+  "$public_dir/open-agent-view.png"
 
-docker ps -a --format '{{.Names}}' | grep -Fx "$container" && {
-  printf 'demo container was not removed: %s\n' "$container" >&2
-  exit 1
-} || true
-
-printf 'captured %s\n' "$video"
+printf 'composed genuine terminal demo: %s\n' "$video"

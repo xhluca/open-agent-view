@@ -1,0 +1,60 @@
+{
+  "duration": 18.03686,
+  "actions": [
+    {
+      "at": 1.703,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 1.898,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.026,
+      "action": "Enter \u00b7 choose OpenAI Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.46,
+      "action": "Enter \u00b7 start OpenAI Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.602,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.449,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 11.661,
+      "action": "Enter",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 13.513,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 15.527,
+      "action": "\u2192 \u00b7 reopen OpenAI Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 15.527,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 17.59,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

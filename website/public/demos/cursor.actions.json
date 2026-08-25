@@ -1,0 +1,80 @@
+{
+  "duration": 23.313667000000002,
+  "actions": [
+    {
+      "at": 0.0,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.162,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.356,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.484,
+      "action": "Enter \u00b7 choose Cursor",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.217,
+      "action": "Select model \u00b7 auto",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.354,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.829,
+      "action": "Enter \u00b7 start Cursor",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.97,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 9.691,
+      "action": "A \u00b7 trust disposable demo workspace",
+      "window": "native harness"
+    },
+    {
+      "at": 16.703,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "Cursor"
+    },
+    {
+      "at": 16.859,
+      "action": "Enter",
+      "window": "Cursor"
+    },
+    {
+      "at": 18.644,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Cursor"
+    },
+    {
+      "at": 20.729,
+      "action": "\u2192 \u00b7 reopen Cursor",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.729,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Cursor"
+    },
+    {
+      "at": 22.91,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

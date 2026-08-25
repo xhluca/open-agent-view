@@ -1,0 +1,60 @@
+{
+  "duration": 30.713375000000003,
+  "actions": [
+    {
+      "at": 1.852,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.047,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.175,
+      "action": "Enter \u00b7 choose Claude",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.745,
+      "action": "Enter \u00b7 start Claude",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.889,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 23.608,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "Claude Code"
+    },
+    {
+      "at": 23.79,
+      "action": "Enter",
+      "window": "Claude Code"
+    },
+    {
+      "at": 26.085,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Claude Code"
+    },
+    {
+      "at": 27.58,
+      "action": "\u2192 \u00b7 reopen Claude",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 27.58,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Claude Code"
+    },
+    {
+      "at": 29.917,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

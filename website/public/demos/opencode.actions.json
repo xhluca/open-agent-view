@@ -1,0 +1,70 @@
+{
+  "duration": 26.684623000000002,
+  "actions": [
+    {
+      "at": 2.159,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.354,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.481,
+      "action": "Enter \u00b7 choose OpenCode",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.448,
+      "action": "Select model \u00b7 openai/gpt-5.6-luna",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.586,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.059,
+      "action": "Enter \u00b7 start OpenCode",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.201,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.376,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "OpenCode"
+    },
+    {
+      "at": 20.519,
+      "action": "Enter",
+      "window": "OpenCode"
+    },
+    {
+      "at": 21.909,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenCode"
+    },
+    {
+      "at": 23.906,
+      "action": "\u2192 \u00b7 reopen OpenCode",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 23.906,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "OpenCode"
+    },
+    {
+      "at": 25.335,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

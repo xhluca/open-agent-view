@@ -1,0 +1,70 @@
+{
+  "duration": 21.894545,
+  "actions": [
+    {
+      "at": 2.153,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.348,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.475,
+      "action": "Enter \u00b7 choose GitHub Copilot",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.899,
+      "action": "Enter \u00b7 start GitHub Copilot",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.041,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.531,
+      "action": "Confirm \u00b7 trust disposable demo workspace",
+      "window": "native harness"
+    },
+    {
+      "at": 13.261,
+      "action": "Esc \u00b7 keep terminal settings unchanged",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 14.936,
+      "action": "Type follow-up",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 15.18,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 17.158,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 19.214,
+      "action": "\u2192 \u00b7 reopen GitHub Copilot",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.144,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 21.087,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}

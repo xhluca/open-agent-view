@@ -1,0 +1,15 @@
+{
+  "duration": 3.1474349999999998,
+  "actions": [
+    {
+      "at": 1.601,
+      "action": "Type /setup",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 1.797,
+      "action": "Enter",
+      "window": "open-agent-view"
+    }
+  ]
+}

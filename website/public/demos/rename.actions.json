@@ -1,0 +1,30 @@
+{
+  "duration": 5.289210000000001,
+  "actions": [
+    {
+      "at": 1.139,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 1.268,
+      "action": "Ctrl+U \u00b7 clear current name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.495,
+      "action": "Type release workspace",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.737,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.939,
+      "action": "Esc \u00b7 close",
+      "window": "open-agent-view"
+    }
+  ]
+}

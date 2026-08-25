@@ -1,0 +1,65 @@
+{
+  "duration": 15.996357000000001,
+  "actions": [
+    {
+      "at": 0.0,
+      "action": "Enter",
+      "window": "Terminal"
+    },
+    {
+      "at": 2.153,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.349,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.476,
+      "action": "Enter \u00b7 choose Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.911,
+      "action": "Enter \u00b7 start Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.053,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 9.387,
+      "action": "Type follow-up",
+      "window": "Pi"
+    },
+    {
+      "at": 9.613,
+      "action": "Enter \u00b7 send follow-up",
+      "window": "Pi"
+    },
+    {
+      "at": 10.928,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Pi"
+    },
+    {
+      "at": 12.913,
+      "action": "\u2192 \u00b7 reopen Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 12.913,
+      "action": "Shift+\u2190 \u00b7 return to opav",
+      "window": "Pi"
+    },
+    {
+      "at": 15.098,
+      "action": "Esc \u00b7 quit",
+      "window": "open-agent-view"
+    }
+  ]
+}
