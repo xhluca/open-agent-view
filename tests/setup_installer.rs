@@ -142,7 +142,11 @@ printf '%s\n' 'npm install progress 100%'
             .args(["setup", case.harness])
             .output()
             .expect("run unconfirmed setup");
-        assert!(!output.status.success(), "{} changed state without consent", case.harness);
+        assert!(
+            !output.status.success(),
+            "{} changed state without consent",
+            case.harness
+        );
         assert!(String::from_utf8_lossy(&output.stderr).contains("rerun with --yes"));
         assert!(!curl_log.exists() && !npm_log.exists());
 
@@ -161,13 +165,20 @@ printf '%s\n' 'npm install progress 100%'
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("installation completed"), "{stdout}");
-        assert!(stdout.contains("Complete authentication interactively"), "{stdout}");
+        assert!(
+            stdout.contains("Complete authentication interactively"),
+            "{stdout}"
+        );
         assert!(executable.is_file());
 
         match case.installer {
             InstallerKind::Script(url) => {
                 let log = fs::read_to_string(&curl_log).expect("script installer curl log");
-                assert!(log.contains(url), "{} used the wrong URL: {log}", case.harness);
+                assert!(
+                    log.contains(url),
+                    "{} used the wrong URL: {log}",
+                    case.harness
+                );
                 assert!(!npm_log.exists());
             }
             InstallerKind::Npm(package) => {
@@ -220,7 +231,9 @@ printf '%s\n' 'native login opened'
             String::from_utf8_lossy(&output.stderr)
         );
         assert_eq!(
-            fs::read_to_string(&login_log).expect("native login argv").trim(),
+            fs::read_to_string(&login_log)
+                .expect("native login argv")
+                .trim(),
             case.login_args,
             "{} used the wrong native login arguments",
             case.harness
