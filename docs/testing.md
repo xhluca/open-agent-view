@@ -53,7 +53,10 @@ checks; the guide also contains release gates that are not yet complete.
   launch/discovery/inspect/interrupt/reply and stale-identity refusal. Copilot
   tests own an ACP subprocess and exercise list pagination plus the retained
   new/prompt/update/permission/completion/reply/cancel lifecycle; a separate
-  load fixture proves external list results remain unowned. Antigravity tests
+  load fixture proves external list results remain unowned. Copilot restart
+  coverage also proves private exact-ID persistence, split user/assistant
+  history replay, real latest-message summaries, provider timestamps, and
+  visibility when the second process cannot reach ACP. Antigravity tests
   read only a temporary documented cache and build shell-free native commands.
 - `tests/managed_cursor_copilot.rs` drives the public `ProviderController`
   surface rather than private supervisor helpers. It covers managed launch,
@@ -118,7 +121,7 @@ checks; the guide also contains release gates that are not yet complete.
 - Release validation locally enforces Rust 1.75 rustfmt, warning-free Clippy,
   all targets, real PTYs, release mode, and the installer. The checked-in
   workflow encodes the wider native-platform contract but was unavailable for
-  v0.1.31, whose Linux x86-64 artifact was built and verified manually.
+  v0.1.32, whose Linux x86-64 artifact was built and verified manually.
 - `scripts/real-tui-tests.sh` runs the serialized real-terminal suite against
   real Unix PTYs with isolated `HOME`/`XDG_STATE_HOME`. At
   120×34, 105×30, and 100×28 they
@@ -511,10 +514,11 @@ examples.
   macOS has no managed Cursor discovery/control until an equally race-safe
   process identity primitive is implemented. Cursor's native TTY picker remains
   available outside Open Agent View.
-- Copilot persisted list results remain observe/native-open in the dashboard.
-  The adapter's explicit ACP load contract is tested, but dashboard-managed
-  authority currently applies only to sessions launched on its retained
-  process-local connection and does not survive a restart. Antigravity exposes
+- Copilot provider-wide list results remain observe/native-open in the
+  dashboard. OAV-created IDs and bounded latest-message metadata survive a
+  restart, while live prompt/permission authority still applies only to the
+  retained process-local connection and is never reconstructed from disk.
+  Antigravity exposes
   only its documented last-conversation-per-workspace cache; complete history
   and inline controls are not claimed.
 - Durable Pi supervision currently requires Linux `/proc` identity. macOS

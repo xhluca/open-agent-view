@@ -17,7 +17,7 @@ open-agent-view-0.1.31-x86_64-unknown-linux-gnu.tar.gz.sha256
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested on the native Linux x86-64 host. No ARM64 or macOS artifact is
-claimed for v0.1.31. Version 0.1.2 was the initial published preview. The
+claimed for v0.1.32. Version 0.1.2 was the initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental

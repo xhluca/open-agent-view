@@ -154,10 +154,12 @@ deletes its completed row. These terminal frontends are process-local and are
 stopped when the dashboard itself exits.
 
 New Copilot dashboard tasks reserve an exact UUID and open Copilot's native
-interactive UI in the foreground. Copilot also retains one process-local ACP
-control connection for rows explicitly created or loaded through its managed
-control path. A later dashboard may still list a persisted Copilot session,
-but that row is observe/native-open rather than silently inheriting control.
+interactive UI in the foreground. Their exact IDs and latest bounded message
+summary are retained privately, so a later dashboard restores the row and
+refreshes its text and age from ACP history. Copilot also retains one
+process-local ACP control connection for rows explicitly created or loaded
+through its managed control path. A later dashboard does not silently inherit
+that connection's control authority.
 
 `doctor` checks executable availability and explicitly named Docker targets. It
 does not launch, stop, or modify a provider session or container. A missing
@@ -454,11 +456,12 @@ when `XDG_STATE_HOME` is unset, the current implementation stores:
 | `pi/` | Detached Linux RPC supervisor record, socket, locks/logs, and OAV-owned Pi session history. |
 | `opencode/` | Private authenticated-loopback server record, lock, log, and exact OAV-owned OpenCode session IDs. |
 | `cursor/` | Linux ownership registry, process identities, locks, and bounded logs for OAV-owned Cursor runs. |
+| `copilot/` | Exact OAV-created Copilot IDs, workspaces, titles, latest bounded summaries, provider timestamps, and registry lock. No credentials or full transcripts. |
 | `hidden-sessions.json` | Reversible local suppression records; provider history and live processes are not changed. |
 | `managed-docker/owners.json` | Exact external proof for managed-container lifecycle. |
 
 These files contain authority metadata and should not be shared between users.
-They do not contain collected Codex structured answers. Copilot ACP authority
-is held in memory and has no OAV state path. Removal or repair has safety
-consequences; follow [troubleshooting and recovery](troubleshooting.md) instead
-of deleting state speculatively.
+They do not contain collected Codex structured answers. Copilot's registry does
+not preserve ACP connection authority or permission requests. Removal or repair
+has safety consequences; follow [troubleshooting and recovery](troubleshooting.md)
+instead of deleting state speculatively.

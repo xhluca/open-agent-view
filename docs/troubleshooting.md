@@ -447,16 +447,20 @@ create timeout. A successful catalog is still followed by a bounded
 ## Copilot session is visible but read-only
 
 Persisted Copilot rows come from ACP `session/list` on a discovery connection.
-They are observe/native-open only and do not inherit control from a previous
-dashboard. Launching with `--launch-provider copilot` creates a session on the
-current process's retained ACP control connection; only that connection-owned
-row can be inspected, prompted, cancelled, or given an exact one-shot
-permission choice.
+Provider-wide rows requested with `--include-external` are observe/native-open
+only and do not inherit control from a previous dashboard. Exact sessions
+created by OAV are retained in `copilot/sessions.json`; on refresh a
+short-lived ACP connection replays their persisted message history and exact
+`updatedAt` value without sending a prompt. Only a row loaded on the current
+process's retained ACP control connection can be prompted, cancelled, or given
+an exact one-shot permission choice.
 
-This authority intentionally ends when the dashboard exits and has no OAV
-state file to repair. If a managed row loses its ACP connection, preserve the
-provider's persisted session and reopen it natively rather than attempting to
-reconstruct authority from its session ID.
+Live authority intentionally ends when the dashboard exits. If a managed row
+loses its ACP connection, preserve the provider's persisted session and reopen
+it natively rather than treating its registry record as live authority. If row
+text cannot refresh, run `copilot --resume=ID` to verify provider history and
+inspect the non-secret registry at the state path below; do not delete Copilot
+credentials.
 
 If model discovery reports `Authentication required`, press Enter/`l` in the
 picker or run `copilot login`. Copilot also documents `gh auth status` and its own GitHub CLI

@@ -194,11 +194,16 @@ is idle; interrupt revalidates the exact Linux process identity first.
 
 GitHub Copilot uses two ACP authority tiers. With `--include-external`, a
 discovery connection calls `session/list`; its persisted results remain
-observe/native-open only. A
-separate retained control connection owns only the sessions it creates during
-the current dashboard process, carries their live events, and enables prompt,
-inspect, cancel, and exact one-shot permission choices. That managed authority
-is process-local and is not reconstructed from persisted session metadata. A
+observe/native-open only. For exact OAV-created IDs, a private registry retains
+the provider ID, workspace, display metadata, latest bounded summary, and ACP
+timestamp. A short-lived discovery connection replays persisted user and agent
+message chunks without starting a turn, then exits; this restores truthful row
+text after a dashboard restart without claiming live authority. A separate
+retained control connection owns only the sessions it creates or explicitly
+loads during the current dashboard process, carries their live events, and
+enables prompt, inspect, cancel, and exact one-shot permission choices. That
+live authority remains process-local and is not reconstructed from the
+registry. A
 separate short-lived headless SDK connection calls `models.list` and exits
 without creating a session; ACP applies the selected model before the first
 prompt.

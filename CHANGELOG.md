@@ -8,6 +8,29 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.32] - 2026-08-25
+
+### Fixed
+
+- OAV-owned GitHub Copilot rows now survive dashboard restarts in a private
+  ownership registry instead of disappearing with the process-local ACP state.
+- Copilot summaries now use the latest replayed user or assistant message.
+  Prompt completion, native exit, and background reconciliation no longer
+  replace real text with `Copilot stopped` or `Copilot native session exited`.
+- Copilot row ages now use ACP's persisted `updatedAt` value after history
+  replay instead of resetting to the dashboard's observation time.
+- Existing Copilot sessions with an OAV-local name are migrated back into the
+  default view without silently granting them inline control authority.
+
+### Tests
+
+- Reproduced the issue against the reporting account's exact Copilot 1.0.80
+  sessions without sending a model prompt. ACP replay returned both sides of
+  the conversation and exact timestamps; two fresh OAV processes now render
+  the same real summary even when the provider is unavailable to the second.
+- Added private-registry restart, split message-chunk, latest-user-text,
+  lifecycle-preservation, permissions, and public-controller regressions.
+
 ## [0.1.31] - 2026-08-25
 
 ### Changed

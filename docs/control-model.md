@@ -321,13 +321,15 @@ does not scrape the provider's picker or infer ownership from a chat ID.
 
 Copilot's official ACP exposes persisted sessions through `session/list`, but
 listing a session does not grant control. Those records are observe/native-open
-only. Managed authority belongs to the exact ACP control connection retained by
-the current dashboard process and is not written to an OAV ownership file.
+only. OAV persists the exact IDs it creates so their rows survive a restart,
+but managed authority still belongs to the exact ACP control connection
+retained by the current dashboard process. The registry is visibility and
+provenance, not a serialized permission request or live-connection lease.
 
 | Operation | Current connection-owned Copilot session | Persisted ACP list record |
 | --- | --- | --- |
-| Discover | In-memory managed state and ACP events | Official `session/list` on the discovery connection |
-| Inspect | Bounded transcript received on the owning connection | Disabled |
+| Discover | Private exact-ID registry plus ACP metadata/message replay | Official `session/list` on the discovery connection |
+| Inspect | Bounded transcript received on the owning connection; a restarted row retains its latest summary and refreshes from bounded ACP replay | Disabled |
 | Open | Idle sessions use advertised `session/close`, or drop the idle owning ACP process when close is absent; native resume then reloads on return | `copilot --resume=ID -C PATH` |
 | Launch/reply | Dashboard launch reserves an exact UUID and starts `copilot --session-id ID --interactive PROMPT` in front; connection-owned reply uses `session/prompt` while idle | Disabled |
 | Interrupt | ACP cancel for the exact active session prompt | Disabled |
@@ -340,8 +342,10 @@ connection-owned Copilot task is idle, releasing those idle rows too. An active
 prompt or permission on any other row refuses the handoff. A backgrounded native
 frontend leaves inline authority released until that exact frontend exits and
 the session is loaded again. When the dashboard exits, the retained ACP process and its control authority
-end. A later `session/list` result remains visible and can be opened natively,
-but it is not silently adopted for inline control. Unknown ACP client requests
+end. The exact OAV-created row remains visible with its provider timestamp and
+latest real message and can be opened natively, but it is not silently adopted
+for inline control. Older locally named Copilot rows are migrated for
+visibility only. Unknown ACP client requests
 are rejected explicitly, and pending permission requests are never answered
 automatically.
 
