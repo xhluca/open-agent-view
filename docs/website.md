@@ -10,6 +10,7 @@ the generated static artifact.
 ```console
 cd website
 npm ci
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm test
 npx playwright install chromium
@@ -72,7 +73,8 @@ gates pass:
 scripts/publish-site.sh
 ```
 
-The script exports the site, validates that the destination is exactly the
+The script installs with lockfile fidelity, requires a clean production
+dependency audit, exports the site, validates that the destination is exactly the
 `open-agent-view/open-agent-view.github.io` repository, replaces only that
 checkout's generated files, commits the artifact when it changed, and pushes
 `main`. It never deploys from a source-branch push or GitHub Action.

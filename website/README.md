@@ -9,12 +9,14 @@ local—there are no runtime CDN or private-repository asset dependencies.
 
 ```console
 npm ci
+npm audit --omit=dev --audit-level=high
 npm run dev
 ```
 
 ## Verification
 
 ```console
+npm audit --omit=dev --audit-level=high
 npm run lint
 npm test
 npx playwright install chromium

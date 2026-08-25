@@ -31,7 +31,8 @@ case "$remote" in
     ;;
 esac
 
-npm --prefix "$website_dir" ci
+npm --prefix "$website_dir" ci --no-audit
+npm --prefix "$website_dir" audit --omit=dev --audit-level=high
 npm --prefix "$website_dir" run lint
 npm --prefix "$website_dir" test
 npm --prefix "$website_dir" run test:visual

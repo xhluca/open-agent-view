@@ -37,6 +37,8 @@ and future released versions are intended to follow Semantic Versioning.
 - Release and Pages publication are now explicitly manual; CI retains the
   quality, portability, provider-setup, and website validation gates without
   holding release authority.
+- The website CI and manual publisher now enforce a high-severity production
+  dependency audit separately from non-deployed build/test tooling.
 
 ## [0.1.32] - 2026-08-25
 

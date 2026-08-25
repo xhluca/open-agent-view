@@ -59,7 +59,8 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: website/package-lock.json
-      - run: npm ci
+      - run: npm ci --no-audit
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm test
       - run: npx playwright install --with-deps chromium
