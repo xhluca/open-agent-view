@@ -69,11 +69,11 @@ owned tmux session, disposable home/state/workspace roots, bounded waits, and
 exact owned-process cleanup. The script rejects host identities, email
 addresses, temporary paths, and credential-like output.
 
-Release follow-up: immediately after the release containing Mistral Vibe, Muse
-Code, Qwen Code, and Kimi Code is public, recapture `setup.cast` through the
-public installer and make the rendered-HTML gate require all twelve picker
-choices. This is intentionally the only recording deferred past the release;
-the public v0.1.36 installer cannot display providers it does not contain.
+For the install story, the disposable environment exposes genuine installed
+provider executables and installs any missing new-provider CLIs from their
+official scripts before recording starts. It copies no provider login state;
+this lets the released `/harness` picker show every supported choice without
+inventing rows or authenticating an account.
 
 [`scripts/capture-site-demo.sh`](../scripts/capture-site-demo.sh) joins the
 reviewed real setup, Claude, and rename casts without generating terminal rows,

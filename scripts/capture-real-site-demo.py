@@ -377,6 +377,8 @@ def base_environment(root: Path) -> dict[str, str]:
             "QWEN_NO_MODIFY_PATH": "1",
             "KIMI_INSTALL_DIR": str(root / "home" / ".kimi-code"),
             "KIMI_NO_MODIFY_PATH": "1",
+            "UV_TOOL_BIN_DIR": str(bin_dir),
+            "UV_TOOL_DIR": str(root / "data" / "uv" / "tools"),
             # The application repository is currently private.  The public
             # installer uses gh for its authenticated release fallback; this
             # points at the existing config without copying it into the demo.
@@ -424,6 +426,91 @@ def expose_installed_providers(root: Path, required: tuple[str, ...]) -> None:
         (destination / name).symlink_to(source.resolve())
 
 
+def prepare_complete_picker(root: Path, environment: dict[str, str]) -> None:
+    """Populate the disposable PATH with genuine CLIs for the setup picker.
+
+    Section 1 proves the released OAV install and its complete picker. It does
+    not exercise provider authentication, so the recorder exposes installed
+    host executables without copying their state and installs only the missing
+    official provider CLIs into the disposable home before recording begins.
+    """
+
+    expose_installed_providers(
+        root,
+        (
+            "claude",
+            "codex",
+            "pi",
+            "opencode",
+            "cursor-agent",
+            "copilot",
+            "agy",
+            "muse",
+        ),
+    )
+    installers = (
+        (
+            "Mistral Vibe",
+            "https://mistral.ai/vibe/install.sh",
+            ("vibe", "vibe-app-server"),
+        ),
+        (
+            "Qwen Code",
+            "https://qwen-code-assets.oss-cn-hangzhou.aliyuncs.com/installation/install-qwen-standalone.sh",
+            ("qwen",),
+        ),
+        (
+            "Kimi Code",
+            "https://code.kimi.com/kimi-code/install.sh",
+            ("kimi",),
+        ),
+    )
+    for label, url, executables in installers:
+        script = root / "tmp" / f"picker-{executables[0]}-install.sh"
+        download = subprocess.run(
+            [
+                "curl",
+                "--fail",
+                "--silent",
+                "--show-error",
+                "--location",
+                url,
+                "--output",
+                str(script),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if download.returncode != 0:
+            raise RuntimeError(
+                f"failed to download official {label} installer: "
+                f"{download.stderr[-1000:]}"
+            )
+        installed = subprocess.run(
+            ["bash", str(script)],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=environment,
+        )
+        if installed.returncode != 0:
+            detail = (installed.stderr or installed.stdout)[-1500:]
+            raise RuntimeError(f"official {label} installer failed: {detail}")
+        search_path = environment["PATH"].split(os.pathsep)
+        for executable in executables:
+            if not any(
+                (Path(directory) / executable).is_file()
+                and os.access(Path(directory) / executable, os.X_OK)
+                for directory in search_path
+            ):
+                raise RuntimeError(
+                    f"official {label} installer did not expose {executable} in the disposable PATH"
+                )
+
+
 def validate_public_cast(path: Path, required: list[str]) -> None:
     visible = visible_cast(path)
     compact = re.sub(r"\s+", "", visible)
@@ -461,6 +548,7 @@ def capture_setup(repo: Path, output: Path) -> None:
     terminal: RealTerminal | None = None
     try:
         environment = base_environment(root)
+        prepare_complete_picker(root, environment)
         terminal = RealTerminal("setup", root, environment)
         terminal.type_line(INSTALL_COMMAND, "Enter · install", "Terminal", 0.012)
         terminal.wait_for(r"installed shorthand:\s*opav", 120)

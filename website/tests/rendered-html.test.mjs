@@ -147,12 +147,9 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
-      // Follow-up after the release containing the four new adapters is public:
-      // recapture setup.cast through the public installer and add Mistral Vibe,
-      // Muse Code, Qwen Code, and Kimi Code to this required list.
       for (const choice of [
         "Claude", "Codex", "Pi", "OpenCode", "Cursor", "GitHub Copilot",
-        "Antigravity", "Terminal",
+        "Antigravity", "Mistral Vibe", "Muse Code", "Qwen Code", "Kimi Code", "Terminal",
       ]) {
         // Full-screen terminal renders may position words with cursor movement rather
         // than literal spaces, so assert the complete label while tolerating that.
