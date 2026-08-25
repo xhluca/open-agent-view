@@ -68,23 +68,18 @@ The archive contains only the canonical `open-agent-view` executable. The
 installer creates a relative `opav` symlink after version verification and
 leaves an unrelated existing command untouched.
 
-## Automated release contract
+## Publication policy
 
-Pushing a stable `vMAJOR.MINOR.PATCH` tag triggers
-`.github/workflows/release.yml`. The workflow:
+GitHub Actions runs read-only quality, test, portability, provider-setup, and
+website gates, but it does not publish releases or the website. Release
+artifacts are built, smoke-tested, checksum-verified, and uploaded manually by
+the maintainer from the exact reviewed commit. Pages is exported, tested, and
+pushed manually with [`scripts/publish-site.sh`](../scripts/publish-site.sh).
 
-1. requires the tag to exactly match the version in `Cargo.toml`;
-2. runs the isolated installer tests and the locked Rust test suite;
-3. builds Linux x86_64/ARM64 and macOS x86_64/ARM64 on native runners;
-4. creates a deterministic archive and SHA-256 checksum;
-5. smoke-tests the extracted binary;
-6. installs the packaged artifact through the same `install.sh` users run;
-7. retains the assets as workflow artifacts; and
-8. publishes a GitHub release for the pre-existing tag.
-
-The Ubuntu 22.04 builders establish a glibc 2.35 floor. Windows and older
-GNU/Linux systems are not release targets yet. The installer fails clearly on
-those systems instead of downloading an incompatible binary.
+The current manual Linux builder establishes the documented glibc 2.35 floor.
+Windows and older GNU/Linux systems are not release targets yet. The installer
+fails clearly on unsupported systems instead of downloading an incompatible
+binary.
 
 ## Prepare a release
 
@@ -128,24 +123,31 @@ Then:
 4. review the exact release commit; and
 5. obtain maintainer approval to publish.
 
-From the approved commit:
+From the approved commit, create and push the immutable annotated tag, then
+publish only the locally verified files:
 
 ```console
 git tag -a vMAJOR.MINOR.PATCH -m "open-agent-view vMAJOR.MINOR.PATCH"
 git push origin vMAJOR.MINOR.PATCH
+gh release create vMAJOR.MINOR.PATCH \
+  dist/open-agent-view-MAJOR.MINOR.PATCH-x86_64-unknown-linux-gnu.tar.gz \
+  dist/open-agent-view-MAJOR.MINOR.PATCH-x86_64-unknown-linux-gnu.tar.gz.sha256 \
+  --repo xhluca/open-agent-view \
+  --verify-tag --generate-notes \
+  --title "Open Agent View vMAJOR.MINOR.PATCH"
 ```
 
-The workflow never creates a tag from a branch build. Do not retry a failed
-release by moving an existing tag; fix the cause and choose a new version.
+Publication never creates or moves a tag from an unreviewed branch build. Do
+not retry a failed release by moving an existing tag; fix the cause and choose
+a new version.
 Annotated tags are the current repository convention. Moving to signed tags
 requires a valid, non-expired maintainer signing key and a documented public-key
 verification path; do not claim a signature when those prerequisites are absent.
 
 ## Verify a published release
 
-Confirm the GitHub release contains the original verified archive and checksum.
-For an automated release also confirm the workflow is green. Then exercise both
-authenticated and public installation paths as applicable:
+Confirm the GitHub release contains the original verified archive and checksum,
+then exercise both authenticated and public installation paths as applicable:
 
 ```console
 OAV_VERSION=MAJOR.MINOR.PATCH ./install.sh

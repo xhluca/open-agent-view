@@ -34,6 +34,9 @@ and future released versions are intended to follow Semantic Versioning.
   clear line separation, accent-colored keys, and brighter action descriptions.
 - The website-served installer now recognizes v0.1.33's Linux-only asset scope
   and remains byte-identical to the repository installer.
+- Release and Pages publication are now explicitly manual; CI retains the
+  quality, portability, provider-setup, and website validation gates without
+  holding release authority.
 
 ## [0.1.32] - 2026-08-25
 
