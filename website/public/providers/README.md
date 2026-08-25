@@ -6,8 +6,8 @@ third-party image requests at runtime.
 - `claude.svg`, `opencode.svg`, `cursor.svg`, `copilot.svg`,
   `antigravity.svg`, and `terminal.svg` are compact marks from
   [Simple Icons](https://simpleicons.org/), distributed under CC0 1.0.
-- `pi.svg` is Pi's official transparent logo from
-  [pi.dev/logo.svg](https://pi.dev/logo.svg), whose site source is MIT licensed.
+- `pi.svg` is Pi's official square badge from its
+  [press kit](https://pi.dev/press-kit) (`pi.dev/favicon.svg`, MIT).
 - `codex.png` is the existing local OpenAI mark used by this project.
 
 Names and logos may be trademarks of their respective owners. Their inclusion

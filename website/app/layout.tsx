@@ -41,10 +41,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* The player is a vendored static runtime asset, not a framework stylesheet. */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
+        <link rel="stylesheet" href="/asciinema-player.css" />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <script src="/asciinema-player.min.js" defer />
         <script src="/site.js" defer />
       </body>
     </html>

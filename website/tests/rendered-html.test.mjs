@@ -18,6 +18,10 @@ const demos = [
   ["copilot", "GitHub Copilot", "GitHub Copilot"],
   ["antigravity", "Antigravity", "Antigravity"],
   ["terminal", "Terminal", "Terminal"],
+  ["rename", null, null],
+  ["switch", null, null],
+  ["model", null, null],
+  ["login", null, null],
 ];
 
 const privateMaterial = [
@@ -78,7 +82,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
 
-  for (const [id, label] of demos.slice(1)) {
+  for (const [id, label] of demos.slice(1, 9)) {
     assert.match(html, new RegExp(`data-story-tab="${id}"`));
     assert.match(html, new RegExp(`data-story="story-${id}"`));
     assert.match(html, new RegExp(`data-select-harness="${id}"`));
@@ -131,10 +135,15 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
-    } else {
+    } else if (manifestName) {
       assert.ok(
         manifest.actions.some((action) => `${action.action} ${action.window}`.includes(manifestName)),
         `${name} actions should identify ${manifestName}`,
+      );
+    } else {
+      assert.ok(
+        manifest.actions.some((action) => action.window === "open-agent-view"),
+        `${name} controls should visibly use the real Open Agent View TUI`,
       );
     }
 

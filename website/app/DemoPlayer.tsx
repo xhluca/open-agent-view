@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect } from "react";
+
 type DemoPlayerProps = {
   story: string;
   label: string;
@@ -6,6 +10,12 @@ type DemoPlayerProps = {
 };
 
 export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlayerProps) {
+  useEffect(() => {
+    const browserWindow = window as Window & { __oavReactHydrated?: boolean };
+    browserWindow.__oavReactHydrated = true;
+    window.dispatchEvent(new Event("oav:react-hydrated"));
+  }, []);
+
   return (
     <figure
       className="story-player"
@@ -32,7 +42,9 @@ export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlaye
           <strong data-demo-window suppressHydrationWarning>open-agent-view</strong>
           <em data-demo-last-action suppressHydrationWarning>Waiting</em>
         </div>
-        <pre data-demo-screen aria-label={label} suppressHydrationWarning>Loading interactive terminal…</pre>
+        <div data-demo-screen role="region" aria-label={label} suppressHydrationWarning>
+          <p>Loading the real terminal recording…</p>
+        </div>
       </div>
       <label className="story-scrubber">
         <span className="sr-only">Demo position</span>

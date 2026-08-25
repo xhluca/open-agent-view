@@ -56,7 +56,6 @@ function StoryTabs({
           <i aria-hidden="true" />
         </button>
       ))}
-      <span className="tab-hold" aria-hidden="true"><i data-tab-hold-progress /></span>
     </div>
   );
 }
@@ -104,26 +103,21 @@ export default function Home() {
             </a>
           ))}
         </div>
-        <DemoPlayer
-          story="story-overview"
-          label="ONE WORKSPACE · EIGHT HARNESSES"
-          caption="Launch · converse · return · rename · stop on the complete dashboard"
-        />
       </section>
 
       <section className="guided section shell" id="start">
         <div className="section-heading">
           <div><p className="section-label">01 · START</p><h2>Install once.<br />Choose any harness.</h2></div>
           <p>
-            The installer downloads a verified prebuilt binary. Launch with
-            <code> opav</code>, type <code>/harness</code>, and the picker shows
-            every available backend in the same workspace.
+            This is a real terminal recording: the installer is typed, the
+            downloaded <code>opav</code> binary opens, and the actual harness
+            picker is navigated with the arrow keys.
           </p>
         </div>
         <DemoPlayer
           story="story-setup"
           label="INSTALL · OPEN · /HARNESS"
-          caption="A finite walkthrough—play, pause, seek, or restart it"
+          caption="Real shell + real Open Agent View TUI · recorded with tmux and asciinema"
         />
       </section>
 
@@ -131,9 +125,9 @@ export default function Home() {
         <div className="section-heading">
           <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
           <p>
-            Each tab starts from the same picker, launches a task, shows a
-            short back-and-forth, then returns to the shared dashboard. Choose
-            a logo above and this demo opens to that exact harness.
+            Each tab records Open Agent View launching the real native CLI,
+            sending a short conversation, returning to the dashboard, and
+            reopening the same session. Choose a logo above to jump here.
           </p>
         </div>
         <div className="tabbed-story" data-tabbed-story>
@@ -141,7 +135,7 @@ export default function Home() {
           <DemoPlayer
             story="story-claude"
             label="HARNESS WALKTHROUGH"
-            caption="A deterministic walkthrough of each provider-native handoff"
+            caption="Actual provider TUI output · no HTML terminal simulation"
           />
         </div>
       </section>
@@ -150,9 +144,10 @@ export default function Home() {
         <div className="section-heading">
           <div><p className="section-label">03 · CONTROL</p><h2>Small commands.<br />Fast context switches.</h2></div>
           <p>
-            Rename locally, cross the native-session boundary, choose a model,
-            or complete setup. When a story ends, its separate eight-second tab
-            timer advances to the next control.
+            Rename a session, switch between the dashboard and a native CLI,
+            choose a model, or complete setup. After a recording ends, the thin
+            cyan line under its tab counts down for eight seconds, then opens
+            the next example.
           </p>
         </div>
         <div className="tabbed-story" data-tabbed-story>
@@ -165,34 +160,46 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="why section shell" id="why">
+        <div className="section-heading">
+          <div><p className="section-label">WHY OPEN AGENT VIEW</p><h2>The agent view,<br />for every harness.</h2></div>
+          <p>
+            Claude Code users already rely on its agent view to keep background
+            work organized. Codex, Pi, OpenCode, Cursor, Copilot, and
+            Antigravity should not each become a separate pile of terminal tabs.
+            Open Agent View gives all of them one open-source panel.
+          </p>
+        </div>
+      </section>
+
       <section className="architecture section shell" id="architecture">
         <div className="section-heading">
-          <div><p className="section-label">TECHNICAL MODEL</p><h2>One index.<br />Native boundaries intact.</h2></div>
+          <div><p className="section-label">HOW IT WORKS</p><h2>One list.<br />The real CLIs underneath.</h2></div>
           <p>
-            Open Agent View does not replace provider state. It normalizes
-            verified observations into one index, grants controls only for
-            sessions it can prove it owns, and hands foreground control back to
-            the original CLI.
+            Your conversations stay in Claude, Codex, Pi, and the other tools
+            that created them. Open Agent View reads their session lists and
+            puts them on one screen. When you open a session, you use that
+            tool&apos;s real interface. When you go back, the task keeps running.
           </p>
         </div>
         <div className="architecture-map" aria-label="Open Agent View architecture">
           <div className="provider-stack">
             <span>Provider CLIs</span>
             <div>{providers.slice(0, 7).map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
-            <small>Native history · auth · models · process state</small>
+            <small>Each CLI keeps its own login, models, and conversation history.</small>
           </div>
-          <div className="flow-arrow"><b>observe</b><i>→</i><em>documented APIs / verified files</em></div>
+          <div className="flow-arrow"><b>read</b><i>→</i><em>session names, status, and recent activity</em></div>
           <div className="oav-core">
             <span>Open Agent View</span>
-            <strong>Session index</strong>
-            <div><b>identity</b><b>state</b><b>capabilities</b><b>ownership</b></div>
-            <small>Pre-indexed, paged, asynchronously refreshed</small>
+            <strong>One dashboard</strong>
+            <div><b>which harness</b><b>what needs you</b><b>what is running</b><b>what finished</b></div>
+            <small>Fast navigation, filtering, naming, and model selection in one place.</small>
           </div>
-          <div className="flow-arrow return"><b>act</b><i>→</i><em>only when authority is exact</em></div>
+          <div className="flow-arrow return"><b>open</b><i>→</i><em>enter the selected session in its original CLI</em></div>
           <div className="native-stack">
-            <span>Native foreground</span>
-            <strong>Exact session</strong>
-            <small>Enter opens · ← twice returns · Shift+← returns immediately</small>
+            <span>Original harness</span>
+            <strong>The real session</strong>
+            <small>Talk to the agent normally, then return to the shared list without stopping it.</small>
           </div>
         </div>
         <a className="text-link" href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md">Read the complete ownership and capability model ↗</a>
