@@ -347,12 +347,15 @@ fn render_session_row(
         .pull_requests
         .map(|count| format!("{count} PR{}", if count == 1 { "" } else { "s" }))
         .unwrap_or_default();
+    // The right edge is a real column, not text appended to the summary. Keep
+    // it padded even when there are no pull requests so a truncated summary
+    // can never visually run into the age (for example, `summary…1d`).
     let right = if prs.is_empty() {
-        age
+        format!("{age:>5}")
     } else {
         format!("{prs:>7} {age:>5}")
     };
-    let fixed = 5 + name_width + provider_width + right.len();
+    let fixed = 5 + name_width + provider_width + display_width(&right);
     let summary_width = (width as usize).saturating_sub(fixed).max(1);
     let summary = truncate(&format!("{state_prefix}{}", session.summary), summary_width);
     let name = pad_to_width(truncate(&session.name, name_width), name_width);
@@ -1547,6 +1550,29 @@ mod tests {
             text.contains("… Antigravity"),
             "provider column touched name: {text:?}"
         );
+    }
+
+    #[test]
+    fn long_summary_never_touches_or_overwrites_the_age_column() {
+        let mut item = session("database-management", SessionState::Completed);
+        item.provider = Provider::GitHubCopilot;
+        item.summary = "Database management is the practice of designing, storing, securing, and maintaining data so applications can use it safely".into();
+        item.updated_at = Some(SystemTime::now() - Duration::from_secs(86_400));
+
+        for width in [80, 120, 160] {
+            let row = render_session_row(&item, ViewMode::Status, width, false, true);
+            let text: String = row.spans.iter().map(|span| span.content.as_ref()).collect();
+
+            assert_eq!(display_width(&text), width as usize);
+            assert!(
+                text.ends_with("   1d"),
+                "age column was not reserved: {text:?}"
+            );
+            assert!(
+                !text.ends_with("…1d"),
+                "summary touched age column: {text:?}"
+            );
+        }
     }
 
     #[test]

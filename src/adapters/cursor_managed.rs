@@ -143,7 +143,7 @@ impl CursorSupervisor {
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
-        let output = self.run_command(&request).with_context(|| {
+        let output = self.runner.run_until_stdout_line(&request).with_context(|| {
             format!(
                 "Cursor create-chat did not complete; run `cursor-agent login` and `cursor-agent models` before retrying (configured executable: {})",
                 self.executable
@@ -186,7 +186,7 @@ impl CursorSupervisor {
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
-        let output = self.run_command(&request).with_context(|| {
+        let output = self.runner.run_until_stdout_line(&request).with_context(|| {
             format!(
                 "Cursor create-chat did not complete; sign in before retrying (configured executable: {})",
                 self.executable

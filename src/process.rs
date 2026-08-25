@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -48,6 +49,16 @@ impl CommandOutput {
 pub trait CommandRunner: Send + Sync {
     fn run(&self, request: &CommandRequest) -> Result<CommandOutput>;
 
+    /// Return after the command emits its first complete stdout line.
+    ///
+    /// Provider CLIs occasionally print the one-shot result and then retain a
+    /// monitor child. The default keeps mock runners and ordinary commands on
+    /// the normal completion contract; the host runner can safely terminate
+    /// the exact child it spawned once that complete result exists.
+    fn run_until_stdout_line(&self, request: &CommandRequest) -> Result<CommandOutput> {
+        self.run(request)
+    }
+
     fn cancel(&self) {}
 }
 
@@ -62,6 +73,11 @@ impl CommandRunner for ProcessRunner {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
         if let Some(current_dir) = &request.current_dir {
             command.current_dir(current_dir);
         }
@@ -84,7 +100,7 @@ impl CommandRunner for ProcessRunner {
                 break status;
             }
             if Instant::now() >= deadline {
-                let _ = child.kill();
+                terminate_process_group(&mut child);
                 let _ = child.wait();
                 let _ = stdout_reader.join();
                 let _ = stderr_reader.join();
@@ -106,6 +122,90 @@ impl CommandRunner for ProcessRunner {
 
         Ok(CommandOutput {
             status: status.code().unwrap_or(-1),
+            stdout,
+            stderr,
+        })
+    }
+
+    fn run_until_stdout_line(&self, request: &CommandRequest) -> Result<CommandOutput> {
+        let mut command = Command::new(&request.program);
+        command
+            .args(&request.args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        if let Some(current_dir) = &request.current_dir {
+            command.current_dir(current_dir);
+        }
+
+        let mut child = command.spawn().with_context(|| {
+            format!(
+                "failed to start command {} {}",
+                request.program,
+                request.args.join(" ")
+            )
+        })?;
+        let stdout = child.stdout.take().context("failed to capture stdout")?;
+        let stderr = child.stderr.take().context("failed to capture stderr")?;
+        let (first_line_tx, first_line_rx) = mpsc::sync_channel(1);
+        let stdout_reader = thread::spawn(move || -> Result<Vec<u8>> {
+            let mut reader = BufReader::new(stdout);
+            let mut bytes = Vec::new();
+            let first = reader
+                .read_until(b'\n', &mut bytes)
+                .context("failed to read command result line")?;
+            let _ = first_line_tx
+                .send((first > 0 && bytes.last() == Some(&b'\n')).then(|| bytes.clone()));
+            reader.read_to_end(&mut bytes)?;
+            Ok(bytes)
+        });
+        let stderr_reader = thread::spawn(move || read_all(stderr));
+        let deadline = Instant::now() + request.timeout;
+
+        let (status, accepted_line) = loop {
+            if let Ok(line) = first_line_rx.try_recv() {
+                if line.is_some() {
+                    terminate_process_group(&mut child);
+                    let status = child
+                        .wait()
+                        .context("failed to reap command after result")?;
+                    break (status, true);
+                }
+            }
+            if let Some(status) = child.try_wait().context("failed to poll command")? {
+                break (status, false);
+            }
+            if Instant::now() >= deadline {
+                terminate_process_group(&mut child);
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(anyhow!(
+                    "command timed out after {} ms: {}",
+                    request.timeout.as_millis(),
+                    request.program
+                ));
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| anyhow!("stdout reader thread panicked"))??;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| anyhow!("stderr reader thread panicked"))??;
+        Ok(CommandOutput {
+            status: if accepted_line {
+                0
+            } else {
+                status.code().unwrap_or(-1)
+            },
             stdout,
             stderr,
         })
@@ -262,6 +362,32 @@ mod tests {
 
         let error = ProcessRunner.run(&request).unwrap_err();
         assert!(error.to_string().contains("timed out"));
+    }
+
+    #[test]
+    fn returns_after_a_complete_result_line_even_when_the_helper_stays_alive() {
+        let mut request = CommandRequest::new(
+            "sh",
+            vec!["-c".into(), "printf 'result-id\\n'; sleep 10".into()],
+        );
+        request.timeout = Duration::from_secs(2);
+        let started = Instant::now();
+
+        let output = ProcessRunner.run_until_stdout_line(&request).unwrap();
+
+        assert_eq!(output.status, 0);
+        assert_eq!(output.stdout, b"result-id\n");
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn partial_stdout_is_not_mistaken_for_a_complete_result_line() {
+        let request = CommandRequest::new("sh", vec!["-c".into(), "printf partial; exit 7".into()]);
+
+        let output = ProcessRunner.run_until_stdout_line(&request).unwrap();
+
+        assert_eq!(output.status, 7);
+        assert_eq!(output.stdout, b"partial");
     }
 
     #[test]
