@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use open_agent_view::native_session::{self, NativeSessionExit};
 
 const CHILD_ENV: &str = "OAV_NATIVE_BACKGROUND_CHILD";
+const SCREEN_GATED_CHILD_ENV: &str = "OAV_SCREEN_GATED_INPUT_CHILD";
 
 #[test]
 fn boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen() {
@@ -145,6 +146,93 @@ fn boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen
         "native screen was not replayed on reattach: {}",
         String::from_utf8_lossy(&output)
     );
+}
+
+#[test]
+fn queued_task_reaches_only_the_authenticated_native_editor_in_a_real_pty() {
+    if std::env::var_os(SCREEN_GATED_CHILD_ENV).is_some() {
+        let mut provider = Command::new("bash");
+        provider.args([
+            "-c",
+            r##"stty raw -echo
+printf '\033[2J\033[HRun /login or /provider to get started.'
+if IFS= read -r -t 0.35 -n 1 early; then
+  printf '\r\nEARLY_INPUT:%s' "$early"
+  exit 71
+fi
+printf '\r\nSend /help for help information.'
+IFS= read -r -N 29 prompt
+prompt=${prompt%$'\r'}
+printf '\r\nRECEIVED_TASK:%s' "$prompt"
+"##,
+        ]);
+        let exit = native_session::run_with_initial_input_after_screen(
+            provider,
+            "kimi:host:screen-gate-test",
+            b"fix the authenticated parser\r",
+            "Send /help for help information.",
+        )
+        .unwrap();
+        assert!(matches!(exit, NativeSessionExit::Exited(status) if status.success()));
+        return;
+    }
+
+    let (mut master, slave) = outer_pty();
+    set_nonblocking(&master);
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .args([
+            "--exact",
+            "queued_task_reaches_only_the_authenticated_native_editor_in_a_real_pty",
+            "--nocapture",
+        ])
+        .env(SCREEN_GATED_CHILD_ENV, "1")
+        .stdin(Stdio::from(slave.try_clone().unwrap()))
+        .stdout(Stdio::from(slave.try_clone().unwrap()))
+        .stderr(Stdio::from(slave));
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if libc::ioctl(libc::STDIN_FILENO, libc::TIOCSCTTY as _, 0) < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let mut child = command.spawn().unwrap();
+    let mut output = Vec::new();
+    read_until(
+        &mut master,
+        &mut output,
+        b"Run /login or /provider to get started.",
+        Duration::from_secs(4),
+    );
+    read_until(
+        &mut master,
+        &mut output,
+        b"RECEIVED_TASK:fix the authenticated parser",
+        Duration::from_secs(4),
+    );
+    assert!(
+        !output
+            .windows(b"EARLY_INPUT".len())
+            .any(|part| part == b"EARLY_INPUT"),
+        "queued task leaked into the login screen: {}",
+        String::from_utf8_lossy(&output)
+    );
+
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success(), "{}", String::from_utf8_lossy(&output));
+            break;
+        }
+        assert!(Instant::now() < deadline, "screen-gated child did not exit");
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn run_child_scenario() {

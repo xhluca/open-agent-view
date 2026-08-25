@@ -27,6 +27,7 @@ const ARROW_SETTLE_DELAY: Duration = Duration::from_millis(75);
 const ARROW_RETURN_WINDOW: Duration = Duration::from_millis(1600);
 const RETURN_HINT_REFRESH: Duration = Duration::from_millis(100);
 const EMPTY_PROMPT_MAX_COLUMN: u16 = 4;
+const MAX_INITIAL_INPUT_BYTES: usize = 256 * 1024;
 #[cfg(unix)]
 const FALLBACK_TERMINAL_ROWS: u16 = 24;
 #[cfg(unix)]
@@ -74,7 +75,7 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
     validate_session_key(session_key)?;
     #[cfg(unix)]
     if terminal_is_interactive() {
-        return run_pty(command, session_key);
+        return run_pty(command, session_key, None);
     }
     let status = command
         .stdin(Stdio::inherit())
@@ -83,6 +84,48 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
         .status()
         .context("failed to open provider session")?;
     Ok(NativeSessionExit::Exited(status))
+}
+
+/// Run a fresh provider-native client and submit input only after its parsed
+/// screen contains an exact readiness marker. This is for native CLIs that do
+/// not accept an initial interactive prompt argument. Login, workspace-trust,
+/// and setup screens cannot receive the queued task because they do not render
+/// the authenticated editor marker.
+pub fn run_with_initial_input_after_screen(
+    command: Command,
+    session_key: &str,
+    initial_input: &[u8],
+    ready_marker: &str,
+) -> Result<NativeSessionExit> {
+    validate_session_key(session_key)?;
+    if initial_input.is_empty() || initial_input.len() > MAX_INITIAL_INPUT_BYTES {
+        bail!("provider-native initial input must contain 1 to {MAX_INITIAL_INPUT_BYTES} bytes");
+    }
+    if ready_marker.is_empty()
+        || ready_marker.len() > 512
+        || ready_marker.chars().any(char::is_control)
+    {
+        bail!("provider-native readiness marker is invalid");
+    }
+    #[cfg(unix)]
+    {
+        if !terminal_is_interactive() {
+            bail!("screen-gated native input requires an interactive terminal");
+        }
+        return run_pty(
+            command,
+            session_key,
+            Some(ScreenTriggeredInput {
+                bytes: initial_input.to_vec(),
+                ready_marker: ready_marker.to_owned(),
+            }),
+        );
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+        bail!("screen-gated native input is unavailable on this platform")
+    }
 }
 
 /// Resume an exact frontend previously backgrounded with a return gesture. Unlike
@@ -102,6 +145,7 @@ pub fn resume(session_key: &str) -> Result<NativeSessionExit> {
             detached.screen,
             session_key,
             false,
+            None,
         )
     }
     #[cfg(not(unix))]
@@ -237,7 +281,11 @@ fn terminal_is_interactive() -> bool {
 }
 
 #[cfg(unix)]
-fn run_pty(mut command: Command, session_key: &str) -> Result<NativeSessionExit> {
+fn run_pty(
+    mut command: Command,
+    session_key: &str,
+    initial_input: Option<ScreenTriggeredInput>,
+) -> Result<NativeSessionExit> {
     let detached = take_detached(session_key)?;
     let (child, master, screen, fresh) = match detached {
         Some(detached) => (detached.child, detached.master, detached.screen, false),
@@ -258,7 +306,20 @@ fn run_pty(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
             )
         }
     };
-    bridge_session(child, master, screen, session_key, fresh)
+    bridge_session(
+        child,
+        master,
+        screen,
+        session_key,
+        fresh,
+        fresh.then_some(initial_input).flatten(),
+    )
+}
+
+#[cfg(unix)]
+struct ScreenTriggeredInput {
+    bytes: Vec<u8>,
+    ready_marker: String,
 }
 
 #[cfg(unix)]
@@ -363,6 +424,7 @@ fn bridge_session(
     mut screen: vt100::Parser,
     session_key: &str,
     fresh: bool,
+    mut initial_input: Option<ScreenTriggeredInput>,
 ) -> Result<NativeSessionExit> {
     let _raw = RawModeGuard::enter()?;
     let mut stdout = io::stdout().lock();
@@ -401,6 +463,7 @@ fn bridge_session(
         }
         if descriptors[0].revents & libc::POLLIN != 0 {
             copy_available(&mut master, &mut stdout, &mut screen)?;
+            forward_ready_initial_input(&mut initial_input, &screen, &mut master)?;
         }
         if descriptors[1].revents & libc::POLLIN != 0 {
             let mut input = [0_u8; 256];
@@ -490,6 +553,24 @@ fn bridge_session(
             return Ok(NativeSessionExit::Exited(status));
         }
     }
+}
+
+#[cfg(unix)]
+fn forward_ready_initial_input(
+    pending: &mut Option<ScreenTriggeredInput>,
+    screen: &vt100::Parser,
+    output: &mut impl Write,
+) -> Result<bool> {
+    let Some(input) = pending.as_ref() else {
+        return Ok(false);
+    };
+    if !screen.screen().contents().contains(&input.ready_marker) {
+        return Ok(false);
+    }
+    output.write_all(&input.bytes)?;
+    output.flush()?;
+    *pending = None;
+    Ok(true)
 }
 
 #[cfg(unix)]
@@ -994,6 +1075,49 @@ mod tests {
     #[test]
     fn return_hint_is_bounded_to_the_terminal_width() {
         assert_eq!(truncate_to_columns("Press ← again", 7), "Press ←");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initial_input_waits_for_the_exact_authenticated_screen_marker_and_sends_once() {
+        let mut screen = vt100::Parser::new(12, 80, 0);
+        let mut pending = Some(ScreenTriggeredInput {
+            bytes: b"fix the parser\r".to_vec(),
+            ready_marker: "Send /help for help information.".into(),
+        });
+        let mut forwarded = Vec::new();
+
+        screen.process(b"Run /login or /provider to get started.");
+        assert!(!forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        assert!(forwarded.is_empty());
+
+        screen.process(b"\r\nSend /help for help information.");
+        assert!(forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        assert_eq!(forwarded, b"fix the parser\r");
+        assert!(pending.is_none());
+
+        assert!(!forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        assert_eq!(forwarded, b"fix the parser\r");
+    }
+
+    #[test]
+    fn screen_gated_input_rejects_empty_or_oversized_payloads_before_spawning() {
+        let command = || Command::new("provider-that-must-not-run");
+        assert!(
+            run_with_initial_input_after_screen(command(), "test:empty", b"", "ready")
+                .unwrap_err()
+                .to_string()
+                .contains("initial input")
+        );
+        assert!(run_with_initial_input_after_screen(
+            command(),
+            "test:oversized",
+            &vec![b'x'; MAX_INITIAL_INPUT_BYTES + 1],
+            "ready",
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("initial input"));
     }
 
     #[test]
