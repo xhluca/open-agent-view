@@ -6,9 +6,10 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.37 is the current private-preview release candidate. Hosted jobs
-were unavailable, so the maintainer explicitly authorized a manual Linux
-x86-64 release. The intended release page contains only:
+Version 0.1.37 is the current private-preview release. Hosted jobs were
+unavailable, so the maintainer explicitly authorized a manual Linux x86-64
+release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.37)
+contains only:
 
 ```text
 open-agent-view-0.1.37-x86_64-unknown-linux-gnu.tar.gz
@@ -16,8 +17,11 @@ open-agent-view-0.1.37-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
-and smoke-tested on the native Linux x86-64 host. No ARM64 or macOS artifact is
-claimed for v0.1.37. Version 0.1.2 was the initial published preview. The
+and smoke-tested both before publication and through the published private
+release. Its SHA-256 digest is
+`3e37ff4fd00dcf68d47e56a1f691ff7aeeeb49961b2e3bf3377c48472b112c8e`.
+No ARM64 or macOS artifact is claimed for v0.1.37. Version 0.1.2 was the
+initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
@@ -133,9 +137,13 @@ gh release create vMAJOR.MINOR.PATCH \
   dist/open-agent-view-MAJOR.MINOR.PATCH-x86_64-unknown-linux-gnu.tar.gz \
   dist/open-agent-view-MAJOR.MINOR.PATCH-x86_64-unknown-linux-gnu.tar.gz.sha256 \
   --repo xhluca/open-agent-view \
-  --verify-tag --generate-notes \
+  --generate-notes \
   --title "Open Agent View vMAJOR.MINOR.PATCH"
 ```
+
+The installed `gh` version may not support `--verify-tag`. Before creating the
+release, verify the annotated tag and its peeled commit explicitly with
+`git ls-remote --tags origin refs/tags/vVERSION refs/tags/vVERSION^{}`.
 
 Publication never creates or moves a tag from an unreviewed branch build. Do
 not retry a failed release by moving an existing tag; fix the cause and choose
