@@ -124,6 +124,10 @@ function shell(lines) {
   return lines.join("\n");
 }
 
+function storyFrame(at, screen, window = "open-agent-view", action = "Waiting") {
+  return { at, screen, window, action };
+}
+
 function dashboard(ids, active = "", composer = "describe a task · /help for commands", notice = "") {
   const rows = ids.map((id) => {
     const provider = providers[id];
@@ -180,28 +184,34 @@ function picker(selectedId = "claude") {
 
 function overviewStory() {
   const frames = [
-    { at: 0, screen: shell([`${prompt("$")} opav`, dim("Opening Open Agent View…")]) },
-    { at: 1.8, screen: dashboard([]) },
-    { at: 4, screen: dashboard([], "", `${strong("Audit the onboarding flow for keyboard traps")}  ${dim("harness Claude Code")}`) },
-    { at: 6, screen: nativeConversation("claude", 1) },
-    { at: 8.5, screen: nativeConversation("claude", 3) },
-    { at: 11, screen: dashboard(["claude"], "claude", "describe a task · /help for commands", "Returned from Claude Code") },
+    storyFrame(0, shell([`${prompt("$")} opav`, dim("Opening Open Agent View…")]), "Terminal", "Enter · launch opav"),
+    storyFrame(1.8, dashboard([]), "open-agent-view", "Dashboard opened"),
+    storyFrame(4, dashboard([], "", `${strong("Audit the onboarding flow for keyboard traps")}  ${dim("harness Claude Code")}`), "open-agent-view", "Typed a new task"),
+    storyFrame(6, nativeConversation("claude", 1), "Claude Code", "Enter · launch session"),
+    storyFrame(8.5, nativeConversation("claude", 3), "Claude Code", "Enter · send follow-up"),
+    storyFrame(11, dashboard(["claude"], "claude", "describe a task · /help for commands", "Returned from Claude Code"), "open-agent-view", "Shift+← · return"),
   ];
   providerOrder.slice(1).forEach((id, index) => {
     const visible = providerOrder.slice(0, index + 2);
-    frames.push({
-      at: 13 + index * 2.1,
-      screen: dashboard(visible, id, providers[id].task, `Launched ${providers[id].label} in /work/acme-dashboard`),
-    });
+    frames.push(storyFrame(
+      13 + index * 2.1,
+      dashboard(visible, id, providers[id].task, `Launched ${providers[id].label} in /work/acme-dashboard`),
+      "open-agent-view",
+      `Enter · launch ${providers[id].label}`,
+    ));
   });
-  frames.push({
-    at: 28.3,
-    screen: dashboard(providerOrder, "codex", `${cyan("name ❯")} migration-safety`, "rename session · enter save · esc cancel"),
-  });
-  frames.push({
-    at: 31,
-    screen: dashboard(providerOrder, "terminal", "describe a task · /help for commands", "Eight harnesses · one workspace · demo complete"),
-  });
+  frames.push(storyFrame(
+    28.3,
+    dashboard(providerOrder, "codex", `${cyan("name ❯")} migration-safety`, "rename session · enter save · esc cancel"),
+    "open-agent-view",
+    "Ctrl+R · rename session",
+  ));
+  frames.push(storyFrame(
+    31,
+    dashboard(providerOrder, "terminal", "describe a task · /help for commands", "Eight harnesses · one workspace · demo complete"),
+    "open-agent-view",
+    "Enter · save name",
+  ));
   return { duration: 34, frames };
 }
 
@@ -211,25 +221,25 @@ function harnessStory(id) {
     return {
       duration: 20,
       frames: [
-        { at: 0, screen: picker(id) },
-        { at: 2.5, screen: dashboard([], "", `${provider.task}  ${dim("harness Terminal")}`) },
-        { at: 5, screen: shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`]) },
-        { at: 8, screen: shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`, green("✓ 7 tests passed"), "", `${prompt("$")} git status --short`]) },
-        { at: 12, screen: shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`, green("✓ 7 tests passed"), "", `${prompt("$")} git status --short`, dim("(clean)"), "", dim("← again to background this shell")]) },
-        { at: 16, screen: dashboard([id], id, "describe a task · /help for commands", "Terminal backgrounded; Enter resumes it") },
+        storyFrame(0, picker(id), "open-agent-view", "/harness · choose Terminal"),
+        storyFrame(2.5, dashboard([], "", `${provider.task}  ${dim("harness Terminal")}`), "open-agent-view", "Enter · select Terminal"),
+        storyFrame(5, shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`]), "Terminal", "Enter · open shell"),
+        storyFrame(8, shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`, green("✓ 7 tests passed"), "", `${prompt("$")} git status --short`]), "Terminal", "Enter · run tests"),
+        storyFrame(12, shell([`${cyan("Terminal")} · ${dim("/work/acme-dashboard")}`, "", `${prompt("$")} npm test`, green("✓ 7 tests passed"), "", `${prompt("$")} git status --short`, dim("(clean)"), "", dim("← again to background this shell")]), "Terminal", "Enter · check status"),
+        storyFrame(16, dashboard([id], id, "describe a task · /help for commands", "Terminal backgrounded; Enter resumes it"), "open-agent-view", "Shift+← · return"),
       ],
     };
   }
   return {
     duration: 22,
     frames: [
-      { at: 0, screen: picker(id) },
-      { at: 2.5, screen: dashboard([], "", `${strong(provider.task)}  ${dim(`harness ${provider.label}`)}`) },
-      { at: 5, screen: nativeConversation(id, 0) },
-      { at: 8, screen: nativeConversation(id, 1) },
-      { at: 11, screen: nativeConversation(id, 2) },
-      { at: 14.5, screen: nativeConversation(id, 3) },
-      { at: 18.5, screen: dashboard([id], id, "describe a task · /help for commands", `Returned from ${provider.label}; the session stays available`) },
+      storyFrame(0, picker(id), "open-agent-view", `/harness · choose ${provider.label}`),
+      storyFrame(2.5, dashboard([], "", `${strong(provider.task)}  ${dim(`harness ${provider.label}`)}`), "open-agent-view", `Enter · select ${provider.label}`),
+      storyFrame(5, nativeConversation(id, 0), provider.label, "Enter · launch session"),
+      storyFrame(8, nativeConversation(id, 1), provider.label, "Enter · send task"),
+      storyFrame(11, nativeConversation(id, 2), provider.label, "Enter · send follow-up"),
+      storyFrame(14.5, nativeConversation(id, 3), provider.label, "Enter · send follow-up"),
+      storyFrame(18.5, dashboard([id], id, "describe a task · /help for commands", `Returned from ${provider.label}; the session stays available`), "open-agent-view", "Shift+← · return"),
     ],
   };
 }
@@ -239,56 +249,56 @@ const STORIES = {
   "story-setup": {
     duration: 20,
     frames: [
-      { at: 0, screen: `${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash` },
-      { at: 3, screen: shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, dim("open-agent-view: downloading v0.1.33 for x86_64-unknown-linux-gnu")]) },
-      { at: 6, screen: shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, green("open-agent-view: checksum verified"), green("open-agent-view: installed open-agent-view 0.1.33"), green("open-agent-view: installed shorthand: opav")]) },
-      { at: 9, screen: shell([`${prompt("$")} opav`, dim("Opening Open Agent View in /work/acme-dashboard…")]) },
-      { at: 11, screen: dashboard([]) },
-      { at: 14, screen: dashboard([], "", `${cyan("/harness")}`) },
-      { at: 16.5, screen: picker("claude") },
+      storyFrame(0, `${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, "Terminal", "Typed install command"),
+      storyFrame(3, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, dim("open-agent-view: downloading v0.1.33 for x86_64-unknown-linux-gnu")]), "Terminal", "Enter · install"),
+      storyFrame(6, shell([`${prompt("$")} curl -fsSL https://open-agent-view.github.io/install.sh | bash`, green("open-agent-view: checksum verified"), green("open-agent-view: installed open-agent-view 0.1.33"), green("open-agent-view: installed shorthand: opav")]), "Terminal", "Installer completed"),
+      storyFrame(9, shell([`${prompt("$")} opav`, dim("Opening Open Agent View in /work/acme-dashboard…")]), "Terminal", "Enter · launch opav"),
+      storyFrame(11, dashboard([]), "open-agent-view", "Dashboard opened"),
+      storyFrame(14, dashboard([], "", `${cyan("/harness")}`), "open-agent-view", "Typed /harness"),
+      storyFrame(16.5, picker("claude"), "open-agent-view", "Enter · open picker"),
     ],
   },
   "story-rename": {
     duration: 16,
     frames: [
-      { at: 0, screen: dashboard(["claude", "codex", "pi", "opencode"], "codex") },
-      { at: 3, screen: dashboard(["claude", "codex", "pi", "opencode"], "codex", `${cyan("name ❯")} database-migration`, "rename session · type a new name · enter save") },
-      { at: 6, screen: dashboard(["claude", "codex", "pi", "opencode"], "codex", `${cyan("name ❯")} migration-safety`, "rename session · enter save · empty resets to provider name") },
-      { at: 9, screen: dashboard(["claude", "codex", "pi", "opencode"], "codex", "describe a task · /help for commands", "Renamed locally to migration-safety; provider history is unchanged") },
-      { at: 12.5, screen: dashboard(providerOrder, "codex", "describe a task · /help for commands", "Local display names remain stable across refreshes") },
+      storyFrame(0, dashboard(["claude", "codex", "pi", "opencode"], "codex"), "open-agent-view", "↓ · select Codex"),
+      storyFrame(3, dashboard(["claude", "codex", "pi", "opencode"], "codex", `${cyan("name ❯")} database-migration`, "rename session · type a new name · enter save"), "open-agent-view", "Ctrl+R · rename"),
+      storyFrame(6, dashboard(["claude", "codex", "pi", "opencode"], "codex", `${cyan("name ❯")} migration-safety`, "rename session · enter save · empty resets to provider name"), "open-agent-view", "Typed migration-safety"),
+      storyFrame(9, dashboard(["claude", "codex", "pi", "opencode"], "codex", "describe a task · /help for commands", "Renamed locally to migration-safety; provider history is unchanged"), "open-agent-view", "Enter · save name"),
+      storyFrame(12.5, dashboard(providerOrder, "codex", "describe a task · /help for commands", "Local display names remain stable across refreshes"), "open-agent-view", "Ctrl+L · refresh"),
     ],
   },
   "story-switch": {
     duration: 20,
     frames: [
-      { at: 0, screen: dashboard(providerOrder, "claude") },
-      { at: 3, screen: nativeConversation("claude", 3) },
-      { at: 7, screen: shell([nativeConversation("claude", 3), "", amber("Press ← again to go back to Open Agent View")]) },
-      { at: 10, screen: dashboard(providerOrder, "claude", "describe a task · /help for commands", "Returned without stopping Claude Code") },
-      { at: 13, screen: dashboard(providerOrder, "codex", "describe a task · /help for commands", "Shift+→ opens the selected native session immediately") },
-      { at: 16, screen: nativeConversation("codex", 3) },
+      storyFrame(0, dashboard(providerOrder, "claude"), "open-agent-view", "↓ · select Claude Code"),
+      storyFrame(3, nativeConversation("claude", 3), "Claude Code", "Enter · open session"),
+      storyFrame(7, shell([nativeConversation("claude", 3), "", amber("Press ← again to go back to Open Agent View")]), "Claude Code", "← · arm return"),
+      storyFrame(10, dashboard(providerOrder, "claude", "describe a task · /help for commands", "Returned without stopping Claude Code"), "open-agent-view", "← · return"),
+      storyFrame(13, dashboard(providerOrder, "codex", "describe a task · /help for commands", "Shift+→ opens the selected native session immediately"), "open-agent-view", "↓ · select Codex"),
+      storyFrame(16, nativeConversation("codex", 3), "OpenAI Codex", "Shift+→ · open session"),
     ],
   },
   "story-model": {
     duration: 18,
     frames: [
-      { at: 0, screen: dashboard(providerOrder, "pi", `${cyan("/model")}`) },
-      { at: 3, screen: shell([strong("Choose Pi model · 6 results"), "", selected("› provider/default"), "  anthropic/sonnet", "  openai/gpt-5", "  google/gemini", "", dim("type to filter · ↑/↓ move · enter select · esc back")]) },
-      { at: 7, screen: shell([strong("Choose Pi model · 1 result"), "", `${dim("filter")}  sonnet`, selected("› anthropic/sonnet"), "", dim("enter uses the exact model ID")]) },
-      { at: 11, screen: dashboard([], "", `${strong("Review the worker pool")}  ${dim("harness Pi · model anthropic/sonnet")}`) },
-      { at: 14, screen: nativeConversation("pi", 1) },
+      storyFrame(0, dashboard(providerOrder, "pi", `${cyan("/model")}`), "open-agent-view", "Typed /model"),
+      storyFrame(3, shell([strong("Choose Pi model · 6 results"), "", selected("› provider/default"), "  anthropic/sonnet", "  openai/gpt-5", "  google/gemini", "", dim("type to filter · ↑/↓ move · enter select · esc back")]), "open-agent-view", "Enter · open model picker"),
+      storyFrame(7, shell([strong("Choose Pi model · 1 result"), "", `${dim("filter")}  sonnet`, selected("› anthropic/sonnet"), "", dim("enter uses the exact model ID")]), "open-agent-view", "Typed sonnet"),
+      storyFrame(11, dashboard([], "", `${strong("Review the worker pool")}  ${dim("harness Pi · model anthropic/sonnet")}`), "open-agent-view", "Enter · select model"),
+      storyFrame(14, nativeConversation("pi", 1), "Pi", "Enter · launch session"),
     ],
   },
   "story-login": {
     duration: 25,
     frames: [
-      { at: 0, screen: dashboard([], "", `${cyan("/login")}`) },
-      { at: 3, screen: shell([strong("Harness setup · /work/acme-dashboard"), "", `${cyan("Claude Code")}     ${green("✓ installed")}  ${amber("sign in interactively")}`, `${cyan("OpenAI Codex")}    ${green("✓ installed")}  checking account…`, `${cyan("Pi")}              ${green("✓ installed")}  checking providers…`, `${cyan("OpenCode")}        ${green("✓ installed")}  checking providers…`, `${cyan("Cursor")}          ${green("✓ installed")}  checking account…`, `${cyan("GitHub Copilot")}  ${green("✓ installed")}  checking account…`, `${cyan("Antigravity")}     ${green("✓ installed")}  checking account…`]) },
-      { at: 7, screen: shell([strong("Native login · Cursor"), "", "Open the browser link shown by Cursor.", dim("Authentication stays in the provider CLI; OAV never reads the token."), "", amber("Waiting for browser authentication…")]) },
-      { at: 11, screen: shell([strong("Harness setup · /work/acme-dashboard"), "", `${cyan("Claude Code")}     ${green("✓ authenticated · models loaded")}`, `${cyan("OpenAI Codex")}    ${green("✓ authenticated · models loaded")}`, `${cyan("Pi")}              ${green("✓ providers available")}`, `${cyan("OpenCode")}        ${green("✓ providers available")}`, `${cyan("Cursor")}          ${green("✓ authenticated · models loaded")}`, `${cyan("GitHub Copilot")}  ${amber("sign in next")}`, `${cyan("Antigravity")}     ${amber("sign in next")}`]) },
-      { at: 15, screen: shell([strong("Native login · GitHub Copilot"), "", `${prompt("$")} copilot login`, dim("Complete the device flow in your browser."), "", amber("Waiting for GitHub authentication…")]) },
-      { at: 19, screen: shell([strong("Harness setup · complete"), "", `${green("✓")} Claude Code`, `${green("✓")} OpenAI Codex`, `${green("✓")} Pi`, `${green("✓")} OpenCode`, `${green("✓")} Cursor`, `${green("✓")} GitHub Copilot`, `${green("✓")} Antigravity`, "", dim("Terminal uses the local shell and needs no provider login.")]) },
-      { at: 22, screen: picker("claude") },
+      storyFrame(0, dashboard([], "", `${cyan("/login")}`), "open-agent-view", "Typed /login"),
+      storyFrame(3, shell([strong("Harness setup · /work/acme-dashboard"), "", `${cyan("Claude Code")}     ${green("✓ installed")}  ${amber("sign in interactively")}`, `${cyan("OpenAI Codex")}    ${green("✓ installed")}  checking account…`, `${cyan("Pi")}              ${green("✓ installed")}  checking providers…`, `${cyan("OpenCode")}        ${green("✓ installed")}  checking providers…`, `${cyan("Cursor")}          ${green("✓ installed")}  checking account…`, `${cyan("GitHub Copilot")}  ${green("✓ installed")}  checking account…`, `${cyan("Antigravity")}     ${green("✓ installed")}  checking account…`]), "open-agent-view", "Enter · run setup"),
+      storyFrame(7, shell([strong("Native login · Cursor"), "", "Open the browser link shown by Cursor.", dim("Authentication stays in the provider CLI; OAV never reads the token."), "", amber("Waiting for browser authentication…")]), "Cursor", "Enter · start native login"),
+      storyFrame(11, shell([strong("Harness setup · /work/acme-dashboard"), "", `${cyan("Claude Code")}     ${green("✓ authenticated · models loaded")}`, `${cyan("OpenAI Codex")}    ${green("✓ authenticated · models loaded")}`, `${cyan("Pi")}              ${green("✓ providers available")}`, `${cyan("OpenCode")}        ${green("✓ providers available")}`, `${cyan("Cursor")}          ${green("✓ authenticated · models loaded")}`, `${cyan("GitHub Copilot")}  ${amber("sign in next")}`, `${cyan("Antigravity")}     ${amber("sign in next")}`]), "open-agent-view", "Shift+← · return"),
+      storyFrame(15, shell([strong("Native login · GitHub Copilot"), "", `${prompt("$")} copilot login`, dim("Complete the device flow in your browser."), "", amber("Waiting for GitHub authentication…")]), "GitHub Copilot", "Enter · start native login"),
+      storyFrame(19, shell([strong("Harness setup · complete"), "", `${green("✓")} Claude Code`, `${green("✓")} OpenAI Codex`, `${green("✓")} Pi`, `${green("✓")} OpenCode`, `${green("✓")} Cursor`, `${green("✓")} GitHub Copilot`, `${green("✓")} Antigravity`, "", dim("Terminal uses the local shell and needs no provider login.")]), "open-agent-view", "Shift+← · return"),
+      storyFrame(22, picker("claude"), "open-agent-view", "/harness · open picker"),
     ],
   },
 };
@@ -306,7 +316,8 @@ class StoryPlayer {
     this.screen = root.querySelector("[data-demo-screen]");
     this.progress = root.querySelector("[data-demo-progress]");
     this.pauseButton = root.querySelector('[data-demo-action="pause"]');
-    this.status = root.querySelector("[data-demo-status]");
+    this.windowLabel = root.querySelector("[data-demo-window]");
+    this.lastAction = root.querySelector("[data-demo-last-action]");
     this.time = root.querySelector("[data-demo-time]");
     this.current = 0;
     this.playing = false;
@@ -413,7 +424,10 @@ class StoryPlayer {
     }
     if (nextIndex !== this.frameIndex) {
       this.frameIndex = nextIndex;
-      this.screen.innerHTML = this.story.frames[nextIndex].screen;
+      const frame = this.story.frames[nextIndex];
+      this.screen.innerHTML = frame.screen;
+      this.windowLabel.textContent = frame.window;
+      this.lastAction.textContent = frame.action;
       this.screen.scrollTop = this.screen.scrollHeight;
     }
     this.progress.value = String(Math.round((this.current / this.story.duration) * 1000));
@@ -424,7 +438,6 @@ class StoryPlayer {
   updateChrome() {
     this.pauseButton.textContent = this.playing ? "Pause" : "Play";
     this.pauseButton.setAttribute("aria-label", this.playing ? "Pause demo" : "Resume demo");
-    this.status.textContent = this.ended ? "COMPLETE" : this.playing ? "PLAYING" : "PAUSED";
   }
 }
 

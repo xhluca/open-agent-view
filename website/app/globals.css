@@ -46,7 +46,8 @@ code, pre { font-family: var(--font-geist-mono), ui-monospace, monospace; }
 .eyebrow, .section-label { color: var(--muted); font: 11px var(--font-geist-mono), monospace; letter-spacing: .16em; text-transform: uppercase; }
 .eyebrow { display: inline-flex; align-items: center; gap: 10px; }
 .eyebrow span { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 18px var(--green); }
-h1 { max-width: 1050px; margin: 30px auto 24px; font-size: clamp(56px, 7.4vw, 98px); line-height: .94; letter-spacing: -.066em; font-weight: 610; }
+h1 { max-width: 1180px; margin: 30px auto 24px; font-size: clamp(56px, 7vw, 92px); line-height: .94; letter-spacing: -.066em; font-weight: 610; }
+h1 span { display: block; }
 .hero-copy { width: min(735px, 100%); margin: 0 auto; color: #b7babf; font-size: clamp(18px, 2vw, 22px); line-height: 1.55; letter-spacing: -.02em; }
 .hero-actions { display: flex; justify-content: center; align-items: stretch; gap: 12px; margin: 36px 0 32px; }
 .copy-command, .launch-command { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: #14191f; box-shadow: 0 24px 70px rgba(0, 0, 0, .32); }
@@ -81,10 +82,9 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
 .story-controls button { min-width: 46px; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 6px; background: #171c21; color: #aeb2b7; font: 10px var(--font-geist-mono), monospace; cursor: pointer; }
 .story-controls button:hover, .story-controls button:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .5); outline: none; }
 .story-window { margin: 12px 12px 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .09); border-radius: 9px; background: #181a1b; }
-.window-bar { position: relative; height: 38px; display: flex; align-items: center; gap: 6px; padding: 0 13px; color: #8f949a; border-bottom: 1px solid rgba(255, 255, 255, .08); font: 9px var(--font-geist-mono), monospace; }
-.window-bar > i { width: 7px; height: 7px; background: #3b4045; border-radius: 50%; }
-.window-bar span { position: absolute; inset: 0; display: grid; place-items: center; }
-.window-bar em { margin-left: auto; color: var(--green); font-style: normal; letter-spacing: .08em; }
+.window-bar { height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 13px; color: #8f949a; border-bottom: 1px solid rgba(255, 255, 255, .08); font: 9px var(--font-geist-mono), monospace; }
+.window-bar strong { min-width: 0; overflow: hidden; color: #d8dad8; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.window-bar em { min-width: 0; overflow: hidden; color: var(--cyan); font-style: normal; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .story-window pre { min-height: 510px; height: min(46vw, 590px); margin: 0; overflow: auto; padding: 18px 20px; color: #cfd2d3; background: #181a1b; font-size: clamp(9px, 1vw, 13px); line-height: 1.42; white-space: pre; tab-size: 2; }
 .term-cyan { color: var(--cyan); }
 .term-green { color: var(--green); }
@@ -142,6 +142,10 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
   .provider-stack, .oav-core, .native-stack { min-height: 0; }
 }
 
+@media (min-width: 621px) {
+  h1 span { white-space: nowrap; }
+}
+
 @media (max-width: 620px) {
   .shell { width: min(100% - 30px, 1180px); }
   .section { padding: 82px 0; }
@@ -157,7 +161,6 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
   .story-controls button { min-width: 0; padding-inline: 4px; }
   .story-window { margin: 7px 7px 0; }
   .story-window pre { min-height: 360px; height: 108vw; padding: 13px; font-size: 8px; line-height: 1.36; }
-  .window-bar span { position: static; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .story-player figcaption { display: grid; }
   .footer { grid-template-columns: 1fr; gap: 10px; padding: 30px 0; }
   .footer p { text-align: left; }

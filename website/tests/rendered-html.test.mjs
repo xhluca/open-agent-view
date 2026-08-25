@@ -27,7 +27,7 @@ test("server-renders the complete product story and canonical metadata", async (
 
   const html = await response.text();
   assert.match(html, /<title>Open Agent View/);
-  assert.match(html, /See every agent/);
+  assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
   assert.match(html, /Install once/);
   assert.match(html, /Pick a harness/);
@@ -40,6 +40,8 @@ test("server-renders the complete product story and canonical metadata", async (
   assert.match(html, /data-demo-action="pause"/);
   assert.match(html, /data-demo-action="forward"/);
   assert.match(html, /data-demo-action="restart"/);
+  assert.match(html, /data-demo-window/);
+  assert.match(html, /data-demo-last-action/);
   assert.match(html, /https:\/\/open-agent-view\.github\.io\/install\.sh/);
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
@@ -47,6 +49,7 @@ test("server-renders the complete product story and canonical metadata", async (
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   assert.doesNotMatch(html, /raw\.githubusercontent\.com/);
   assert.doesNotMatch(html, /One loop|Run more agents|Never pretend controls|Built to stay honest/);
+  assert.doesNotMatch(html, /data-demo-status/);
   assert.doesNotMatch(html, /<video\b/);
 
   for (const provider of [

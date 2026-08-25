@@ -82,7 +82,7 @@ export default function Home() {
 
       <section className="hero shell" id="top">
         <p className="eyebrow"><span /> Local agents, one workspace</p>
-        <h1>See every agent.<br />Step in when it matters.</h1>
+        <h1><span>Monitor every agent.</span><span>Step in when it matters.</span></h1>
         <p className="hero-copy">
           Launch, name, follow, and return to every local coding-agent session
           from one terminal—without losing the native harness.

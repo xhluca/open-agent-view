@@ -29,9 +29,8 @@ export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlaye
       </div>
       <div className="story-window">
         <div className="window-bar">
-          <i /><i /><i />
-          <span>open-agent-view · /work/acme-dashboard</span>
-          <em data-demo-status suppressHydrationWarning>READY</em>
+          <strong data-demo-window suppressHydrationWarning>open-agent-view</strong>
+          <em data-demo-last-action suppressHydrationWarning>Waiting</em>
         </div>
         <pre data-demo-screen aria-label={label} suppressHydrationWarning>Loading interactive terminal…</pre>
       </div>

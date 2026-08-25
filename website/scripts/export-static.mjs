@@ -21,7 +21,7 @@ if (!response.ok) {
 }
 
 const html = await response.text();
-if (!html.includes("See every agent") || html.includes("/_next/image?")) {
+if (!html.includes("Monitor every agent") || html.includes("/_next/image?")) {
   throw new Error("static render is incomplete or depends on a server-side image optimizer");
 }
 

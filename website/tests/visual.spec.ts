@@ -10,7 +10,7 @@ for (const viewport of viewports) {
   test(`${viewport.name} layout is complete, interactive, and horizontally bounded`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /See every agent/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Monitor every agent/ })).toBeVisible();
     await expect(page.locator("html")).toHaveAttribute("data-stories-ready", "true");
     await expect(page.locator(".provider-row img")).toHaveCount(8);
     await expect(page.locator(".story-player")).toHaveCount(4);
@@ -44,9 +44,17 @@ test("playback controls, provider deep links, keyboard tabs, and eight-second ta
   await overview.getByRole("button", { name: "Restart demo" }).click();
   await expect.poll(async () => Number(await progress.inputValue())).toBeLessThan(40);
 
+  await progress.fill("190");
+  await progress.dispatchEvent("input");
+  await expect(overview.locator("[data-demo-window]")).toHaveText("Claude Code");
+  await expect(overview.locator("[data-demo-last-action]")).toHaveText("Enter · launch session");
+  await expect(overview.locator(".window-bar")).not.toContainText("/work/acme-dashboard");
+  await expect(overview.locator(".window-bar")).not.toContainText(/PLAYING|PAUSED|COMPLETE/);
+
   await progress.fill("1000");
   await progress.dispatchEvent("input");
-  await expect(overview.locator("[data-demo-status]")).toHaveText("COMPLETE");
+  await expect(overview.locator("[data-demo-window]")).toHaveText("open-agent-view");
+  await expect(overview.locator("[data-demo-last-action]")).toHaveText("Enter · save name");
   for (const harness of ["Claude Code", "OpenAI Codex", "Pi", "OpenCode", "Cursor", "GitHub Copilot", "Antigravity", "Terminal"]) {
     await expect(overview.locator("[data-demo-screen]")).toContainText(harness);
   }
@@ -89,7 +97,8 @@ test("copy, keyboard focus, reduced motion, and accessibility work", async ({ br
   const progress = page.locator('[data-story="story-overview"] [data-demo-progress]');
   await page.waitForTimeout(400);
   expect(Number(await progress.inputValue())).toBe(0);
-  await expect(page.locator('[data-story="story-overview"] [data-demo-status]')).toHaveText("PAUSED");
+  await expect(page.locator('[data-story="story-overview"] [data-demo-window]')).toHaveText("Terminal");
+  await expect(page.locator('[data-story="story-overview"] [data-demo-last-action]')).toHaveText("Enter · launch opav");
 
   const animationDuration = await page.locator(".brand-mark i").first().evaluate((node) => getComputedStyle(node).animationDuration);
   expect(["0s", "0.00001s", "1e-05s"]).toContain(animationDuration);
