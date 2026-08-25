@@ -164,9 +164,10 @@ checks; the guide also contains release gates that are not yet complete.
   workspaces, lets the real OAV binary run each current official installer,
   verifies the installed executable/version, and requires a native PTY login
   handoff. Browser/device authorization is deliberately bounded rather than
-  completed. On 2026-08-25 this passed for Claude Code 2.1.245, current Codex,
-  Pi 0.73.1, OpenCode 1.18.23, Cursor 2026.08.11-e8db854, current Copilot, and
-  Antigravity 1.1.20; all disposable containers were removed.
+  completed. On 2026-08-25 this passed for Claude Code 2.1.245, Codex 0.149.1,
+  Pi 0.73.1, OpenCode 1.18.23, Cursor
+  2026.08.11-e8db854, Copilot 1.0.80, and Antigravity 1.1.20; all disposable
+  containers were removed.
 - `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
   `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
   the exact repository request, install-directory propagation, successful
@@ -412,6 +413,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Searchable async model catalogs, native auth retry, and exact modeled launch | All seven agent catalog parsers/transports, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
+| Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 13 parsed cast/action pairs plus desktop/phone Playwright and Axe gates | Verified |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
 | OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |

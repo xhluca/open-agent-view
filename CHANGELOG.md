@@ -8,6 +8,39 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.36] - 2026-08-25
+
+### Fixed
+
+- Session summaries now reserve a real padded age column at every terminal
+  width, so long text cannot touch or overwrite values such as `1d`.
+- Cursor session creation returns as soon as the CLI emits its complete chat
+  identifier and cleans up the exact helper process group, avoiding the
+  apparent launch hang caused by retained monitor children.
+
+### Changed
+
+- Replaced every simulated landing-page terminal with 13 genuine Asciinema
+  recordings: public installation, all eight selectable targets, and real
+  rename/switch/model/login flows. The finite players expose pause, replay,
+  ±5-second seeking, a scrubber, native-window context, and the latest recorded
+  key action.
+- Simplified the site around install, real harness work, common controls, the
+  Claude-agent-view motivation, and a plain-language architecture diagram.
+- Rebuilt the README GIF from genuine setup, Claude Code, and rename terminal
+  recordings; it stops on the final dashboard frame instead of looping.
+
+### Tests
+
+- Added cast-v2/action-timeline validation for all 13 recordings, including
+  strict checks against credentials, account emails, host identities, and
+  private paths.
+- Added desktop/phone browser rendering, hydration survival, non-looping final
+  frame, provider deep-link, keyboard tabs, clipboard, cyan countdown,
+  reduced-motion, and Axe accessibility coverage for the real player.
+- Added an exact-width row regression and verified the release binary in a
+  fresh non-root, network-disabled, read-only Docker PTY.
+
 ## [0.1.35] - 2026-08-25
 
 ### Changed
