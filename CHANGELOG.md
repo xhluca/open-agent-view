@@ -8,6 +8,26 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.30] - 2026-08-25
+
+### Fixed
+
+- OAV-owned Claude rows now derive a bounded current description from Claude's
+  supported `logs` terminal stream. The normalizer prefers Claude's concise
+  recap and falls back to the latest assistant paragraph instead of leaving
+  every `status: busy` row blank.
+- Claude description probes are bounded, concurrent, and cached between
+  refreshes; completed rows reuse their last result instead of spawning work
+  indefinitely.
+
+### Tests
+
+- Reproduced the blank row against Claude Code 2.1.241 and the reporting
+  account's exact managed `open-agent-view-dev` task. A read-only end-to-end
+  JSON probe now returns its current 210-character recap with no warnings.
+- Added VT-screen regressions for recap extraction, assistant-message fallback,
+  terminal-chrome exclusion, exact owned-session enrichment, and cache reuse.
+
 ## [0.1.29] - 2026-08-25
 
 ### Changed

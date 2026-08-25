@@ -991,6 +991,10 @@ if [ "${1:-}" = "attach" ]; then
   printf '%s\n' "CLAUDE FULL SCREEN ATTACH ${2:-}"
   while :; do sleep 1; done
 fi
+if [ "${1:-}" = "logs" ]; then
+  printf '%s\n' '※ recap: foreground Claude task is backgrounded'
+  exit 0
+fi
 printf '%s' 'deadbeef-91dc-4b50-a43f-6db2837576fe' > "$HOME/claude-session-id"
 printf '%s\n' "$*" > "$HOME/claude-launch-arguments"
 sleep 0.3

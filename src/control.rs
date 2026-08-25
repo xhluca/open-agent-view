@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -488,6 +488,13 @@ struct ClaudeController {
     runtime: Runtime,
     runner: Arc<dyn CommandRunner>,
     registry: Arc<Mutex<OwnershipRegistry>>,
+    summary_cache: Mutex<BTreeMap<String, CachedClaudeSummary>>,
+}
+
+#[derive(Clone)]
+struct CachedClaudeSummary {
+    summary: String,
+    refreshed_at: Instant,
 }
 
 impl ClaudeController {
@@ -505,6 +512,93 @@ impl ClaudeController {
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
             registry,
+            summary_cache: Mutex::new(BTreeMap::new()),
+        }
+    }
+
+    fn enrich_summaries(&self, snapshot: &mut SessionSnapshot, owned_indices: &[usize]) {
+        const CACHE_TTL: Duration = Duration::from_secs(10);
+        const MAX_SUMMARY_PROBES: usize = 24;
+        const MAX_WORKERS: usize = 4;
+
+        let now = Instant::now();
+        let mut candidates = Vec::new();
+        if let Ok(cache) = self.summary_cache.lock() {
+            for &index in owned_indices {
+                let session = &mut snapshot.sessions[index];
+                if !session.summary.is_empty() {
+                    continue;
+                }
+                let cached = cache.get(&session.provider_session_id);
+                if let Some(cached) = cached.filter(|cached| !cached.summary.is_empty()) {
+                    session.summary = cached.summary.clone();
+                }
+                let cache_is_fresh = cached.is_some_and(|cached| {
+                    now.saturating_duration_since(cached.refreshed_at) < CACHE_TTL
+                });
+                let completed_is_cached = session.state == SessionState::Completed
+                    && cached.is_some_and(|cached| !cached.summary.is_empty());
+                if !cache_is_fresh && !completed_is_cached {
+                    candidates.push((index, session.provider_session_id.clone()));
+                }
+            }
+        }
+
+        candidates
+            .sort_by_key(|(index, _)| std::cmp::Reverse(snapshot.sessions[*index].started_at));
+        candidates.truncate(MAX_SUMMARY_PROBES);
+        if candidates.is_empty() {
+            return;
+        }
+
+        let worker_count = candidates.len().min(MAX_WORKERS);
+        let chunk_size = (candidates.len() + worker_count - 1) / worker_count;
+        let batches = std::thread::scope(|scope| {
+            let mut handles = Vec::new();
+            for chunk in candidates.chunks(chunk_size) {
+                let work = chunk.to_vec();
+                let runner = Arc::clone(&self.runner);
+                let program = self.invocation.program.clone();
+                let prefix_args = self.invocation.prefix_args.clone();
+                handles.push(scope.spawn(move || {
+                    work.into_iter()
+                        .map(|(index, session_id)| {
+                            let mut args = prefix_args.clone();
+                            args.extend(["logs".into(), session_id.chars().take(8).collect()]);
+                            let mut request = CommandRequest::new(program.clone(), args);
+                            request.timeout = Duration::from_secs(4);
+                            let summary = runner
+                                .run(&request)
+                                .ok()
+                                .filter(|output| output.status == 0)
+                                .and_then(|output| claude_summary_from_terminal(&output.stdout));
+                            (index, session_id, summary)
+                        })
+                        .collect::<Vec<_>>()
+                }));
+            }
+            handles
+                .into_iter()
+                .filter_map(|handle| handle.join().ok())
+                .flatten()
+                .collect::<Vec<_>>()
+        });
+
+        let refreshed_at = Instant::now();
+        if let Ok(mut cache) = self.summary_cache.lock() {
+            for (index, session_id, summary) in batches {
+                let summary = summary.unwrap_or_default();
+                if !summary.is_empty() {
+                    snapshot.sessions[index].summary = summary.clone();
+                }
+                cache.insert(
+                    session_id,
+                    CachedClaudeSummary {
+                        summary,
+                        refreshed_at,
+                    },
+                );
+            }
         }
     }
 
@@ -754,11 +848,17 @@ impl ProviderController for ClaudeController {
                 return;
             }
         };
-        for session in &mut snapshot.sessions {
-            if registry.owns(session) && is_interruptible_claude_session(session) {
-                session.capabilities.insert(Capability::Interrupt);
+        let mut owned_indices = Vec::new();
+        for (index, session) in snapshot.sessions.iter_mut().enumerate() {
+            if registry.owns(session) {
+                owned_indices.push(index);
+                if is_interruptible_claude_session(session) {
+                    session.capabilities.insert(Capability::Interrupt);
+                }
             }
         }
+        drop(registry);
+        self.enrich_summaries(snapshot, &owned_indices);
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
@@ -1340,6 +1440,72 @@ fn recent_terminal_screen(bytes: &[u8]) -> String {
         .join("\n")
 }
 
+fn claude_summary_from_terminal(bytes: &[u8]) -> Option<String> {
+    let mut parser = vt100::Parser::new(100, 200, 0);
+    parser.process(bytes);
+    summarize_claude_screen(&parser.screen().contents())
+}
+
+fn summarize_claude_screen(screen: &str) -> Option<String> {
+    let lines = screen.lines().collect::<Vec<_>>();
+    let recap = lines.iter().rposition(|line| {
+        line.trim_start()
+            .to_ascii_lowercase()
+            .starts_with("※ recap:")
+    });
+    if let Some(start) = recap {
+        let first = lines[start]
+            .trim()
+            .strip_prefix("※ recap:")
+            .unwrap_or(lines[start].trim());
+        return bounded_claude_message(first, &lines[start + 1..]);
+    }
+
+    let assistant = lines
+        .iter()
+        .rposition(|line| line.trim_start().starts_with('●'))?;
+    let first = lines[assistant]
+        .trim_start()
+        .strip_prefix('●')
+        .unwrap_or(lines[assistant])
+        .trim();
+    bounded_claude_message(first, &lines[assistant + 1..])
+}
+
+fn bounded_claude_message(first: &str, continuation: &[&str]) -> Option<String> {
+    const MAX_LINES: usize = 4;
+    const MAX_CHARS: usize = 320;
+    let mut parts = Vec::new();
+    if !first.trim().is_empty() {
+        parts.push(first.trim());
+    }
+    for line in continuation.iter().take(MAX_LINES.saturating_sub(1)) {
+        let line = line.trim();
+        if line.is_empty() || is_claude_screen_boundary(line) {
+            break;
+        }
+        parts.push(line);
+    }
+    let normalized = parts
+        .join(" ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized.chars().take(MAX_CHARS).collect())
+    }
+}
+
+fn is_claude_screen_boundary(line: &str) -> bool {
+    line.starts_with(['❯', '✻', '※', '✔', '⏵', '─', '━'])
+        || line.starts_with("Brewed for")
+        || line.starts_with("Churned for")
+        || line.starts_with("new task?")
+        || line.contains("auto mode on")
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeSet, VecDeque};
@@ -1454,6 +1620,27 @@ mod tests {
     }
 
     #[test]
+    fn claude_terminal_summary_prefers_the_latest_recap_and_stops_before_chrome() {
+        let screen = "● Earlier response\n\n※ recap: The provider metadata is now fresh and\n  the dashboard shows the latest answer.\n✔ Update installed\n──────────────── title\n❯ next prompt\n⏵ auto mode on";
+
+        assert_eq!(
+            summarize_claude_screen(screen).as_deref(),
+            Some("The provider metadata is now fresh and the dashboard shows the latest answer.")
+        );
+    }
+
+    #[test]
+    fn claude_terminal_summary_falls_back_to_the_latest_assistant_paragraph() {
+        let screen =
+            "❯ task\n\n● First line of the latest answer\n  continues here.\n\n✻ Churned for 3s\n❯";
+
+        assert_eq!(
+            summarize_claude_screen(screen).as_deref(),
+            Some("First line of the latest answer continues here.")
+        );
+    }
+
+    #[test]
     fn launch_records_ownership_and_uses_argument_arrays() {
         let directory = tempdir().unwrap();
         let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
@@ -1485,6 +1672,7 @@ mod tests {
             runtime: Runtime::Host,
             runner: runner.clone(),
             registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
         };
 
         let outcome = controller
@@ -1582,6 +1770,7 @@ exit 0
             runtime: Runtime::Host,
             runner: Arc::new(ProcessRunner),
             registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
         };
 
         let outcome = controller
@@ -1620,6 +1809,12 @@ exit 0
             outputs: Mutex::new(VecDeque::from([
                 CommandOutput {
                     status: 0,
+                    stdout: b"\x1b[2J\x1b[H\x1b[2;1H\xe2\x80\xbb recap: latest Claude result\r\n\xe2\x9d\xaf next"
+                        .to_vec(),
+                    stderr: vec![],
+                },
+                CommandOutput {
+                    status: 0,
                     stdout: inventory.into_bytes(),
                     stderr: vec![],
                 },
@@ -1639,6 +1834,7 @@ exit 0
             runtime: Runtime::Host,
             runner: runner.clone(),
             registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
         };
         let external = session(provider_id);
         let mut snapshot = SessionSnapshot {
@@ -1650,13 +1846,24 @@ exit 0
         assert!(snapshot.sessions[0]
             .capabilities
             .contains(&Capability::Interrupt));
+        assert_eq!(snapshot.sessions[0].summary, "latest Claude result");
+        let mut refreshed_snapshot = SessionSnapshot {
+            sessions: vec![external.clone()],
+            warnings: Vec::new(),
+        };
+        controller.enrich(&mut refreshed_snapshot);
+        assert_eq!(
+            refreshed_snapshot.sessions[0].summary,
+            "latest Claude result"
+        );
         assert!(controller.owns(&external));
         controller.interrupt(&external).unwrap();
 
         let requests = runner.requests.lock().unwrap();
-        assert_eq!(requests.len(), 2);
-        assert_eq!(requests[0].args, vec!["agents", "--json"]);
-        assert_eq!(requests[1].args, vec!["stop", "4b34abd1"]);
+        assert_eq!(requests.len(), 3);
+        assert_eq!(requests[0].args, vec!["logs", "4b34abd1"]);
+        assert_eq!(requests[1].args, vec!["agents", "--json"]);
+        assert_eq!(requests[2].args, vec!["stop", "4b34abd1"]);
     }
 
     #[test]
@@ -1681,6 +1888,7 @@ exit 0
             runtime: Runtime::Host,
             runner: runner.clone(),
             registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
         };
         let mut completed = session("completed");
         completed.state = SessionState::Completed;
@@ -1906,6 +2114,7 @@ exit 0
             runtime: Runtime::Host,
             runner: runner.clone(),
             registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
         };
         assert_eq!(
             controller
