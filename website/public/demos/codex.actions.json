@@ -1,132 +1,144 @@
 {
-  "duration": 46.804353453538894,
+  "duration": 35.959395,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.745,
+      "at": 0.771,
       "action": "\u2193 \u00b7 highlight OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 1.474,
+      "at": 1.501,
       "action": "Enter \u00b7 choose OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 2.638,
+      "at": 2.669,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.263,
+      "at": 3.297,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 3.398,
+      "at": 3.43,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.86,
+      "at": 3.892,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.321,
+      "at": 4.358,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.334,
+      "at": 5.359,
       "action": "Search \u00b7 gpt-5.6-sol",
       "window": "open-agent-view"
     },
     {
-      "at": 6.221,
+      "at": 6.242,
       "action": "Enter \u00b7 select gpt-5.6-sol",
       "window": "open-agent-view"
     },
     {
-      "at": 7.469,
+      "at": 7.478,
       "action": "Enter \u00b7 start OpenAI Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 8.094,
+      "at": 8.102,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 13.787,
+      "at": 13.206,
       "action": "Hello response complete",
       "window": "OpenAI Codex"
     },
     {
-      "at": 15.25,
+      "at": 14.679,
       "action": "Type \u00b7 Explain what is OpenAI Codex",
       "window": "OpenAI Codex"
     },
     {
-      "at": 15.88,
+      "at": 15.311,
       "action": "Enter \u00b7 send explanation",
       "window": "OpenAI Codex"
     },
     {
-      "at": 35.475,
+      "at": 24.756,
       "action": "Explanation response complete",
       "window": "OpenAI Codex"
     },
     {
-      "at": 37.663,
+      "at": 26.922,
       "action": "Type \u00b7 explain return shortcut",
       "window": "OpenAI Codex"
     },
     {
-      "at": 38.543,
+      "at": 27.799,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "OpenAI Codex"
     },
     {
-      "at": 38.92,
+      "at": 28.177,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 40.93,
+      "at": 30.184,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 41.058,
+      "at": 30.312,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 42.07,
+      "at": 31.315,
       "action": "Type \u00b7 codex-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 42.712,
+      "at": 31.94,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 42.846,
+      "at": 32.063,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 44.075,
+      "at": 33.23,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 44.699,
+      "at": 33.855,
       "action": "Enter",
       "window": "open-agent-view"
+    }
+  ],
+  "timing_adjustments": [
+    {
+      "label": "Codex Working turn 1",
+      "source_duration": 1.666,
+      "retimed_duration": 0.666
+    },
+    {
+      "label": "Codex Working turn 2",
+      "source_duration": 18.872,
+      "retimed_duration": 7.549
     }
   ]
 }

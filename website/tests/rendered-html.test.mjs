@@ -150,6 +150,22 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       && action.window.length > 0
     )), `${name} actions should be ordered, bounded, and labelled`);
 
+    if (name === "claude") {
+      assert.equal(manifest.timing_adjustments?.length, 1);
+      assert.equal(manifest.timing_adjustments[0].label, "Claude launch/background handoff");
+      assert.ok(manifest.timing_adjustments[0].retimed_duration <= 1.8);
+    } else if (name === "codex") {
+      assert.equal(manifest.timing_adjustments?.length, 2);
+      for (const adjustment of manifest.timing_adjustments) {
+        assert.match(adjustment.label, /^Codex Working turn [12]$/);
+        assert.ok(Math.abs(
+          adjustment.retimed_duration / adjustment.source_duration - 0.4
+        ) < 0.002, `${adjustment.label} should make 0.5× playback exactly 3× faster at 0.6×`);
+      }
+    } else {
+      assert.equal(manifest.timing_adjustments, undefined);
+    }
+
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
@@ -283,8 +299,8 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   const playbackSpeeds = [...script.matchAll(/speed:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
   assert.deepEqual(
     playbackSpeeds,
-    [1, ...Array(12).fill(0.5), ...Array(4).fill(1)],
-    "the long harness stories should play at half speed while setup and controls remain literal 1×",
+    [1, ...Array(12).fill(0.6), ...Array(4).fill(1)],
+    "the harness stories should play 20% faster while setup and controls remain literal 1×",
   );
   assert.match(script, /retainFrame\(\)/);
   assert.match(script, /story-frame-cover/);
@@ -300,7 +316,7 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
   assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
   assert.match(page, /thin\s+cyan\s+line/i);
-  assert.match(page, /Actual provider TUI output · complete turns · playback at 0.5×/);
+  assert.match(page, /Actual provider TUI output · complete turns · playback at 0.6×/);
   assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
 
   const recorder = await readFile(new URL("../scripts/capture-real-site-demo.py", root), "utf8");
@@ -319,6 +335,8 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(recorder, /Error:\\s\*4\\d\\d/);
   assert.match(recorder, /SEQUENCE_PLAYBACK_SPEED\s*=\s*0\.5/);
   assert.match(recorder, /SEQUENCE_TYPING_SPEEDUP\s*=\s*0\.8/);
+  assert.match(recorder, /CLAUDE_LAUNCH_TARGET_SECONDS\s*=\s*1\.8/);
+  assert.match(recorder, /CODEX_WORKING_CAST_SCALE\s*=\s*0\.4/);
   assert.match(recorder, /sequence_wait\(1\.0\)[\s\S]{0,100}terminal\.key\("Enter"/);
   assert.match(recorder, /printf 'Hello from Terminal\.\\\\n'/);
   assert.doesNotMatch(recorder, /\.local["']?\s*\/\s*["']bin["']\s*\/\s*["'](?:hello|Explain)["']/);

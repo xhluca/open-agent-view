@@ -18,6 +18,7 @@ jobs:
           components: rustfmt, clippy
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: python3 -m unittest scripts/test_compact_real_recordings.py
 
   test:
     strategy:

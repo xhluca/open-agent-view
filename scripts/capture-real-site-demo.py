@@ -28,7 +28,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from compact_real_recordings import compact_recording
+from compact_real_recordings import (
+    CompressionInterval,
+    compact_recording,
+    retime_recording_intervals,
+)
 
 
 COLS = 132
@@ -212,6 +216,7 @@ class RealTerminal:
         self.root = root
         self.raw_cast = root / f"{name}.raw.cast"
         self.actions: list[dict[str, Any]] = []
+        self.timing_marks: list[dict[str, Any]] = []
         self.closed = False
         run(["tmux", "kill-session", "-t", self.session], check=False)
         run(
@@ -474,6 +479,47 @@ class RealTerminal:
                 "action": label,
                 "window": window,
             }
+        )
+
+    def mark_timing(self, label: str) -> None:
+        """Record a private timing boundary that is not shown as a keycap."""
+
+        self.timing_marks.append(
+            {
+                "at": self.timeline_time(),
+                "label": label,
+            }
+        )
+
+    def wait_codex_response_started(self, baseline: str, timeout: float = 120) -> None:
+        """Wait until Codex replaces Working with its actual answer text."""
+
+        def response_lines(screen: str) -> set[str]:
+            return {
+                line.strip()
+                for line in screen.splitlines()
+                if re.match(r"^[•·]\s+(?!Working\b).+", line.strip(), re.I)
+            }
+
+        before = response_lines(baseline)
+        deadline = time.monotonic() + timeout
+        ready_since: float | None = None
+        while time.monotonic() < deadline:
+            screen = self.screen()
+            current = response_lines(screen)
+            if (
+                current - before
+                and not re.search(r"Working\s*\([^\n]*esc to interrupt", screen, re.I)
+            ):
+                ready_since = ready_since or time.monotonic()
+                if time.monotonic() - ready_since >= 0.2:
+                    return
+            else:
+                ready_since = None
+            time.sleep(0.08)
+        tail = self.screen()[-4000:].replace(str(Path.home()), "~")
+        raise RuntimeError(
+            f"real Codex turn never replaced Working with response output; screen={tail!r}"
         )
 
     def timeline_time(self) -> float:
@@ -1394,6 +1440,11 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
 
 SEQUENCE_PLAYBACK_SPEED = 0.5
 SEQUENCE_TYPING_SPEEDUP = 0.8
+CLAUDE_LAUNCH_TARGET_SECONDS = 1.8
+# Section 2 moves from 0.5x to 0.6x playback. Scaling the real Codex Working
+# interval by 0.4 therefore makes that state exactly 3x faster than before:
+# (source * 0.4 / 0.6) == (source / 0.5 / 3).
+CODEX_WORKING_CAST_SCALE = 0.4
 
 
 def sequence_wait(visible_seconds: float) -> None:
@@ -1540,8 +1591,17 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
         "open-agent-view",
         0.085,
     )
+    if spec.id == "claude":
+        terminal.mark_timing("claude-launch-start")
     terminal.wait_screen_without(APP_HEADER_PATTERN, 90)
     terminal.wait_native_screen(spec.ready_pattern, 90)
+    if spec.id == "claude":
+        terminal.mark_timing("claude-launch-end")
+    if spec.id == "codex":
+        terminal.wait_screen(r"Working\s*\([^\n]*esc to interrupt", 90)
+        terminal.mark_timing("codex-working-1-start")
+        terminal.wait_codex_response_started(baseline)
+        terminal.mark_timing("codex-working-1-end")
     terminal.wait_screen_settled(
         baseline,
         provider=spec.label,
@@ -1563,6 +1623,11 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
     sequence_wait(1.0)
     baseline = terminal.screen()
     terminal.key("Enter", "Enter · send explanation", spec.label)
+    if spec.id == "codex":
+        terminal.wait_screen(r"Working\s*\([^\n]*esc to interrupt", 90)
+        terminal.mark_timing("codex-working-2-start")
+        terminal.wait_codex_response_started(baseline)
+        terminal.mark_timing("codex-working-2-end")
     terminal.wait_screen_settled(
         baseline,
         provider=spec.label,
@@ -1618,6 +1683,45 @@ def write_sequence_recording(
         encoding="utf-8",
     )
     action_path.chmod(0o644)
+    marks = {
+        str(item["label"]): float(item["at"]) - start - primed_lead
+        for item in terminal.timing_marks
+        if start <= float(item["at"]) <= end
+    }
+    intervals: list[CompressionInterval] = []
+    if spec.id == "claude":
+        source_start = marks.get("claude-launch-start")
+        source_end = marks.get("claude-launch-end")
+        if source_start is None or source_end is None:
+            raise RuntimeError("Claude sequence is missing measured launch timing marks")
+        source_duration = source_end - source_start
+        if source_duration > CLAUDE_LAUNCH_TARGET_SECONDS:
+            intervals.append(
+                CompressionInterval(
+                    "Claude launch/background handoff",
+                    source_start,
+                    source_end,
+                    CLAUDE_LAUNCH_TARGET_SECONDS,
+                )
+            )
+    elif spec.id == "codex":
+        for turn in (1, 2):
+            source_start = marks.get(f"codex-working-{turn}-start")
+            source_end = marks.get(f"codex-working-{turn}-end")
+            if source_start is None or source_end is None:
+                raise RuntimeError(
+                    f"Codex sequence is missing measured Working interval {turn}"
+                )
+            source_duration = source_end - source_start
+            intervals.append(
+                CompressionInterval(
+                    f"Codex Working turn {turn}",
+                    source_start,
+                    source_end,
+                    source_duration * CODEX_WORKING_CAST_SCALE,
+                )
+            )
+    retime_recording_intervals(target, action_path, intervals)
     validate_public_cast(
         target,
         [

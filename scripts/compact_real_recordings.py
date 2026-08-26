@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -30,11 +31,85 @@ HARNESS_STORIES = (
 )
 
 
+@dataclass(frozen=True)
+class CompressionInterval:
+    """A genuine cast interval whose elapsed time may be shortened."""
+
+    label: str
+    start: float
+    end: float
+    target_duration: float
+
+
 def _load_cast(path: Path) -> tuple[dict[str, Any], list[list[Any]]]:
     lines = path.read_text(encoding="utf-8").splitlines()
     if len(lines) < 2:
         raise RuntimeError(f"recording is empty: {path}")
     return json.loads(lines[0]), [json.loads(line) for line in lines[1:] if line]
+
+
+def retime_recording_intervals(
+    cast_path: Path,
+    actions_path: Path,
+    intervals: list[CompressionInterval],
+) -> bool:
+    """Shorten selected real-output intervals without changing their bytes.
+
+    The cast and its public action timeline use the same continuous time map,
+    so seeking, the progress bar, and the action keycap stay synchronized.
+    """
+
+    if not intervals:
+        return False
+    manifest = json.loads(actions_path.read_text(encoding="utf-8"))
+    duration = float(manifest["duration"])
+    ordered = sorted(intervals, key=lambda item: item.start)
+    previous_end = 0.0
+    for interval in ordered:
+        source_duration = interval.end - interval.start
+        if interval.start < previous_end or interval.end > duration + 0.001:
+            raise RuntimeError(f"invalid or overlapping timing interval: {interval}")
+        if source_duration <= 0 or not 0 < interval.target_duration <= source_duration:
+            raise RuntimeError(f"timing interval does not shorten real time: {interval}")
+        previous_end = interval.end
+
+    def remap(value: float) -> float:
+        saved = 0.0
+        for interval in ordered:
+            source_duration = interval.end - interval.start
+            removed = source_duration - interval.target_duration
+            if value >= interval.end:
+                saved += removed
+                continue
+            if value > interval.start:
+                progress = (value - interval.start) / source_duration
+                return interval.start - saved + progress * interval.target_duration
+            break
+        return value - saved
+
+    header, events = _load_cast(cast_path)
+    for event in events:
+        event[0] = round(remap(float(event[0])), 6)
+    for action in manifest.get("actions", []):
+        action["at"] = round(remap(float(action["at"])), 3)
+    manifest["duration"] = round(remap(duration), 6)
+    manifest["timing_adjustments"] = [
+        {
+            "label": interval.label,
+            "source_duration": round(interval.end - interval.start, 3),
+            "retimed_duration": round(interval.target_duration, 3),
+        }
+        for interval in ordered
+    ]
+
+    cast_path.write_text(
+        "\n".join(json.dumps(item, ensure_ascii=False) for item in (header, *events)) + "\n",
+        encoding="utf-8",
+    )
+    actions_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    cast_path.chmod(0o644)
+    actions_path.chmod(0o644)
+    return True
 
 
 def compact_recording(

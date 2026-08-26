@@ -150,7 +150,7 @@ export default function Home() {
           <DemoPlayer
             story="story-claude"
             label="HARNESS WALKTHROUGH"
-            caption="Actual provider TUI output · complete turns · playback at 0.5×"
+            caption="Actual provider TUI output · complete turns · playback at 0.6×"
           />
         </div>
       </section>
