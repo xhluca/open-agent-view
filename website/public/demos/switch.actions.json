@@ -1,35 +1,87 @@
 {
-  "duration": 9.880158304332733,
+  "duration": 31.752884000623705,
+  "proof": "real-open-agent-view-tui",
+  "sequence": "guide-select-open-double-left-reopen-shift-left",
   "actions": [
     {
-      "at": 1.182,
-      "action": "\u2192 \u00b7 enter selected session",
+      "at": 3.465,
+      "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 1.309,
-      "action": "\u2190 \u00b7 arm return",
-      "window": "Terminal"
-    },
-    {
-      "at": 2.937,
-      "action": "\u2190 \u00b7 return to opav",
-      "window": "Terminal"
-    },
-    {
-      "at": 4.823,
-      "action": "\u2192 \u00b7 reopen session",
+      "at": 6.398,
+      "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 4.947,
-      "action": "Session reopened",
+      "at": 6.522,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.252,
+      "action": "\u2193 \u00b7 select test-watcher",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 8.38,
+      "action": "\u2192 \u00b7 open selected session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.008,
+      "action": "\u2190 \u00b7 arm return at empty prompt",
       "window": "Terminal"
     },
     {
-      "at": 7.073,
+      "at": 11.637,
+      "action": "\u2190 again \u00b7 return to dashboard",
+      "window": "Terminal"
+    },
+    {
+      "at": 14.782,
+      "action": "Read \u00b7 dashboard guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 17.91,
+      "action": "Ctrl+U \u00b7 clear guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 18.034,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 18.761,
+      "action": "Enter \u00b7 reopen test-watcher",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.09,
       "action": "Shift+\u2190 \u00b7 return immediately",
       "window": "Terminal"
+    },
+    {
+      "at": 23.225,
+      "action": "Read \u00b7 dashboard guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 26.354,
+      "action": "Ctrl+U \u00b7 clear guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 26.478,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 27.202,
+      "action": "All managed sessions remain visible",
+      "window": "open-agent-view"
     }
   ]
 }

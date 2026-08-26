@@ -1,66 +1,131 @@
 {
-  "duration": 15.309564910435688,
-  "proof": "multiple-native-agent-sessions",
-  "sequence": "rename-codex-then-claude",
+  "duration": 35.5741196440115,
+  "proof": "real-open-agent-view-tui",
+  "sequence": "guide-rename-three-multi-harness-sessions",
   "actions": [
     {
-      "at": 1.788,
-      "action": "Ctrl+R \u00b7 rename Codex session",
+      "at": 3.335,
+      "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 2.616,
-      "action": "Ctrl+U \u00b7 clear Codex name",
+      "at": 6.262,
+      "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 3.638,
-      "action": "Type \u00b7 release-audit",
+      "at": 6.386,
+      "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 4.516,
-      "action": "Enter \u00b7 save Codex name",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 4.642,
-      "action": "Saved Codex name",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 6.268,
-      "action": "\u2193 \u00b7 select Claude session",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 7.199,
+      "at": 7.918,
       "action": "Ctrl+R \u00b7 rename Claude session",
       "window": "open-agent-view"
     },
     {
-      "at": 8.027,
-      "action": "Ctrl+U \u00b7 clear Claude name",
+      "at": 9.055,
+      "action": "Ctrl+U \u00b7 clear current name",
       "window": "open-agent-view"
     },
     {
-      "at": 9.33,
-      "action": "Type \u00b7 frontend-refactor",
+      "at": 10.071,
+      "action": "Type \u00b7 launch-review",
       "window": "open-agent-view"
     },
     {
-      "at": 10.204,
-      "action": "Enter \u00b7 save Claude name",
+      "at": 10.996,
+      "action": "Enter \u00b7 save local name",
       "window": "open-agent-view"
     },
     {
-      "at": 10.331,
-      "action": "Saved Claude name",
+      "at": 11.119,
+      "action": "Saved \u00b7 launch-review remains Claude",
       "window": "open-agent-view"
     },
     {
-      "at": 11.959,
-      "action": "Both agent names visible",
+      "at": 12.644,
+      "action": "\u2193 \u00b7 move to the next section",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 12.768,
+      "action": "\u2193 \u00b7 select the next agent",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 13.698,
+      "action": "Ctrl+R \u00b7 rename Codex session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 14.829,
+      "action": "Ctrl+U \u00b7 clear current name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 15.706,
+      "action": "Type \u00b7 api-cutover",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 16.631,
+      "action": "Enter \u00b7 save local name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 16.755,
+      "action": "Saved \u00b7 api-cutover remains Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 18.279,
+      "action": "\u2193 \u00b7 move to the next section",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 19.211,
+      "action": "Ctrl+R \u00b7 rename Pi session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.342,
+      "action": "Ctrl+U \u00b7 clear current name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 21.082,
+      "action": "Type \u00b7 test-plan",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.006,
+      "action": "Enter \u00b7 save local name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.129,
+      "action": "Saved \u00b7 test-plan remains Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 26.528,
+      "action": "Read \u00b7 dashboard guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 29.658,
+      "action": "Ctrl+U \u00b7 clear guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 29.782,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 30.522,
+      "action": "Three renamed sessions visible",
       "window": "open-agent-view"
     }
   ]

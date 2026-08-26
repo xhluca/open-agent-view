@@ -1,39 +1,71 @@
 {
-  "duration": 10.083,
+  "duration": 27.763711636548994,
+  "proof": "real-open-agent-view-tui",
+  "sequence": "guide-check-open-native-login-background",
   "actions": [
     {
-      "at": 1.78,
-      "action": "Type /setup",
+      "at": 3.414,
+      "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 1.904,
+      "at": 6.543,
+      "action": "Ctrl+U \u00b7 clear guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 6.668,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 8.236,
+      "action": "Type /setup claude",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 8.361,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.028,
+      "at": 8.488,
       "action": "Setup check complete",
       "window": "Harness setup"
     },
     {
-      "at": 3.953,
+      "at": 11.612,
       "action": "Enter \u00b7 open native login",
       "window": "Harness setup"
     },
     {
-      "at": 4.077,
+      "at": 11.735,
       "action": "Native login ready",
       "window": "Claude Code login"
     },
     {
-      "at": 6.706,
+      "at": 15.86,
       "action": "Shift+\u2190 \u00b7 background setup",
       "window": "Claude Code login"
     },
     {
-      "at": 7.083,
-      "action": "Returned to dashboard",
+      "at": 18.837,
+      "action": "Read \u00b7 dashboard guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.165,
+      "action": "Ctrl+U \u00b7 clear guidance",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.289,
+      "action": "Esc \u00b7 return to dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 23.012,
+      "action": "Returned without losing setup",
       "window": "open-agent-view"
     }
   ]

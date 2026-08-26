@@ -2195,27 +2195,141 @@ def start_control_dashboard(
     return terminal
 
 
-def prepare_real_terminal_session(terminal: RealTerminal) -> None:
-    terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.06)
-    terminal.wait_for(r"choose harness", 20)
-    terminal.key("Enter", "Enter · choose Terminal", "open-agent-view")
+def prepare_control_fixture(root: Path) -> Path:
+    """Create a dense, realistic multi-harness dashboard for control demos.
+
+    The fixture feeds the released binary's normal discovery, grouping,
+    selection, composer, and local-name code paths. It avoids inventing a
+    terminal-looking web animation while keeping the rename story repeatable
+    and free of provider API calls.
+    """
+
+    work = root / "home" / "work" / "acme-dashboard"
+    now_ms = int(time.time() * 1000)
+    rows = (
+        ("ready_for_review", "claude", "release-review", "Release notes are ready for final review"),
+        ("needs_input", "codex", "api-migration", "Choose the rollout window for the API migration"),
+        ("needs_input", "pi", "test-triage", "Confirm which flaky tests should be quarantined"),
+        ("needs_input", "opencode", "billing-cleanup", "Approval needed before updating billing fixtures"),
+        ("working", "cursor", "frontend-polish", "Refining responsive layout and keyboard focus"),
+        ("working", "github_copilot", "database-indexes", "Benchmarking the new query indexes"),
+        ("working", "antigravity", "incident-report", "Tracing the production timeout regression"),
+        ("working", "mistral_vibe", "cli-packaging", "Validating release archives on Linux and macOS"),
+        ("completed", "muse_code", "docs-refresh", "Updated the operator guide and examples"),
+        ("completed", "qwen_code", "auth-tests", "Authentication integration tests are passing"),
+        ("completed", "kimi_code", "cache-profile", "Cache hit-rate analysis is complete"),
+        ("completed", "claude", "accessibility", "Keyboard and screen-reader audit completed"),
+        ("completed", "codex", "dependency-audit", "Dependency upgrade plan is ready"),
+        ("completed", "pi", "metrics-cleanup", "Removed duplicate telemetry counters"),
+        ("completed", "opencode", "release-notes", "Drafted release notes for the next version"),
+        ("completed", "cursor", "mobile-layout", "Verified the compact dashboard layout"),
+    )
+    sessions = []
+    for index, (state, provider, name, summary) in enumerate(rows):
+        provider_id = provider.replace("_", "-")
+        sessions.append(
+            {
+                "id": f"{provider_id}:host:control-{index:02d}",
+                "provider_session_id": f"control-{index:02d}",
+                "provider": provider,
+                "runtime": {"kind": "host"},
+                "kind": "managed",
+                "name": name,
+                "cwd": str(work),
+                "state": state,
+                "summary": summary,
+                "raw_state": state,
+                "pid": 4100 + index if state == "working" else None,
+                "started_at": now_ms - (index + 2) * 240_000,
+                "updated_at": now_ms - (index + 1) * 95_000,
+                "pull_requests": None,
+                "capabilities": ["inspect"],
+            }
+        )
+    path = root / "state" / "control-sessions.json"
+    write_private_text(
+        path,
+        json.dumps({"sessions": sessions, "warnings": []}, indent=2) + "\n",
+    )
+    return path
+
+
+def start_fixture_control_dashboard(
+    repo: Path,
+    root: Path,
+    demo: str,
+) -> RealTerminal:
+    environment = base_environment(root)
+    install_local_binary(repo, root)
+    fixture = prepare_control_fixture(root)
+    work = root / "home" / "work" / "acme-dashboard"
+    terminal = RealTerminal(demo, root, environment)
+    command = [
+        "opav",
+        "--fixture",
+        str(fixture),
+        "--cwd",
+        str(work),
+        "--refresh-ms",
+        "30000",
+        "--history-limit",
+        "40",
+    ]
+    terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
+    terminal.wait_for(APP_HEADER_PATTERN, 45)
+    terminal.wait_screen(r"release-review.*Claude", 20)
+    time.sleep(0.8)
+    return terminal
+
+
+def show_composer_guidance(
+    terminal: RealTerminal,
+    message: str,
+    *,
+    hold: float = 2.5,
+) -> None:
+    """Write a readable instruction in OAV's genuine bottom composer."""
+
+    words = re.findall(r"[A-Za-z0-9+/]+", message)[:7]
+    visible_pattern = r"\W+".join(re.escape(word) for word in words)
+    terminal.type_text(message, "Read · dashboard guidance", "open-agent-view", 0.035)
+    terminal.wait_screen(visible_pattern, 20)
+    time.sleep(hold)
+    terminal.key("C-u", "Ctrl+U · clear guidance", "open-agent-view")
+    terminal.key("Escape", "Esc · return to dashboard", "open-agent-view")
+    terminal.wait_screen_without(visible_pattern, 20)
+    time.sleep(0.6)
+
+
+def prepare_real_terminal_session(
+    terminal: RealTerminal,
+    name: str = "workspace shell",
+    ready_message: str = "Managed terminal ready.",
+) -> None:
     terminal.type_line(
-        "workspace shell",
+        "/harness terminal",
+        "Enter · select Terminal harness",
+        "open-agent-view",
+        0.04,
+    )
+    terminal.wait_screen(r"new tasks will use the Terminal harness", 20)
+    terminal.type_line(
+        name,
         "Enter · create terminal session",
         "open-agent-view",
         0.035,
     )
     terminal.wait_screen(r"[$#]\s*$", 30)
     terminal.type_line(
-        "printf 'Managed terminal ready.\\n'",
+        f"printf '%s\\n' {shlex.quote(ready_message)}",
         "Enter · run command",
         "Terminal",
         0.012,
     )
-    terminal.wait_screen(r"Managed terminal ready\.", 15)
+    terminal.wait_screen(re.escape(ready_message), 15)
     terminal.key("S-Left", "Shift+← · return to opav", "Terminal")
     terminal.wait_screen(APP_HEADER_PATTERN, 30)
-    terminal.wait_screen(r"workspace shell", 20)
+    terminal.wait_screen(re.escape(name), 20)
     time.sleep(0.8)
 
 
@@ -2223,51 +2337,185 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
     root = Path(tempfile.mkdtemp(prefix=f"oav-real-{demo}."))
     terminal: RealTerminal | None = None
     try:
-        active = "pi" if demo == "model" else ("all" if demo == "login" else "terminal")
-        terminal = start_control_dashboard(repo, root, demo, active)
+        if demo == "rename":
+            terminal = start_fixture_control_dashboard(repo, root, demo)
+        else:
+            active = "pi" if demo == "model" else ("all" if demo == "login" else "terminal")
+            terminal = start_control_dashboard(repo, root, demo, active)
 
         if demo == "switch":
-            prepare_real_terminal_session(terminal)
+            for name, ready_message in (
+                ("api-server", "API server shell ready."),
+                ("test-watcher", "Test watcher shell ready."),
+                ("release-shell", "Release shell ready."),
+            ):
+                prepare_real_terminal_session(terminal, name, ready_message)
+        elif demo == "model":
+            prepare_real_terminal_session(
+                terminal,
+                "workspace-shell",
+                "Workspace shell stays available.",
+            )
+            terminal.type_line(
+                "/harness pi",
+                "Enter · select Pi harness",
+                "open-agent-view",
+                0.04,
+            )
+            terminal.wait_screen(r"new tasks will use the Pi harness", 20)
+            time.sleep(0.8)
+        elif demo == "login":
+            prepare_real_terminal_session(
+                terminal,
+                "workspace-shell",
+                "Workspace shell stays available during setup.",
+            )
 
         start = terminal.repaint_start()
-        if demo == "switch":
-            terminal.key("Right", "→ · enter selected session", "open-agent-view")
-            terminal.wait_screen(r"Managed terminal ready\.", 20)
-            terminal.key("Left", "← · arm return", "Terminal")
+        action_start_index = len(terminal.actions)
+        if demo == "rename":
+            show_composer_guidance(
+                terminal,
+                "Select a session, then press Ctrl+R to give it a clear local name.",
+                hold=2.8,
+            )
+            rename_steps = (
+                ("release-review", "Claude", "launch-review"),
+                ("api-migration", "Codex", "api-cutover"),
+                ("test-triage", "Pi", "test-plan"),
+            )
+            for index, (old_name, provider, new_name) in enumerate(rename_steps):
+                terminal.wait_selected_row(old_name, 20)
+                time.sleep(0.8)
+                terminal.key(
+                    "C-r",
+                    f"Ctrl+R · rename {provider} session",
+                    "open-agent-view",
+                )
+                terminal.wait_screen(r"rename session", 20)
+                terminal.wait_screen(re.escape(old_name), 20)
+                time.sleep(1.0)
+                terminal.key("C-u", "Ctrl+U · clear current name", "open-agent-view")
+                terminal.type_text(
+                    new_name,
+                    f"Type · {new_name}",
+                    "open-agent-view",
+                    0.065,
+                )
+                time.sleep(0.8)
+                terminal.key("Enter", "Enter · save local name", "open-agent-view")
+                terminal.wait_screen(
+                    rf"(?m)^\s*[^\n]*\b{re.escape(new_name)}\b"
+                    rf"[^\n]*\b{re.escape(provider)}\b",
+                    20,
+                )
+                terminal.remember(f"Saved · {new_name} remains {provider}", "open-agent-view")
+                time.sleep(1.4)
+                if index + 1 < len(rename_steps):
+                    terminal.key("Down", "↓ · move to the next section", "open-agent-view")
+                    if index == 0:
+                        terminal.key("Down", "↓ · select the next agent", "open-agent-view")
+                    terminal.wait_selected_row(rename_steps[index + 1][0], 20)
+
+            show_composer_guidance(
+                terminal,
+                "Names stay on this dashboard; Claude, Codex, and Pi keep their own titles.",
+                hold=3.0,
+            )
+            terminal.wait_screen(r"launch-review.*Claude", 20)
+            terminal.wait_screen(r"api-cutover.*Codex", 20)
+            terminal.wait_screen(r"test-plan.*Pi", 20)
+            terminal.remember("Three renamed sessions visible", "open-agent-view")
+            time.sleep(2.5)
+        elif demo == "switch":
+            show_composer_guidance(
+                terminal,
+                "Use Up and Down to choose a session. Press Right or Enter to open it.",
+                hold=2.8,
+            )
+            terminal.wait_selected_row("release-shell", 20)
+            terminal.key("Down", "↓ · select test-watcher", "open-agent-view")
+            terminal.wait_selected_row("test-watcher", 20)
+            time.sleep(1.0)
+            terminal.key("Right", "→ · open selected session", "open-agent-view")
+            terminal.wait_native_screen(r"Test watcher shell ready\.", 20)
+            time.sleep(1.5)
+            terminal.key("Left", "← · arm return at empty prompt", "Terminal")
             terminal.wait_screen(r"Press ← again", 10)
             time.sleep(1.5)
-            terminal.key("Left", "← · return to opav", "Terminal")
+            terminal.key("Left", "← again · return to dashboard", "Terminal")
             terminal.wait_screen(APP_HEADER_PATTERN, 20)
-            time.sleep(1.5)
-            terminal.key("Right", "→ · reopen session", "open-agent-view")
-            terminal.wait_screen(r"Managed terminal ready\.", 20)
-            terminal.remember("Session reopened", "Terminal")
-            time.sleep(2.0)
+            show_composer_guidance(
+                terminal,
+                "At an empty prompt, Left twice returns. Shift+Left returns immediately.",
+                hold=3.0,
+            )
+            terminal.key("Enter", "Enter · reopen test-watcher", "open-agent-view")
+            terminal.wait_native_screen(r"Test watcher shell ready\.", 20)
+            time.sleep(1.2)
             terminal.key("S-Left", "Shift+← · return immediately", "Terminal")
             terminal.wait_screen(APP_HEADER_PATTERN, 20)
+            show_composer_guidance(
+                terminal,
+                "The three sessions keep running while the shared dashboard is in front.",
+                hold=3.0,
+            )
+            terminal.remember("All managed sessions remain visible", "open-agent-view")
+            time.sleep(2.0)
         elif demo == "model":
+            show_composer_guidance(
+                terminal,
+                "/model chooses the model for the next Pi session.",
+                hold=2.8,
+            )
             terminal.type_line("/model", "Type /model", "open-agent-view", 0.07)
             terminal.wait_screen(r"choose Pi model", 45)
             terminal.wait_screen(r"results", 45)
-            terminal.key("Down", "↓ · next model", "open-agent-view")
-            terminal.key("Down", "↓ · next model", "open-agent-view")
-            terminal.key("Enter", "Enter · select exact model", "open-agent-view")
-            terminal.wait_screen(r"model", 15)
-            terminal.remember("Selected model visible", "open-agent-view")
-            time.sleep(1.8)
+            time.sleep(2.0)
+            terminal.key("Down", "↓ · browse available models", "open-agent-view")
+            time.sleep(0.8)
+            terminal.key("Up", "↑ · return to first result", "open-agent-view")
+            time.sleep(0.8)
+            terminal.type_text(
+                "gpt-5.4",
+                "Type · search gpt-5.4",
+                "open-agent-view",
+                0.09,
+            )
+            terminal.wait_screen(r"gpt-5\.4", 30)
+            time.sleep(2.0)
+            terminal.key("Enter", "Enter · select the filtered model", "open-agent-view")
+            terminal.wait_screen(r"model\s+[^\n]*gpt-5\.4", 20)
+            show_composer_guidance(
+                terminal,
+                "The composer now shows the exact model the next Pi task will use.",
+                hold=3.2,
+            )
+            terminal.remember("Selected Pi model remains visible", "open-agent-view")
+            time.sleep(2.0)
         elif demo == "login":
-            terminal.type_line("/setup", "Type /setup", "open-agent-view", 0.07)
+            show_composer_guidance(
+                terminal,
+                "/setup claude checks installation and opens Claude's native sign-in.",
+                hold=3.0,
+            )
+            terminal.type_line("/setup claude", "Type /setup claude", "open-agent-view", 0.06)
             terminal.wait_screen(r"interactive login now\?", 45)
             terminal.remember("Setup check complete", "Harness setup")
-            time.sleep(1.8)
+            time.sleep(3.0)
             terminal.key("Enter", "Enter · open native login", "Harness setup")
             terminal.wait_screen(r"Opening Claude Code login|browser|sign[ -]?in|log[ -]?in", 60)
             terminal.remember("Native login ready", "Claude Code login")
-            time.sleep(2.5)
+            time.sleep(4.0)
             terminal.key("S-Left", "Shift+← · background setup", "Claude Code login")
             terminal.wait_screen(APP_HEADER_PATTERN, 30)
-            terminal.remember("Returned to dashboard", "open-agent-view")
-            time.sleep(1.8)
+            show_composer_guidance(
+                terminal,
+                "Setup stays managed in the dashboard while you continue other work.",
+                hold=3.2,
+            )
+            terminal.remember("Returned without losing setup", "open-agent-view")
+            time.sleep(2.2)
         else:
             raise RuntimeError(f"unknown control recording: {demo}")
 
@@ -2283,23 +2531,61 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             end,
             public_path_replacements(root),
         )
+        primed_lead = prime_first_terminal_frame(target)
         actions = [
-            {**item, "at": max(0.0, round(float(item["at"]) - start, 3))}
-            for item in terminal.actions
+            {
+                **item,
+                "at": max(
+                    0.0,
+                    round(float(item["at"]) - start - primed_lead, 3),
+                ),
+            }
+            for item in terminal.actions[action_start_index:]
             if start <= float(item["at"]) <= end
         ]
         action_path = output / f"{demo}.actions.json"
         action_path.write_text(
-            json.dumps({"duration": end - start + 1.35, "actions": actions}, indent=2)
+            json.dumps(
+                {
+                    "duration": end - start + 1.35 - primed_lead,
+                    "proof": "real-open-agent-view-tui",
+                    "sequence": {
+                        "rename": "guide-rename-three-multi-harness-sessions",
+                        "switch": "guide-select-open-double-left-reopen-shift-left",
+                        "model": "guide-browse-search-select-pi-model",
+                        "login": "guide-check-open-native-login-background",
+                    }[demo],
+                    "actions": actions,
+                },
+                indent=2,
+            )
             + "\n",
             encoding="utf-8",
         )
         action_path.chmod(0o644)
-        compact_recording(target, action_path)
         required = {
-            "switch": ["Managed terminal ready.", "Press ← again"],
-            "model": ["choose Pi model"],
-            "login": ["interactive login now?", "Opening Claude Code login"],
+            "rename": [
+                "release-review",
+                "database-indexes",
+                "launch-review",
+                "api-cutover",
+                "test-plan",
+            ],
+            "switch": [
+                "release-shell",
+                "test-watcher",
+                "api-server",
+                "Press ← again",
+            ],
+            "model": [
+                "workspace-shell",
+                "choose Pi model",
+                "gpt-5.4",
+            ],
+            "login": [
+                "interactive login now?",
+                "Opening Claude Code login",
+            ],
         }[demo]
         validate_public_cast(target, [APP_HEADER, *required])
         print(f"captured real Open Agent View {demo} controls: {target}")
@@ -2452,13 +2738,6 @@ def main() -> int:
         capture_setup(repo, output)
     elif args.demo == "sequence":
         capture_provider_sequence(repo, output, through=args.through)
-    elif args.demo == "rename":
-        capture_provider_sequence(
-            repo,
-            output,
-            through="codex",
-            capture_rename=True,
-        )
     elif args.demo == "claude":
         capture_claude(repo, output)
     elif args.demo in PROVIDER_DEMOS:

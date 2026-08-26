@@ -223,8 +223,8 @@ export default function Home() {
           <StoryTabs name="Common control demos" tabs={controlTabs} initial="rename" />
           <DemoPlayer
             story="story-rename"
-            label="EVERYDAY CONTROLS"
-            caption="Organize real agent sessions and return to any of them"
+            label="GUIDED CONTROLS"
+            caption="Read the next step in the composer, perform it in the real TUI, and hold the result"
           />
         </div>
       </section>

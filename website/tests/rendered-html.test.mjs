@@ -267,23 +267,46 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
 
     if (name === "rename") {
       assert.match(visibleOutput, /rename session/i);
-      assert.match(visibleOutput, /claude-explanation/i);
-      assert.match(visibleOutput, /codex-explanation/i);
-      assert.match(visibleOutput, /frontend-refactor/i);
-      assert.match(visibleOutput, /release-audit/i);
+      assert.match(visibleOutput, /release-review/i);
+      assert.match(visibleOutput, /database-indexes/i);
+      assert.match(visibleOutput, /launch-review/i);
+      assert.match(visibleOutput, /api-cutover/i);
+      assert.match(visibleOutput, /test-plan/i);
       assert.match(visibleOutput, /Claude/i);
       assert.match(visibleOutput, /Codex/i);
-      assert.equal(manifest.proof, "multiple-native-agent-sessions");
-      assert.equal(manifest.sequence, "rename-codex-then-claude");
-      assert.ok(manifest.actions.some((action) => action.action === "Saved Codex name"));
-      assert.ok(manifest.actions.some((action) => action.action === "Saved Claude name"));
-      assert.ok(manifest.actions.some((action) => action.action === "Both agent names visible"));
+      assert.match(visibleOutput, /Pi/i);
+      assert.equal(manifest.proof, "real-open-agent-view-tui");
+      assert.equal(manifest.sequence, "guide-rename-three-multi-harness-sessions");
+      assert.equal(
+        manifest.actions.filter((action) => action.action === "Enter · save local name").length,
+        3,
+      );
+      assert.ok(manifest.actions.some((action) => action.action === "Three renamed sessions visible"));
+    }
+    if (name === "switch") {
+      assert.match(visibleOutput, /release-shell/i);
+      assert.match(visibleOutput, /test-watcher/i);
+      assert.match(visibleOutput, /api-server/i);
+      assert.match(visibleOutput, /Press ← again/i);
+      assert.equal(manifest.sequence, "guide-select-open-double-left-reopen-shift-left");
+      assert.ok(manifest.actions.some((action) => action.action === "← again · return to dashboard"));
+      assert.ok(manifest.actions.some((action) => action.action === "Shift+← · return immediately"));
+    }
+    if (name === "model") {
+      assert.match(visibleOutput, /workspace-shell/i);
+      assert.match(visibleOutput, /choose Pi model/i);
+      assert.match(visibleOutput, /gpt-5\.4/i);
+      assert.equal(manifest.sequence, "guide-browse-search-select-pi-model");
+      assert.ok(manifest.actions.some((action) => action.action === "Type · search gpt-5.4"));
+      assert.ok(manifest.actions.some((action) => action.action === "Enter · select the filtered model"));
     }
     if (name === "login") {
+      assert.match(visibleOutput, /workspace-shell/i);
       assert.match(visibleOutput, /interactive login now\?/i);
       assert.match(visibleOutput, /Opening Claude Code login/i);
+      assert.equal(manifest.sequence, "guide-check-open-native-login-background");
       assert.ok(manifest.actions.some((action) => action.action === "Native login ready"));
-      assert.ok(manifest.actions.some((action) => action.action === "Returned to dashboard"));
+      assert.ok(manifest.actions.some((action) => action.action === "Returned without losing setup"));
     }
 
     for (const pattern of privateMaterial) {

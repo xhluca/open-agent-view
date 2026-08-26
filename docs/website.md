@@ -22,7 +22,8 @@ npm run export
 tests render 1440×900 desktop, 1280×800 Mac-laptop, and 390×844 phone
 viewports, reject horizontal overflow,
 exercise every timeline control, provider deep links, keyboard-accessible tabs,
-finite next-tab handoff, clipboard copy, and reduced motion, then run Axe.
+finite next-tab handoff, countdown cancellation after a rewind, clipboard copy,
+and reduced motion, then run Axe.
 Rendered-HTML tests also parse all 17 genuine cast-v2 recordings and their
 action timelines, reject private paths/account identities/credential-like
 material, require canonical Open Graph metadata and the locally vendored marks,
@@ -41,8 +42,9 @@ The page has three finite terminal walkthroughs implemented by
    turns, type the return shortcut explanation, return with Shift+Left, wait on
    the growing shared dashboard, rename the exact new row, and end at the next
    `/harness` picker; and
-3. four tabbed common-control stories demonstrate rename, native-session
-   switching, model selection, and login/setup.
+3. four tabbed common-control stories explain each next action in the real
+   bottom composer, then demonstrate multi-session rename, native-session
+   switching, model search/selection, and login/setup at literal speed.
 
 Every player has independent −5s, pause/resume, +5s, restart, and scrub
 controls. No recording advances when the page loads. Scrolling or moving
@@ -52,7 +54,8 @@ pauses when focus moves elsewhere or the browser tab is hidden. A manual pause
 remains paused until the visitor explicitly resumes it. Harness tabs can be
 opened directly from the provider marks in the hero. Harness and control tabs
 advance only after the current story has ended and a separate visible countdown
-has elapsed. The long harness stories play at 0.5× so model browsing, native
+has elapsed. Rewinding, restarting, replaying, or scrubbing away from the final
+frame cancels and resets that countdown. The long harness stories play at 0.6× so model browsing, native
 responses, returning, and renaming remain legible; setup and focused control
 stories remain literal 1×. Meaningful response and dashboard states are held
 long enough to read. Reduced-motion mode also disables automatic tab changes
@@ -63,13 +66,23 @@ binary, or provider TUI recorded through tmux and Asciinema. The recorder
 prepares the harnesses before the Section 2 recording begins, copies only the
 minimum existing login state into a private disposable home, and deletes that
 home after validating the sanitized cast. Each later tab reuses the same
-disposable workspace and provider stores, so the dashboard truthfully gains one
-renamed row at a time. There are no fabricated conversations or terminal rows.
+disposable workspace and provider stores, so the Section 2 dashboard truthfully
+gains one renamed row at a time. There are no fabricated Section 2
+conversations or terminal rows.
 Before Asciinema starts, the recorder invokes every real CLI's bounded
 version/catalog path in that same disposable environment so first-process
 startup is not presented as interaction time. The Terminal story uses the real
 `/shell` picker and literal `printf` commands; it does not install fake
 chat-like executables.
+
+Section 3 records the same released OAV TUI through tmux and Asciinema, but
+chooses the safest repeatable data source for each control. Rename reads a
+dense normalized fixture with sixteen multi-harness rows so three local-name
+changes can be taught without paid provider calls. Switch creates and reopens
+three genuine managed shell sessions. Model selection reads Pi's real catalog,
+and setup opens Claude's real unauthenticated native sign-in flow. Every
+instruction is typed into OAV's own composer; no HTML terminal imitation is
+used.
 
 ## Recording and README media
 
