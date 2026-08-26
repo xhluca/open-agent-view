@@ -111,7 +111,9 @@ harness or losing the draft. `/harness NAME` selects explicitly;
 
 For every installed launch-capable provider, `shift+tab` from the new-task composer
 opens an asynchronous searchable picker while preserving the current draft;
-`/model` opens the same picker as a command. Type to filter, use arrows or `tab`
+`/model` opens the same picker as a command. When Terminal is selected,
+`/shell` is an equivalent, clearer alias and the picker lists shells rather
+than models. Type to filter, use arrows or `tab`
 to move, `page up`/`page down` to move ten choices, `enter` to select, and
 `esc` to keep the previous selection and draft. After a successful catalog
 load, **Default** is available alongside the exact account models. An
@@ -126,7 +128,7 @@ identifier without loading the catalog, and `/model default` resets the
 selection. `/login` hands the terminal to the selected provider's native
 authentication/setup UI. When the catalog reports an authentication failure,
 the picker offers `enter`/`l` for that handoff and reloads the same account
-catalog automatically. The selected harness/model is always displayed in the composer
+catalog automatically. The selected harness/model (or Terminal shell) is always displayed in the composer
 border before submission. Catalog sources are provider-native: Claude parses
 aliases advertised beside `--model` in `claude --help`; Codex requests all
 visible pages of App Server `model/list`; Pi parses `pi --offline
@@ -155,7 +157,13 @@ The task text becomes the terminal's display name, not a command. A boundary
 double-arrow or Shift+Left/Right returns to OAV, Enter/Right resumes, the first
 Ctrl+X stops it, and the second Ctrl+X
 deletes its completed row. These terminal frontends are process-local and are
-stopped when the dashboard itself exits.
+stopped when the dashboard itself exits. `/shell` and `/model` both open a
+searchable shell picker. It shows the configured default and installed Bash,
+Zsh, Fish, Nushell, Xonsh, and Elvish executables. A missing supported shell is
+shown as an explicit `install` row; selecting that row suspends OAV and opens
+the host package manager (`brew`, `apt-get`, `dnf`, `pacman`, or `zypper`) in
+the native terminal. OAV never evaluates the session name or shell choice as a
+command string.
 
 New Copilot dashboard tasks reserve an exact UUID and open Copilot's native
 interactive UI in the foreground. Their exact IDs and latest bounded message
@@ -371,12 +379,13 @@ label.
 | Session list | `ctrl+l` | Request an immediate provider refresh. |
 | Session list | `tab`, `/`, or printable text | Compose a new host task. `/` begins a dashboard command rather than a filter. |
 | New-task composer | `tab` | Open the visible harness picker. |
-| New-task composer | `shift+tab` | Open the selected harness's model picker without changing the task draft. |
+| New-task composer | `shift+tab` | Open the selected harness's model picker—or Terminal shell picker—without changing the task draft. |
 | Harness picker | `↑` / `↓`, `←` / `→`, or `tab` / `shift+tab` | Preview configured launch-capable harnesses with wraparound. |
 | Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
 | Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
 | New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, Copilot, Antigravity, or Terminal when its launch controller is available; `/provider` is an alias. |
 | New-task composer | `/model` | Asynchronously load the selected harness's account/catalog model list and open a searchable picker. |
+| Terminal composer | `/shell` / `/shell NAME` | Open the shell picker or select an installed shell; `/model` remains an exact alias while Terminal is selected. Missing supported shells appear as explicit native package-manager install actions. |
 | Model picker | type, `backspace`, `↑` / `↓`, `tab` / `shift+tab`, `page up` / `page down` | Filter and navigate catalog results; provider discovery stays off the input thread. |
 | Model picker | `enter` / `esc` | Select the highlighted model, or return with the previous model and draft unchanged. |
 | New-task composer | `/model NAME` / `/model default` | Select an exact custom model identifier or reset to the provider default. The provider revalidates it at launch. |

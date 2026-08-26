@@ -83,6 +83,16 @@ pub trait ProviderController: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Perform an explicit setup action offered by a launch-option picker.
+    /// Terminal uses this for missing shells; providers otherwise keep this
+    /// unavailable rather than interpreting model text as an installer.
+    fn setup_launch_option(&self, _option: &str) -> Result<ControlOutcome> {
+        bail!(
+            "{} launch-option setup is unavailable",
+            self.provider().label()
+        )
+    }
+
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Background
     }
@@ -274,6 +284,11 @@ impl ControlHub {
             bail!("{} does not expose model selection", provider.label());
         }
         controller.available_models()
+    }
+
+    pub fn setup_launch_option(&self, provider: &Provider, option: &str) -> Result<ControlOutcome> {
+        self.ensure_provider_io()?;
+        self.controller(provider)?.setup_launch_option(option)
     }
 
     pub fn launch_presentation(&self, provider: &Provider) -> Result<LaunchPresentation> {
@@ -1968,6 +1983,15 @@ exit 0
         assert_fenced(hub.respond_input(&item, "answer"));
         assert_fenced(hub.delete(&item));
         assert_fenced(hub.open(&item));
+        assert_fenced(hub.authenticate(&Provider::Terminal));
+        assert_fenced(hub.setup_provider(&Provider::Terminal));
+        assert_fenced(hub.setup_launch_option(&Provider::Terminal, "install-shell:fish"));
+        assert_eq!(
+            hub.available_models(&Provider::Terminal)
+                .unwrap_err()
+                .to_string(),
+            "provider actions are disabled while reading a fixture"
+        );
         assert!(hub.codex_supervisor().is_none());
     }
 

@@ -7,7 +7,9 @@
 //! only the exact child held by that PTY registry.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -23,11 +25,22 @@ use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, Se
 
 static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+pub const SHELL_INSTALL_PREFIX: &str = "install-shell:";
+const SUPPORTED_SHELLS: &[(&str, &str)] = &[
+    ("bash", "bash"),
+    ("zsh", "zsh"),
+    ("fish", "fish"),
+    ("nu", "nushell"),
+    ("xonsh", "xonsh"),
+    ("elvish", "elvish"),
+];
+
 #[derive(Clone, Debug)]
 struct TerminalRecord {
     key: String,
     name: String,
     cwd: PathBuf,
+    shell: String,
     state: SessionState,
     created_at: SystemTime,
     updated_at: SystemTime,
@@ -67,7 +80,7 @@ impl TerminalHarness {
 
     fn run_record(&self, record: &TerminalRecord, fresh: bool) -> Result<ControlOutcome> {
         let exit = if fresh {
-            let shell = configured_shell();
+            let shell = record.shell.clone();
             let mut command = Command::new(&shell);
             command.current_dir(&record.cwd);
             command.env("OAV_TERMINAL_NAME", &record.name);
@@ -170,7 +183,7 @@ impl ProviderController for TerminalHarness {
 
     fn launch_mode(&self) -> LaunchMode {
         if cfg!(unix) {
-            LaunchMode::DefaultModel
+            LaunchMode::SelectableModel
         } else {
             LaunchMode::Unavailable
         }
@@ -178,6 +191,14 @@ impl ProviderController for TerminalHarness {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Foreground
+    }
+
+    fn available_models(&self) -> Result<Vec<String>> {
+        Ok(shell_choices())
+    }
+
+    fn setup_launch_option(&self, option: &str) -> Result<ControlOutcome> {
+        install_shell(option)
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
@@ -191,10 +212,12 @@ impl ProviderController for TerminalHarness {
             .as_millis();
         let sequence = TERMINAL_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let key = format!("terminal:{millis}-{}-{sequence}", std::process::id());
+        let shell = resolve_shell(request.model.as_deref())?;
         let record = TerminalRecord {
             key: key.clone(),
             name: terminal_name(&request.prompt),
             cwd: request.cwd.clone(),
+            shell,
             state: SessionState::Working,
             created_at: now,
             updated_at: now,
@@ -218,8 +241,9 @@ impl ProviderController for TerminalHarness {
             .record(&session.provider_session_id)?
             .context("the managed terminal no longer exists")?;
         Ok(format!(
-            "Terminal: {}\nDirectory: {}\nState: {}\n\nTerminal scrollback remains in its native PTY. Enter or Right resumes the exact screen.",
+            "Terminal: {}\nShell: {}\nDirectory: {}\nState: {}\n\nTerminal scrollback remains in its native PTY. Enter or Right resumes the exact screen.",
             record.name,
+            record.shell,
             record.cwd.display(),
             record.state.heading()
         ))
@@ -304,9 +328,15 @@ fn terminal_session(record: &TerminalRecord) -> AgentSession {
         cwd: record.cwd.clone(),
         state: record.state,
         summary: if record.state == SessionState::Completed {
-            "Terminal exited · Ctrl+X deletes this row".into()
+            format!(
+                "Terminal exited · {} · Ctrl+X deletes this row",
+                shell_label(&record.shell)
+            )
         } else {
-            "Interactive shell · Enter resumes · ←/→ twice or Shift+Arrow returns to OAV".into()
+            format!(
+                "Interactive shell · {} · Enter resumes · ←/→ twice or Shift+Arrow returns to OAV",
+                shell_label(&record.shell)
+            )
         },
         raw_state: Some(if record.state == SessionState::Completed {
             "terminal_exited".into()
@@ -337,6 +367,189 @@ fn configured_shell() -> String {
         .unwrap_or_else(|| "/bin/sh".into())
 }
 
+pub fn is_shell_install_choice(value: &str) -> bool {
+    value
+        .strip_prefix(SHELL_INSTALL_PREFIX)
+        .is_some_and(|shell| supported_shell(shell).is_some())
+}
+
+pub fn shell_install_name(value: &str) -> Option<&str> {
+    value
+        .strip_prefix(SHELL_INSTALL_PREFIX)
+        .filter(|shell| supported_shell(shell).is_some())
+}
+
+fn supported_shell(name: &str) -> Option<(&'static str, &'static str)> {
+    SUPPORTED_SHELLS
+        .iter()
+        .copied()
+        .find(|(shell, _)| *shell == name)
+}
+
+fn shell_label(shell: &str) -> &str {
+    Path::new(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(shell)
+}
+
+fn executable_path(name: &str) -> Option<PathBuf> {
+    if name.contains('/') {
+        let path = PathBuf::from(name);
+        return executable_file(&path).then_some(path);
+    }
+    std::env::var_os("PATH").and_then(|value| {
+        std::env::split_paths(&value)
+            .map(|directory| directory.join(name))
+            .find(|candidate| executable_file(candidate))
+    })
+}
+
+fn executable_file(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    return metadata.permissions().mode() & 0o111 != 0;
+    #[cfg(not(unix))]
+    true
+}
+
+fn shell_choices() -> Vec<String> {
+    let configured = configured_shell();
+    let configured_name = shell_label(&configured).to_owned();
+    let mut choices = Vec::new();
+    if executable_path(&configured).is_some() {
+        choices.push(configured_name.clone());
+    }
+    for (shell, _) in SUPPORTED_SHELLS {
+        if *shell == configured_name {
+            continue;
+        }
+        if executable_path(shell).is_some() {
+            choices.push((*shell).to_owned());
+        } else {
+            choices.push(format!("{SHELL_INSTALL_PREFIX}{shell}"));
+        }
+    }
+    choices
+}
+
+fn resolve_shell(selection: Option<&str>) -> Result<String> {
+    let default_shell = configured_shell();
+    let requested = selection.unwrap_or_else(|| shell_label(&default_shell));
+    if is_shell_install_choice(requested) {
+        bail!("select the install action before launching this shell");
+    }
+    if requested.len() > 64
+        || requested.is_empty()
+        || requested.contains('/')
+        || requested
+            .chars()
+            .any(|character| !character.is_ascii_alphanumeric() && character != '-')
+    {
+        bail!("shell names must be a supported executable name");
+    }
+    if supported_shell(requested).is_none() && requested != shell_label(&default_shell) {
+        bail!("unsupported shell {requested}; use /shell to see supported shells");
+    }
+    if requested == shell_label(&default_shell) {
+        return executable_path(&default_shell)
+            .map(|path| path.to_string_lossy().into_owned())
+            .context("the configured SHELL executable is unavailable");
+    }
+    executable_path(requested)
+        .map(|path| path.to_string_lossy().into_owned())
+        .with_context(|| format!("{requested} is not installed; use /shell to install it"))
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ShellInstallPlan {
+    program: PathBuf,
+    args: Vec<String>,
+}
+
+fn shell_install_plan(shell: &str) -> Result<ShellInstallPlan> {
+    let (_, package) = supported_shell(shell).context("unsupported shell installation choice")?;
+    let manager = if let Some(brew) = executable_path("brew") {
+        brew
+    } else if let Some(apt) = executable_path("apt-get") {
+        apt
+    } else if let Some(dnf) = executable_path("dnf") {
+        dnf
+    } else if let Some(pacman) = executable_path("pacman") {
+        pacman
+    } else if let Some(zypper) = executable_path("zypper") {
+        zypper
+    } else {
+        bail!("no supported package manager was found (brew, apt-get, dnf, pacman, or zypper)");
+    };
+    let manager_name = manager
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("package manager path has no executable name")?;
+    let mut args = package_manager_args(manager_name, package)?;
+
+    #[cfg(unix)]
+    if manager_name != "brew" && unsafe { libc::geteuid() } != 0 {
+        let sudo = executable_path("sudo")
+            .context("installing this shell requires root access, but sudo was not found")?;
+        args.insert(0, manager.to_string_lossy().into_owned());
+        return Ok(ShellInstallPlan {
+            program: sudo,
+            args,
+        });
+    }
+    Ok(ShellInstallPlan {
+        program: manager,
+        args,
+    })
+}
+
+fn package_manager_args(manager: &str, package: &str) -> Result<Vec<String>> {
+    let verb = match manager {
+        "brew" | "apt-get" | "dnf" | "zypper" => "install",
+        "pacman" => "-S",
+        _ => bail!("unsupported package manager {manager}"),
+    };
+    Ok(vec![verb.to_owned(), package.to_owned()])
+}
+
+fn install_shell(option: &str) -> Result<ControlOutcome> {
+    let shell = shell_install_name(option).unwrap_or(option);
+    supported_shell(shell).context("unsupported shell installation choice")?;
+    if executable_path(shell).is_some() {
+        return Ok(ControlOutcome {
+            message: format!("{shell} is already installed"),
+            provider_session_hint: None,
+        });
+    }
+    let plan = shell_install_plan(shell)?;
+    let mut command = Command::new(&plan.program);
+    command.args(&plan.args);
+    match crate::native_session::run(command, &format!("setup:shell:{shell}"))? {
+        crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+            message: format!("backgrounded {shell} installation; resume its Terminal setup row"),
+            provider_session_hint: None,
+        }),
+        crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+            if executable_path(shell).is_none() {
+                bail!("{shell} installer completed, but the shell is not visible in PATH yet");
+            }
+            Ok(ControlOutcome {
+                message: format!("installed {shell}; reopen /shell to select it"),
+                provider_session_hint: None,
+            })
+        }
+        crate::native_session::NativeSessionExit::Exited(status) => {
+            bail!("{shell} installer exited with status {status}")
+        }
+    }
+}
+
 fn terminal_name(prompt: &str) -> String {
     let normalized = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
     let normalized = if normalized.is_empty() {
@@ -364,6 +577,46 @@ mod tests {
     }
 
     #[test]
+    fn shell_install_markers_are_bounded_to_the_supported_catalog() {
+        assert!(is_shell_install_choice("install-shell:fish"));
+        assert_eq!(shell_install_name("install-shell:nu"), Some("nu"));
+        assert!(!is_shell_install_choice("install-shell:made-up"));
+        assert!(!is_shell_install_choice("bash"));
+        assert!(resolve_shell(Some("made-up"))
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported"));
+    }
+
+    #[test]
+    fn shell_catalog_distinguishes_installed_entries_from_install_actions() {
+        let choices = shell_choices();
+        assert!(!choices.is_empty());
+        assert!(choices.iter().all(|choice| {
+            is_shell_install_choice(choice) || executable_path(choice).is_some()
+        }));
+        for (shell, _) in SUPPORTED_SHELLS {
+            assert!(choices.iter().any(|choice| {
+                choice == shell || choice == &format!("{SHELL_INSTALL_PREFIX}{shell}")
+            }));
+        }
+    }
+
+    #[test]
+    fn shell_install_plans_use_argument_arrays_and_exact_package_names() {
+        assert_eq!(
+            package_manager_args("apt-get", "fish").unwrap(),
+            vec!["install", "fish"]
+        );
+        assert_eq!(
+            package_manager_args("pacman", "nushell").unwrap(),
+            vec!["-S", "nushell"]
+        );
+        assert!(package_manager_args("sh", "fish").is_err());
+        assert_eq!(supported_shell("nu"), Some(("nu", "nushell")));
+    }
+
+    #[test]
     fn completed_terminal_requires_a_second_delete_action() {
         let harness = TerminalHarness::new();
         let now = SystemTime::now();
@@ -371,6 +624,7 @@ mod tests {
             key: "terminal:test".into(),
             name: "test".into(),
             cwd: PathBuf::from("/work"),
+            shell: "/bin/sh".into(),
             state: SessionState::Completed,
             created_at: now,
             updated_at: now,
@@ -400,6 +654,7 @@ mod tests {
                 key: "terminal:vanished".into(),
                 name: "vanished".into(),
                 cwd: PathBuf::from("/work"),
+                shell: "/bin/sh".into(),
                 state: SessionState::Working,
                 created_at: now,
                 updated_at: now,

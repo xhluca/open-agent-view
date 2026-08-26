@@ -970,6 +970,12 @@ trait DashboardControl {
     fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
         Err(anyhow!("{} setup is unavailable", provider.label()))
     }
+    fn setup_launch_option(&self, provider: &Provider, _option: &str) -> Result<ControlOutcome> {
+        Err(anyhow!(
+            "{} launch-option setup is unavailable",
+            provider.label()
+        ))
+    }
     fn supports_authentication(&self, _provider: &Provider) -> bool {
         false
     }
@@ -1019,6 +1025,10 @@ impl DashboardControl for ControlHub {
 
     fn setup_provider(&self, provider: &Provider) -> Result<ControlOutcome> {
         self.setup_provider(provider)
+    }
+
+    fn setup_launch_option(&self, provider: &Provider, option: &str) -> Result<ControlOutcome> {
+        self.setup_launch_option(provider, option)
     }
 
     fn supports_authentication(&self, provider: &Provider) -> bool {
@@ -1126,6 +1136,33 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
                 }
             }
         }
+        AppAction::SetupLaunchOption { provider, option } => {
+            if let Err(error) = terminal.suspend_dashboard() {
+                app.set_notice(format!("failed to suspend dashboard: {error:#}"));
+                return ActionEffect::default();
+            }
+            let result = control.setup_launch_option(&provider, &option);
+            let resume = terminal.resume_dashboard();
+            match (result, resume) {
+                (Ok(outcome), Ok(())) => {
+                    app.set_notice(outcome.message);
+                    app.retry_model_load(&provider);
+                    ActionEffect {
+                        refresh: true,
+                        load_models: Some(provider),
+                        ..ActionEffect::default()
+                    }
+                }
+                (Err(error), Ok(())) => {
+                    app.set_notice(format!("shell setup failed: {error:#}"));
+                    ActionEffect::default()
+                }
+                (_, Err(error)) => {
+                    app.set_notice(format!("failed to restore dashboard: {error:#}"));
+                    ActionEffect::default()
+                }
+            }
+        }
         AppAction::Hide { session_ids } => ActionEffect {
             hide_session_ids: session_ids,
             ..ActionEffect::default()
@@ -1191,6 +1228,7 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
         | AppAction::LoadModels { .. }
         | AppAction::Authenticate { .. }
         | AppAction::SetupProvider { .. }
+        | AppAction::SetupLaunchOption { .. }
         | AppAction::Hide { .. } => false,
         AppAction::Refresh => {
             app.set_notice("refreshing provider sessions…");
@@ -2119,6 +2157,10 @@ mod tests {
             self.invoke("setup", provider.label().into())
         }
 
+        fn setup_launch_option(&self, provider: &Provider, option: &str) -> Result<ControlOutcome> {
+            self.invoke("setup-option", format!("{}:{option}", provider.label()))
+        }
+
         fn reply_session(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
             self.invoke("reply", format!("{}:{prompt}", session.id))
         }
@@ -2262,6 +2304,30 @@ mod tests {
         assert_eq!(
             control.calls.lock().unwrap().as_slice(),
             ["authenticate:Claude", "setup:GitHub Copilot"]
+        );
+
+        let effect = dispatch_action(
+            &mut terminal,
+            &mut app,
+            AppAction::SetupLaunchOption {
+                provider: Provider::Terminal,
+                option: "install-shell:fish".into(),
+            },
+            &control,
+        );
+        assert!(effect.refresh);
+        assert_eq!(effect.load_models, Some(Provider::Terminal));
+        assert_eq!(
+            terminal.calls,
+            vec!["suspend", "resume", "suspend", "resume", "suspend", "resume"]
+        );
+        assert_eq!(
+            control.calls.lock().unwrap().as_slice(),
+            [
+                "authenticate:Claude",
+                "setup:GitHub Copilot",
+                "setup-option:Terminal:install-shell:fish"
+            ]
         );
     }
 

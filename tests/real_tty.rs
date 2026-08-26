@@ -828,6 +828,17 @@ fn terminal_harness_backgrounds_resumes_stops_then_deletes_in_a_real_pty() {
     app.wait_for("Terminal-only dashboard startup", |screen| {
         screen.contains("Open Agent View") && !screen.contains("loading provider sessions")
     });
+    app.send(b"/shell");
+    app.send(ENTER);
+    app.wait_for("Terminal shell picker", |screen| {
+        screen.contains("choose Terminal shell")
+            && screen.contains("Default shell")
+            && screen.contains("install")
+    });
+    app.send(ENTER);
+    app.wait_for("Terminal shell selected", |screen| {
+        screen.contains("new task · harness Terminal · shell default")
+    });
     app.send(b"release shell");
     app.send(ENTER);
     app.wait_for("foreground Terminal shell", |screen| {

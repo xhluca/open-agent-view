@@ -101,7 +101,7 @@ supporting every mutation another harness exposes.
 | Muse Code | Managed discovery, launch, and native resume |
 | Qwen Code | Managed discovery, launch, and native resume |
 | Kimi Code | Managed discovery, launch, and native resume |
-| Terminal | Managed shells, background, resume, stop, delete |
+| Terminal | Searchable shell picker, optional native install, background, resume, stop, delete |
 
 Exact CLI versions, model discovery, authentication behavior, platform limits,
 and provider-specific caveats live in the [provider notes](docs/exploration/README.md).

@@ -72,7 +72,7 @@ pub use opencode::{
 };
 pub use pi::{default_pi_session_dir, parse_pi_session, PiController, PiSource};
 pub use qwen::{default_qwen_ownership_path, QwenController, QwenOwnership, QwenSource};
-pub use terminal_harness::TerminalHarness;
+pub use terminal_harness::{is_shell_install_choice, shell_install_name, TerminalHarness};
 
 use crate::domain::{AgentSession, SessionKind, SessionSnapshot, SessionState};
 

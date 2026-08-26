@@ -8,6 +8,15 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.38] - 2026-08-26
+
+### Added
+
+- Terminal now treats its launch option as a shell rather than a model.
+  `/shell` and `/model` open the same searchable picker, installed shells launch
+  directly, and missing supported shells are explicit native package-manager
+  install actions.
+
 ### Fixed
 
 - Mistral Vibe app-server discovery now waits for the initialize response
@@ -24,8 +33,11 @@ and future released versions are intended to follow Semantic Versioning.
   return, exact rename, and the next picker. Harness stories play at 0.5× and
   begin on the inherited picker rather than a blank shell.
 - Website recordings remain paused on page load, only the focused visible
-  player advances, and the current action now flashes in a larger keycap for
-  three seconds. The responsive audit now covers desktop, 1280×800 Mac-laptop,
+  player advances, and the current action now appears in a restrained keycap
+  for three seconds. Scripted holds use viewer-visible timing at 0.5×, typing is
+  faster, completed responses no longer linger for twelve seconds, and every
+  real harness/catalog path is warmed before recording. The responsive audit
+  now covers desktop, 1280×800 Mac-laptop,
   and phone layouts.
 - Real-demo credentials are loaded from an owned mode-0600 environment file;
   they are no longer serialized into the long-lived Asciinema process command

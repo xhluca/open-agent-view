@@ -1084,7 +1084,7 @@ SEQUENCE_DEMOS = (
         r"Send /help for help information\.",
         "gpt-5.4",
     ),
-    ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
+    ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$", "bash"),
 )
 
 
@@ -1370,16 +1370,53 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
-def select_sequence_model(terminal: RealTerminal, spec: ProviderDemo) -> None:
-    terminal.type_line("/model", "Type /model", "open-agent-view", 0.055)
-    if spec.model is None:
-        terminal.wait_screen(r"Terminal.*does not.*model|model.*unavailable", 30)
-        terminal.remember("Terminal keeps the shell default", "open-agent-view")
-        time.sleep(2.0)
-        return
+SEQUENCE_PLAYBACK_SPEED = 0.5
+SEQUENCE_TYPING_SPEEDUP = 0.8
 
-    terminal.wait_screen(r"choose .* model", 60)
-    terminal.wait_screen_without(r"Loading models…", 120)
+
+def sequence_wait(visible_seconds: float) -> None:
+    """Wait for an exact viewer-visible duration at the configured playback speed."""
+
+    time.sleep(visible_seconds * SEQUENCE_PLAYBACK_SPEED)
+
+
+def sequence_type_text(
+    terminal: RealTerminal,
+    value: str,
+    label: str,
+    window: str,
+    delay: float,
+) -> None:
+    terminal.type_text(value, label, window, delay * SEQUENCE_TYPING_SPEEDUP)
+
+
+def sequence_type_line(
+    terminal: RealTerminal,
+    value: str,
+    label: str,
+    window: str,
+    delay: float,
+) -> None:
+    sequence_type_text(terminal, value, label, window, delay)
+    sequence_wait(1.0)
+    terminal.key("Enter", "Enter", window)
+
+
+def select_sequence_model(terminal: RealTerminal, spec: ProviderDemo) -> None:
+    option = "shell" if spec.id == "terminal" else "model"
+    sequence_type_line(
+        terminal,
+        f"/{option}",
+        f"Type /{option}",
+        "open-agent-view",
+        0.055,
+    )
+    picker_pattern = rf"choose .* {option}"
+    terminal.wait_screen(picker_pattern, 60)
+    terminal.wait_screen_without(
+        r"Loading models…|Finding installed shells…",
+        120,
+    )
     model_screen = terminal.screen()
     if re.search(
         r"failed to list|model discovery exited|not authenticated|no models",
@@ -1389,55 +1426,69 @@ def select_sequence_model(terminal: RealTerminal, spec: ProviderDemo) -> None:
         raise RuntimeError(
             f"{spec.label} model discovery failed before the recording could select a model"
         )
-    terminal.key("Down", "↓ · browse models", "open-agent-view")
-    time.sleep(0.45)
-    terminal.key("Down", "↓ · browse models", "open-agent-view")
-    time.sleep(0.45)
-    terminal.key("Up", "↑ · compare flagship", "open-agent-view")
-    time.sleep(0.65)
-    terminal.type_text(
+    terminal.key("Down", f"↓ · browse {option}s", "open-agent-view")
+    sequence_wait(0.675)
+    terminal.key("Down", f"↓ · browse {option}s", "open-agent-view")
+    sequence_wait(0.675)
+    terminal.key("Up", f"↑ · compare {option}s", "open-agent-view")
+    sequence_wait(0.975)
+    sequence_type_text(
+        terminal,
         spec.model,
         f"Search · {spec.model}",
         "open-agent-view",
         0.04,
     )
-    terminal.wait_screen_without(r"Loading models…", 120)
+    terminal.wait_screen_without(r"Loading models…|Finding installed shells…", 120)
     terminal.wait_screen(re.escape(spec.model), 45)
-    if not re.search(r"choose .* model", terminal.screen(), re.IGNORECASE):
+    if not re.search(picker_pattern, terminal.screen(), re.IGNORECASE):
         raise RuntimeError(
             f"{spec.label} model picker closed while searching for {spec.model}"
         )
-    time.sleep(2.0)
+    sequence_wait(1.5)
     terminal.key("Enter", f"Enter · select {spec.model}", "open-agent-view")
-    terminal.wait_screen_without(r"choose .* model", 30)
-    time.sleep(2.0)
+    terminal.wait_screen_without(picker_pattern, 30)
+    sequence_wait(1.5)
 
 
 def run_terminal_sequence_turns(
     terminal: RealTerminal,
     spec: ProviderDemo,
-    first_baseline: str,
 ) -> None:
+    first_baseline = terminal.screen()
+    sequence_type_line(
+        terminal,
+        "printf 'Hello from Terminal.\\n'",
+        "Enter · printf greeting",
+        "Terminal",
+        0.055,
+    )
     terminal.wait_screen(r"Hello from Terminal", 20)
     terminal.wait_screen_settled(
         first_baseline,
         provider=spec.label,
         timeout=30,
-        minimum_wait=2,
-        stable_for=2,
+        minimum_wait=0.5,
+        stable_for=1.5,
     )
     terminal.remember("Command complete", "Terminal")
 
-    explanation = "Explain what is Terminal"
+    explanation = "printf 'Terminal is a real shell managed beside coding agents.\\n'"
     baseline = terminal.screen()
-    terminal.type_line(explanation, "Enter · explain Terminal", "Terminal", 0.055)
-    terminal.wait_screen(r"Terminal is a shell session", 20)
+    sequence_type_line(
+        terminal,
+        explanation,
+        "Enter · printf explanation",
+        "Terminal",
+        0.055,
+    )
+    terminal.wait_screen(r"Terminal is a real shell", 20)
     terminal.wait_screen_settled(
         baseline,
         provider=spec.label,
         timeout=30,
-        minimum_wait=2,
-        stable_for=2,
+        minimum_wait=0.5,
+        stable_for=1.5,
     )
     terminal.remember("Explanation complete", "Terminal")
 
@@ -1458,19 +1509,42 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
             )
 
     baseline = terminal.screen()
-    terminal.type_line("hello", f"Enter · start {spec.label}", "open-agent-view", 0.085)
+    sequence_type_line(
+        terminal,
+        "hello",
+        f"Enter · start {spec.label}",
+        "open-agent-view",
+        0.085,
+    )
     terminal.wait_screen_without(APP_HEADER_PATTERN, 90)
     terminal.wait_native_screen(spec.ready_pattern, 90)
-    terminal.wait_screen_settled(baseline, provider=spec.label)
+    terminal.wait_screen_settled(
+        baseline,
+        provider=spec.label,
+        minimum_wait=0.75,
+        stable_for=1.5,
+    )
     reject_failed_turn()
     terminal.remember("Hello response complete", spec.label)
 
     explanation = f"Explain what is {spec.label}"
-    terminal.type_text(explanation, f"Type · {explanation}", spec.label, 0.055)
+    sequence_type_text(
+        terminal,
+        explanation,
+        f"Type · {explanation}",
+        spec.label,
+        0.055,
+    )
     terminal.wait_screen(re.escape(explanation), 30)
+    sequence_wait(1.0)
     baseline = terminal.screen()
     terminal.key("Enter", "Enter · send explanation", spec.label)
-    terminal.wait_screen_settled(baseline, provider=spec.label)
+    terminal.wait_screen_settled(
+        baseline,
+        provider=spec.label,
+        minimum_wait=0.75,
+        stable_for=1.5,
+    )
     reject_failed_turn()
     terminal.remember("Explanation response complete", spec.label)
 
@@ -1526,8 +1600,12 @@ def write_sequence_recording(
             APP_HEADER,
             "choose harness",
             spec.label,
-            "hello",
-            f"Explain what is {spec.label}",
+            "Hello from Terminal" if spec.id == "terminal" else "hello",
+            (
+                "Terminal is a real shell"
+                if spec.id == "terminal"
+                else f"Explain what is {spec.label}"
+            ),
             f"{spec.id}-explanation",
             *prior_names,
         ],
@@ -1549,20 +1627,7 @@ def capture_provider_sequence(
         prepare_complete_picker(root, environment)
         prepare_sequence_provider_state(root, environment)
         install_local_binary(repo, root)
-
-        # Terminal is a convenience harness, not an AI provider. These two
-        # real executables make the requested plain-English shell commands
-        # useful without pretending the shell is a model.
-        write_private_text(
-            root / "home" / ".local" / "bin" / "hello",
-            "#!/bin/sh\nprintf 'Hello from Terminal.\\n'\n",
-        )
-        (root / "home" / ".local" / "bin" / "hello").chmod(0o700)
-        write_private_text(
-            root / "home" / ".local" / "bin" / "Explain",
-            "#!/bin/sh\nprintf 'Terminal is a shell session managed beside coding agents.\\n'\n",
-        )
-        (root / "home" / ".local" / "bin" / "Explain").chmod(0o700)
+        prewarm_sequence_harnesses(root, environment)
 
         work = root / "home" / "work" / "acme-dashboard"
         terminal = RealTerminal("harness-sequence", root, environment)
@@ -1577,12 +1642,24 @@ def capture_provider_sequence(
             "--harness",
             "claude",
         ]
-        terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
+        sequence_type_line(
+            terminal,
+            shlex.join(command),
+            "Enter · launch opav",
+            "Terminal",
+            0.001,
+        )
         terminal.wait_screen(APP_HEADER_PATTERN, 60)
-        time.sleep(1.0)
-        terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
+        sequence_wait(0.75)
+        sequence_type_line(
+            terminal,
+            "/harness",
+            "Type /harness",
+            "open-agent-view",
+            0.07,
+        )
         terminal.wait_screen(r"choose harness", 30)
-        time.sleep(1.0)
+        sequence_wait(0.75)
 
         previous_names: list[str] = []
         for index, spec in enumerate(SEQUENCE_DEMOS):
@@ -1599,47 +1676,42 @@ def capture_provider_sequence(
                     f"↓ · highlight {spec.label}",
                     "open-agent-view",
                 )
-                time.sleep(0.8)
+                sequence_wait(1.2)
             terminal.wait_screen(re.escape(picker_search), 30)
             terminal.key("Enter", f"Enter · choose {spec.label}", "open-agent-view")
             terminal.wait_screen_without(r"choose harness", 30)
             terminal.wait_screen(rf"harness\s+{re.escape(picker_search)}", 30)
-            time.sleep(2.0)
+            sequence_wait(1.5)
 
             select_sequence_model(terminal, spec)
             if spec.id == "terminal":
-                baseline = terminal.screen()
-                terminal.type_line(
-                    "hello",
+                sequence_type_line(
+                    terminal,
+                    "terminal workspace",
                     "Enter · open Terminal",
                     "open-agent-view",
                     0.08,
                 )
                 terminal.wait_screen_without(APP_HEADER_PATTERN, 45)
                 terminal.wait_screen(spec.ready_pattern, 30)
-                terminal.type_line(
-                    "hello",
-                    "Enter · run hello in Terminal",
-                    "Terminal",
-                    0.08,
-                )
-                run_terminal_sequence_turns(terminal, spec, baseline)
+                run_terminal_sequence_turns(terminal, spec)
             else:
                 run_native_sequence_turns(terminal, spec)
 
             return_draft = "Now, I can navigate back to panel with Shift + Left Arrow"
-            terminal.type_text(
+            sequence_type_text(
+                terminal,
                 return_draft,
                 "Type · explain return shortcut",
                 spec.label,
                 0.04,
             )
             terminal.wait_screen(re.escape(return_draft), 30)
-            time.sleep(2.0)
+            sequence_wait(1.5)
             terminal.key("S-Left", "Shift+← · return to panel", spec.label)
             terminal.wait_screen(APP_HEADER_PATTERN, 45)
             terminal.remember("Returned to shared dashboard", "open-agent-view")
-            time.sleep(5.0)
+            sequence_wait(3.75)
 
             # The launch result selects the exact provider/session ID. Refuse
             # to record a rename unless that newly created row is actually
@@ -1656,7 +1728,14 @@ def capture_provider_sequence(
             terminal.key("C-r", "Ctrl+R · rename session", "open-agent-view")
             terminal.wait_screen(r"rename session", 20)
             terminal.key("C-u", "Ctrl+U · clear name", "open-agent-view")
-            terminal.type_text(renamed, f"Type · {renamed}", "open-agent-view", 0.06)
+            sequence_type_text(
+                terminal,
+                renamed,
+                f"Type · {renamed}",
+                "open-agent-view",
+                0.06,
+            )
+            sequence_wait(1.0)
             terminal.key("Enter", "Enter · save name", "open-agent-view")
             terminal.wait_screen(
                 rf"(?m)^\s*[^\n]*\b{re.escape(renamed)}\b"
@@ -1664,11 +1743,17 @@ def capture_provider_sequence(
                 30,
             )
             terminal.remember("Renamed session visible", "open-agent-view")
-            time.sleep(1.5)
+            sequence_wait(1.125)
 
-            terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
+            sequence_type_line(
+                terminal,
+                "/harness",
+                "Type /harness",
+                "open-agent-view",
+                0.07,
+            )
             terminal.wait_screen(r"choose harness", 30)
-            time.sleep(2.0)
+            sequence_wait(1.5)
             end = terminal.timeline_time()
             previous_names.append(renamed)
             write_sequence_recording(
@@ -1710,6 +1795,59 @@ def install_local_binary(repo: Path, root: Path) -> None:
     bin_dir = root / "home" / ".local" / "bin"
     (bin_dir / "open-agent-view").symlink_to(binary.resolve())
     (bin_dir / "opav").symlink_to("open-agent-view")
+
+
+def prewarm_sequence_harnesses(
+    root: Path,
+    environment: dict[str, str],
+) -> None:
+    """Warm real executable, catalog, and supervisor paths before recording.
+
+    These probes run outside asciinema, use the same disposable HOME and
+    credentials as the subsequent capture, and never create a conversation.
+    That keeps first-process startup costs out of the story without inventing
+    provider output or polluting the gradually accumulated session list.
+    """
+
+    work = root / "home" / "work" / "acme-dashboard"
+    probes = [
+        ["claude", "--help"],
+        ["codex", "--version"],
+        ["pi", "--offline", "--list-models"],
+        ["opencode", "models"],
+        ["cursor-agent", "models"],
+        ["copilot", "--version"],
+        ["agy", "models"],
+        ["vibe", "--version"],
+        ["muse", "--version"],
+        ["qwen", "--version"],
+        ["kimi", "provider", "list", "--json"],
+        ["bash", "--version"],
+        ["opav", "--json", "--cwd", str(work), "--history-limit", "1"],
+    ]
+    print("prewarming real harness executables and model catalogs…", flush=True)
+    for command in probes:
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=work,
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise RuntimeError(
+                f"prewarm failed for {command[0]}: {error}"
+            ) from error
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"prewarm failed for {shlex.join(command)} with status "
+                f"{completed.returncode}"
+            )
+    print("prewarmed all real harness paths", flush=True)
 
 
 def start_control_dashboard(

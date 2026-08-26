@@ -73,7 +73,11 @@ no session ownership or control authority.
 
 The Terminal launch target is a convenience controller, not an agent protocol.
 Its prompt becomes only a bounded display name and OAV starts the user's shell
-without evaluating that name. Its authority is the exact process-local PTY
+without evaluating that name. Its `/shell` picker resolves only installed
+allowlisted executable names. Missing allowlisted shells can be selected as an
+explicit install action, which runs one detected native package manager as an
+argument array after OAV hands over the terminal; the display name and filter
+text never enter that command. Its authority is the exact process-local PTY
 entry created by this dashboard. Ctrl+X stops that entry; only its completed
 record gains Delete. Normal dashboard shutdown stops all retained Terminal and
 provider-login frontends, so this is not a durable terminal multiplexer.

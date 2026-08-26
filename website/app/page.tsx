@@ -134,7 +134,7 @@ export default function Home() {
           <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
           <p>
             Each tab starts in the same real harness picker, chooses an available
-            model, completes two turns in the native CLI, returns to the shared
+            model (or Terminal shell), completes two turns in the native CLI, returns to the shared
             dashboard, renames the session, and leaves the picker ready for the
             next harness. Earlier sessions remain visible as the walkthrough grows.
           </p>

@@ -181,9 +181,16 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
         `${name} actions should identify ${manifestName}`,
       );
       assert.ok(
-        manifest.actions.some((action) => action.action === "Type /model"),
-        `${name} should visibly open model selection`,
+        manifest.actions.some((action) => (
+          action.action === (name === "terminal" ? "Type /shell" : "Type /model")
+        )),
+        `${name} should visibly open its launch-option selection`,
       );
+      if (name === "terminal") {
+        assert.match(visibleOutput, /printf 'Hello from Terminal\.\\n'/);
+        assert.match(visibleOutput, /Terminal is a real shell managed beside coding agents/);
+        assert.doesNotMatch(visibleOutput, /\$ hello\b|\$ Explain\b/);
+      }
       assert.ok(
         manifest.actions.some((action) => /(?:Explanation|Command).*complete/i.test(action.action)),
         `${name} should wait for the second turn to complete`,
@@ -305,6 +312,12 @@ test("uses the local asciinema player without a synthetic terminal generator or 
     /inner_shell\s*=\s*f?["']env\s+\{?exports/,
     "capture credentials must not be serialized into the Asciinema process argv",
   );
+  assert.match(recorder, /def prewarm_sequence_harnesses\(/);
+  assert.match(recorder, /SEQUENCE_PLAYBACK_SPEED\s*=\s*0\.5/);
+  assert.match(recorder, /SEQUENCE_TYPING_SPEEDUP\s*=\s*0\.8/);
+  assert.match(recorder, /sequence_wait\(1\.0\)[\s\S]{0,100}terminal\.key\("Enter"/);
+  assert.match(recorder, /printf 'Hello from Terminal\.\\\\n'/);
+  assert.doesNotMatch(recorder, /\.local["']?\s*\/\s*["']bin["']\s*\/\s*["'](?:hello|Explain)["']/);
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {

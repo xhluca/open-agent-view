@@ -71,6 +71,10 @@ pub enum AppAction {
     SetupProvider {
         provider: Provider,
     },
+    SetupLaunchOption {
+        provider: Provider,
+        option: String,
+    },
     Open {
         session_id: String,
     },
@@ -441,8 +445,7 @@ impl App {
                         provider: self.launch_provider.clone(),
                     }
                 } else {
-                    self.confirm_model_selection();
-                    AppAction::None
+                    self.confirm_model_selection()
                 }
             }
             Overlay::Composer(mode) => self.submit_composer(mode),
@@ -746,13 +749,13 @@ impl App {
             .clamp(0, len.saturating_sub(1) as isize) as usize;
     }
 
-    pub fn confirm_model_selection(&mut self) {
+    pub fn confirm_model_selection(&mut self) -> AppAction {
         if self.has_valid_custom_model_input() {
             self.launch_model = Some(self.model_filter.clone());
             self.model_filter.clear();
             self.notice = None;
             self.overlay = Overlay::Composer(ComposerMode::NewSession);
-            return;
+            return AppAction::None;
         }
         let selection = self
             .model_choices()
@@ -761,12 +764,26 @@ impl App {
             .flatten()
             .map(ToOwned::to_owned);
         if self.model_choices().is_empty() {
-            return;
+            return AppAction::None;
+        }
+        if self.launch_provider == Provider::Terminal {
+            if let Some(option) = selection
+                .as_deref()
+                .filter(|value| crate::adapters::is_shell_install_choice(value))
+            {
+                self.model_filter.clear();
+                self.notice = None;
+                return AppAction::SetupLaunchOption {
+                    provider: Provider::Terminal,
+                    option: option.to_owned(),
+                };
+            }
         }
         self.launch_model = selection;
         self.model_filter.clear();
         self.notice = None;
         self.overlay = Overlay::Composer(ComposerMode::NewSession);
+        AppAction::None
     }
 
     pub fn set_completed_visibility(&mut self, include_completed: bool) {
@@ -1178,6 +1195,10 @@ impl App {
             "/harness" | "/provider" if argument.is_empty() => self.open_harness_picker(),
             "/harness" | "/provider" => self.select_launch_provider(argument),
             "/model" => return self.select_launch_model(argument),
+            "/shell" if self.launch_provider == Provider::Terminal => {
+                return self.select_launch_model(argument)
+            }
+            "/shell" => self.set_notice("/shell is available after selecting Terminal"),
             "/login" if argument.is_empty() => {
                 return AppAction::Authenticate {
                     provider: self.launch_provider.clone(),
@@ -1265,8 +1286,13 @@ impl App {
         if argument.eq_ignore_ascii_case("default") {
             self.launch_model = None;
             self.set_notice(format!(
-                "{} will use its default model",
-                self.launch_provider.label()
+                "{} will use its default {}",
+                self.launch_provider.label(),
+                if self.launch_provider == Provider::Terminal {
+                    "shell"
+                } else {
+                    "model"
+                }
             ));
             return AppAction::None;
         }
@@ -1275,13 +1301,22 @@ impl App {
                 .chars()
                 .any(|character| character.is_control() || character.is_whitespace())
         {
-            self.set_notice("model names must be 1–128 characters without whitespace");
+            self.set_notice(if self.launch_provider == Provider::Terminal {
+                "shell names must be 1–128 characters without whitespace"
+            } else {
+                "model names must be 1–128 characters without whitespace"
+            });
             return AppAction::None;
         }
         self.launch_model = Some(argument.to_owned());
         self.set_notice(format!(
-            "new {} tasks will use model {argument}",
-            self.launch_provider.label()
+            "new {} tasks will use {} {argument}",
+            self.launch_provider.label(),
+            if self.launch_provider == Provider::Terminal {
+                "shell"
+            } else {
+                "model"
+            }
         ));
         AppAction::None
     }
@@ -2449,6 +2484,63 @@ mod tests {
                 "setup alias {name} did not resolve"
             );
         }
+    }
+
+    #[test]
+    fn terminal_shell_command_aliases_model_and_install_rows_are_explicit_actions() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Terminal,
+            vec![LaunchTarget {
+                provider: Provider::Terminal,
+                supports_model: true,
+            }],
+        );
+
+        app.start_new_session(None);
+        app.input = "/shell".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::LoadModels {
+                provider: Provider::Terminal
+            }
+        );
+        app.set_available_models(
+            Provider::Terminal,
+            Ok(vec!["bash".into(), "install-shell:fish".into()]),
+        );
+        app.model_selection = 2;
+        assert_eq!(
+            app.activate(),
+            AppAction::SetupLaunchOption {
+                provider: Provider::Terminal,
+                option: "install-shell:fish".into(),
+            }
+        );
+        assert_eq!(app.overlay, Overlay::ModelPicker);
+        assert_eq!(app.launch_model, None);
+
+        app.model_selection = 1;
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.launch_model.as_deref(), Some("bash"));
+
+        app.start_new_session(None);
+        app.input = "/model zsh".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.launch_model.as_deref(), Some("zsh"));
+    }
+
+    #[test]
+    fn shell_command_is_scoped_to_terminal() {
+        let mut app = App::new(SessionSnapshot::default());
+        app.start_new_session(None);
+        app.input = "/shell".into();
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("/shell is available after selecting Terminal")
+        );
     }
 
     #[test]

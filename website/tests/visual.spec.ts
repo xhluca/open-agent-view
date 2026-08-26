@@ -150,7 +150,7 @@ test("recordings stay paused on load and only the focused player advances", asyn
   expect(Math.abs(afterFocusChange - pausedSetupTime)).toBeLessThan(0.03);
 });
 
-test("the current key action flashes prominently and fades after three seconds", async ({ page }) => {
+test("the current key action is readable but restrained and fades after three seconds", async ({ page }) => {
   await openReady(page);
   const player = page.locator("#harness-demo [data-demo-player]");
   await player.scrollIntoViewIfNeeded();
@@ -173,9 +173,12 @@ test("the current key action flashes prominently and fades after three seconds",
       background: style.backgroundColor,
     };
   });
-  expect(appearance.fontSize).toBeGreaterThanOrEqual(14);
+  expect(appearance.fontSize).toBeGreaterThanOrEqual(12);
+  expect(appearance.fontSize).toBeLessThan(13);
   expect(appearance.border).toBe("solid");
   expect(appearance.background).not.toBe("rgba(0, 0, 0, 0)");
+  const alpha = Number.parseFloat(appearance.background.match(/[\d.]+\)$/)?.[0] ?? "1");
+  expect(alpha).toBeLessThanOrEqual(0.35);
   await expect(badge).not.toHaveClass(/is-visible/, { timeout: 3_500 });
 });
 

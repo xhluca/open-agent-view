@@ -37,7 +37,7 @@ The page has three finite terminal walkthroughs implemented by
 1. the start story installs from the public URL, opens the app, types
    `/harness`, and stops with every option visible;
 2. twelve tabbed harness stories begin at the same `/harness` picker, choose
-   the tab's harness, browse and select its model, run two complete native-TUI
+   the tab's harness, browse and select its model (or Terminal shell), run two complete native-TUI
    turns, type the return shortcut explanation, return with Shift+Left, wait on
    the growing shared dashboard, rename the exact new row, and end at the next
    `/harness` picker; and
@@ -65,6 +65,11 @@ minimum existing login state into a private disposable home, and deletes that
 home after validating the sanitized cast. Each later tab reuses the same
 disposable workspace and provider stores, so the dashboard truthfully gains one
 renamed row at a time. There are no fabricated conversations or terminal rows.
+Before Asciinema starts, the recorder invokes every real CLI's bounded
+version/catalog path in that same disposable environment so first-process
+startup is not presented as interaction time. The Terminal story uses the real
+`/shell` picker and literal `printf` commands; it does not install fake
+chat-like executables.
 
 ## Recording and README media
 

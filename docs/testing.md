@@ -156,8 +156,9 @@ checks; the guide also contains release gates that are not yet complete.
   each receives one exact OAV-generated UUID, the selected model/prompt, opens
   full-screen before returning, and restores the exact new managed row after
   the native background gesture.
-- A dedicated real PTY selects the eighth Terminal target, launches a private
-  interactive shell, backgrounds it with the native gesture, discovers and resumes its exact
+- A dedicated real PTY selects the Terminal target, opens its real searchable
+  shell picker, confirms the configured shell, launches a private interactive
+  shell, backgrounds it with the native gesture, discovers and resumes its exact
   preserved screen, stops it with Ctrl+X, and deletes the completed row with a
   second Ctrl+X. Provider login PTYs use the same isolated registry.
 - `tests/setup_installer.rs` covers all eleven coding-agent installers with an

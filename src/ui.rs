@@ -9,7 +9,7 @@ use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
     SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE,
 };
-use crate::domain::{AgentSession, Capability, SessionState};
+use crate::domain::{AgentSession, Capability, Provider, SessionState};
 
 const BG: Color = Color::Rgb(24, 26, 27);
 const FG: Color = Color::Rgb(205, 205, 205);
@@ -400,10 +400,15 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         app.overlay,
         Overlay::Composer(ComposerMode::NewSession) | Overlay::HarnessPicker | Overlay::ModelPicker
     ) {
-        let model = app.launch_model.as_deref().unwrap_or("default");
+        let launch_option = app.launch_model.as_deref().unwrap_or("default");
+        let option_label = if app.launch_provider == Provider::Terminal {
+            "shell"
+        } else {
+            "model"
+        };
         block = block.title(format!(
-            " new task · harness {} · model {model} ",
-            app.launch_provider.label()
+            " new task · harness {} · {option_label} {launch_option} ",
+            app.launch_provider.label(),
         ));
     }
     let (prefix, content, editable) = match &app.overlay {
@@ -656,12 +661,14 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::Composer(ComposerMode::Rename { .. }) => {
             "rename · type name · enter save · esc cancel".into()
         }
-        Overlay::Composer(ComposerMode::NewSession) if width >= 100 => {
-            "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
-        }
-        Overlay::Composer(ComposerMode::NewSession) if width >= 70 => {
-            "enter create · tab harness · shift+tab model · ctrl+j newline · esc cancel".into()
-        }
+        Overlay::Composer(ComposerMode::NewSession) if width >= 100 => format!(
+            "enter create · tab harness · shift+tab {} · ctrl+j newline · esc cancel",
+            if app.launch_provider == Provider::Terminal { "shell" } else { "model" }
+        ),
+        Overlay::Composer(ComposerMode::NewSession) if width >= 70 => format!(
+            "enter create · tab harness · shift+tab {} · ctrl+j newline · esc cancel",
+            if app.launch_provider == Provider::Terminal { "shell" } else { "model" }
+        ),
         Overlay::Composer(ComposerMode::NewSession) if width >= 55 => {
             "enter to create · tab harness · /help · esc cancel".into()
         }
@@ -671,9 +678,10 @@ fn contextual_footer(app: &App, width: u16) -> String {
             app.launch_targets.len().min(9)
         ),
         Overlay::HarnessPicker => "↑/↓ choose · enter · esc".into(),
-        Overlay::ModelPicker if width >= 70 => {
-            "type to filter · ↑/↓ move · page up/down · enter select · esc back".into()
-        }
+        Overlay::ModelPicker if width >= 70 => format!(
+            "type to filter · ↑/↓ move · page up/down · enter {} · esc back",
+            if selected_shell_install(app) { "install" } else { "select" }
+        ),
         Overlay::ModelPicker => "type filter · ↑/↓ · enter · esc".into(),
         Overlay::Peek
             if app.selected_session().is_some_and(|session| {
@@ -824,7 +832,8 @@ fn help_actions(app: &App) -> Vec<String> {
     actions.push("ctrl+j for newline".into());
     actions.push("tab for new task/harness picker".into());
     actions.push("/harness [name] switches harness".into());
-    actions.push("/model [name|default] selects a model".into());
+    actions.push("/model [name|default] selects a model (or Terminal shell)".into());
+    actions.push("/shell [name|default] selects a Terminal shell".into());
     actions.push("/login opens native setup".into());
     actions.push("/setup [harness] installs/signs in".into());
     actions.push("/completed [show|hide] toggles finished sessions".into());
@@ -980,6 +989,7 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    let terminal_shells = app.launch_provider == Provider::Terminal;
     let choices = app.model_choices();
     let popup_width = area.width.saturating_sub(2).min(76).max(28);
     let error_lines = if choices.is_empty() && !app.models_loading {
@@ -1040,7 +1050,11 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
     if choices.is_empty() {
         if app.models_loading {
             lines.push(Line::from(Span::styled(
-                "  ◌ Loading models…",
+                if terminal_shells {
+                    "  ◌ Finding installed shells…"
+                } else {
+                    "  ◌ Loading models…"
+                },
                 Style::default().fg(ACCENT),
             )));
         } else if !error_lines.is_empty() {
@@ -1052,7 +1066,11 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             }));
         } else {
             lines.push(Line::from(Span::styled(
-                "  No matching models",
+                if terminal_shells {
+                    "  No matching shells"
+                } else {
+                    "  No matching models"
+                },
                 Style::default().fg(DIM),
             )));
         }
@@ -1079,12 +1097,19 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
                 .take(visible_rows)
                 .map(|(index, model)| {
                     let selected = index == app.model_selection;
-                    let label = model.unwrap_or("Default");
+                    let label = match model {
+                        None if terminal_shells => "Default shell".to_owned(),
+                        None => "Default".to_owned(),
+                        Some(value) => crate::adapters::shell_install_name(value)
+                            .filter(|_| terminal_shells)
+                            .map(|shell| format!("{shell} · install"))
+                            .unwrap_or_else(|| (*value).to_owned()),
+                    };
                     let current = *model == app.launch_model.as_deref();
                     Line::from(format!(
                         " {} {}{}",
                         if selected { "›" } else { " " },
-                        sanitize_inline(label),
+                        sanitize_inline(&label),
                         if current { " · current" } else { "" }
                     ))
                     .style(if selected {
@@ -1102,7 +1127,11 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
     }
     if app.models_loading && !choices.is_empty() {
         lines.push(Line::from(Span::styled(
-            " Discovering available models…",
+            if terminal_shells {
+                " Finding installed shells…"
+            } else {
+                " Discovering available models…"
+            },
             Style::default().fg(DIM),
         )));
     }
@@ -1113,6 +1142,8 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             " enter/l native setup · ctrl+r retry · esc back"
         } else if app.models_error.is_some() {
             " ctrl+r retry · esc back"
+        } else if selected_shell_install(app) {
+            " enter install in native package manager · esc back"
         } else if popup_width >= 58 {
             " ↑/↓ move · PgUp/PgDn page · enter select · esc back"
         } else {
@@ -1127,8 +1158,9 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .block(
                 Block::default()
                     .title(format!(
-                        " choose {} model · {} result{} ",
+                        " choose {} {} · {} result{} ",
                         app.launch_provider.label(),
+                        if terminal_shells { "shell" } else { "model" },
                         choices.len(),
                         if choices.len() == 1 { "" } else { "s" }
                     ))
@@ -1147,6 +1179,15 @@ fn render_model_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .min(popup.right().saturating_sub(2)),
         popup.y + 1,
     );
+}
+
+fn selected_shell_install(app: &App) -> bool {
+    app.launch_provider == Provider::Terminal
+        && app
+            .model_choices()
+            .get(app.model_selection)
+            .and_then(|choice| *choice)
+            .is_some_and(crate::adapters::is_shell_install_choice)
 }
 
 fn render_confirmation(frame: &mut Frame<'_>, _: &App, target: &ConfirmTarget, area: Rect) {
@@ -1909,6 +1950,38 @@ mod tests {
         assert!(rendered.contains("new task · harness Claude · model opus"));
         assert!(rendered.contains("tab harness"));
         assert!(rendered.contains("shift+tab model"));
+    }
+
+    #[test]
+    fn terminal_composer_and_picker_use_shell_language_and_mark_install_actions() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot::default(),
+            false,
+            Provider::Terminal,
+            vec![LaunchTarget {
+                provider: Provider::Terminal,
+                supports_model: true,
+            }],
+        );
+        app.start_new_session(None);
+        app.open_model_picker();
+        app.set_available_models(
+            Provider::Terminal,
+            Ok(vec!["bash".into(), "install-shell:fish".into()]),
+        );
+        app.model_selection = 2;
+        let backend = TestBackend::new(100, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let rendered = buffer_text(terminal.backend().buffer());
+
+        assert!(rendered.contains("new task · harness Terminal · shell default"));
+        assert!(rendered.contains("choose Terminal shell · 3 results"));
+        assert!(rendered.contains("Default shell"));
+        assert!(rendered.contains("fish · install"));
+        assert!(rendered.contains("enter install in native package manager"));
+        assert!(!rendered.contains("install-shell:"));
     }
 
     #[test]
