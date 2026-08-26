@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::io::{self, Stdout};
 use std::sync::mpsc::{self, SyncSender, TryRecvError, TrySendError};
 use std::thread;
@@ -35,14 +36,22 @@ const LAUNCH_SPINNER: [&str; 8] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "�
 struct PendingLaunch {
     provider: Provider,
     provider_session_id: String,
+    known_session_ids: BTreeSet<String>,
     open_when_visible: bool,
     deadline: Instant,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct PendingLaunchIntent {
+    provider: Provider,
+    provider_session_id: String,
+    known_session_ids: BTreeSet<String>,
 }
 
 #[derive(Debug, Default)]
 struct ActionEffect {
     refresh: bool,
-    pending_launch: Option<(Provider, String)>,
+    pending_launch: Option<PendingLaunchIntent>,
     completed_visibility: Option<bool>,
     load_models: Option<Provider>,
     hide_session_ids: Vec<String>,
@@ -56,7 +65,18 @@ struct LaunchWorkerResult {
     model: Option<String>,
     prompt: String,
     open_when_visible: bool,
+    known_session_ids: BTreeSet<String>,
     result: Result<ControlOutcome, String>,
+}
+
+#[derive(Debug)]
+struct LaunchJob {
+    sequence: u64,
+    provider: Provider,
+    model: Option<String>,
+    prompt: String,
+    open_when_visible: bool,
+    known_session_ids: BTreeSet<String>,
 }
 
 pub fn run_dashboard(
@@ -255,6 +275,7 @@ pub fn run_dashboard(
                                         PendingLaunch {
                                             provider: completed.provider,
                                             provider_session_id,
+                                            known_session_ids: completed.known_session_ids,
                                             open_when_visible: completed.open_when_visible,
                                             deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
                                         }
@@ -364,6 +385,7 @@ pub fn run_dashboard(
                                     presentation @ (LaunchPresentation::Background
                                     | LaunchPresentation::DeferredForeground),
                                 ) => {
+                                    let known_session_ids = provider_session_ids(&app, &provider);
                                     latest_launch_sequence = latest_launch_sequence.wrapping_add(1);
                                     launching_provider = Some(provider.clone());
                                     launch_animation_tick = 0;
@@ -371,11 +393,15 @@ pub fn run_dashboard(
                                     app.set_notice(format!("launching {}…", provider.label()));
                                     schedule_launch(
                                         control.clone(),
-                                        latest_launch_sequence,
-                                        provider,
-                                        model,
-                                        prompt,
-                                        presentation == LaunchPresentation::DeferredForeground,
+                                        LaunchJob {
+                                            sequence: latest_launch_sequence,
+                                            provider,
+                                            model,
+                                            prompt,
+                                            open_when_visible: presentation
+                                                == LaunchPresentation::DeferredForeground,
+                                            known_session_ids,
+                                        },
                                         launch_tx.clone(),
                                     );
                                     ActionEffect::default()
@@ -401,10 +427,11 @@ pub fn run_dashboard(
                         if let Some(provider) = effect.load_models {
                             schedule_model_load(control.clone(), provider, models_tx.clone());
                         }
-                        if let Some((provider, provider_session_id)) = effect.pending_launch {
+                        if let Some(intent) = effect.pending_launch {
                             pending_launch = Some(PendingLaunch {
-                                provider,
-                                provider_session_id,
+                                provider: intent.provider,
+                                provider_session_id: intent.provider_session_id,
+                                known_session_ids: intent.known_session_ids,
                                 open_when_visible: false,
                                 deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
                             });
@@ -562,46 +589,29 @@ fn schedule_model_load(
     });
 }
 
-fn schedule_launch(
-    control: ControlHub,
-    sequence: u64,
-    provider: Provider,
-    model: Option<String>,
-    prompt: String,
-    open_when_visible: bool,
-    sender: mpsc::Sender<LaunchWorkerResult>,
-) {
-    let operation_provider = provider.clone();
-    let operation_model = model.clone();
-    let operation_prompt = prompt.clone();
-    schedule_launch_job(
-        sequence,
-        provider,
-        model,
-        prompt,
-        open_when_visible,
-        sender,
-        move || control.launch_with(operation_provider, operation_model, operation_prompt),
-    );
+fn schedule_launch(control: ControlHub, job: LaunchJob, sender: mpsc::Sender<LaunchWorkerResult>) {
+    let operation_provider = job.provider.clone();
+    let operation_model = job.model.clone();
+    let operation_prompt = job.prompt.clone();
+    schedule_launch_job(job, sender, move || {
+        control.launch_with(operation_provider, operation_model, operation_prompt)
+    });
 }
 
 fn schedule_launch_job(
-    sequence: u64,
-    provider: Provider,
-    model: Option<String>,
-    prompt: String,
-    open_when_visible: bool,
+    job: LaunchJob,
     sender: mpsc::Sender<LaunchWorkerResult>,
     operation: impl FnOnce() -> Result<ControlOutcome> + Send + 'static,
 ) {
     let _launch_worker = thread::spawn(move || {
         let result = operation().map_err(|error| format!("{error:#}"));
         let _ = sender.send(LaunchWorkerResult {
-            sequence,
-            provider,
-            model,
-            prompt,
-            open_when_visible,
+            sequence: job.sequence,
+            provider: job.provider,
+            model: job.model,
+            prompt: job.prompt,
+            open_when_visible: job.open_when_visible,
+            known_session_ids: job.known_session_ids,
             result,
         });
     });
@@ -615,6 +625,7 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
     prompt: String,
     control: &C,
 ) -> ActionEffect {
+    let known_session_ids = provider_session_ids(app, &provider);
     if let Err(error) = terminal.suspend_dashboard() {
         app.set_notice(format!("failed to suspend dashboard: {error:#}"));
         return ActionEffect::default();
@@ -628,9 +639,13 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
             app.set_notice(outcome.message);
             ActionEffect {
                 refresh: true,
-                pending_launch: outcome
-                    .provider_session_hint
-                    .map(|provider_session_id| (provider, provider_session_id)),
+                pending_launch: outcome.provider_session_hint.map(|provider_session_id| {
+                    PendingLaunchIntent {
+                        provider,
+                        provider_session_id,
+                        known_session_ids,
+                    }
+                }),
                 ..ActionEffect::default()
             }
         }
@@ -654,11 +669,20 @@ fn dispatch_foreground_launch<T: DashboardTerminal, C: DashboardControl>(
     }
 }
 
+fn provider_session_ids(app: &App, provider: &Provider) -> BTreeSet<String> {
+    app.snapshot
+        .sessions
+        .iter()
+        .filter(|session| &session.provider == provider)
+        .map(|session| session.id.clone())
+        .collect()
+}
+
 fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> Option<String> {
     let Some(pending) = pending else {
         return None;
     };
-    let Some(session) = app.snapshot.sessions.iter().find(|session| {
+    let exact = app.snapshot.sessions.iter().find(|session| {
         session.provider == pending.provider
             && (session.provider_session_id == pending.provider_session_id
                 || session
@@ -667,9 +691,14 @@ fn select_pending_launch(app: &mut App, pending: Option<&PendingLaunch>) -> Opti
                 || pending
                     .provider_session_id
                     .starts_with(&session.provider_session_id))
-    }) else {
-        return None;
-    };
+    });
+    let session = exact.or_else(|| {
+        let mut newly_discovered = app.snapshot.sessions.iter().filter(|session| {
+            session.provider == pending.provider && !pending.known_session_ids.contains(&session.id)
+        });
+        let candidate = newly_discovered.next()?;
+        newly_discovered.next().is_none().then_some(candidate)
+    })?;
     let session_id = session.id.clone();
     app.select_and_reveal_session(&session_id)
         .then_some(session_id)
@@ -1177,15 +1206,20 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
             model,
             prompt,
         } => {
+            let known_session_ids = provider_session_ids(app, &provider);
             let result = control.launch_session(provider.clone(), model, prompt);
             match result {
                 Ok(outcome) => {
                     app.set_notice(outcome.message);
                     ActionEffect {
                         refresh: true,
-                        pending_launch: outcome
-                            .provider_session_hint
-                            .map(|provider_session_id| (provider, provider_session_id)),
+                        pending_launch: outcome.provider_session_hint.map(|provider_session_id| {
+                            PendingLaunchIntent {
+                                provider,
+                                provider_session_id,
+                                known_session_ids,
+                            }
+                        }),
                         ..ActionEffect::default()
                     }
                 }
@@ -2418,23 +2452,33 @@ mod tests {
         );
 
         assert!(effect.refresh);
-        assert_eq!(
-            effect.pending_launch,
-            Some((Provider::Pi, "provider-id".into()))
-        );
+        let pending = effect.pending_launch.expect("launch hint");
+        assert_eq!(pending.provider, Provider::Pi);
+        assert_eq!(pending.provider_session_id, "provider-id");
         assert_eq!(*control.calls.lock().unwrap(), vec!["launch:build"]);
     }
 
     #[test]
     fn slow_launch_job_does_not_block_keyboard_state_changes() {
         let (sender, receiver) = mpsc::channel();
-        schedule_launch_job(7, Provider::Pi, None, "build".into(), false, sender, || {
-            thread::sleep(Duration::from_millis(100));
-            Ok(ControlOutcome {
-                message: "launched".into(),
-                provider_session_hint: Some("pi-id".into()),
-            })
-        });
+        schedule_launch_job(
+            LaunchJob {
+                sequence: 7,
+                provider: Provider::Pi,
+                model: None,
+                prompt: "build".into(),
+                open_when_visible: false,
+                known_session_ids: BTreeSet::from(["pi:host:old".into()]),
+            },
+            sender,
+            || {
+                thread::sleep(Duration::from_millis(100));
+                Ok(ControlOutcome {
+                    message: "launched".into(),
+                    provider_session_hint: Some("pi-id".into()),
+                })
+            },
+        );
 
         assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
         let mut app = app();
@@ -2450,6 +2494,10 @@ mod tests {
         assert_eq!(completed.provider, Provider::Pi);
         assert_eq!(completed.prompt, "build");
         assert!(!completed.open_when_visible);
+        assert_eq!(
+            completed.known_session_ids,
+            BTreeSet::from(["pi:host:old".into()])
+        );
         assert_eq!(
             completed.result.unwrap().provider_session_hint.as_deref(),
             Some("pi-id")
@@ -2472,6 +2520,7 @@ mod tests {
         let pending = PendingLaunch {
             provider: Provider::Pi,
             provider_session_id: "same".into(),
+            known_session_ids: BTreeSet::new(),
             open_when_visible: false,
             deadline: Instant::now() + Duration::from_secs(1),
         };
@@ -2489,11 +2538,51 @@ mod tests {
     }
 
     #[test]
+    fn pending_launch_selects_the_only_new_provider_row_when_native_id_changes() {
+        let mut app = app();
+        let mut old = app.snapshot.sessions[0].clone();
+        old.id = "muse:host:old".into();
+        old.provider_session_id = "old".into();
+        old.provider = Provider::MuseCode;
+        let mut launched = old.clone();
+        launched.id = "muse:host:final".into();
+        launched.provider_session_id = "final".into();
+        app.replace_snapshot(SessionSnapshot {
+            sessions: vec![old, launched],
+            warnings: Vec::new(),
+        });
+        let pending = PendingLaunch {
+            provider: Provider::MuseCode,
+            provider_session_id: "provisional".into(),
+            known_session_ids: BTreeSet::from(["muse:host:old".into()]),
+            open_when_visible: false,
+            deadline: Instant::now() + Duration::from_secs(1),
+        };
+
+        assert_eq!(
+            select_pending_launch(&mut app, Some(&pending)).as_deref(),
+            Some("muse:host:final")
+        );
+        assert_eq!(
+            app.selection,
+            Some(SelectionKey::Session("muse:host:final".into()))
+        );
+
+        let mut second = app.snapshot.sessions[1].clone();
+        second.id = "muse:host:another".into();
+        second.provider_session_id = "another".into();
+        app.snapshot.sessions.push(second);
+        app.replace_snapshot(app.snapshot.clone());
+        assert!(select_pending_launch(&mut app, Some(&pending)).is_none());
+    }
+
+    #[test]
     fn pending_launch_refresh_temporarily_queries_hidden_result_classes() {
         let request = DiscoveryRequest::default();
         let pending = PendingLaunch {
             provider: Provider::Codex,
             provider_session_id: "exact".into(),
+            known_session_ids: BTreeSet::new(),
             open_when_visible: false,
             deadline: Instant::now() + Duration::from_secs(1),
         };

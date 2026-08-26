@@ -277,6 +277,28 @@ class RealTerminal:
             ["tmux", "capture-pane", "-t", self.session, "-p"], capture=True
         ).stdout
 
+    def styled_screen(self) -> str:
+        return run(
+            ["tmux", "capture-pane", "-t", self.session, "-p", "-e"],
+            capture=True,
+        ).stdout
+
+    def wait_selected_row(self, provider: str, timeout: float = 10) -> None:
+        """Require OAV's selected-row background on the launched provider."""
+
+        selected_background = "\x1b[48;2;58;60;61m"
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            for line in self.styled_screen().splitlines():
+                if selected_background in line and provider in line:
+                    return
+            time.sleep(0.2)
+        tail = self.styled_screen()[-5000:].replace(str(Path.home()), "~")
+        raise RuntimeError(
+            f"new {provider} row appeared but was not selected after launch; "
+            f"styled screen={tail!r}"
+        )
+
     def wait_for(self, pattern: str, timeout: float = 90) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
@@ -1040,7 +1062,7 @@ SEQUENCE_DEMOS = (
         "Cursor",
         "cursor",
         r"Cursor|cursor",
-        "claude-opus-5-thinking-high",
+        "auto",
     ),
     ProviderDemo(
         "copilot",
@@ -1054,7 +1076,7 @@ SEQUENCE_DEMOS = (
         "Antigravity",
         "antigravity",
         r"Antigravity|antigravity",
-        "gemini-3.1-pro-high",
+        "gemini-3.7-flash-high",
     ),
     ProviderDemo(
         "mistral-vibe",
@@ -1121,7 +1143,7 @@ PROVIDER_DEMOS = {
         "Antigravity",
         "antigravity",
         r"Antigravity|antigravity",
-        "gemini-3.1-pro-high",
+        "gemini-3.7-flash-high",
     ),
     "mistral-vibe": ProviderDemo(
         "mistral-vibe", "Mistral Vibe", "mistral-vibe", r"Mistral Vibe|vibe", setup_only=True
@@ -1498,7 +1520,8 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
         screen = terminal.screen()
         if re.search(
             r"API Error|unsupported parameter|Agent execution terminated due to error|"
-            r"Authentication required|not authenticated|run exited without success",
+            r"Authentication required|not authenticated|run exited without success|"
+            r"Named models unavailable|Free plans can only use Auto",
             screen,
             re.IGNORECASE,
         ):
@@ -1723,6 +1746,7 @@ def capture_provider_sequence(
                 rf"(?:\n[^\n]*){{0,24}}\n[^\n]*\b{re.escape(row_label)}\b",
                 30,
             )
+            terminal.wait_selected_row(row_label)
 
             renamed = f"{spec.id}-explanation"
             terminal.key("C-r", "Ctrl+R · rename session", "open-agent-view")

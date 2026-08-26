@@ -6,21 +6,21 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.39 is the current private-preview release. Hosted jobs were
+Version 0.1.40 is the current private-preview release. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
-release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.39)
+release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.40)
 contains only:
 
 ```text
-open-agent-view-0.1.39-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.39-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.40-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.40-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested both before publication and through the published private
 release. Its SHA-256 digest is
 `9458e465072a88087bc394f142757c561ae7e245c5912058fce42017f29ea070`.
-No ARM64 or macOS artifact is claimed for v0.1.39. Version 0.1.2 was the
+No ARM64 or macOS artifact is claimed for v0.1.40. Version 0.1.2 was the
 initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates

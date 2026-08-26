@@ -8,6 +8,18 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.40] - 2026-08-26
+
+### Fixed
+
+- Post-launch selection now remembers the provider rows that existed before a
+  native session started. If a provider replaces its provisional session ID,
+  Open Agent View selects the only newly discovered row instead of leaving an
+  older provider selected; ambiguous results still fail closed.
+- Real website captures now verify the selected-row highlight before renaming,
+  reject Cursor free-plan model errors, use Cursor Auto, and use the verified
+  faster Antigravity Flash/High model.
+
 ## [0.1.39] - 2026-08-26
 
 ### Fixed
