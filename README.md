@@ -85,23 +85,54 @@ commands.
 
 ## Harnesses
 
-OAV keeps the integration honest: a harness can be visible without necessarily
-supporting every mutation another harness exposes.
+Open Agent View brings these local coding harnesses—and regular terminals—into
+one dashboard.
 
-| Harness | OAV integration |
-| --- | --- |
-| Claude Code | Managed launch, native attach, verified stop |
-| OpenAI Codex | Durable threads, reply, requests, interrupt, archive, delete |
-| Cursor | Models, managed launch, native resume, interrupt |
-| GitHub Copilot | Managed native/ACP sessions, reply, cancel, approval |
-| OpenCode | Durable loopback sessions, inspect, reply, interrupt, resume |
-| Pi | Native tasks and durable RPC on Linux, reply, stop, delete, resume |
-| Antigravity | Exact managed conversations, models, launch, resume, stop |
-| Mistral Vibe | Managed discovery, launch, and native resume |
-| Muse Code | Managed discovery, launch, and native resume |
-| Qwen Code | Managed discovery, launch, and native resume |
-| Kimi Code | Managed discovery, launch, and native resume |
-| Terminal | Searchable shell picker, optional native install, background, resume, stop, delete |
+<table>
+  <tr>
+    <td align="center" width="25%"><a href="https://github.com/anthropics/claude-code"><img src="website/public/providers/claude.svg" width="64" height="64" alt="Claude Code logo"><br><strong>Claude Code</strong></a></td>
+    <td align="center" width="25%"><a href="https://github.com/openai/codex"><img src="website/public/providers/codex.png" width="64" height="64" alt="OpenAI Codex logo"><br><strong>OpenAI Codex</strong></a></td>
+    <td align="center" width="25%"><a href="https://cursor.com/cli"><img src="website/public/providers/cursor.svg" width="64" height="64" alt="Cursor logo"><br><strong>Cursor</strong></a></td>
+    <td align="center" width="25%"><a href="https://github.com/github/copilot-cli"><img src="website/public/providers/copilot.svg" width="64" height="64" alt="GitHub Copilot logo"><br><strong>GitHub Copilot</strong></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/anomalyco/opencode"><img src="website/public/providers/opencode.svg" width="64" height="64" alt="OpenCode logo"><br><strong>OpenCode</strong></a></td>
+    <td align="center"><a href="https://pi.dev"><img src="website/public/providers/pi.svg" width="64" height="64" alt="Pi logo"><br><strong>Pi</strong></a></td>
+    <td align="center"><a href="https://developers.google.com/antigravity"><img src="website/public/providers/antigravity.svg" width="64" height="64" alt="Antigravity logo"><br><strong>Antigravity</strong></a></td>
+    <td align="center"><a href="https://github.com/mistralai/mistral-vibe"><img src="website/public/providers/mistral-vibe.svg" width="64" height="64" alt="Mistral Vibe logo"><br><strong>Mistral Vibe</strong></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://dev.meta.ai/"><img src="https://session-migrate.github.io/agents/muse.svg" width="64" height="64" alt="Muse Code logo"><br><strong>Muse Code</strong></a></td>
+    <td align="center"><a href="https://github.com/QwenLM/qwen-code"><img src="website/public/providers/qwen.svg" width="64" height="64" alt="Qwen Code logo"><br><strong>Qwen Code</strong></a></td>
+    <td align="center"><a href="https://github.com/MoonshotAI/kimi-cli"><img src="https://session-migrate.github.io/agents/kimi-code.svg" width="64" height="64" alt="Kimi Code logo"><br><strong>Kimi Code</strong></a></td>
+    <td align="center"><a href="docs/cli.md"><img src="website/public/providers/terminal.svg" width="64" height="64" alt="Terminal icon"><br><strong>Terminal</strong></a></td>
+  </tr>
+</table>
+
+<details>
+<summary><strong>Compare feature support by harness</strong></summary>
+
+| Harness | Launch | Model / shell picker | Open / resume | Inspect | Inline reply | Approval / input | Stop | Delete / archive |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Claude Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| OpenAI Codex | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Cursor | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | — |
+| GitHub Copilot | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
+| OpenCode | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | — |
+| Pi | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Antigravity | ✓ | ✓ | ✓ | — | — | — | ✓ | — |
+| Mistral Vibe | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Muse Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Qwen Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Kimi Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Terminal | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
+
+`✓` means OAV exposes the feature for sessions it owns. A dash means the
+session still appears in the dashboard, but that action stays in the harness's
+native interface. “Delete / archive” is checked when at least one safe removal
+operation is available.
+
+</details>
 
 Exact CLI versions, model discovery, authentication behavior, platform limits,
 and provider-specific caveats live in the [provider notes](docs/exploration/README.md).
