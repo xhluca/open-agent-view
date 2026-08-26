@@ -131,6 +131,42 @@ function safe(action) {
   try { return action(); } catch { return undefined; }
 }
 
+const playbackFocus = {
+  players: new Set(),
+  engaged: false,
+  preferred: null,
+
+  register(player) {
+    this.players.add(player);
+  },
+
+  engage(preferred = null) {
+    this.engaged = true;
+    this.preferred = preferred;
+    this.sync();
+  },
+
+  observe(player, entry) {
+    player.intersectionRatio = entry.isIntersecting ? entry.intersectionRatio : 0;
+    this.sync();
+  },
+
+  sync() {
+    let focused = null;
+    const pageIsActive = document.visibilityState === "visible" && document.hasFocus();
+    if (this.engaged && pageIsActive) {
+      if (this.preferred && this.preferred.intersectionRatio >= 0.18) {
+        focused = this.preferred;
+      } else if (!this.preferred) {
+        focused = [...this.players]
+          .filter((player) => player.intersectionRatio >= 0.35)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0] || null;
+      }
+    }
+    for (const player of this.players) player.setViewportFocused(player === focused);
+  },
+};
+
 class RealCastPlayer {
   constructor(root) {
     this.root = root;
@@ -143,7 +179,11 @@ class RealCastPlayer {
     this.player = null;
     this.manifest = null;
     this.playing = false;
-    this.visible = true;
+    this.activelyPlaying = false;
+    this.viewportFocused = false;
+    this.intersectionRatio = 0;
+    this.manuallyPaused = false;
+    this.userRequestedPlayback = false;
     this.ended = false;
     this.generation = 0;
     this.lastObservedTime = 0;
@@ -153,6 +193,16 @@ class RealCastPlayer {
     for (const button of root.querySelectorAll("[data-demo-action]")) {
       button.addEventListener("click", () => this.control(button.dataset.demoAction));
     }
+    this.mount.addEventListener("pointerdown", () => {
+      this.activate();
+    });
+    this.root.addEventListener("focusin", () => {
+      if (!this.manuallyPaused && !this.ended) {
+        this.userRequestedPlayback = true;
+        this.playing = true;
+      }
+      playbackFocus.engage(this);
+    });
     this.progress.addEventListener("pointerdown", () => this.pause());
     this.progress.addEventListener("input", () => {
       if (!this.manifest || !this.player) return;
@@ -163,27 +213,31 @@ class RealCastPlayer {
       this.update(seconds);
     });
 
+    playbackFocus.register(this);
     this.observer = new IntersectionObserver(([entry]) => {
-      this.visible = entry.isIntersecting;
-      if (!this.player) return;
-      if (this.visible && this.playing) safe(() => this.player.play());
-      else safe(() => this.player.pause());
-    }, { threshold: 0.18 });
+      playbackFocus.observe(this, entry);
+    }, { threshold: [0, 0.18, 0.35, 0.55, 0.75, 1] });
     this.observer.observe(root);
     this.mountStory(root.dataset.story);
     window.requestAnimationFrame(() => this.tick());
   }
 
-  async mountStory(storyId) {
+  async mountStory(storyId, activate = false) {
     const story = STORIES[storyId];
     const generation = ++this.generation;
     this.root.dataset.story = storyId;
+    this.playing = activate;
+    this.activelyPlaying = false;
+    this.manuallyPaused = false;
+    this.userRequestedPlayback = activate;
+    if (activate) playbackFocus.engage(this);
 
     if (!story) {
       safe(() => this.player?.dispose());
       this.player = null;
       this.manifest = null;
       this.playing = false;
+      this.activelyPlaying = false;
       this.ended = false;
       this.progress.value = "0";
       this.mount.replaceChildren();
@@ -208,7 +262,7 @@ class RealCastPlayer {
       safe(() => this.player?.dispose());
       this.player = null;
       this.manifest = manifest;
-      this.playing = false;
+      this.activelyPlaying = false;
       this.ended = false;
       this.lastObservedTime = 0;
       this.lastMovementAt = performance.now();
@@ -216,7 +270,7 @@ class RealCastPlayer {
       this.mount.replaceChildren();
       if (retained) this.mount.append(retained);
       this.player = window.AsciinemaPlayer.create(story.cast, this.mount, {
-        autoPlay: !this.reducedMotion && this.root.dataset.autoPlay === "true",
+        autoPlay: false,
         controls: false,
         cursorMode: "blinking",
         fit: "both",
@@ -226,17 +280,18 @@ class RealCastPlayer {
         terminalFontFamily: "Geist Mono, ui-monospace, monospace",
         terminalLineHeight: 1.34,
       });
-      this.playing = !this.reducedMotion && this.root.dataset.autoPlay === "true";
-      this.pauseButton.textContent = this.playing ? "Pause" : "Play";
+      this.pauseButton.textContent = "Play";
       this.player.addEventListener("ended", () => this.finish());
       this.update(0);
       this.releaseRetainedFrame(retained);
+      playbackFocus.sync();
     } catch (error) {
       if (generation !== this.generation) return;
       safe(() => this.player?.dispose());
       this.player = null;
       this.manifest = null;
       this.playing = false;
+      this.activelyPlaying = false;
       const failure = document.createElement("p");
       failure.className = "recording-unavailable";
       failure.textContent = `Could not load the real terminal recording: ${error.message}`;
@@ -294,6 +349,50 @@ class RealCastPlayer {
     return Number(safe(() => this.player?.getCurrentTime()) || 0);
   }
 
+  activate() {
+    if (this.ended) return;
+    this.manuallyPaused = false;
+    this.userRequestedPlayback = true;
+    this.playing = true;
+    playbackFocus.engage(this);
+  }
+
+  setViewportFocused(focused) {
+    this.viewportFocused = focused;
+    this.root.dataset.playbackFocused = String(focused);
+    if (
+      focused
+      && playbackFocus.engaged
+      && !this.manuallyPaused
+      && !this.ended
+      && this.root.dataset.autoPlay === "true"
+      && (!this.reducedMotion || this.userRequestedPlayback)
+    ) {
+      this.playing = true;
+    }
+    this.syncPlayback();
+  }
+
+  syncPlayback() {
+    const shouldPlay = Boolean(
+      this.player
+      && this.playing
+      && this.viewportFocused
+      && document.visibilityState === "visible"
+      && document.hasFocus()
+      && (!this.reducedMotion || this.userRequestedPlayback),
+    );
+    if (shouldPlay) {
+      if (!this.activelyPlaying) safe(() => this.player.play());
+      this.activelyPlaying = true;
+      this.pauseButton.textContent = "Pause";
+    } else {
+      if (this.activelyPlaying) safe(() => this.player?.pause());
+      this.activelyPlaying = false;
+      this.pauseButton.textContent = this.ended ? "Replay" : "Play";
+    }
+  }
+
   control(action) {
     if (!this.player || !this.manifest) return;
     if (action === "pause") {
@@ -320,13 +419,16 @@ class RealCastPlayer {
     if (!this.player) return;
     if (this.ended) this.seekTo(0);
     this.ended = false;
+    this.manuallyPaused = false;
+    this.userRequestedPlayback = true;
     this.playing = true;
-    this.pauseButton.textContent = "Pause";
-    if (this.visible) safe(() => this.player.play());
+    playbackFocus.engage(this);
   }
 
   pause() {
     this.playing = false;
+    this.activelyPlaying = false;
+    this.manuallyPaused = true;
     this.pauseButton.textContent = "Play";
     safe(() => this.player?.pause());
   }
@@ -335,6 +437,7 @@ class RealCastPlayer {
     if (this.ended) return;
     this.ended = true;
     this.playing = false;
+    this.activelyPlaying = false;
     this.pauseButton.textContent = "Replay";
     this.update(this.manifest?.duration || this.currentTime());
     this.root.dispatchEvent(new CustomEvent("demo-ended", { bubbles: true }));
@@ -363,7 +466,7 @@ class RealCastPlayer {
         this.lastMovementAt = now;
       }
       const nearEnd = current >= this.manifest.duration - 0.35;
-      const stalledAtEnd = this.playing && nearEnd && now - this.lastMovementAt > 600;
+      const stalledAtEnd = this.activelyPlaying && nearEnd && now - this.lastMovementAt > 600;
       if (!this.ended && (current >= this.manifest.duration - 0.02 || stalledAtEnd)) {
         this.finish();
       }
@@ -404,7 +507,7 @@ class TabbedStory {
     return Math.max(0, this.tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true"));
   }
 
-  select(index, focus = false) {
+  select(index, focus = false, activate = true) {
     window.cancelAnimationFrame(this.holdFrame);
     this.holdFrame = 0;
     for (const [tabIndex, tab] of this.tabs.entries()) {
@@ -414,7 +517,7 @@ class TabbedStory {
       tab.style.setProperty("--tab-progress", selected ? "1" : "0");
     }
     if (focus) this.tabs[index].focus();
-    this.player.mountStory(this.tabs[index].dataset.story);
+    this.player.mountStory(this.tabs[index].dataset.story, activate);
   }
 
   startHold() {
@@ -433,7 +536,7 @@ class TabbedStory {
       if (remaining > 0) this.holdFrame = window.requestAnimationFrame(advance);
       else {
         const next = this.selectedIndex() + 1;
-        this.select(next < this.tabs.length ? next : 0);
+        this.select(next < this.tabs.length ? next : 0, false, true);
       }
     };
     this.holdFrame = window.requestAnimationFrame(advance);
@@ -462,9 +565,20 @@ function mountStories() {
       const index = story._tabbedStory.tabs.findIndex(
         (tab) => tab.dataset.storyTab === link.dataset.selectHarness,
       );
-      if (index >= 0) story._tabbedStory.select(index);
+      if (index >= 0) story._tabbedStory.select(index, false, true);
     });
   }
+  window.addEventListener("wheel", () => playbackFocus.engage(), { passive: true });
+  window.addEventListener("touchstart", () => playbackFocus.engage(), { passive: true });
+  window.addEventListener("scroll", () => playbackFocus.sync(), { passive: true });
+  window.addEventListener("focus", () => playbackFocus.sync());
+  window.addEventListener("blur", () => playbackFocus.sync());
+  document.addEventListener("visibilitychange", () => playbackFocus.sync());
+  window.addEventListener("keydown", (event) => {
+    if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", " "].includes(event.key)) {
+      playbackFocus.engage();
+    }
+  });
   document.documentElement.dataset.storiesReady = "true";
   enableCopyCommands();
 }

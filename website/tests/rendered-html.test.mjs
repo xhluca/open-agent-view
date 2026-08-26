@@ -237,6 +237,8 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.ok(playerBundle.size > 50_000, "the local asciinema player bundle should be published");
   assert.match(script, /class RealCastPlayer/);
   assert.match(script, /AsciinemaPlayer\.create\(story\.cast/);
+  assert.match(script, /autoPlay:\s*false/);
+  assert.match(script, /const playbackFocus/);
   assert.match(player, /dispatchEvent\(new Event\("oav:react-hydrated"\)\)/);
   assert.match(script, /window\.addEventListener\("oav:react-hydrated", mountStories/);
   assert.match(script, /if \(!window\.__oavReactHydrated\)/);

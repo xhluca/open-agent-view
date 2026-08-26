@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 type BrowserPlayer = {
+  activelyPlaying: boolean;
+  currentTime(): number;
   finish(): void;
   manifest: { duration: number };
   pause(): void;
@@ -82,6 +84,8 @@ test("real player controls are accessible and the final frame does not loop", as
   await expect(setup.getByRole("button", { name: "Restart demo" })).toBeVisible();
 
   const progress = setup.getByRole("slider", { name: "Seek through INSTALL · OPEN · /HARNESS" });
+  await setup.locator("[data-demo-screen]").click({ position: { x: 20, y: 20 } });
+  await expect(pause).toHaveText("Pause");
   await expect(pause).toHaveText("Replay", { timeout: 15_000 });
   const finalProgress = Number(await progress.inputValue());
   const finalFrame = await setup.locator(".ap-wrapper").textContent();
@@ -91,6 +95,51 @@ test("real player controls are accessible and the final frame does not loop", as
   await expect(progress).toHaveValue(String(finalProgress));
   await expect(setup.locator(".ap-wrapper")).toHaveText(finalFrame ?? "");
   await expect(setup.locator(".ap-wrapper")).toHaveCount(1);
+});
+
+test("recordings stay paused on load and only the focused player advances", async ({ page }) => {
+  await openReady(page);
+  const players = page.locator("[data-demo-player]");
+
+  const initial = await players.evaluateAll((nodes) => nodes.map((node) => {
+    const player = (node as PlayerNode)._realCastPlayer;
+    return { active: player.activelyPlaying, time: player.currentTime() };
+  }));
+  await page.waitForTimeout(700);
+  const settled = await players.evaluateAll((nodes) => nodes.map((node) => {
+    const player = (node as PlayerNode)._realCastPlayer;
+    return { active: player.activelyPlaying, time: player.currentTime() };
+  }));
+  expect(initial.every(({ active }) => !active)).toBe(true);
+  expect(settled.every(({ active }) => !active)).toBe(true);
+  expect(settled.every(({ time }, index) => Math.abs(time - initial[index].time) < 0.05)).toBe(true);
+
+  const setup = page.locator("#start [data-demo-player]");
+  await setup.scrollIntoViewIfNeeded();
+  await setup.getByRole("button", { name: "Restart demo" }).focus();
+  await expect(setup).toHaveAttribute("data-playback-focused", "true");
+  await expect(setup.getByRole("button", { name: "Pause demo" })).toHaveText("Pause");
+  await expect.poll(() => setup.evaluate((node) => (
+    (node as PlayerNode)._realCastPlayer.currentTime()
+  ))).toBeGreaterThan(0.2);
+  const harness = page.locator("#harness-demo [data-demo-player]");
+  await harness.scrollIntoViewIfNeeded();
+  await page.locator("#harness-demo").getByRole("tab", { name: "Claude Code" }).click();
+  await expect(harness).toHaveAttribute("data-playback-focused", "true");
+  await expect(harness.getByRole("button", { name: "Pause demo" })).toHaveText("Pause");
+  await expect.poll(() => harness.evaluate((node) => (
+    (node as PlayerNode)._realCastPlayer.currentTime()
+  ))).toBeGreaterThan(0.2);
+  await expect(setup).toHaveAttribute("data-playback-focused", "false");
+  await page.waitForTimeout(150);
+  const pausedSetupTime = await setup.evaluate((node) => (
+    (node as PlayerNode)._realCastPlayer.currentTime()
+  ));
+  await page.waitForTimeout(450);
+  const afterFocusChange = await setup.evaluate((node) => (
+    (node as PlayerNode)._realCastPlayer.currentTime()
+  ));
+  expect(Math.abs(afterFocusChange - pausedSetupTime)).toBeLessThan(0.03);
 });
 
 test("every provider logo jumps to its real recording and tabs support arrow navigation", async ({ page }) => {
@@ -162,8 +211,8 @@ test("selected tabs use a cyan underline as the eight-second countdown", async (
   expect(before.color).toBe(expectedCyan);
   expect(before.width).toBeGreaterThan(0);
 
-  await controls.getByRole("button", { name: "Pause demo" }).click();
   await controls.locator("[data-demo-player]").evaluate((node) => {
+    (node as PlayerNode)._realCastPlayer.pause();
     node.dispatchEvent(new CustomEvent("demo-ended", { bubbles: true }));
   });
   await page.waitForTimeout(350);

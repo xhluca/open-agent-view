@@ -42,12 +42,17 @@ The page has three finite terminal walkthroughs implemented by
    switching, model selection, and login/setup.
 
 Every player has independent −5s, pause/resume, +5s, restart, and scrub
-controls. Harness tabs can be opened directly from the provider marks in the
-hero. Harness and control tabs advance only after the current story has ended
-and a separate visible countdown has elapsed. Playback is literal 1×. Only
-genuine idle/provider waits are shortened before publication; meaningful
-response, setup, and reopened-session states are held long enough to read.
-Reduced-motion mode disables autoplay and automatic tab changes.
+controls. No recording advances when the page loads. Scrolling or moving
+keyboard focus to a demo, choosing one of its tabs, selecting a provider mark,
+or pressing Play starts only that focused recording; the previous recording
+pauses when focus moves elsewhere or the browser tab is hidden. A manual pause
+remains paused until the visitor explicitly resumes it. Harness tabs can be
+opened directly from the provider marks in the hero. Harness and control tabs
+advance only after the current story has ended and a separate visible countdown
+has elapsed. Playback is literal 1×. Only genuine idle/provider waits are
+shortened before publication; meaningful response, setup, and reopened-session
+states are held long enough to read. Reduced-motion mode also disables automatic
+tab changes and requires an explicit tab, terminal, or Play activation.
 
 The keystrokes are scripted, but every pixel comes from the shell, release
 binary, or provider TUI recorded through tmux and Asciinema. Authenticated clips
