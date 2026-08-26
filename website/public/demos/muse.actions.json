@@ -1,55 +1,131 @@
 {
-  "duration": 13.965,
-  "proof": "setup",
+  "duration": 51.596142055368425,
+  "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.011,
-      "action": "Enter",
-      "window": "Terminal"
-    },
-    {
-      "at": 2.232,
-      "action": "Type /setup muse",
+      "at": 0.756,
+      "action": "\u2193 \u00b7 highlight Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.356,
+      "at": 1.684,
+      "action": "Enter \u00b7 choose Muse Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.166,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.29,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.483,
-      "action": "Y \u00b7 install Muse Code",
-      "window": "Harness setup"
+      "at": 4.426,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 2.607,
-      "action": "Enter \u00b7 confirm install",
-      "window": "Harness setup"
+      "at": 5.0,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 5.607,
-      "action": "Install check complete",
-      "window": "Harness setup"
+      "at": 5.574,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.537,
-      "action": "Enter \u00b7 open Muse Code login",
-      "window": "Harness setup"
+      "at": 7.178,
+      "action": "Search \u00b7 meta/muse-spark-1.2",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.661,
-      "action": "Native login ready",
-      "window": "Muse Code login"
+      "at": 9.314,
+      "action": "Enter \u00b7 select meta/muse-spark-1.2",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.587,
-      "action": "Shift+\u2190 \u00b7 background setup",
-      "window": "Muse Code login"
+      "at": 11.886,
+      "action": "Enter \u00b7 start Muse Code",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.965,
-      "action": "Returned to dashboard",
+      "at": 12.01,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 20.517,
+      "action": "Hello response complete",
+      "window": "Muse Code"
+    },
+    {
+      "at": 22.122,
+      "action": "Type \u00b7 Explain what is Muse Code",
+      "window": "Muse Code"
+    },
+    {
+      "at": 22.251,
+      "action": "Enter \u00b7 send explanation",
+      "window": "Muse Code"
+    },
+    {
+      "at": 34.114,
+      "action": "Explanation response complete",
+      "window": "Muse Code"
+    },
+    {
+      "at": 36.736,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Muse Code"
+    },
+    {
+      "at": 38.865,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Muse Code"
+    },
+    {
+      "at": 39.242,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.375,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.502,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 45.658,
+      "action": "Type \u00b7 muse-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 45.782,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 45.905,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.118,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.242,
+      "action": "Enter",
       "window": "open-agent-view"
     }
   ]

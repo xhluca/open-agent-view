@@ -1,7 +1,7 @@
 # Demo asset provenance
 
 `open-agent-view.gif` and `open-agent-view.png` are composed exclusively from
-genuine terminal recordings made on 2026-08-25. The sequence starts by
+genuine terminal recordings made on 2026-08-25 and 2026-08-26. The sequence starts by
 installing the public v0.1.37 release and opening its complete twelve-choice
 harness picker, then shows a short conversation in the real Claude Code TUI,
 the return to OAV, and an OAV session rename. It does not generate HTML rows
@@ -31,6 +31,9 @@ python3 scripts/capture-real-site-demo.py rename
 ```
 
 The website publishes 17 real recordings: install/setup, all twelve selectable
-targets, and rename/switch/model/login controls. Static tests parse every cast
-and action manifest, reject private material, and browser tests mount the real
-vendored Asciinema player at desktop and phone sizes.
+targets, and rename/switch/model/login controls. The twelve target recordings
+share one disposable workspace and show the exact picker, model, two-turn,
+return, rename, and next-picker loop, preserving each earlier session row.
+Static tests parse every cast and action manifest, reject private material, and
+browser tests mount the real vendored Asciinema player at desktop, Mac-laptop,
+and phone sizes.

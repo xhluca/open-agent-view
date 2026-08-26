@@ -19,7 +19,8 @@ npm run export
 ```
 
 `npm run export` writes the deployable site to `website/dist/static`. Browser
-tests render both 1440×900 and 390×844 viewports, reject horizontal overflow,
+tests render 1440×900 desktop, 1280×800 Mac-laptop, and 390×844 phone
+viewports, reject horizontal overflow,
 exercise every timeline control, provider deep links, keyboard-accessible tabs,
 finite next-tab handoff, clipboard copy, and reduced motion, then run Axe.
 Rendered-HTML tests also parse all 17 genuine cast-v2 recordings and their
@@ -35,9 +36,11 @@ The page has three finite terminal walkthroughs implemented by
 
 1. the start story installs from the public URL, opens the app, types
    `/harness`, and stops with every option visible;
-2. twelve tabbed harness stories launch the native CLI, send a bounded
-   conversation when the disposable account is ready—or show that provider's
-   genuine setup/login TUI when it is not—then return to OAV; and
+2. twelve tabbed harness stories begin at the same `/harness` picker, choose
+   the tab's harness, browse and select its model, run two complete native-TUI
+   turns, type the return shortcut explanation, return with Shift+Left, wait on
+   the growing shared dashboard, rename the exact new row, and end at the next
+   `/harness` picker; and
 3. four tabbed common-control stories demonstrate rename, native-session
    switching, model selection, and login/setup.
 
@@ -49,22 +52,19 @@ pauses when focus moves elsewhere or the browser tab is hidden. A manual pause
 remains paused until the visitor explicitly resumes it. Harness tabs can be
 opened directly from the provider marks in the hero. Harness and control tabs
 advance only after the current story has ended and a separate visible countdown
-has elapsed. Playback is literal 1×. Only genuine idle/provider waits are
-shortened before publication; meaningful response, setup, and reopened-session
-states are held long enough to read. Reduced-motion mode also disables automatic
-tab changes and requires an explicit tab, terminal, or Play activation.
+has elapsed. The long harness stories play at 0.5× so model browsing, native
+responses, returning, and renaming remain legible; setup and focused control
+stories remain literal 1×. Meaningful response and dashboard states are held
+long enough to read. Reduced-motion mode also disables automatic tab changes
+and requires an explicit tab, terminal, or Play activation.
 
 The keystrokes are scripted, but every pixel comes from the shell, release
-binary, or provider TUI recorded through tmux and Asciinema. Authenticated clips
-use the minimum existing login state copied into disposable private homes; the
-capture deletes those homes and validates the sanitized cast before publishing.
-Providers without disposable authentication show their actual setup/login UI;
-there are no fabricated conversations or terminal rows. Provider spinners can
-repaint continuously while a model or CLI starts, so harness stories cap
-uninteresting gaps between labelled actions at three seconds.
-[`scripts/compact_real_recordings.py`](../scripts/compact_real_recordings.py)
-applies one time map to the genuine cast and its action labels; it never changes,
-reorders, or invents terminal output.
+binary, or provider TUI recorded through tmux and Asciinema. The recorder
+prepares the harnesses before the Section 2 recording begins, copies only the
+minimum existing login state into a private disposable home, and deletes that
+home after validating the sanitized cast. Each later tab reuses the same
+disposable workspace and provider stores, so the dashboard truthfully gains one
+renamed row at a time. There are no fabricated conversations or terminal rows.
 
 ## Recording and README media
 
@@ -87,7 +87,7 @@ recapture commands are in [`docs/assets/README.md`](assets/README.md).
 
 The repeatable visual audit builds and exports the current site, then captures
 start, 25%, 50%, 75%, and end
-frames for every story at desktop and mobile sizes, checks that the native TUI
+frames for every story at desktop, Mac-laptop, and mobile sizes, checks that the native TUI
 footer and action keycap stay in bounds, and writes contact sheets to a temporary
 review directory:
 

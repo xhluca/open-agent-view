@@ -104,6 +104,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
   const currentVersion = cargo.match(/^version = "([^"]+)"$/m)?.[1];
   assert.ok(currentVersion, "Cargo.toml should declare the release version");
 
+  const accumulatedSessionNames = [];
   for (const [name, , manifestName] of demos) {
     const [cast, actionsSource] = await Promise.all([
       readFile(new URL(`public/demos/${name}.cast`, root), "utf8"),
@@ -149,12 +150,6 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       && action.window.length > 0
     )), `${name} actions should be ordered, bounded, and labelled`);
 
-    if (manifestName) {
-      const actionTimes = [0, ...manifest.actions.map((action) => action.at), manifest.duration];
-      const longestGap = Math.max(...actionTimes.slice(1).map((at, index) => at - actionTimes[index]));
-      assert.ok(longestGap <= 3.001, `${name} should shorten provider waits without dropping frames`);
-    }
-
     if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
@@ -167,29 +162,61 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
         const terminalLabel = choice.split(" ").map((part) => escapeRegExp(part)).join("\\s*");
         assert.match(visibleOutput, new RegExp(terminalLabel), `setup picker should show ${choice}`);
       }
-    } else if (manifestName && manifest.proof === "setup") {
-      assert.ok(
-        manifest.actions.some((action) => action.action === "Native login ready"),
-        `${name} should show the provider's native login/setup UI`,
-      );
-      assert.ok(
-        manifest.actions.some((action) => action.action === "Returned to dashboard"),
-        `${name} should visibly return from provider setup`,
-      );
-      assert.match(visibleOutput, /install|setup/i);
     } else if (manifestName) {
+      const initialFrameOutput = events
+        .filter((event) => event[0] === 0 && event[1] === "o")
+        .map((event) => event[2])
+        .join("")
+        .replace(oscSequence, "")
+        .replace(csiSequence, "");
+      assert.match(
+        initialFrameOutput,
+        /Open Agent View[\s\S]*choose harness/i,
+        `${name} should inherit the prior demo's harness picker at time zero`,
+      );
+      assert.equal(manifest.sequence, "picker-model-two-turns-return-rename-picker");
+      assert.equal(manifest.proof, name === "terminal" ? "terminal" : "conversation");
       assert.ok(
         manifest.actions.some((action) => `${action.action} ${action.window}`.includes(manifestName)),
         `${name} actions should identify ${manifestName}`,
       );
       assert.ok(
-        manifest.actions.some((action) => /(?:Response|Command) ready|finished/i.test(action.action)),
-        `${name} should hold on a meaningful completed state`,
+        manifest.actions.some((action) => action.action === "Type /model"),
+        `${name} should visibly open model selection`,
       );
       assert.ok(
-        manifest.actions.some((action) => action.action === "Session reopened"),
-        `${name} should prove the native session can be reopened`,
+        manifest.actions.some((action) => /(?:Explanation|Command).*complete/i.test(action.action)),
+        `${name} should wait for the second turn to complete`,
       );
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Shift+← · return to panel"),
+        `${name} should return with Shift+Left`,
+      );
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Ctrl+R · rename session"),
+        `${name} should rename the newly created row`,
+      );
+      assert.ok(
+        manifest.actions.some((action) => action.action === "Type /harness"),
+        `${name} should end back at the harness picker`,
+      );
+      assert.match(visibleOutput, new RegExp(`${escapeRegExp(name)}-explanation`));
+      assert.match(visibleOutput, /choose harness/i);
+      for (const priorName of accumulatedSessionNames) {
+        assert.match(
+          visibleOutput,
+          new RegExp(escapeRegExp(priorName)),
+          `${name} should preserve the earlier ${priorName} row`,
+        );
+      }
+      accumulatedSessionNames.push(`${name}-explanation`);
+      if (name === "qwen") {
+        assert.doesNotMatch(
+          visibleOutput,
+          /API Error|unsupported parameter|max_tokens.*not supported/i,
+          "Qwen's real conversation must complete without a model/API error",
+        );
+      }
     } else {
       assert.ok(
         manifest.actions.some((action) => action.window === "open-agent-view"),
@@ -239,14 +266,19 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(script, /AsciinemaPlayer\.create\(story\.cast/);
   assert.match(script, /autoPlay:\s*false/);
   assert.match(script, /const playbackFocus/);
+  assert.match(script, /engaged:\s*false/);
+  assert.match(script, /document\.visibilityState === "visible" && document\.hasFocus\(\)/);
   assert.match(player, /dispatchEvent\(new Event\("oav:react-hydrated"\)\)/);
   assert.match(script, /window\.addEventListener\("oav:react-hydrated", mountStories/);
   assert.match(script, /if \(!window\.__oavReactHydrated\)/);
   assert.match(script, /if \(document\.documentElement\.dataset\.storiesReady === "true"\) return/);
   assert.match(script, /loop:\s*false/);
   const playbackSpeeds = [...script.matchAll(/speed:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
-  assert.ok(playbackSpeeds.length >= demos.length);
-  assert.ok(playbackSpeeds.every((speed) => speed === 1), "every story should play at literal 1×");
+  assert.deepEqual(
+    playbackSpeeds,
+    [1, ...Array(12).fill(0.5), ...Array(4).fill(1)],
+    "the long harness stories should play at half speed while setup and controls remain literal 1×",
+  );
   assert.match(script, /retainFrame\(\)/);
   assert.match(script, /story-frame-cover/);
   assert.match(script, /this\.autoAdvance/);
@@ -261,11 +293,18 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
   assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
   assert.match(page, /thin\s+cyan\s+line/i);
-  assert.match(page, /Actual provider TUI output · idle waits shortened · playback at 1×/);
+  assert.match(page, /Actual provider TUI output · complete turns · playback at 0.5×/);
   assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
 
   const recorder = await readFile(new URL("../scripts/capture-real-site-demo.py", root), "utf8");
   assert.doesNotMatch(recorder, /["']NO_COLOR["']\s*:/, "capture must not disable provider colors");
+  assert.match(recorder, /environment_file\s*=\s*root\s*\/\s*["']recording\.env["']/);
+  assert.match(recorder, /environment_file\.chmod\(0o600\)/);
+  assert.doesNotMatch(
+    recorder,
+    /inner_shell\s*=\s*f?["']env\s+\{?exports/,
+    "capture credentials must not be serialized into the Asciinema process argv",
+  );
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {

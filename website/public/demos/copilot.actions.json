@@ -1,81 +1,142 @@
 {
-  "duration": 23.252069,
+  "duration": 66.41865074217988,
   "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.027,
-      "action": "Enter",
-      "window": "Terminal"
-    },
-    {
-      "at": 2.301,
-      "action": "Type /harness",
+      "at": 0.756,
+      "action": "\u2193 \u00b7 highlight GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 2.425,
-      "action": "Enter",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 2.552,
+      "at": 1.683,
       "action": "Enter \u00b7 choose GitHub Copilot",
       "window": "open-agent-view"
     },
     {
-      "at": 3.993,
-      "action": "Enter \u00b7 start GitHub Copilot",
+      "at": 4.163,
+      "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 4.117,
+      "at": 4.287,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.117,
-      "action": "Confirm \u00b7 trust disposable demo workspace",
-      "window": "native harness"
-    },
-    {
-      "at": 10.117,
-      "action": "Esc \u00b7 keep terminal settings unchanged",
-      "window": "GitHub Copilot"
-    },
-    {
-      "at": 11.915,
-      "action": "Type follow-up",
-      "window": "GitHub Copilot"
-    },
-    {
-      "at": 12.043,
-      "action": "Enter \u00b7 send follow-up",
-      "window": "GitHub Copilot"
-    },
-    {
-      "at": 13.683,
-      "action": "Response ready",
-      "window": "GitHub Copilot"
-    },
-    {
-      "at": 16.009,
-      "action": "Shift+\u2190 \u00b7 return to opav",
-      "window": "GitHub Copilot"
-    },
-    {
-      "at": 17.992,
-      "action": "\u2192 \u00b7 reopen GitHub Copilot",
+      "at": 4.42,
+      "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 18.115,
-      "action": "Session reopened",
+      "at": 4.995,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.569,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 6.647,
+      "action": "Search \u00b7 gpt-5.4",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.555,
+      "action": "Enter \u00b7 select gpt-5.4",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 13.126,
+      "action": "Enter \u00b7 start GitHub Copilot",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 13.25,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 15.665,
+      "action": "Confirm \u00b7 trust demo workspace",
       "window": "GitHub Copilot"
     },
     {
-      "at": 20.445,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 17.3,
+      "action": "Esc \u00b7 keep terminal settings",
       "window": "GitHub Copilot"
+    },
+    {
+      "at": 29.616,
+      "action": "Hello response complete",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 31.501,
+      "action": "Type \u00b7 Explain what is GitHub Copilot",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 31.631,
+      "action": "Enter \u00b7 send explanation",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 48.734,
+      "action": "Explanation response complete",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 51.373,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 53.503,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "GitHub Copilot"
+    },
+    {
+      "at": 53.882,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 59.012,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 59.139,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 60.478,
+      "action": "Type \u00b7 copilot-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 60.602,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 60.725,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 62.939,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 63.063,
+      "action": "Enter",
+      "window": "open-agent-view"
     }
   ]
 }

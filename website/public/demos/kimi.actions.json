@@ -1,50 +1,131 @@
 {
-  "duration": 13.938,
-  "proof": "setup",
+  "duration": 55.78117265930462,
+  "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 2.21,
-      "action": "Type /setup kimi",
+      "at": 0.756,
+      "action": "\u2193 \u00b7 highlight Kimi Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.334,
+      "at": 1.683,
+      "action": "Enter \u00b7 choose Kimi Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.166,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.29,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.461,
-      "action": "Y \u00b7 install Kimi Code",
-      "window": "Harness setup"
+      "at": 4.421,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 2.585,
-      "action": "Enter \u00b7 confirm install",
-      "window": "Harness setup"
+      "at": 4.998,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 5.585,
-      "action": "Install check complete",
-      "window": "Harness setup"
+      "at": 5.573,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.513,
-      "action": "Enter \u00b7 open Kimi Code login",
-      "window": "Harness setup"
+      "at": 6.654,
+      "action": "Search \u00b7 gpt-5.4",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.636,
-      "action": "Native login ready",
-      "window": "Kimi Code login"
+      "at": 8.786,
+      "action": "Enter \u00b7 select gpt-5.4",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.561,
-      "action": "Shift+\u2190 \u00b7 background setup",
-      "window": "Kimi Code login"
+      "at": 11.357,
+      "action": "Enter \u00b7 start Kimi Code",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.938,
-      "action": "Returned to dashboard",
+      "at": 11.481,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 28.132,
+      "action": "Hello response complete",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 29.727,
+      "action": "Type \u00b7 Explain what is Kimi Code",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 29.864,
+      "action": "Enter \u00b7 send explanation",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 38.148,
+      "action": "Explanation response complete",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 40.793,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 42.922,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 43.302,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.434,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.561,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 49.706,
+      "action": "Type \u00b7 kimi-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 49.833,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 49.977,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.293,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.423,
+      "action": "Enter",
       "window": "open-agent-view"
     }
   ]

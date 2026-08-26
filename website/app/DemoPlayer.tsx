@@ -40,7 +40,7 @@ export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlaye
       <div className="story-window">
         <div className="window-bar">
           <strong data-demo-window suppressHydrationWarning>open-agent-view</strong>
-          <kbd data-demo-last-action suppressHydrationWarning>Waiting</kbd>
+          <kbd data-demo-last-action role="status" aria-live="polite" suppressHydrationWarning>Ready</kbd>
         </div>
         <div data-demo-screen role="region" aria-label={label} suppressHydrationWarning>
           <p>Loading the real terminal recording…</p>

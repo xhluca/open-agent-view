@@ -1,76 +1,132 @@
 {
-  "duration": 21.191208,
+  "duration": 56.421840194159465,
   "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 2.255,
-      "action": "Type /harness",
+      "at": 0.757,
+      "action": "\u2193 \u00b7 highlight Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 2.379,
-      "action": "Enter",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 2.507,
+      "at": 1.684,
       "action": "Enter \u00b7 choose Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 3.749,
-      "action": "Select model \u00b7 gemini-3.1-pro-high",
+      "at": 4.168,
+      "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.877,
+      "at": 4.292,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 5.375,
+      "at": 4.424,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.999,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.575,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.194,
+      "action": "Search \u00b7 gemini-3.1-pro-high",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 9.327,
+      "action": "Enter \u00b7 select gemini-3.1-pro-high",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.901,
       "action": "Enter \u00b7 start Antigravity",
       "window": "open-agent-view"
     },
     {
-      "at": 5.499,
+      "at": 12.026,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 8.499,
-      "action": "Type follow-up",
+      "at": 25.227,
+      "action": "Hello response complete",
       "window": "Antigravity"
     },
     {
-      "at": 8.628,
-      "action": "Enter \u00b7 send follow-up",
+      "at": 26.938,
+      "action": "Type \u00b7 Explain what is Antigravity",
       "window": "Antigravity"
     },
     {
-      "at": 11.628,
-      "action": "Response ready",
+      "at": 27.069,
+      "action": "Enter \u00b7 send explanation",
       "window": "Antigravity"
     },
     {
-      "at": 13.954,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 38.499,
+      "action": "Explanation response complete",
       "window": "Antigravity"
     },
     {
-      "at": 15.938,
-      "action": "\u2192 \u00b7 reopen Antigravity",
+      "at": 41.123,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Antigravity"
+    },
+    {
+      "at": 43.252,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Antigravity"
+    },
+    {
+      "at": 43.628,
+      "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 16.06,
-      "action": "Session reopened",
-      "window": "Antigravity"
+      "at": 48.759,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
     },
     {
-      "at": 18.386,
-      "action": "Shift+\u2190 \u00b7 return to opav",
-      "window": "Antigravity"
+      "at": 48.885,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 50.483,
+      "action": "Type \u00b7 antigravity-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 50.607,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 50.73,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.942,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 53.066,
+      "action": "Enter",
+      "window": "open-agent-view"
     }
   ]
 }

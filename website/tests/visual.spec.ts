@@ -32,6 +32,7 @@ const harnesses = [
 
 const viewports = [
   { name: "desktop", width: 1440, height: 900 },
+  { name: "mac-laptop", width: 1280, height: 800 },
   { name: "phone", width: 390, height: 844 },
 ] as const;
 
@@ -68,6 +69,11 @@ for (const viewport of viewports) {
     }));
     expect(overflow.content, `overflowing elements: ${overflow.offenders.join(", ")}`).toBeLessThanOrEqual(overflow.viewport);
 
+    const harnessWidth = await page.locator("#harness-demo [data-demo-player]").evaluate(
+      (node) => node.getBoundingClientRect().width,
+    );
+    expect(harnessWidth).toBeLessThanOrEqual(Math.min(viewport.width, 1042));
+
     await page.screenshot({ path: testInfo.outputPath(`${viewport.name}.png`), fullPage: true });
   });
 }
@@ -76,6 +82,8 @@ test("real player controls are accessible and the final frame does not loop", as
   await openReady(page);
 
   const setup = page.locator("#start [data-demo-player]");
+  await expect(setup.locator("[data-demo-window]")).toHaveText("Terminal");
+  await expect(page.locator("#harness-demo [data-demo-window]")).toHaveText("open-agent-view");
   await setup.scrollIntoViewIfNeeded();
   await expect(setup.getByRole("button", { name: "Go back five seconds" })).toBeVisible();
   const pause = setup.getByRole("button", { name: "Pause demo" });
@@ -140,6 +148,35 @@ test("recordings stay paused on load and only the focused player advances", asyn
     (node as PlayerNode)._realCastPlayer.currentTime()
   ));
   expect(Math.abs(afterFocusChange - pausedSetupTime)).toBeLessThan(0.03);
+});
+
+test("the current key action flashes prominently and fades after three seconds", async ({ page }) => {
+  await openReady(page);
+  const player = page.locator("#harness-demo [data-demo-player]");
+  await player.scrollIntoViewIfNeeded();
+  await page.locator("#harness-demo").getByRole("tab", { name: "Claude Code" }).click();
+  await player.evaluate((node) => {
+    const controller = (node as PlayerNode)._realCastPlayer;
+    controller.pause();
+    const target = Math.min(controller.manifest.duration * 0.12, 5);
+    controller.seekTo(target);
+    controller.update(target);
+  });
+
+  const badge = player.locator("[data-demo-last-action]");
+  await expect(badge).toHaveClass(/is-visible/);
+  const appearance = await badge.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      fontSize: Number.parseFloat(style.fontSize),
+      border: style.borderTopStyle,
+      background: style.backgroundColor,
+    };
+  });
+  expect(appearance.fontSize).toBeGreaterThanOrEqual(14);
+  expect(appearance.border).toBe("solid");
+  expect(appearance.background).not.toBe("rgba(0, 0, 0, 0)");
+  await expect(badge).not.toHaveClass(/is-visible/, { timeout: 3_500 });
 });
 
 test("every provider logo jumps to its real recording and tabs support arrow navigation", async ({ page }) => {

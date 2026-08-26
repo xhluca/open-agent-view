@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -61,6 +62,7 @@ ONE_TIME_LOGIN_URL_PATTERN = re.compile(
     re.I,
 )
 DEVICE_CODE_PATTERN = re.compile(r"\b[A-Z0-9]{4}-[A-Z0-9]{4}\b")
+RECORDER_SECRET_VALUES: set[str] = set()
 
 
 def run(
@@ -137,6 +139,40 @@ def write_trimmed_cast(
     target.chmod(0o644)
 
 
+def prime_first_terminal_frame(target: Path) -> float:
+    """Make the inherited TUI state visible at time zero.
+
+    tmux emits a resize followed by a burst of full-screen repaint events. If
+    that burst retains its recorder startup delay, an embedded player shows a
+    blank shell until playback begins. Collapse only that first repaint burst
+    to time zero and preserve every later delay/action at its real offset.
+    """
+
+    header, events = cast_records(target)
+    first_output = next(
+        (float(event[0]) for event in events if event[1] == "o" and event[2]),
+        None,
+    )
+    if first_output is None or first_output <= 0.001:
+        return 0.0
+
+    repaint_cutoff = first_output + 0.05
+    for event in events:
+        event_time = float(event[0])
+        event[0] = (
+            0.0
+            if event_time <= repaint_cutoff
+            else round(event_time - repaint_cutoff, 6)
+        )
+    target.write_text(
+        "\n".join(json.dumps(record, ensure_ascii=False) for record in (header, *events))
+        + "\n",
+        encoding="utf-8",
+    )
+    target.chmod(0o644)
+    return repaint_cutoff
+
+
 def visible_cast(path: Path) -> str:
     _, events = cast_records(path)
     text = "".join(str(event[2]) for event in events if event[1] == "o")
@@ -193,10 +229,23 @@ class RealTerminal:
                 str(root / "home" / "work" / "acme-dashboard"),
             ]
         )
-        exports = " ".join(
-            f"{key}={shlex.quote(value)}" for key, value in sorted(environment.items())
+        # Never place login/API material in the long-lived Asciinema process
+        # argv. Keep the complete environment in this owned mode-0600 file and
+        # expose only its disposable path to the recorded shell command.
+        environment_file = root / "recording.env"
+        environment_file.write_text(
+            "\n".join(
+                f"export {key}={shlex.quote(value)}"
+                for key, value in sorted(environment.items())
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        inner_shell = f"env {exports} bash --noprofile --norc"
+        environment_file.chmod(0o600)
+        inner_shell = (
+            f". {shlex.quote(str(environment_file))}; "
+            "exec bash --noprofile --norc"
+        )
         command = (
             f"{shlex.quote(require_program('asciinema'))} rec "
             f"--overwrite --quiet "
@@ -245,6 +294,115 @@ class RealTerminal:
             time.sleep(0.25)
         tail = self.screen()[-4000:].replace(str(Path.home()), "~")
         raise RuntimeError(f"real terminal screen never rendered /{pattern}/; screen={tail!r}")
+
+    def wait_screen_without(self, pattern: str, timeout: float = 45) -> None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not re.search(pattern, self.screen(), re.I | re.S):
+                return
+            time.sleep(0.25)
+        tail = self.screen()[-4000:].replace(str(Path.home()), "~")
+        raise RuntimeError(
+            f"real terminal screen kept rendering /{pattern}/; screen={tail!r}"
+        )
+
+    def wait_native_screen(self, pattern: str, timeout: float = 45) -> None:
+        """Require a provider marker while the OAV dashboard is absent."""
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            screen = self.screen()
+            if re.search(pattern, screen, re.I | re.S) and not re.search(
+                APP_HEADER_PATTERN, screen, re.I | re.S
+            ):
+                return
+            time.sleep(0.25)
+        tail = self.screen()[-4000:].replace(str(Path.home()), "~")
+        raise RuntimeError(
+            f"real native terminal never rendered /{pattern}/ away from OAV; "
+            f"screen={tail!r}"
+        )
+
+    def wait_screen_settled(
+        self,
+        baseline: str,
+        *,
+        provider: str,
+        timeout: float = 240,
+        minimum_wait: float = 8,
+        stable_for: float = 6,
+    ) -> None:
+        """Wait for a real native turn to change the screen and finish repainting."""
+
+        started = time.monotonic()
+        deadline = started + timeout
+        changed = False
+        stable_since = started
+        previous = baseline
+        trust_answered = False
+        copilot_url_answered = False
+        terminal_setup_closed = False
+        while time.monotonic() < deadline:
+            screen = self.screen()
+            if (
+                not copilot_url_answered
+                and "Do you want to allow this access?" in screen
+                and "Copilot is attempting to access the following URL" in screen
+            ):
+                self.key(
+                    "Enter",
+                    "Enter · allow this URL once",
+                    provider,
+                )
+                copilot_url_answered = True
+                time.sleep(0.8)
+                previous = self.screen()
+                stable_since = time.monotonic()
+                continue
+            if not trust_answered and (
+                "Workspace Trust Required" in screen
+                or "Confirm folder trust" in screen
+                or "Do you trust the files in this folder" in screen
+                or "Trust this folder?" in screen
+            ):
+                if "Confirm folder trust" in screen:
+                    key = "Enter"
+                elif "Trust this folder?" in screen:
+                    key = "Enter"
+                elif "Do you trust the files in this folder" in screen:
+                    key = "a"
+                else:
+                    key = "a"
+                self.key(key, "Confirm · trust demo workspace", provider)
+                trust_answered = True
+                time.sleep(0.8)
+                previous = self.screen()
+                stable_since = time.monotonic()
+                continue
+            if not terminal_setup_closed and "Set up terminal for multi-line input support" in screen:
+                self.key("Escape", "Esc · keep terminal settings", provider)
+                terminal_setup_closed = True
+                time.sleep(0.8)
+                previous = self.screen()
+                stable_since = time.monotonic()
+                continue
+            if screen != baseline:
+                changed = True
+            if screen != previous:
+                previous = screen
+                stable_since = time.monotonic()
+            now = time.monotonic()
+            if (
+                changed
+                and now - started >= minimum_wait
+                and now - stable_since >= stable_for
+            ):
+                return
+            time.sleep(0.35)
+        tail = self.screen()[-4000:].replace(str(Path.home()), "~")
+        raise RuntimeError(
+            f"real {provider} turn did not settle after {timeout:.0f}s; screen={tail!r}"
+        )
 
     def wait_screen_occurrences(self, text: str, count: int = 2, timeout: float = 120) -> None:
         deadline = time.monotonic() + timeout
@@ -349,10 +507,15 @@ def base_environment(root: Path) -> dict[str, str]:
     bin_dir = root / "home" / ".local" / "bin"
     for directory in (*directories.values(), bin_dir, root / "home" / "work" / "acme-dashboard"):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    (root / "home" / "work" / "acme-dashboard" / "AGENTS.md").write_text(
-        "This is a disposable Open Agent View demo workspace.\n",
-        encoding="utf-8",
-    )
+    demo_instructions = """This is a disposable Open Agent View demo workspace.
+Answer conversational questions directly in at most two short sentences.
+Do not call tools, inspect files, or modify the workspace unless explicitly asked.
+"""
+    for instructions_file in ("AGENTS.md", "CLAUDE.md"):
+        (root / "home" / "work" / "acme-dashboard" / instructions_file).write_text(
+            demo_instructions,
+            encoding="utf-8",
+        )
     # Keep provider discovery isolated from the host PATH. Only recording
     # prerequisites are linked in; provider executables are added explicitly
     # by expose_installed_providers or by their real setup installer.
@@ -377,6 +540,11 @@ def base_environment(root: Path) -> dict[str, str]:
             "QWEN_NO_MODIFY_PATH": "1",
             "KIMI_INSTALL_DIR": str(root / "home" / ".kimi-code"),
             "KIMI_NO_MODIFY_PATH": "1",
+            # The shared CI/user account can legitimately exhaust Linux's
+            # per-user inotify-instance pool. Keep Kimi's disposable watcher
+            # functional without touching host processes or kernel limits.
+            "CHOKIDAR_USEPOLLING": "1",
+            "CHOKIDAR_INTERVAL": "1000",
             "UV_TOOL_BIN_DIR": str(bin_dir),
             "UV_TOOL_DIR": str(root / "data" / "uv" / "tools"),
             # The application repository is currently private.  The public
@@ -522,6 +690,9 @@ def validate_public_cast(path: Path, required: list[str]) -> None:
         raise RuntimeError(f"refusing to publish credential-like text in {path.name}")
     if DEVICE_CODE_PATTERN.search(raw):
         raise RuntimeError(f"refusing to publish a one-time device code in {path.name}")
+    for value in RECORDER_SECRET_VALUES:
+        if value and value in raw:
+            raise RuntimeError(f"refusing to publish recorder credentials in {path.name}")
     hostname = socket.gethostname()
     for identity in (os.environ.get("USER", ""), hostname, hostname.split(".", 1)[0]):
         if identity and identity in raw:
@@ -691,6 +862,158 @@ def prepare_provider_login(provider: str, root: Path, environment: dict[str, str
         antigravity_settings.chmod(stat.S_IRUSR | stat.S_IWUSR)
 
 
+def write_private_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.write_text(value, encoding="utf-8")
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+def require_host_secret(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(
+            f"the authenticated real demo requires {name} in the recorder environment"
+        )
+    RECORDER_SECRET_VALUES.add(value)
+    return value
+
+
+def prepare_sequence_provider_state(
+    root: Path,
+    environment: dict[str, str],
+) -> None:
+    """Prepare every provider before recording, without showing setup in the cast."""
+
+    home = root / "home"
+    work = home / "work" / "acme-dashboard"
+
+    claude_config = root / "claude-config"
+    private_copy(
+        Path.home() / ".claude" / ".credentials.json",
+        claude_config / ".credentials.json",
+    )
+    private_copy(Path.home() / ".claude.json", claude_config / ".claude.json")
+    environment.update(
+        {
+            "CLAUDE_CONFIG_DIR": str(claude_config),
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "DISABLE_AUTOUPDATER": "1",
+        }
+    )
+
+    for provider in (
+        "codex",
+        "pi",
+        "opencode",
+        "cursor",
+        "copilot",
+        "antigravity",
+    ):
+        prepare_provider_login(provider, root, environment)
+
+    muse_config = root / "config" / "muse"
+    private_copy(Path.home() / ".config" / "muse" / "settings.json", muse_config / "settings.json")
+    write_private_text(
+        muse_config / "trust.json",
+        json.dumps(
+            {
+                "schema_version": 1,
+                "projects": {str(work): {"decision": "trusted"}},
+            }
+        )
+        + "\n",
+    )
+    source_catalog = Path.home() / ".local" / "share" / "muse" / "model-catalog"
+    catalog_files = sorted(source_catalog.glob("*.json"))
+    if not catalog_files:
+        raise RuntimeError("the authenticated Muse model catalog is missing")
+    for source in catalog_files:
+        private_copy(source, root / "data" / "muse" / "model-catalog" / source.name)
+
+    openai_key = require_host_secret("OPENAI_API_KEY")
+    environment["OPENAI_API_KEY"] = openai_key
+    vibe_home = home / ".vibe"
+    write_private_text(
+        vibe_home / "config.toml",
+        """active_model = "gpt41-openai"
+enable_otel = false
+
+[[providers]]
+name = "openai"
+api_base = "https://api.openai.com/v1"
+api_key_env_var = "OPENAI_API_KEY"
+backend = "generic"
+emits_finish_reason = true
+
+[[models]]
+name = "gpt-4.1"
+provider = "openai"
+alias = "gpt41-openai"
+auto_compact_threshold = 131072
+""",
+    )
+    write_private_text(vibe_home / ".env", f"OPENAI_API_KEY={openai_key}\n")
+    write_private_text(
+        vibe_home / "trusted_folders.toml",
+        f"trusted = [{json.dumps(str(work.resolve()))}]\nuntrusted = []\n",
+    )
+
+    write_private_text(
+        home / ".qwen" / "settings.json",
+        json.dumps(
+            {
+                "modelProviders": {
+                    "openai": [
+                        {
+                            "id": "gpt-4.1",
+                            "name": "GPT-4.1",
+                            "envKey": "OPENAI_API_KEY",
+                            "baseUrl": "https://api.openai.com/v1",
+                        }
+                    ]
+                },
+                "env": {"OPENAI_API_KEY": openai_key},
+                "security": {"auth": {"selectedType": "openai"}},
+                "model": {"name": "gpt-4.1"},
+            }
+        )
+        + "\n",
+    )
+
+    environment["KIMI_CODE_HOME"] = str(home / ".kimi-code")
+    environment["KIMI_DISABLE_TELEMETRY"] = "1"
+    write_private_text(
+        home / ".kimi-code" / "config.toml",
+        f'''default_model = "gpt-5.4"
+
+[providers.openai]
+type = "openai_responses"
+base_url = "https://api.openai.com/v1"
+api_key = {json.dumps(openai_key)}
+
+[models."gpt-5.4"]
+provider = "openai"
+model = "gpt-5.4"
+display_name = "GPT-5.4"
+max_context_size = 272000
+        capabilities = ["image_in", "thinking"]
+''',
+    )
+    normalized_work = str(work.resolve()).replace("\\", "/").rstrip("/")
+    work_slug = re.sub(r"[^a-z0-9._-]+", "-", work.name.lower()).strip("-")
+    work_slug = (work_slug[:40].strip("-") or "workspace")
+    work_hash = hashlib.sha256(normalized_work.encode()).hexdigest()[:12]
+    write_private_text(
+        home / ".kimi-code" / "workspace-trust" / f"wd_{work_slug}_{work_hash}",
+        json.dumps(
+            {
+                "root": normalized_work,
+                "trustedAt": int(time.time() * 1000),
+            }
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class ProviderDemo:
     id: str
@@ -699,6 +1022,86 @@ class ProviderDemo:
     ready_pattern: str
     model: str | None = None
     setup_only: bool = False
+
+
+SEQUENCE_DEMOS = (
+    ProviderDemo("claude", "Claude Code", "claude", r"Claude Code v", "opus"),
+    ProviderDemo("codex", "OpenAI Codex", "codex", r"Codex|OpenAI", "gpt-5.6-sol"),
+    ProviderDemo("pi", "Pi", "pi", r"Pi|pi", "openai/gpt-5.6-sol"),
+    ProviderDemo(
+        "opencode",
+        "OpenCode",
+        "opencode",
+        r"OpenCode|opencode",
+        "github-copilot/gpt-5.6-luna",
+    ),
+    ProviderDemo(
+        "cursor",
+        "Cursor",
+        "cursor",
+        r"Cursor|cursor",
+        "claude-opus-5-thinking-high",
+    ),
+    ProviderDemo(
+        "copilot",
+        "GitHub Copilot",
+        "copilot",
+        r"Copilot|copilot",
+        "gpt-5.4",
+    ),
+    ProviderDemo(
+        "antigravity",
+        "Antigravity",
+        "antigravity",
+        r"Antigravity|antigravity",
+        "gemini-3.1-pro-high",
+    ),
+    ProviderDemo(
+        "mistral-vibe",
+        "Mistral Vibe",
+        "mistral-vibe",
+        r"Mistral Vibe|vibe",
+        "gpt41-openai",
+    ),
+    ProviderDemo(
+        "muse",
+        "Muse Code",
+        "muse",
+        r"Muse Code|Muse",
+        "meta/muse-spark-1.2",
+    ),
+    ProviderDemo(
+        "qwen",
+        "Qwen Code",
+        "qwen",
+        r"Qwen Code|Qwen",
+        "gpt-4.1",
+    ),
+    ProviderDemo(
+        "kimi",
+        "Kimi Code",
+        "kimi",
+        r"Send /help for help information\.",
+        "gpt-5.4",
+    ),
+    ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
+)
+
+
+SEQUENCE_ROW_LABELS = {
+    "claude": "Claude",
+    "codex": "Codex",
+    "pi": "Pi",
+    "opencode": "OpenCode",
+    "cursor": "Cursor",
+    "copilot": "GitHub Copilot",
+    "antigravity": "Antigravity",
+    "mistral-vibe": "Mistral Vibe",
+    "muse": "Muse Code",
+    "qwen": "Qwen Code",
+    "kimi": "Kimi Code",
+    "terminal": "Terminal",
+}
 
 
 PROVIDER_DEMOS = {
@@ -960,6 +1363,339 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             root, output, terminal, spec, start, end, "conversation"
         )
         print(f"captured real Open Agent View → {spec.label} TUI: {target}")
+    finally:
+        if terminal is not None:
+            terminal.finish()
+        terminate_owned_processes(root)
+        shutil.rmtree(root, ignore_errors=True)
+
+
+def select_sequence_model(terminal: RealTerminal, spec: ProviderDemo) -> None:
+    terminal.type_line("/model", "Type /model", "open-agent-view", 0.055)
+    if spec.model is None:
+        terminal.wait_screen(r"Terminal.*does not.*model|model.*unavailable", 30)
+        terminal.remember("Terminal keeps the shell default", "open-agent-view")
+        time.sleep(2.0)
+        return
+
+    terminal.wait_screen(r"choose .* model", 60)
+    terminal.wait_screen_without(r"Loading models…", 120)
+    model_screen = terminal.screen()
+    if re.search(
+        r"failed to list|model discovery exited|not authenticated|no models",
+        model_screen,
+        re.IGNORECASE,
+    ) and "Use exact model ID" not in model_screen:
+        raise RuntimeError(
+            f"{spec.label} model discovery failed before the recording could select a model"
+        )
+    terminal.key("Down", "↓ · browse models", "open-agent-view")
+    time.sleep(0.45)
+    terminal.key("Down", "↓ · browse models", "open-agent-view")
+    time.sleep(0.45)
+    terminal.key("Up", "↑ · compare flagship", "open-agent-view")
+    time.sleep(0.65)
+    terminal.type_text(
+        spec.model,
+        f"Search · {spec.model}",
+        "open-agent-view",
+        0.04,
+    )
+    terminal.wait_screen_without(r"Loading models…", 120)
+    terminal.wait_screen(re.escape(spec.model), 45)
+    if not re.search(r"choose .* model", terminal.screen(), re.IGNORECASE):
+        raise RuntimeError(
+            f"{spec.label} model picker closed while searching for {spec.model}"
+        )
+    time.sleep(2.0)
+    terminal.key("Enter", f"Enter · select {spec.model}", "open-agent-view")
+    terminal.wait_screen_without(r"choose .* model", 30)
+    time.sleep(2.0)
+
+
+def run_terminal_sequence_turns(
+    terminal: RealTerminal,
+    spec: ProviderDemo,
+    first_baseline: str,
+) -> None:
+    terminal.wait_screen(r"Hello from Terminal", 20)
+    terminal.wait_screen_settled(
+        first_baseline,
+        provider=spec.label,
+        timeout=30,
+        minimum_wait=2,
+        stable_for=2,
+    )
+    terminal.remember("Command complete", "Terminal")
+
+    explanation = "Explain what is Terminal"
+    baseline = terminal.screen()
+    terminal.type_line(explanation, "Enter · explain Terminal", "Terminal", 0.055)
+    terminal.wait_screen(r"Terminal is a shell session", 20)
+    terminal.wait_screen_settled(
+        baseline,
+        provider=spec.label,
+        timeout=30,
+        minimum_wait=2,
+        stable_for=2,
+    )
+    terminal.remember("Explanation complete", "Terminal")
+
+
+def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> None:
+    def reject_failed_turn() -> None:
+        screen = terminal.screen()
+        if re.search(
+            r"API Error|unsupported parameter|Agent execution terminated due to error|"
+            r"Authentication required|not authenticated|run exited without success",
+            screen,
+            re.IGNORECASE,
+        ):
+            tail = screen[-2400:].replace(str(Path.home()), "~")
+            raise RuntimeError(
+                f"{spec.label} rendered a provider failure instead of a completed turn: "
+                f"{tail!r}"
+            )
+
+    baseline = terminal.screen()
+    terminal.type_line("hello", f"Enter · start {spec.label}", "open-agent-view", 0.085)
+    terminal.wait_screen_without(APP_HEADER_PATTERN, 90)
+    terminal.wait_native_screen(spec.ready_pattern, 90)
+    terminal.wait_screen_settled(baseline, provider=spec.label)
+    reject_failed_turn()
+    terminal.remember("Hello response complete", spec.label)
+
+    explanation = f"Explain what is {spec.label}"
+    terminal.type_text(explanation, f"Type · {explanation}", spec.label, 0.055)
+    terminal.wait_screen(re.escape(explanation), 30)
+    baseline = terminal.screen()
+    terminal.key("Enter", "Enter · send explanation", spec.label)
+    terminal.wait_screen_settled(baseline, provider=spec.label)
+    reject_failed_turn()
+    terminal.remember("Explanation response complete", spec.label)
+
+
+def write_sequence_recording(
+    root: Path,
+    output: Path,
+    terminal: RealTerminal,
+    spec: ProviderDemo,
+    start: float,
+    end: float,
+    prior_names: list[str],
+    action_start_index: int,
+) -> None:
+    target = output / f"{spec.id}.cast"
+    write_trimmed_cast(
+        terminal.raw_cast,
+        target,
+        start,
+        end,
+        public_path_replacements(root),
+    )
+    primed_lead = prime_first_terminal_frame(target)
+    actions = [
+        {
+            **item,
+            "at": max(
+                0.0,
+                round(float(item["at"]) - start - primed_lead, 3),
+            ),
+        }
+        for item in terminal.actions[action_start_index:]
+        if start <= float(item["at"]) <= end
+    ]
+    action_path = output / f"{spec.id}.actions.json"
+    action_path.write_text(
+        json.dumps(
+            {
+                "duration": end - start + 1.35 - primed_lead,
+                "proof": "conversation" if spec.id != "terminal" else "terminal",
+                "sequence": "picker-model-two-turns-return-rename-picker",
+                "actions": actions,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    action_path.chmod(0o644)
+    validate_public_cast(
+        target,
+        [
+            APP_HEADER,
+            "choose harness",
+            spec.label,
+            "hello",
+            f"Explain what is {spec.label}",
+            f"{spec.id}-explanation",
+            *prior_names,
+        ],
+    )
+
+
+def capture_provider_sequence(
+    repo: Path,
+    output: Path,
+    *,
+    through: str | None = None,
+) -> None:
+    # Provider supervisors use Unix sockets. Keep the private root short so
+    # every provider stays comfortably below sockaddr_un path limits.
+    root = Path(tempfile.mkdtemp(prefix="oavseq."))
+    terminal: RealTerminal | None = None
+    try:
+        environment = base_environment(root)
+        prepare_complete_picker(root, environment)
+        prepare_sequence_provider_state(root, environment)
+        install_local_binary(repo, root)
+
+        # Terminal is a convenience harness, not an AI provider. These two
+        # real executables make the requested plain-English shell commands
+        # useful without pretending the shell is a model.
+        write_private_text(
+            root / "home" / ".local" / "bin" / "hello",
+            "#!/bin/sh\nprintf 'Hello from Terminal.\\n'\n",
+        )
+        (root / "home" / ".local" / "bin" / "hello").chmod(0o700)
+        write_private_text(
+            root / "home" / ".local" / "bin" / "Explain",
+            "#!/bin/sh\nprintf 'Terminal is a shell session managed beside coding agents.\\n'\n",
+        )
+        (root / "home" / ".local" / "bin" / "Explain").chmod(0o700)
+
+        work = root / "home" / "work" / "acme-dashboard"
+        terminal = RealTerminal("harness-sequence", root, environment)
+        command = [
+            "opav",
+            "--cwd",
+            str(work),
+            "--launch-cwd",
+            str(work),
+            "--refresh-ms",
+            "30000",
+            "--harness",
+            "claude",
+        ]
+        terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
+        terminal.wait_screen(APP_HEADER_PATTERN, 60)
+        time.sleep(1.0)
+        terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
+        terminal.wait_screen(r"choose harness", 30)
+        time.sleep(1.0)
+
+        previous_names: list[str] = []
+        for index, spec in enumerate(SEQUENCE_DEMOS):
+            action_start_index = len(terminal.actions)
+            start = terminal.repaint_start()
+            print(f"recording coherent {spec.label} story…", flush=True)
+            picker_search = {
+                "claude": "Claude",
+                "codex": "Codex",
+            }.get(spec.id, spec.label)
+            if index > 0:
+                terminal.key(
+                    "Down",
+                    f"↓ · highlight {spec.label}",
+                    "open-agent-view",
+                )
+                time.sleep(0.8)
+            terminal.wait_screen(re.escape(picker_search), 30)
+            terminal.key("Enter", f"Enter · choose {spec.label}", "open-agent-view")
+            terminal.wait_screen_without(r"choose harness", 30)
+            terminal.wait_screen(rf"harness\s+{re.escape(picker_search)}", 30)
+            time.sleep(2.0)
+
+            select_sequence_model(terminal, spec)
+            if spec.id == "terminal":
+                baseline = terminal.screen()
+                terminal.type_line(
+                    "hello",
+                    "Enter · open Terminal",
+                    "open-agent-view",
+                    0.08,
+                )
+                terminal.wait_screen_without(APP_HEADER_PATTERN, 45)
+                terminal.wait_screen(spec.ready_pattern, 30)
+                terminal.type_line(
+                    "hello",
+                    "Enter · run hello in Terminal",
+                    "Terminal",
+                    0.08,
+                )
+                run_terminal_sequence_turns(terminal, spec, baseline)
+            else:
+                run_native_sequence_turns(terminal, spec)
+
+            return_draft = "Now, I can navigate back to panel with Shift + Left Arrow"
+            terminal.type_text(
+                return_draft,
+                "Type · explain return shortcut",
+                spec.label,
+                0.04,
+            )
+            terminal.wait_screen(re.escape(return_draft), 30)
+            time.sleep(2.0)
+            terminal.key("S-Left", "Shift+← · return to panel", spec.label)
+            terminal.wait_screen(APP_HEADER_PATTERN, 45)
+            terminal.remember("Returned to shared dashboard", "open-agent-view")
+            time.sleep(5.0)
+
+            # The launch result selects the exact provider/session ID. Refuse
+            # to record a rename unless that newly created row is actually
+            # visible; otherwise a delayed provider-history flush could make
+            # the demo rename the previously selected provider instead.
+            row_label = SEQUENCE_ROW_LABELS[spec.id]
+            terminal.wait_screen(
+                rf"(?ms)^(?:Needs input|Working|Completed)[ \t]*$"
+                rf"(?:\n[^\n]*){{0,24}}\n[^\n]*\b{re.escape(row_label)}\b",
+                30,
+            )
+
+            renamed = f"{spec.id}-explanation"
+            terminal.key("C-r", "Ctrl+R · rename session", "open-agent-view")
+            terminal.wait_screen(r"rename session", 20)
+            terminal.key("C-u", "Ctrl+U · clear name", "open-agent-view")
+            terminal.type_text(renamed, f"Type · {renamed}", "open-agent-view", 0.06)
+            terminal.key("Enter", "Enter · save name", "open-agent-view")
+            terminal.wait_screen(
+                rf"(?m)^\s*[^\n]*\b{re.escape(renamed)}\b"
+                rf"[^\n]*\b{re.escape(row_label)}\b",
+                30,
+            )
+            terminal.remember("Renamed session visible", "open-agent-view")
+            time.sleep(1.5)
+
+            terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.07)
+            terminal.wait_screen(r"choose harness", 30)
+            time.sleep(2.0)
+            end = terminal.timeline_time()
+            previous_names.append(renamed)
+            write_sequence_recording(
+                root,
+                output,
+                terminal,
+                spec,
+                start,
+                end,
+                previous_names[:-1],
+                action_start_index,
+            )
+            print(f"captured coherent {spec.label} story", flush=True)
+            if through == spec.id:
+                break
+
+        terminal.key("Escape", "Esc · close picker", "open-agent-view")
+        terminal.key("Escape", "Esc · quit", "open-agent-view")
+        terminal.finish()
+    except Exception:
+        for log_path in sorted((root / "state").glob("**/*.log")):
+            with contextlib.suppress(OSError):
+                detail = log_path.read_text(encoding="utf-8", errors="replace")[-2000:]
+                for secret in RECORDER_SECRET_VALUES:
+                    detail = detail.replace(secret, "[credential redacted]")
+                print(f"provider log {log_path.relative_to(root)}:\n{detail}", file=sys.stderr)
+        raise
     finally:
         if terminal is not None:
             terminal.finish()
@@ -1263,13 +1999,19 @@ def capture_claude(repo: Path, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "demo", choices=("setup", "claude", *PROVIDER_DEMOS, *CONTROL_DEMOS)
+        "demo", choices=("setup", "sequence", "claude", *PROVIDER_DEMOS, *CONTROL_DEMOS)
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
         help="destination (default: website/public/demos)",
+    )
+    parser.add_argument(
+        "--through",
+        choices=tuple(spec.id for spec in SEQUENCE_DEMOS),
+        default=None,
+        help="for sequence, stop after this harness (useful for recorder validation)",
     )
     args = parser.parse_args()
     repo = Path(__file__).resolve().parent.parent
@@ -1278,6 +2020,8 @@ def main() -> int:
         require_program(program)
     if args.demo == "setup":
         capture_setup(repo, output)
+    elif args.demo == "sequence":
+        capture_provider_sequence(repo, output, through=args.through)
     elif args.demo == "claude":
         capture_claude(repo, output)
     elif args.demo in PROVIDER_DEMOS:

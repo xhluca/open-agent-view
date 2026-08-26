@@ -8,6 +8,36 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Mistral Vibe app-server discovery now waits for the initialize response
+  before sending configuration/session requests, matching Vibe 2.24+'s RPC
+  handshake instead of timing out on valid installations.
+- Newly backgrounded Qwen sessions remain visible from OAV's exact private
+  ownership record while Qwen is still flushing history, and temporary Qwen
+  catalog failures no longer erase owned rows from the dashboard.
+
+### Changed
+
+- Re-recorded every Section 2 harness walkthrough as one coherent cumulative
+  workspace: picker, model selection, two complete native turns, Shift+Left
+  return, exact rename, and the next picker. Harness stories play at 0.5× and
+  begin on the inherited picker rather than a blank shell.
+- Website recordings remain paused on page load, only the focused visible
+  player advances, and the current action now flashes in a larger keycap for
+  three seconds. The responsive audit now covers desktop, 1280×800 Mac-laptop,
+  and phone layouts.
+- Real-demo credentials are loaded from an owned mode-0600 environment file;
+  they are no longer serialized into the long-lived Asciinema process command
+  line during authenticated capture.
+
+### Tests
+
+- Added provider regressions for the Vibe handshake and Qwen's pre-history and
+  temporary-discovery states, plus a 255-frame responsive website audit and
+  checks that every native conversation starts at the picker and contains no
+  provider/API failure screen.
+
 ## [0.1.37] - 2026-08-25
 
 ### Added

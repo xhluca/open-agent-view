@@ -1,65 +1,127 @@
 {
-  "duration": 18.299525,
+  "duration": 58.477315077691074,
+  "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 1.989,
+      "at": 0.759,
+      "action": "Enter \u00b7 choose Claude Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.25,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.374,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.507,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.081,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.655,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.602,
+      "action": "Search \u00b7 opus",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.746,
+      "action": "Enter \u00b7 select opus",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.327,
+      "action": "Enter \u00b7 start Claude Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.452,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 29.334,
+      "action": "Hello response complete",
+      "window": "Claude Code"
+    },
+    {
+      "at": 31.05,
+      "action": "Type \u00b7 Explain what is Claude Code",
+      "window": "Claude Code"
+    },
+    {
+      "at": 31.18,
+      "action": "Enter \u00b7 send explanation",
+      "window": "Claude Code"
+    },
+    {
+      "at": 40.857,
+      "action": "Explanation response complete",
+      "window": "Claude Code"
+    },
+    {
+      "at": 43.498,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Claude Code"
+    },
+    {
+      "at": 45.627,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Claude Code"
+    },
+    {
+      "at": 46.003,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 51.134,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 51.261,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.538,
+      "action": "Type \u00b7 claude-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.662,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 52.785,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 54.999,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 2.113,
+      "at": 55.123,
       "action": "Enter",
       "window": "open-agent-view"
-    },
-    {
-      "at": 2.241,
-      "action": "Enter \u00b7 choose Claude",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 3.842,
-      "action": "Enter \u00b7 start Claude",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 3.966,
-      "action": "Enter",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 6.966,
-      "action": "Enter \u00b7 send follow-up",
-      "window": "Claude Code"
-    },
-    {
-      "at": 7.09,
-      "action": "Enter",
-      "window": "Claude Code"
-    },
-    {
-      "at": 8.736,
-      "action": "Response ready",
-      "window": "Claude Code"
-    },
-    {
-      "at": 11.062,
-      "action": "Shift+\u2190 \u00b7 return to opav",
-      "window": "Claude Code"
-    },
-    {
-      "at": 13.043,
-      "action": "\u2192 \u00b7 reopen Claude",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 13.167,
-      "action": "Session reopened",
-      "window": "Claude Code"
-    },
-    {
-      "at": 15.492,
-      "action": "Shift+\u2190 \u00b7 return to opav",
-      "window": "Claude Code"
     }
   ]
 }

@@ -133,10 +133,10 @@ export default function Home() {
         <div className="section-heading">
           <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
           <p>
-            Each tab follows a genuine native flow. Authenticated harnesses
-            exchange a short conversation and reopen it; first-run harnesses
-            use their official installer and native login screen, then return
-            to the dashboard. Choose a logo above to jump here.
+            Each tab starts in the same real harness picker, chooses an available
+            model, completes two turns in the native CLI, returns to the shared
+            dashboard, renames the session, and leaves the picker ready for the
+            next harness. Earlier sessions remain visible as the walkthrough grows.
           </p>
         </div>
         <div
@@ -150,7 +150,7 @@ export default function Home() {
           <DemoPlayer
             story="story-claude"
             label="HARNESS WALKTHROUGH"
-            caption="Actual provider TUI output · idle waits shortened · playback at 1×"
+            caption="Actual provider TUI output · complete turns · playback at 0.5×"
           />
         </div>
       </section>

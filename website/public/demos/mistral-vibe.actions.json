@@ -1,50 +1,131 @@
 {
-  "duration": 13.977,
-  "proof": "setup",
+  "duration": 51.73759790485284,
+  "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 2.592,
-      "action": "Type /setup mistral-vibe",
+      "at": 0.756,
+      "action": "\u2193 \u00b7 highlight Mistral Vibe",
       "window": "open-agent-view"
     },
     {
-      "at": 2.716,
+      "at": 1.684,
+      "action": "Enter \u00b7 choose Mistral Vibe",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.163,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.287,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.843,
-      "action": "Y \u00b7 install Mistral Vibe",
-      "window": "Harness setup"
+      "at": 4.421,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 2.967,
-      "action": "Enter \u00b7 confirm install",
-      "window": "Harness setup"
+      "at": 4.996,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 5.624,
-      "action": "Install check complete",
-      "window": "Harness setup"
+      "at": 5.573,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.55,
-      "action": "Enter \u00b7 open Mistral Vibe login",
-      "window": "Harness setup"
+      "at": 6.878,
+      "action": "Search \u00b7 gpt41-openai",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.674,
-      "action": "Native login ready",
-      "window": "Mistral Vibe login"
+      "at": 9.012,
+      "action": "Enter \u00b7 select gpt41-openai",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.599,
-      "action": "Shift+\u2190 \u00b7 background setup",
-      "window": "Mistral Vibe login"
+      "at": 11.584,
+      "action": "Enter \u00b7 start Mistral Vibe",
+      "window": "open-agent-view"
     },
     {
-      "at": 10.977,
-      "action": "Returned to dashboard",
+      "at": 11.708,
+      "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.811,
+      "action": "Hello response complete",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 24.594,
+      "action": "Type \u00b7 Explain what is Mistral Vibe",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 24.727,
+      "action": "Enter \u00b7 send explanation",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 32.996,
+      "action": "Explanation response complete",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 35.622,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 37.749,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Mistral Vibe"
+    },
+    {
+      "at": 38.884,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.016,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.143,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 45.799,
+      "action": "Type \u00b7 mistral-vibe-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 45.923,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 46.046,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.259,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 48.383,
+      "action": "Enter",
       "window": "open-agent-view"
     }
   ]

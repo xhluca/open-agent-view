@@ -1,60 +1,131 @@
 {
-  "duration": 14.606,
-  "proof": "setup",
+  "duration": 50.29189996814447,
+  "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 2.208,
-      "action": "Type /setup qwen",
+      "at": 0.758,
+      "action": "\u2193 \u00b7 highlight Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.332,
+      "at": 1.686,
+      "action": "Enter \u00b7 choose Qwen Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.166,
+      "action": "Type /model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.29,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.459,
-      "action": "Y \u00b7 install Qwen Code",
-      "window": "Harness setup"
+      "at": 4.422,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 2.583,
-      "action": "Enter \u00b7 confirm install",
-      "window": "Harness setup"
+      "at": 4.997,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
     },
     {
-      "at": 5.583,
-      "action": "Install check complete",
-      "window": "Harness setup"
+      "at": 5.571,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
     },
     {
-      "at": 7.511,
-      "action": "Enter \u00b7 open Qwen Code login",
-      "window": "Harness setup"
+      "at": 6.648,
+      "action": "Search \u00b7 gpt-4.1",
+      "window": "open-agent-view"
     },
     {
-      "at": 8.055,
-      "action": "Type /auth",
-      "window": "Qwen Code"
+      "at": 8.783,
+      "action": "Enter \u00b7 select gpt-4.1",
+      "window": "open-agent-view"
     },
     {
-      "at": 8.179,
+      "at": 11.357,
+      "action": "Enter \u00b7 start Qwen Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.481,
       "action": "Enter",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.116,
+      "action": "Hello response complete",
       "window": "Qwen Code"
     },
     {
-      "at": 8.302,
-      "action": "Native login ready",
-      "window": "Qwen Code login"
+      "at": 23.708,
+      "action": "Type \u00b7 Explain what is Qwen Code",
+      "window": "Qwen Code"
     },
     {
-      "at": 11.229,
-      "action": "Shift+\u2190 \u00b7 background setup",
-      "window": "Qwen Code login"
+      "at": 23.839,
+      "action": "Enter \u00b7 send explanation",
+      "window": "Qwen Code"
     },
     {
-      "at": 11.606,
-      "action": "Returned to dashboard",
+      "at": 32.804,
+      "action": "Explanation response complete",
+      "window": "Qwen Code"
+    },
+    {
+      "at": 35.428,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Qwen Code"
+    },
+    {
+      "at": 37.558,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Qwen Code"
+    },
+    {
+      "at": 37.934,
+      "action": "Returned to shared dashboard",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 43.067,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 43.194,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.348,
+      "action": "Type \u00b7 qwen-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.475,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 44.599,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 46.813,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 46.937,
+      "action": "Enter",
       "window": "open-agent-view"
     }
   ]

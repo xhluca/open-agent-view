@@ -29,6 +29,7 @@ const stories = [
 ];
 const viewports = [
   ["desktop", { width: 1440, height: 900 }],
+  ["mac-laptop", { width: 1280, height: 800 }],
   ["mobile", { width: 390, height: 844 }],
 ];
 const positions = [0, 0.25, 0.5, 0.75, 1];

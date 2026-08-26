@@ -1,81 +1,137 @@
 {
-  "duration": 22.843909,
+  "duration": 56.96448103129289,
   "proof": "conversation",
+  "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 2.259,
-      "action": "Type /harness",
+      "at": 0.757,
+      "action": "\u2193 \u00b7 highlight Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 2.383,
-      "action": "Enter",
-      "window": "open-agent-view"
-    },
-    {
-      "at": 2.512,
+      "at": 1.684,
       "action": "Enter \u00b7 choose Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 3.255,
-      "action": "Select model \u00b7 auto",
+      "at": 4.164,
+      "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.379,
+      "at": 4.289,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 4.871,
+      "at": 4.422,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.997,
+      "action": "\u2193 \u00b7 browse models",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 5.571,
+      "action": "\u2191 \u00b7 compare flagship",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.535,
+      "action": "Search \u00b7 claude-opus-5-thinking-high",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 9.67,
+      "action": "Enter \u00b7 select claude-opus-5-thinking-high",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 12.248,
       "action": "Enter \u00b7 start Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 4.995,
+      "at": 12.372,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 7.995,
-      "action": "Confirm \u00b7 trust disposable demo workspace",
-      "window": "native harness"
-    },
-    {
-      "at": 10.995,
-      "action": "Type follow-up",
+      "at": 18.353,
+      "action": "Confirm \u00b7 trust demo workspace",
       "window": "Cursor"
     },
     {
-      "at": 11.122,
-      "action": "Enter \u00b7 send follow-up",
+      "at": 29.531,
+      "action": "Hello response complete",
       "window": "Cursor"
     },
     {
-      "at": 13.278,
-      "action": "Response ready",
+      "at": 30.947,
+      "action": "Type \u00b7 Explain what is Cursor",
       "window": "Cursor"
     },
     {
-      "at": 15.603,
-      "action": "Shift+\u2190 \u00b7 return to opav",
+      "at": 31.076,
+      "action": "Enter \u00b7 send explanation",
       "window": "Cursor"
     },
     {
-      "at": 17.586,
-      "action": "\u2192 \u00b7 reopen Cursor",
+      "at": 39.332,
+      "action": "Explanation response complete",
+      "window": "Cursor"
+    },
+    {
+      "at": 41.972,
+      "action": "Type \u00b7 explain return shortcut",
+      "window": "Cursor"
+    },
+    {
+      "at": 44.102,
+      "action": "Shift+\u2190 \u00b7 return to panel",
+      "window": "Cursor"
+    },
+    {
+      "at": 44.479,
+      "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 17.709,
-      "action": "Session reopened",
-      "window": "Cursor"
+      "at": 49.616,
+      "action": "Ctrl+R \u00b7 rename session",
+      "window": "open-agent-view"
     },
     {
-      "at": 20.035,
-      "action": "Shift+\u2190 \u00b7 return to opav",
-      "window": "Cursor"
+      "at": 49.748,
+      "action": "Ctrl+U \u00b7 clear name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 51.027,
+      "action": "Type \u00b7 cursor-explanation",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 51.151,
+      "action": "Enter \u00b7 save name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 51.274,
+      "action": "Renamed session visible",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 53.486,
+      "action": "Type /harness",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 53.61,
+      "action": "Enter",
+      "window": "open-agent-view"
     }
   ]
 }

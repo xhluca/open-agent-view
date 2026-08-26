@@ -43,62 +43,62 @@ const STORIES = {
   "story-claude": {
     cast: "/demos/claude.cast",
     actions: "/demos/claude.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-codex": {
     cast: "/demos/codex.cast",
     actions: "/demos/codex.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-pi": {
     cast: "/demos/pi.cast",
     actions: "/demos/pi.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-opencode": {
     cast: "/demos/opencode.cast",
     actions: "/demos/opencode.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-cursor": {
     cast: "/demos/cursor.cast",
     actions: "/demos/cursor.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-copilot": {
     cast: "/demos/copilot.cast",
     actions: "/demos/copilot.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-antigravity": {
     cast: "/demos/antigravity.cast",
     actions: "/demos/antigravity.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-mistral-vibe": {
     cast: "/demos/mistral-vibe.cast",
     actions: "/demos/mistral-vibe.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-muse": {
     cast: "/demos/muse.cast",
     actions: "/demos/muse.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-qwen": {
     cast: "/demos/qwen.cast",
     actions: "/demos/qwen.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-kimi": {
     cast: "/demos/kimi.cast",
     actions: "/demos/kimi.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-terminal": {
     cast: "/demos/terminal.cast",
     actions: "/demos/terminal.actions.json",
-    speed: 1,
+    speed: 0.5,
   },
   "story-rename": {
     cast: "/demos/rename.cast",
@@ -188,6 +188,8 @@ class RealCastPlayer {
     this.generation = 0;
     this.lastObservedTime = 0;
     this.lastMovementAt = performance.now();
+    this.lastActionSignature = "";
+    this.actionFadeTimer = 0;
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     for (const button of root.querySelectorAll("[data-demo-action]")) {
@@ -266,6 +268,9 @@ class RealCastPlayer {
       this.ended = false;
       this.lastObservedTime = 0;
       this.lastMovementAt = performance.now();
+      this.lastActionSignature = "";
+      window.clearTimeout(this.actionFadeTimer);
+      this.lastAction.classList.remove("is-visible");
       this.progress.value = "0";
       this.mount.replaceChildren();
       if (retained) this.mount.append(retained);
@@ -443,15 +448,35 @@ class RealCastPlayer {
     this.root.dispatchEvent(new CustomEvent("demo-ended", { bubbles: true }));
   }
 
+  showAction(action) {
+    const signature = action
+      ? `${action.at}:${action.window}:${action.action}`
+      : "";
+    if (signature === this.lastActionSignature) return;
+    this.lastActionSignature = signature;
+    window.clearTimeout(this.actionFadeTimer);
+    this.lastAction.classList.remove("is-visible");
+    this.lastAction.textContent = action?.action || "Ready";
+    if (!action) return;
+    // Restart the three-second keycap animation even after a timeline seek.
+    void this.lastAction.offsetWidth;
+    this.lastAction.classList.add("is-visible");
+    this.actionFadeTimer = window.setTimeout(() => {
+      this.lastAction.classList.remove("is-visible");
+    }, 3000);
+  }
+
   update(seconds) {
     if (!this.manifest) return;
     const bounded = Math.max(0, Math.min(seconds, this.manifest.duration));
     const action = [...this.manifest.actions]
       .reverse()
-      .find((candidate) => candidate.at <= bounded)
-      || this.manifest.actions[0];
-    this.windowLabel.textContent = action?.window || "Terminal";
-    this.lastAction.textContent = action?.action || "Ready";
+      .find((candidate) => candidate.at <= bounded);
+    const upcomingAction = action
+      ? null
+      : this.manifest.actions.find((candidate) => candidate.at > bounded);
+    this.windowLabel.textContent = action?.window || upcomingAction?.window || "Terminal";
+    this.showAction(action);
     this.progress.value = String(Math.round(bounded / this.manifest.duration * 1000));
     this.timeLabel.textContent = `${formatTime(bounded)} / ${formatTime(this.manifest.duration)}`;
   }
