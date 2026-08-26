@@ -15,8 +15,8 @@ provider's native terminal—all from one queue.
 [Provider notes](docs/exploration/README.md) ·
 [Roadmap](ROADMAP.md)
 
-[![CI](https://github.com/xhluca/open-agent-view/actions/workflows/ci.yml/badge.svg)](https://github.com/xhluca/open-agent-view/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/xhluca/open-agent-view?display_name=tag&sort=semver)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
+[![Release](https://img.shields.io/badge/release-v0.1.41-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>

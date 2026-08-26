@@ -80,6 +80,16 @@ artifacts are built, smoke-tested, checksum-verified, and uploaded manually by
 the maintainer from the exact reviewed commit. Pages is exported, tested, and
 pushed manually with [`scripts/publish-site.sh`](../scripts/publish-site.sh).
 
+The README deliberately uses repository-owned status badges. Its **Tests**
+badge links to the complete evidence record in
+[`docs/testing.md`](testing.md), and its static release badge must match the
+crate version. A dynamic Shields release badge cannot read this private
+repository and incorrectly reports `repo not found`; the GitHub Actions badge
+would likewise describe hosted-runner availability rather than the documented
+manual release gate when jobs are rejected before startup. A regression test
+keeps both unavailable endpoints out of the README and prevents the release
+badge from drifting behind the package version.
+
 The current manual Linux builder establishes the documented glibc 2.35 floor.
 Windows and older GNU/Linux systems are not release targets yet. The installer
 fails clearly on unsupported systems instead of downloading an incompatible
