@@ -25,6 +25,28 @@ const controlTabs = [
   ["login", "Login & setup"],
 ] as const;
 
+function GitHubMark() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="github-mark"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      <path d="M12 2C6.48 2 2 6.58 2 12.23c0 4.52 2.87 8.35 6.84 9.71.5.1.68-.22.68-.49 0-.24-.01-1.05-.02-1.91-2.78.62-3.37-1.21-3.37-1.21-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .08 1.53 1.06 1.53 1.06.9 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.64-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.04 1.03-2.76-.1-.26-.45-1.3.1-2.72 0 0 .84-.28 2.75 1.05A9.38 9.38 0 0 1 12 6.05c.85 0 1.69.12 2.49.34 1.91-1.33 2.75-1.05 2.75-1.05.55 1.42.2 2.46.1 2.72.64.72 1.03 1.64 1.03 2.76 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.89 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.24 10.24 0 0 0 22 12.23C22 6.58 17.52 2 12 2Z" />
+    </svg>
+  );
+}
+
+function ExternalArrow() {
+  return (
+    <>
+      <span className="external-arrow" aria-hidden="true">↗</span>
+      <span className="sr-only"> (opens in a new tab)</span>
+    </>
+  );
+}
+
 function ProviderMark({ provider }: { provider: (typeof providers)[number] }) {
   return (
     <span className={`provider-mark provider-${provider.id}`} aria-hidden="true">
@@ -79,11 +101,23 @@ export default function Home() {
           <strong>Open Agent View</strong>
         </a>
         <div className="nav-links">
-          <a href="#start">Start</a>
-          <a href="#harness-demo">Harnesses</a>
-          <a href="#controls">Controls</a>
-          <a href="#architecture">Architecture</a>
-          <a href="https://github.com/xhluca/open-agent-view">GitHub</a>
+          <div className="nav-internal" aria-label="On this page">
+            <a href="#start">Start</a>
+            <a href="#harness-demo">Harnesses</a>
+            <a href="#controls">Controls</a>
+            <a href="#architecture">How it works</a>
+          </div>
+          <span className="nav-divider" aria-hidden="true" />
+          <a
+            className="nav-github"
+            href="https://github.com/xhluca/open-agent-view"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <GitHubMark />
+            <span>GitHub</span>
+            <ExternalArrow />
+          </a>
         </div>
       </nav>
 
@@ -97,6 +131,22 @@ export default function Home() {
         <div className="hero-actions">
           <CopyCommand command={installCommand} />
           <CopyCommand command="open-agent-view" comment="# shorthand: opav" />
+        </div>
+        <div className="hero-resource-links">
+          <a
+            className="github-button"
+            href="https://github.com/xhluca/open-agent-view"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <GitHubMark />
+            <span>View on GitHub</span>
+            <ExternalArrow />
+          </a>
+          <a className="internal-button" href="#start">
+            <span>Watch the real demo</span>
+            <span className="internal-arrow" aria-hidden="true">↓</span>
+          </a>
         </div>
         <div className="provider-row" aria-label="Choose a harness demo">
           {providers.map((provider) => (
@@ -209,13 +259,40 @@ export default function Home() {
             <small>Talk to the agent normally, then return to the shared dashboard without stopping it.</small>
           </div>
         </div>
-        <a className="text-link" href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md">Read the complete ownership and capability model ↗</a>
+        <a
+          className="text-link external-text-link"
+          href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Read the complete ownership and capability model <ExternalArrow />
+        </a>
       </section>
+
+      <aside className="repository-banner shell" aria-label="Open source repository">
+        <div>
+          <span>Open source</span>
+          <strong>Inspect the code, follow development, or contribute.</strong>
+        </div>
+        <a
+          className="github-button"
+          href="https://github.com/xhluca/open-agent-view"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <GitHubMark />
+          <span>Open the repository</span>
+          <ExternalArrow />
+        </a>
+      </aside>
 
       <footer className="footer shell">
         <a className="brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /></span><strong>Open Agent View</strong></a>
         <p>One control surface for all your local coding agents.</p>
-        <div><a href="https://github.com/xhluca/open-agent-view">GitHub</a><a href="https://github.com/xhluca/open-agent-view/tree/main/docs">Docs</a></div>
+        <div>
+          <a href="https://github.com/xhluca/open-agent-view" target="_blank" rel="noreferrer">GitHub <ExternalArrow /></a>
+          <a href="https://github.com/xhluca/open-agent-view/tree/main/docs" target="_blank" rel="noreferrer">Docs <ExternalArrow /></a>
+        </div>
       </footer>
     </main>
   );

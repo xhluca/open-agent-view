@@ -79,6 +79,11 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /From one dashboard/);
   assert.match(html, /One dashboard/);
   assert.match(html, /Native agent sessions/);
+  assert.match(html, /View on GitHub/);
+  assert.match(html, /Open the repository/);
+  assert.match(html, /class="nav-github"/);
+  assert.match(html, /class="external-arrow"/);
+  assert.match(html, /opens in a new tab/);
   assert.match(html, /data-story="story-setup"/);
   assert.match(html, /aria-label="INSTALL · OPEN · \/HARNESS playback controls"/);
   assert.match(html, /aria-label="Seek through INSTALL · OPEN · \/HARNESS"/);
@@ -92,6 +97,12 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
+  assert.ok(
+    (html.match(/href="https:\/\/github\.com\/xhluca\/open-agent-view"/g) ?? []).length >= 4,
+    "GitHub should be prominent in the header, hero, repository banner, and footer",
+  );
+  assert.match(html, /href="#start">Start<\/a>/);
+  assert.match(html, /href="https:\/\/github\.com\/xhluca\/open-agent-view" target="_blank" rel="noreferrer"/);
 
   for (const [id, label] of demos.slice(1, 13)) {
     assert.match(html, new RegExp(`data-story-tab="${id}"`));

@@ -221,6 +221,36 @@ test("the second copy control copies exactly the full executable name", async ({
   await context.close();
 });
 
+test("internal navigation and prominent GitHub actions use distinct link language", async ({ page }) => {
+  await openReady(page);
+
+  const internal = page.locator(".nav-internal").getByRole("link", { name: "Start" });
+  await expect(internal).toHaveAttribute("href", "#start");
+  await expect(internal).not.toHaveAttribute("target", "_blank");
+
+  const githubLinks = page.getByRole("link", { name: /GitHub|repository/i });
+  expect(await githubLinks.count()).toBeGreaterThanOrEqual(4);
+  const navGitHub = page.locator(".nav-github");
+  await expect(navGitHub).toBeVisible();
+  await expect(navGitHub).toHaveAttribute("target", "_blank");
+  await expect(navGitHub.locator(".github-mark")).toHaveCount(1);
+  await expect(navGitHub.locator(".external-arrow")).toHaveText("↗");
+
+  const heroGitHub = page.locator(".hero-resource-links .github-button");
+  await expect(heroGitHub).toBeVisible();
+  const hierarchy = await heroGitHub.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      background: style.backgroundColor,
+      border: style.borderTopStyle,
+      height: node.getBoundingClientRect().height,
+    };
+  });
+  expect(hierarchy.background).not.toBe("rgba(0, 0, 0, 0)");
+  expect(hierarchy.border).toBe("solid");
+  expect(hierarchy.height).toBeGreaterThanOrEqual(43);
+});
+
 test("selected tabs use a cyan underline as the eight-second countdown", async ({ page }) => {
   await openReady(page);
 

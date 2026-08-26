@@ -39,7 +39,18 @@ code, pre { font-family: var(--font-geist-mono), ui-monospace, monospace; }
 .brand-mark i { position: absolute; top: 5px; width: 11px; height: 11px; border: 2px solid var(--cyan); transform: rotate(45deg); }
 .brand-mark i:first-child { left: 4px; }
 .brand-mark i:last-child { right: 4px; }
-.nav-links { display: flex; gap: 25px; color: var(--muted); font-size: 13px; }
+.nav-links, .nav-internal { display: flex; align-items: center; }
+.nav-links { gap: 16px; color: var(--muted); font-size: 13px; }
+.nav-internal { gap: 25px; }
+.nav-internal a { position: relative; padding: 10px 0; }
+.nav-internal a::after { position: absolute; right: 0; bottom: 4px; left: 0; height: 1px; content: ""; background: var(--cyan); transform: scaleX(0); transform-origin: left; transition: transform .18s ease; }
+.nav-internal a:hover::after, .nav-internal a:focus-visible::after { transform: scaleX(1); }
+.nav-divider { width: 1px; height: 23px; background: var(--line); }
+.nav-github { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; color: #dfe1df; border: 1px solid rgba(255, 255, 255, .18); border-radius: 8px; background: rgba(20, 25, 31, .88); font-weight: 600; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.nav-github:hover, .nav-github:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .55); background: rgba(85, 211, 218, .08); outline: none; }
+.github-mark { width: 17px; height: 17px; flex: 0 0 auto; }
+.external-arrow { display: inline-block; font-size: .9em; transition: transform .18s ease; }
+a:hover > .external-arrow, a:focus-visible > .external-arrow { transform: translate(2px, -2px); }
 .nav-links a:hover, .footer a:hover, .text-link:hover { color: var(--ink); }
 
 .hero { padding: 108px 0 110px; text-align: center; }
@@ -58,6 +69,13 @@ h1 span { display: block; }
 .copy-command b { flex: 0 0 auto; color: #a0a4aa; font: 600 10px var(--font-geist-mono), monospace; text-transform: uppercase; letter-spacing: .08em; }
 .copy-command:hover, .copy-command:focus-visible { border-color: rgba(85, 211, 218, .5); outline: none; }
 .copy-command:hover b, .copy-command:focus-visible b { color: var(--cyan); }
+.hero-resource-links { display: flex; justify-content: center; gap: 10px; margin: -12px 0 34px; }
+.github-button, .internal-button { min-height: 43px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 0 16px; border-radius: 8px; font: 600 12px var(--font-geist-mono), monospace; }
+.github-button { color: #0b0e11; border: 1px solid var(--ink); background: var(--ink); box-shadow: 0 12px 35px rgba(0, 0, 0, .28); }
+.github-button:hover, .github-button:focus-visible { color: #061013; border-color: var(--cyan); background: var(--cyan); outline: none; }
+.internal-button { color: #b9bdc1; border: 1px solid rgba(255, 255, 255, .13); background: rgba(12, 16, 20, .68); }
+.internal-button:hover, .internal-button:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .45); outline: none; }
+.internal-arrow { color: var(--cyan); }
 
 .provider-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; margin-bottom: 24px; }
 .provider-row a { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 6px; color: #aaaeb3; border: 1px solid rgba(255, 255, 255, .09); border-radius: 8px; background: rgba(12, 16, 20, .7); font: 9px var(--font-geist-mono), monospace; text-transform: uppercase; letter-spacing: .035em; }
@@ -138,14 +156,20 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
 .flow-arrow em { max-width: 130px; font-size: 10px; font-style: normal; line-height: 1.4; }
 .flow-arrow.return { transform: rotate(180deg); }
 .flow-arrow.return > * { transform: rotate(180deg); }
-.text-link { display: inline-block; margin-top: 21px; color: var(--muted); font-size: 13px; }
+.text-link { display: inline-flex; align-items: center; gap: 5px; margin-top: 21px; color: var(--muted); font-size: 13px; }
+
+.repository-banner { min-height: 136px; display: flex; align-items: center; justify-content: space-between; gap: 30px; margin-bottom: 72px; padding: 28px 32px; border: 1px solid rgba(85, 211, 218, .25); border-radius: 14px; background: linear-gradient(110deg, rgba(85, 211, 218, .09), rgba(13, 18, 22, .96) 43%); box-shadow: 0 30px 90px rgba(0, 0, 0, .28); }
+.repository-banner > div { display: grid; gap: 8px; }
+.repository-banner > div span { color: var(--cyan); font: 10px var(--font-geist-mono), monospace; letter-spacing: .14em; text-transform: uppercase; }
+.repository-banner > div strong { font-size: clamp(18px, 2vw, 25px); letter-spacing: -.025em; }
 
 .footer { min-height: 120px; display: grid; grid-template-columns: 1fr 1fr 1fr; align-items: center; color: #92979d; border-top: 1px solid var(--line); font-size: 12px; }
 .footer p { text-align: center; }
 .footer > div { display: flex; justify-content: flex-end; gap: 22px; }
+.footer > div a { display: inline-flex; align-items: center; gap: 4px; }
 
 @media (max-width: 980px) {
-  .nav-links a:not(:last-child) { display: none; }
+  .nav-internal, .nav-divider { display: none; }
   .provider-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .section-heading { grid-template-columns: 1fr; gap: 24px; }
   .architecture-map { grid-template-columns: 1fr; gap: 9px; }
@@ -169,6 +193,8 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
   h2 { font-size: 46px; }
   .hero-actions { flex-direction: column; }
   .hero-actions > * { width: 100%; }
+  .hero-resource-links { display: grid; grid-template-columns: 1fr; }
+  .hero-resource-links > * { width: 100%; }
   .provider-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .story-topbar { align-items: flex-start; flex-direction: column; }
   .story-controls { width: 100%; display: grid; grid-template-columns: repeat(4, 1fr); }
@@ -176,6 +202,8 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
   .story-window { margin: 7px 7px 0; }
   .story-window [data-demo-screen] { min-height: 0; height: auto; aspect-ratio: 1.715; }
   .story-player figcaption { display: grid; }
+  .repository-banner { align-items: stretch; flex-direction: column; margin-bottom: 48px; padding: 25px; }
+  .repository-banner .github-button { width: 100%; }
   .footer { grid-template-columns: 1fr; gap: 10px; padding: 30px 0; }
   .footer p { text-align: left; }
   .footer > div { justify-content: flex-start; }
