@@ -619,6 +619,7 @@ fn native_outcome(
 mod tests {
     use super::*;
     use crate::process::CommandOutput;
+    use crate::test_support::tempfile;
 
     fn fixture(root: &Path) -> PathBuf {
         let session = root.join("sessions/wd_work/session_owned");

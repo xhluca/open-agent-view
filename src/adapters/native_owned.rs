@@ -274,6 +274,7 @@ fn ensure_private_file(path: &Path, label: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::tempfile;
 
     #[test]
     fn registry_round_trips_metadata_without_transcript_or_credentials() {
@@ -336,9 +337,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn failed_persistence_never_grants_in_memory_ownership_or_leaves_a_temp_file() {
+        use std::os::unix::fs::PermissionsExt;
+
         let directory = tempfile::tempdir().unwrap();
         let parent = directory.path().join("state");
         fs::create_dir(&parent).unwrap();
+        fs::set_permissions(&parent, fs::Permissions::from_mode(0o700)).unwrap();
         let path = parent.join("owned.json");
         let registry = NativeOwnership::load(path.clone(), "Test").unwrap();
 

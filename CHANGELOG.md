@@ -8,6 +8,22 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.41] - 2026-08-26
+
+### Fixed
+
+- OpenCode HTTP supervision now recognizes a complete `Content-Length` or
+  chunked response without waiting for the server to close a keep-alive
+  connection. Healthy launches no longer fail after the read timeout with
+  `EAGAIN` (`Resource temporarily unavailable`).
+- Provider-native spawn errors now identify the executable and working
+  directory, and reject a missing executable or directory before PTY setup.
+
+### Documentation
+
+- The real README walkthrough is rendered at 16 px instead of 13 px for more
+  legible native terminal text.
+
 ## [0.1.40] - 2026-08-26
 
 ### Fixed

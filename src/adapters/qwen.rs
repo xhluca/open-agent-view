@@ -655,6 +655,7 @@ fn reject_symlink(path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::process::CommandOutput;
+    use crate::test_support::tempfile;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 

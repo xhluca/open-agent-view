@@ -920,6 +920,7 @@ fn reject_symlink(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::tempfile;
     use std::collections::VecDeque;
 
     struct FakeRpc {

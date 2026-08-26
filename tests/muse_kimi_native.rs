@@ -19,6 +19,12 @@ use open_agent_view::domain::{Capability, Provider, SessionState};
 
 const CHILD_PROVIDER: &str = "OAV_MUSE_KIMI_NATIVE_CHILD";
 
+fn private_tempdir() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    directory
+}
+
 #[test]
 fn muse_controller_launch_discover_reattach_interrupt_and_exact_open_use_real_ptys() {
     if std::env::var(CHILD_PROVIDER).as_deref() == Ok("muse") {
@@ -143,7 +149,7 @@ fn run_outer(provider: &str, marker: &str, task: &str) {
 
 fn run_muse_child() {
     let _cleanup = NativeSessionCleanup;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let executable = directory.path().join("muse");
     let data_root = directory.path().join("data/muse");
     let workspace = directory.path().join("workspace");
@@ -207,7 +213,7 @@ while :; do sleep 1; done
 
 fn run_kimi_child() {
     let _cleanup = NativeSessionCleanup;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let executable = directory.path().join("kimi");
     let data_root = directory.path().join("kimi-home");
     let workspace = directory.path().join("workspace");

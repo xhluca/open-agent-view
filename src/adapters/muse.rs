@@ -613,6 +613,7 @@ fn native_outcome(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::tempfile;
 
     fn fixture_log(path: &Path, id: &str, cwd: &str) -> PathBuf {
         let directory = path.join("sessions/2026/08/25").join(id);

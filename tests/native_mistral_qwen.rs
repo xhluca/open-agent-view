@@ -19,6 +19,12 @@ use open_agent_view::domain::{Provider, Runtime, SessionSnapshot, SessionState};
 
 const PTY_CHILD: &str = "OAV_MISTRAL_QWEN_PTY_CHILD";
 
+fn private_tempdir() -> tempfile::TempDir {
+    let directory = tempfile::tempdir().unwrap();
+    fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    directory
+}
+
 #[test]
 fn mistral_controller_background_reattach_interrupt_and_exact_resume_use_real_ptys() {
     if std::env::var(PTY_CHILD).as_deref() == Ok("mistral") {
@@ -54,7 +60,7 @@ fn executable(path: &Path, body: &str) {
 
 #[test]
 fn qwen_public_controller_launch_discover_open_and_refuse_unowned_interrupt() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let qwen = directory.path().join("qwen");
     executable(
         &qwen,
@@ -121,7 +127,7 @@ printf 'launch %s %s %s\n' "$session" "$model" "$prompt" >> "$root/invocations.l
 
 #[test]
 fn mistral_public_controller_correlates_exact_launch_then_discovers_and_opens_it() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let vibe = directory.path().join("vibe");
     let server = directory.path().join("vibe-app-server");
     executable(
@@ -207,7 +213,7 @@ esac
 
 fn run_mistral_pty_child() {
     let _cleanup = NativeSessionCleanup;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let workspace = directory.path().join("workspace");
     fs::create_dir_all(&workspace).unwrap();
     let vibe = directory.path().join("vibe");
@@ -296,7 +302,7 @@ esac
 
 fn run_qwen_pty_child() {
     let _cleanup = NativeSessionCleanup;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = private_tempdir();
     let workspace = directory.path().join("workspace");
     fs::create_dir_all(&workspace).unwrap();
     let qwen = directory.path().join("qwen");

@@ -647,9 +647,24 @@ fn request_http(
 
 fn read_http_response(stream: &mut TcpStream) -> Result<HttpResponse> {
     let mut bytes = Vec::new();
-    stream
-        .take((MAX_HEADER_BYTES + MAX_BODY_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)?;
+    let mut buffer = [0_u8; 16 * 1024];
+    loop {
+        let read = stream.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes.extend_from_slice(&buffer[..read]);
+        if bytes.len() > MAX_HEADER_BYTES + MAX_BODY_BYTES {
+            bail!("OpenCode HTTP response exceeded size limit");
+        }
+        // OpenCode may keep an HTTP/1.1 connection alive even when the client
+        // asks it to close. Stop as soon as framing proves the complete body
+        // arrived instead of waiting for EOF and turning a healthy response
+        // into an EAGAIN/read-timeout launch failure.
+        if http_response_is_complete(&bytes)? {
+            break;
+        }
+    }
     if bytes.len() > MAX_HEADER_BYTES + MAX_BODY_BYTES {
         bail!("OpenCode HTTP response exceeded size limit");
     }
@@ -677,11 +692,71 @@ fn read_http_response(stream: &mut TcpStream) -> Result<HttpResponse> {
     });
     if chunked {
         body = decode_chunked(&body)?;
+    } else if let Some(content_length) = content_length(headers)? {
+        if body.len() < content_length {
+            bail!("truncated OpenCode HTTP response body");
+        }
+        body.truncate(content_length);
     }
     if body.len() > MAX_BODY_BYTES {
         bail!("OpenCode HTTP body exceeded size limit");
     }
     Ok(HttpResponse { status, body })
+}
+
+fn http_response_is_complete(bytes: &[u8]) -> Result<bool> {
+    let Some(split) = find_bytes(bytes, b"\r\n\r\n") else {
+        if bytes.len() > MAX_HEADER_BYTES {
+            bail!("OpenCode HTTP headers exceeded size limit");
+        }
+        return Ok(false);
+    };
+    if split > MAX_HEADER_BYTES {
+        bail!("OpenCode HTTP headers exceeded size limit");
+    }
+    let headers =
+        std::str::from_utf8(&bytes[..split]).context("OpenCode HTTP headers were not UTF-8")?;
+    let body = &bytes[split + 4..];
+    if headers.lines().any(|line| {
+        line.split_once(':')
+            .map(|(name, value)| {
+                name.eq_ignore_ascii_case("transfer-encoding")
+                    && value.to_ascii_lowercase().contains("chunked")
+            })
+            .unwrap_or(false)
+    }) {
+        return Ok(decode_chunked(body).is_ok());
+    }
+    if let Some(expected) = content_length(headers)? {
+        if expected > MAX_BODY_BYTES {
+            bail!("OpenCode HTTP body exceeded size limit");
+        }
+        return Ok(body.len() >= expected);
+    }
+    let status = headers
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().nth(1))
+        .and_then(|value| value.parse::<u16>().ok());
+    Ok(matches!(status, Some(100..=199 | 204 | 304)))
+}
+
+fn content_length(headers: &str) -> Result<Option<usize>> {
+    let mut result = None;
+    for value in headers.lines().filter_map(|line| {
+        line.split_once(':').and_then(|(name, value)| {
+            name.eq_ignore_ascii_case("content-length")
+                .then_some(value.trim())
+        })
+    }) {
+        let parsed = value
+            .parse::<usize>()
+            .context("invalid OpenCode HTTP content length")?;
+        if result.replace(parsed).is_some_and(|prior| prior != parsed) {
+            bail!("conflicting OpenCode HTTP content lengths");
+        }
+    }
+    Ok(result)
 }
 
 fn decode_chunked(input: &[u8]) -> Result<Vec<u8>> {
@@ -1351,6 +1426,42 @@ mod tests {
         );
         assert!(opencode_prompt_body("Build", Some("missing-provider")).is_err());
         assert!(opencode_prompt_body("Build", Some("openai/ ")).is_err());
+    }
+
+    #[test]
+    fn reads_a_complete_keep_alive_response_without_waiting_for_eof() {
+        let listener = std::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let body = br#"{"healthy":true}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
+            stream.write_all(body).unwrap();
+            stream.flush().unwrap();
+            std::thread::sleep(Duration::from_millis(750));
+        });
+
+        let mut stream = TcpStream::connect(address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .unwrap();
+        let started = std::time::Instant::now();
+        let response = read_http_response(&mut stream).unwrap();
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, br#"{"healthy":true}"#);
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn rejects_conflicting_content_lengths() {
+        let response = b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nContent-Length: 2\r\n\r\nx";
+        assert!(http_response_is_complete(response).is_err());
     }
 
     #[cfg(target_os = "linux")]

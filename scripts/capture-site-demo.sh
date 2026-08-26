@@ -30,7 +30,7 @@ agg \
   --quiet \
   --no-loop \
   --theme github-dark \
-  --font-size 13 \
+  --font-size 16 \
   --speed 1 \
   --idle-time-limit 3 \
   --last-frame-duration 3 \

@@ -14,6 +14,8 @@ use std::io::{self, Read, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 #[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(unix)]
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::{Mutex, OnceLock};
 #[cfg(unix)]
@@ -367,6 +369,20 @@ fn detached_registry() -> &'static Mutex<BTreeMap<String, DetachedSession>> {
 
 #[cfg(unix)]
 fn spawn_pty(command: &mut Command) -> Result<(std::process::Child, std::fs::File)> {
+    let program = command.get_program().to_string_lossy().into_owned();
+    let working_directory = command
+        .get_current_dir()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    if command.get_current_dir().is_some() && !working_directory.is_dir() {
+        bail!(
+            "provider-native working directory does not exist: {}",
+            working_directory.display()
+        );
+    }
+    if Path::new(&program).components().count() > 1 && !Path::new(&program).is_file() {
+        bail!("provider-native executable does not exist: {program}");
+    }
     let mut master_fd = -1;
     let mut slave_fd = -1;
     let size = terminal_size(libc::STDIN_FILENO).unwrap_or(libc::winsize {
@@ -413,7 +429,12 @@ fn spawn_pty(command: &mut Command) -> Result<(std::process::Child, std::fs::Fil
     }
     let child = command
         .spawn()
-        .context("failed to start provider-native client")?;
+        .with_context(|| {
+            format!(
+                "failed to start provider-native client {program} in {}",
+                working_directory.display()
+            )
+        })?;
     Ok((child, master))
 }
 
