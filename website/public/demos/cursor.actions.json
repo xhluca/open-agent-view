@@ -1,135 +1,130 @@
 {
-  "duration": 56.96448103129289,
+  "duration": 37.62435582730581,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.757,
+      "at": 0.746,
       "action": "\u2193 \u00b7 highlight Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 1.684,
+      "at": 1.475,
       "action": "Enter \u00b7 choose Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 4.164,
+      "at": 2.643,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 4.289,
+      "at": 3.268,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 4.422,
+      "at": 3.399,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.997,
+      "at": 3.861,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.571,
-      "action": "\u2191 \u00b7 compare flagship",
+      "at": 4.322,
+      "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 7.535,
-      "action": "Search \u00b7 claude-opus-5-thinking-high",
+      "at": 5.075,
+      "action": "Search \u00b7 auto",
       "window": "open-agent-view"
     },
     {
-      "at": 9.67,
-      "action": "Enter \u00b7 select claude-opus-5-thinking-high",
+      "at": 5.96,
+      "action": "Enter \u00b7 select auto",
       "window": "open-agent-view"
     },
     {
-      "at": 12.248,
+      "at": 7.207,
       "action": "Enter \u00b7 start Cursor",
       "window": "open-agent-view"
     },
     {
-      "at": 12.372,
+      "at": 7.831,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 18.353,
-      "action": "Confirm \u00b7 trust demo workspace",
-      "window": "Cursor"
-    },
-    {
-      "at": 29.531,
+      "at": 13.789,
       "action": "Hello response complete",
       "window": "Cursor"
     },
     {
-      "at": 30.947,
+      "at": 14.979,
       "action": "Type \u00b7 Explain what is Cursor",
       "window": "Cursor"
     },
     {
-      "at": 31.076,
+      "at": 15.61,
       "action": "Enter \u00b7 send explanation",
       "window": "Cursor"
     },
     {
-      "at": 39.332,
+      "at": 26.345,
       "action": "Explanation response complete",
       "window": "Cursor"
     },
     {
-      "at": 41.972,
+      "at": 28.538,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Cursor"
     },
     {
-      "at": 44.102,
+      "at": 29.414,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Cursor"
     },
     {
-      "at": 44.479,
+      "at": 29.791,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 49.616,
+      "at": 31.8,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 49.748,
+      "at": 31.928,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 51.027,
+      "at": 32.983,
       "action": "Type \u00b7 cursor-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 51.151,
+      "at": 33.608,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 51.274,
+      "at": 33.732,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 53.486,
+      "at": 34.895,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 53.61,
+      "at": 35.519,
       "action": "Enter",
       "window": "open-agent-view"
     }

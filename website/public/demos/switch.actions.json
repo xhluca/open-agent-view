@@ -1,33 +1,33 @@
 {
-  "duration": 9.957124073476791,
+  "duration": 9.880158304332733,
   "actions": [
     {
-      "at": 1.264,
+      "at": 1.182,
       "action": "\u2192 \u00b7 enter selected session",
       "window": "open-agent-view"
     },
     {
-      "at": 1.392,
+      "at": 1.309,
       "action": "\u2190 \u00b7 arm return",
       "window": "Terminal"
     },
     {
-      "at": 3.02,
+      "at": 2.937,
       "action": "\u2190 \u00b7 return to opav",
       "window": "Terminal"
     },
     {
-      "at": 4.902,
+      "at": 4.823,
       "action": "\u2192 \u00b7 reopen session",
       "window": "open-agent-view"
     },
     {
-      "at": 5.025,
+      "at": 4.947,
       "action": "Session reopened",
       "window": "Terminal"
     },
     {
-      "at": 7.15,
+      "at": 7.073,
       "action": "Shift+\u2190 \u00b7 return immediately",
       "window": "Terminal"
     }

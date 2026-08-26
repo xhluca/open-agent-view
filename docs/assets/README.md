@@ -2,11 +2,13 @@
 
 `open-agent-view.gif` and `open-agent-view.png` are composed exclusively from
 genuine terminal recordings made on 2026-08-25 and 2026-08-26. The sequence starts by
-installing the public v0.1.37 release and opening its complete twelve-choice
+installing the public v0.1.41 release and opening its complete twelve-choice
 harness picker, then shows a short conversation in the real Claude Code TUI,
 the return to OAV, and an OAV session rename. It does not generate HTML rows
 that imitate a terminal. Every Open Agent View frame in the source recordings
-and rendered media comes from the v0.1.37 binary.
+and rendered media comes from the v0.1.41 binary.
+The GIF is rendered at a 16px terminal font (1291×784) so the native TUI
+details remain legible in the repository README.
 
 The source casts live in [`website/public/demos`](../../website/public/demos).
 [`scripts/capture-real-site-demo.py`](../../scripts/capture-real-site-demo.py)

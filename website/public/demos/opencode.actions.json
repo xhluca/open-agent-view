@@ -1,130 +1,130 @@
 {
-  "duration": 63.62097258113862,
+  "duration": 43.55277917013265,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.756,
+      "at": 0.745,
       "action": "\u2193 \u00b7 highlight OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 1.684,
+      "at": 1.473,
       "action": "Enter \u00b7 choose OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 4.166,
+      "at": 2.653,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 4.29,
+      "at": 3.277,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 4.423,
+      "at": 3.412,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.997,
+      "at": 3.874,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.571,
-      "action": "\u2191 \u00b7 compare flagship",
+      "at": 4.336,
+      "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 7.526,
+      "at": 5.933,
       "action": "Search \u00b7 github-copilot/gpt-5.6-luna",
       "window": "open-agent-view"
     },
     {
-      "at": 9.664,
+      "at": 6.82,
       "action": "Enter \u00b7 select github-copilot/gpt-5.6-luna",
       "window": "open-agent-view"
     },
     {
-      "at": 12.236,
+      "at": 8.061,
       "action": "Enter \u00b7 start OpenCode",
       "window": "open-agent-view"
     },
     {
-      "at": 12.36,
+      "at": 8.685,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 35.956,
+      "at": 26.218,
       "action": "Hello response complete",
       "window": "OpenCode"
     },
     {
-      "at": 37.494,
+      "at": 27.521,
       "action": "Type \u00b7 Explain what is OpenCode",
       "window": "OpenCode"
     },
     {
-      "at": 37.624,
+      "at": 28.153,
       "action": "Enter \u00b7 send explanation",
       "window": "OpenCode"
     },
     {
-      "at": 45.878,
+      "at": 32.171,
       "action": "Explanation response complete",
       "window": "OpenCode"
     },
     {
-      "at": 48.508,
+      "at": 34.355,
       "action": "Type \u00b7 explain return shortcut",
       "window": "OpenCode"
     },
     {
-      "at": 50.639,
+      "at": 35.233,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "OpenCode"
     },
     {
-      "at": 51.016,
+      "at": 35.611,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 56.148,
+      "at": 37.621,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 56.275,
+      "at": 37.748,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 57.675,
+      "at": 38.91,
       "action": "Type \u00b7 opencode-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 57.799,
+      "at": 39.535,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 57.922,
+      "at": 39.658,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 60.142,
+      "at": 40.824,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 60.266,
+      "at": 41.449,
       "action": "Enter",
       "window": "open-agent-view"
     }

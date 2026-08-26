@@ -1,130 +1,130 @@
 {
-  "duration": 50.29189996814447,
+  "duration": 32.116947787149456,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.758,
+      "at": 0.746,
       "action": "\u2193 \u00b7 highlight Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 1.686,
+      "at": 1.475,
       "action": "Enter \u00b7 choose Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 4.166,
+      "at": 2.645,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 4.29,
+      "at": 3.269,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 4.422,
+      "at": 3.403,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.997,
+      "at": 3.865,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.571,
-      "action": "\u2191 \u00b7 compare flagship",
+      "at": 4.328,
+      "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 6.648,
+      "at": 5.188,
       "action": "Search \u00b7 gpt-4.1",
       "window": "open-agent-view"
     },
     {
-      "at": 8.783,
+      "at": 6.074,
       "action": "Enter \u00b7 select gpt-4.1",
       "window": "open-agent-view"
     },
     {
-      "at": 11.357,
+      "at": 7.321,
       "action": "Enter \u00b7 start Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 11.481,
+      "at": 7.946,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 22.116,
+      "at": 14.611,
       "action": "Hello response complete",
       "window": "Qwen Code"
     },
     {
-      "at": 23.708,
+      "at": 15.935,
       "action": "Type \u00b7 Explain what is Qwen Code",
       "window": "Qwen Code"
     },
     {
-      "at": 23.839,
+      "at": 16.566,
       "action": "Enter \u00b7 send explanation",
       "window": "Qwen Code"
     },
     {
-      "at": 32.804,
+      "at": 20.938,
       "action": "Explanation response complete",
       "window": "Qwen Code"
     },
     {
-      "at": 35.428,
+      "at": 23.116,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Qwen Code"
     },
     {
-      "at": 37.558,
+      "at": 24.0,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Qwen Code"
     },
     {
-      "at": 37.934,
+      "at": 24.376,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 43.067,
+      "at": 26.386,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 43.194,
+      "at": 26.513,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 44.348,
+      "at": 27.468,
       "action": "Type \u00b7 qwen-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 44.475,
+      "at": 28.096,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 44.599,
+      "at": 28.219,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 46.813,
+      "at": 29.384,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 46.937,
+      "at": 30.013,
       "action": "Enter",
       "window": "open-agent-view"
     }

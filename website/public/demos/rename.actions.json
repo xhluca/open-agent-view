@@ -1,28 +1,28 @@
 {
-  "duration": 5.855,
+  "duration": 5.849,
   "actions": [
     {
-      "at": 1.188,
+      "at": 1.17,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 1.315,
+      "at": 1.303,
       "action": "Ctrl+U \u00b7 clear current name",
       "window": "open-agent-view"
     },
     {
-      "at": 2.607,
+      "at": 2.603,
       "action": "Type release workspace",
       "window": "open-agent-view"
     },
     {
-      "at": 2.731,
+      "at": 2.726,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 2.855,
+      "at": 2.849,
       "action": "Renamed row visible",
       "window": "open-agent-view"
     }
