@@ -19,7 +19,7 @@ open-agent-view-0.1.40-x86_64-unknown-linux-gnu.tar.gz.sha256
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested both before publication and through the published private
 release. Its SHA-256 digest is
-`9458e465072a88087bc394f142757c561ae7e245c5912058fce42017f29ea070`.
+`7938ebb7372a0914c1ee883778e3a5a4a8da20a18809655aba5b52015d78fc1d`.
 No ARM64 or macOS artifact is claimed for v0.1.40. Version 0.1.2 was the
 initial published preview. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
