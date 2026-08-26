@@ -125,8 +125,8 @@ export default function Home() {
         <p className="eyebrow"><span /> Local agents, one workspace</p>
         <h1><span>Monitor every agent.</span><span>Step in when it matters.</span></h1>
         <p className="hero-copy">
-          Launch, name, follow, and return to every local coding-agent session
-          from one terminal—without losing the native harness.
+          One live dashboard for every coding harness. Jump into any native
+          session, then return without losing your place.
         </p>
         <div className="hero-actions">
           <CopyCommand command={installCommand} />
