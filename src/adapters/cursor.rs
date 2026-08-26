@@ -82,10 +82,30 @@ impl CursorInvocation {
 
     /// Build the documented empty-chat allocator used by managed integrations.
     pub fn create_chat(&self, cwd: &Path) -> Result<CursorCommandSpec> {
+        self.create_chat_with_model(cwd, None)
+    }
+
+    /// Allocate the chat with its selected model already persisted.
+    ///
+    /// Cursor applies a model flag passed only to a later `--resume` process
+    /// to that process, but a preallocated chat can retain the account's prior
+    /// named model on its following turn. Supplying the documented global
+    /// option to `create-chat` makes the session itself use the requested
+    /// choice, including `auto` on plans that reject named models.
+    pub fn create_chat_with_model(
+        &self,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<CursorCommandSpec> {
         require_absolute_cwd(cwd)?;
+        let mut args = vec!["create-chat".into()];
+        if let Some(model) = model {
+            require_model(model)?;
+            args.extend(["--model".into(), model.into()]);
+        }
         Ok(CursorCommandSpec {
             program: self.executable.clone(),
-            args: vec!["create-chat".into()],
+            args,
             current_dir: cwd.to_owned(),
         })
     }
@@ -534,6 +554,13 @@ mod tests {
             ]
         );
         assert!(!foreground.args.iter().any(|arg| arg == "--print"));
+        assert_eq!(
+            invocation
+                .create_chat_with_model(Path::new("/work/repo"), Some("auto"))
+                .unwrap()
+                .args,
+            ["create-chat", "--model", "auto"]
+        );
     }
 
     #[test]

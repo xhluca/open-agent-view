@@ -8,6 +8,15 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.39] - 2026-08-26
+
+### Fixed
+
+- Cursor now persists the selected model while allocating the exact chat,
+  before native foreground resume. This keeps `auto` selected on accounts that
+  reject named models instead of letting a prior account model reappear on the
+  next turn.
+
 ## [0.1.38] - 2026-08-26
 
 ### Added

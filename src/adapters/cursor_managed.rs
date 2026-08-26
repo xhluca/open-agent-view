@@ -139,7 +139,7 @@ impl CursorSupervisor {
                 bail!("Cursor model `{model}` is not available to the authenticated account");
             }
         }
-        let spec = self.invocation.create_chat(cwd)?;
+        let spec = self.invocation.create_chat_with_model(cwd, model)?;
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
@@ -182,7 +182,7 @@ impl CursorSupervisor {
                 bail!("Cursor model `{model}` is not available to the authenticated account");
             }
         }
-        let spec = self.invocation.create_chat(cwd)?;
+        let spec = self.invocation.create_chat_with_model(cwd, model)?;
         let mut request = crate::process::CommandRequest::new(spec.program, spec.args);
         request.current_dir = Some(spec.current_dir);
         request.timeout = CREATE_TIMEOUT;
@@ -1054,10 +1054,15 @@ fn process_cmdline(_: u32) -> Result<Vec<u8>> {
 }
 
 fn is_missing_process(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<std::io::Error>()
-        .map(|error| error.kind() == std::io::ErrorKind::NotFound)
-        .unwrap_or(false)
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .map(|error| {
+                error.kind() == std::io::ErrorKind::NotFound
+                    || matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
+            })
+            .unwrap_or(false)
+    })
 }
 
 fn require_safe_session_id(session_id: &str) -> Result<()> {
@@ -1141,6 +1146,17 @@ mod tests {
             ),
             vec!["auto", "claude-sonnet-4.6"]
         );
+    }
+
+    #[test]
+    fn vanished_process_errors_reconcile_as_not_running_even_when_wrapped() {
+        let missing = anyhow::Error::new(std::io::Error::from_raw_os_error(libc::ESRCH))
+            .context("process disappeared during discovery");
+        assert!(is_missing_process(&missing));
+        let absent = anyhow::Error::new(std::io::Error::from_raw_os_error(libc::ENOENT));
+        assert!(is_missing_process(&absent));
+        let denied = anyhow::Error::new(std::io::Error::from_raw_os_error(libc::EACCES));
+        assert!(!is_missing_process(&denied));
     }
 
     #[test]
