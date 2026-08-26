@@ -73,6 +73,12 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
+  assert.match(html, /Choose any harness/);
+  assert.match(html, /Work in its native CLI/);
+  assert.match(html, /Manage every session/);
+  assert.match(html, /From one dashboard/);
+  assert.match(html, /One dashboard/);
+  assert.match(html, /Native agent sessions/);
   assert.match(html, /data-story="story-setup"/);
   assert.match(html, /aria-label="INSTALL · OPEN · \/HARNESS playback controls"/);
   assert.match(html, /aria-label="Seek through INSTALL · OPEN · \/HARNESS"/);
@@ -95,6 +101,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   }
 
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
+  assert.doesNotMatch(html, /Keep the conversation|Small commands|Fast context switches|One list|other tools|shared list/);
   assert.doesNotMatch(html, /raw\.githubusercontent\.com/);
   assert.doesNotMatch(html, /<video\b|data-demo-status|data-terminal-(?:row|grid|frame)/);
 });
@@ -249,8 +256,17 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
 
     if (name === "rename") {
       assert.match(visibleOutput, /rename session/i);
-      assert.match(visibleOutput, /release workspace/i);
-      assert.ok(manifest.actions.some((action) => action.action === "Renamed row visible"));
+      assert.match(visibleOutput, /claude-explanation/i);
+      assert.match(visibleOutput, /codex-explanation/i);
+      assert.match(visibleOutput, /frontend-refactor/i);
+      assert.match(visibleOutput, /release-audit/i);
+      assert.match(visibleOutput, /Claude/i);
+      assert.match(visibleOutput, /Codex/i);
+      assert.equal(manifest.proof, "multiple-native-agent-sessions");
+      assert.equal(manifest.sequence, "rename-codex-then-claude");
+      assert.ok(manifest.actions.some((action) => action.action === "Saved Codex name"));
+      assert.ok(manifest.actions.some((action) => action.action === "Saved Claude name"));
+      assert.ok(manifest.actions.some((action) => action.action === "Both agent names visible"));
     }
     if (name === "login") {
       assert.match(visibleOutput, /interactive login now\?/i);
@@ -315,7 +331,7 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   const tabUnderline = styles.match(/\.story-tabs button i\s*\{([^}]+)\}/s)?.[1] ?? "";
   assert.match(tabUnderline, /background:\s*var\(--cyan\)/);
   assert.match(styles, /\.story-tabs button\[aria-selected="true"\] i/);
-  assert.match(page, /thin\s+cyan\s+line/i);
+  assert.doesNotMatch(page, /thin\s+cyan\s+line|counts down for eight seconds/i);
   assert.match(page, /Actual provider TUI output · complete turns · playback at 0.6×/);
   assert.doesNotMatch(`${page}\n${styles}\n${script}`, /data-tab-hold-progress|yellow hold bar|\.tab-hold/);
 

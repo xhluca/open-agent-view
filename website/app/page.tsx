@@ -131,12 +131,11 @@ export default function Home() {
 
       <section className="guided section shell" id="harness-demo">
         <div className="section-heading">
-          <div><p className="section-label">02 · WORK</p><h2>Pick a harness.<br />Keep the conversation.</h2></div>
+          <div><p className="section-label">02 · WORK</p><h2>Choose any harness.<br />Work in its native CLI.</h2></div>
           <p>
-            Each tab starts in the same real harness picker, chooses an available
-            model (or Terminal shell), completes two turns in the native CLI, returns to the shared
-            dashboard, renames the session, and leaves the picker ready for the
-            next harness. Earlier sessions remain visible as the walkthrough grows.
+            Start Claude Code, Codex, Pi, or another supported harness from the
+            same workspace. Every session stays visible in Open Agent View while
+            each conversation continues in the interface built for that harness.
           </p>
         </div>
         <div
@@ -157,12 +156,11 @@ export default function Home() {
 
       <section className="guided section shell" id="controls">
         <div className="section-heading">
-          <div><p className="section-label">03 · CONTROL</p><h2>Small commands.<br />Fast context switches.</h2></div>
+          <div><p className="section-label">03 · CONTROL</p><h2>Manage every session.<br />From one dashboard.</h2></div>
           <p>
-            Rename a session, switch between the dashboard and a native CLI,
-            choose a model, or complete setup. After a recording ends, the thin
-            cyan line under its tab counts down for eight seconds, then opens
-            the next example.
+            Rename sessions, move between active agents, choose models, and
+            complete sign-in or setup without losing track of the rest.
+            Everything stays available from one dashboard.
           </p>
         </div>
         <div
@@ -176,19 +174,19 @@ export default function Home() {
           <DemoPlayer
             story="story-rename"
             label="EVERYDAY CONTROLS"
-            caption="The story timeline and the next-tab countdown are independent"
+            caption="Organize real agent sessions and return to any of them"
           />
         </div>
       </section>
 
       <section className="architecture section shell" id="architecture">
         <div className="section-heading">
-          <div><p className="section-label">HOW IT WORKS</p><h2>One list.<br />Your CLIs underneath.</h2></div>
+          <div><p className="section-label">HOW IT WORKS</p><h2>One dashboard.<br />Native agent sessions.</h2></div>
           <p>
-            Your conversations stay in Claude, Codex, Pi, and the other tools
-            that created them. Open Agent View reads their session lists and
-            puts them on one screen. When you open a session, you use that
-            tool&apos;s native interface. When you go back, the task keeps running.
+            Your conversations remain with the harness that created them—Claude
+            Code, Codex, Pi, and the rest. Open Agent View brings those sessions
+            into one dashboard. Open a session to return to its native CLI; go
+            back to the dashboard and it keeps running.
           </p>
         </div>
         <div className="architecture-map" aria-label="Open Agent View architecture">
@@ -208,7 +206,7 @@ export default function Home() {
           <div className="native-stack">
             <span>Original harness</span>
             <strong>Your session</strong>
-            <small>Talk to the agent normally, then return to the shared list without stopping it.</small>
+            <small>Talk to the agent normally, then return to the shared dashboard without stopping it.</small>
           </div>
         </div>
         <a className="text-link" href="https://github.com/xhluca/open-agent-view/blob/main/docs/control-model.md">Read the complete ownership and capability model ↗</a>

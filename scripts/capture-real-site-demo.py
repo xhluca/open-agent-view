@@ -1740,11 +1740,162 @@ def write_sequence_recording(
     )
 
 
+def capture_multi_session_rename(
+    root: Path,
+    output: Path,
+    terminal: RealTerminal,
+    previous_names: list[str],
+) -> None:
+    """Record two genuine agent-session renames on the shared dashboard.
+
+    This runs inside the coherent provider sequence after Claude and Codex
+    have both completed real conversations. Keeping the same terminal proves
+    that Ctrl+R changes the managed rows users just saw instead of substituting
+    a prepared or simulated dashboard.
+    """
+
+    if previous_names[-2:] != ["claude-explanation", "codex-explanation"]:
+        raise RuntimeError(
+            "multi-session rename requires the completed Claude and Codex rows"
+        )
+
+    terminal.key("Escape", "Esc · close harness picker", "open-agent-view")
+    terminal.wait_screen_without(r"choose harness", 30)
+    terminal.key("Escape", "Esc · return to session list", "open-agent-view")
+    terminal.wait_selected_row("Codex", 20)
+    time.sleep(0.8)
+
+    action_start_index = len(terminal.actions)
+    start = terminal.repaint_start()
+    time.sleep(1.0)
+
+    rename_steps = (
+        ("Codex", "release-audit"),
+        ("Claude", "frontend-refactor"),
+    )
+    for index, (provider, new_name) in enumerate(rename_steps):
+        terminal.wait_selected_row(provider, 20)
+        terminal.key(
+            "C-r",
+            f"Ctrl+R · rename {provider} session",
+            "open-agent-view",
+        )
+        terminal.wait_screen(r"rename session", 20)
+        time.sleep(0.7)
+        terminal.key(
+            "C-u",
+            f"Ctrl+U · clear {provider} name",
+            "open-agent-view",
+        )
+        terminal.type_text(
+            new_name,
+            f"Type · {new_name}",
+            "open-agent-view",
+            0.065,
+        )
+        time.sleep(0.75)
+        terminal.key(
+            "Enter",
+            f"Enter · save {provider} name",
+            "open-agent-view",
+        )
+        terminal.wait_screen(
+            rf"(?m)^\s*[^\n]*\b{re.escape(new_name)}\b"
+            rf"[^\n]*\b{re.escape(provider)}\b",
+            30,
+        )
+        terminal.wait_selected_row(provider, 20)
+        terminal.remember(f"Saved {provider} name", "open-agent-view")
+        time.sleep(1.5)
+        if index == 0:
+            terminal.key(
+                "Down",
+                "↓ · select Claude session",
+                "open-agent-view",
+            )
+            terminal.wait_selected_row("Claude", 20)
+            time.sleep(0.8)
+
+    terminal.wait_screen(
+        r"(?m)^\s*[^\n]*\bfrontend-refactor\b[^\n]*\bClaude\b",
+        30,
+    )
+    terminal.wait_screen(
+        r"(?m)^\s*[^\n]*\brelease-audit\b[^\n]*\bCodex\b",
+        30,
+    )
+    terminal.remember("Both agent names visible", "open-agent-view")
+    time.sleep(2.0)
+    end = terminal.timeline_time()
+
+    target = output / "rename.cast"
+    write_trimmed_cast(
+        terminal.raw_cast,
+        target,
+        start,
+        end,
+        public_path_replacements(root),
+    )
+    primed_lead = prime_first_terminal_frame(target)
+    actions = [
+        {
+            **item,
+            "at": max(0.0, round(float(item["at"]) - start - primed_lead, 3)),
+        }
+        for item in terminal.actions[action_start_index:]
+        if start <= float(item["at"]) <= end
+    ]
+    action_path = output / "rename.actions.json"
+    action_path.write_text(
+        json.dumps(
+            {
+                "duration": end - start + 1.35 - primed_lead,
+                "proof": "multiple-native-agent-sessions",
+                "sequence": "rename-codex-then-claude",
+                "actions": actions,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    action_path.chmod(0o644)
+    validate_public_cast(
+        target,
+        [
+            APP_HEADER,
+            "rename session",
+            "claude-explanation",
+            "codex-explanation",
+            "frontend-refactor",
+            "release-audit",
+            "Claude",
+            "Codex",
+        ],
+    )
+
+    previous_names[-2:] = ["frontend-refactor", "release-audit"]
+    print("captured real multi-session Claude + Codex rename story", flush=True)
+
+    # Restore the picker so a full sequence can continue to Pi and later
+    # harnesses, and so the existing recorder cleanup path stays deterministic.
+    sequence_type_line(
+        terminal,
+        "/harness",
+        "Type /harness",
+        "open-agent-view",
+        0.07,
+    )
+    terminal.wait_screen(r"choose harness", 30)
+    sequence_wait(1.0)
+
+
 def capture_provider_sequence(
     repo: Path,
     output: Path,
     *,
     through: str | None = None,
+    capture_rename: bool = False,
 ) -> None:
     # Provider supervisors use Unix sockets. Keep the private root short so
     # every provider stays comfortably below sockaddr_un path limits.
@@ -1897,6 +2048,8 @@ def capture_provider_sequence(
                 action_start_index,
             )
             print(f"captured coherent {spec.label} story", flush=True)
+            if capture_rename and spec.id == "codex":
+                capture_multi_session_rename(root, output, terminal, previous_names)
             if through == spec.id:
                 break
 
@@ -2073,25 +2226,11 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
         active = "pi" if demo == "model" else ("all" if demo == "login" else "terminal")
         terminal = start_control_dashboard(repo, root, demo, active)
 
-        if demo in ("rename", "switch"):
+        if demo == "switch":
             prepare_real_terminal_session(terminal)
 
         start = terminal.repaint_start()
-        if demo == "rename":
-            terminal.key("C-r", "Ctrl+R · rename session", "open-agent-view")
-            terminal.wait_screen(r"rename session", 15)
-            terminal.key("C-u", "Ctrl+U · clear current name", "open-agent-view")
-            terminal.type_text(
-                "release workspace",
-                "Type release workspace",
-                "open-agent-view",
-                0.065,
-            )
-            terminal.key("Enter", "Enter · save name", "open-agent-view")
-            terminal.wait_screen(r"release workspace", 15)
-            terminal.remember("Renamed row visible", "open-agent-view")
-            time.sleep(2.0)
-        elif demo == "switch":
+        if demo == "switch":
             terminal.key("Right", "→ · enter selected session", "open-agent-view")
             terminal.wait_screen(r"Managed terminal ready\.", 20)
             terminal.key("Left", "← · arm return", "Terminal")
@@ -2158,7 +2297,6 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
         action_path.chmod(0o644)
         compact_recording(target, action_path)
         required = {
-            "rename": ["rename session", "release workspace"],
             "switch": ["Managed terminal ready.", "Press ← again"],
             "model": ["choose Pi model"],
             "login": ["interactive login now?", "Opening Claude Code login"],
@@ -2314,6 +2452,13 @@ def main() -> int:
         capture_setup(repo, output)
     elif args.demo == "sequence":
         capture_provider_sequence(repo, output, through=args.through)
+    elif args.demo == "rename":
+        capture_provider_sequence(
+            repo,
+            output,
+            through="codex",
+            capture_rename=True,
+        )
     elif args.demo == "claude":
         capture_claude(repo, output)
     elif args.demo in PROVIDER_DEMOS:
