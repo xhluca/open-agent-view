@@ -342,12 +342,22 @@ class RealCastPlayer {
 
   seekTo(seconds) {
     if (!this.player) return;
+    const leftFinalFrame = Boolean(
+      this.ended
+      && this.manifest
+      && seconds < this.manifest.duration - 0.2,
+    );
     const retained = this.retainFrame();
     if (retained) this.mount.append(retained);
     safe(() => this.player.seek(seconds));
     this.lastObservedTime = seconds;
     this.lastMovementAt = performance.now();
     this.releaseRetainedFrame(retained);
+    if (leftFinalFrame) {
+      this.ended = false;
+      this.pauseButton.textContent = "Play";
+      this.root.dispatchEvent(new CustomEvent("demo-end-cancelled", { bubbles: true }));
+    }
   }
 
   currentTime() {
@@ -526,6 +536,7 @@ class TabbedStory {
     root.addEventListener("demo-ended", () => {
       if (this.autoAdvance) this.startHold();
     });
+    root.addEventListener("demo-end-cancelled", () => this.cancelHold());
   }
 
   selectedIndex() {
@@ -533,8 +544,7 @@ class TabbedStory {
   }
 
   select(index, focus = false, activate = true) {
-    window.cancelAnimationFrame(this.holdFrame);
-    this.holdFrame = 0;
+    this.cancelHold(false);
     for (const [tabIndex, tab] of this.tabs.entries()) {
       const selected = tabIndex === index;
       tab.setAttribute("aria-selected", String(selected));
@@ -545,8 +555,17 @@ class TabbedStory {
     this.player.mountStory(this.tabs[index].dataset.story, activate);
   }
 
-  startHold() {
+  cancelHold(resetProgress = true) {
     window.cancelAnimationFrame(this.holdFrame);
+    this.holdFrame = 0;
+    this.holdStarted = 0;
+    if (resetProgress) {
+      this.tabs[this.selectedIndex()]?.style.setProperty("--tab-progress", "1");
+    }
+  }
+
+  startHold() {
+    this.cancelHold(false);
     const tab = this.tabs[this.selectedIndex()];
     const isLast = this.selectedIndex() === this.tabs.length - 1;
     if (isLast && !this.loop) {

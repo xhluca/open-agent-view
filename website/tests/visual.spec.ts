@@ -296,6 +296,52 @@ test("selected tabs use a cyan underline as the eight-second countdown", async (
   await expect(controls.getByRole("tab", { name: "Switch sessions" })).toHaveAttribute("aria-selected", "true", { timeout: 9_000 });
 });
 
+test("seeking away from the final frame resets and cancels tab auto-advance", async ({ page }) => {
+  await openReady(page);
+
+  const section = page.locator("#controls");
+  await section.scrollIntoViewIfNeeded();
+  const rename = section.getByRole("tab", { name: "Rename" });
+  const switchSessions = section.getByRole("tab", { name: "Switch sessions" });
+  await rename.click();
+
+  await section.locator("[data-tabbed-story]").evaluate((node) => {
+    (node as TabbedStoryNode)._tabbedStory.holdDelay = 700;
+    const player = (node.querySelector("[data-demo-player]") as PlayerNode)._realCastPlayer;
+    player.pause();
+    player.finish();
+  });
+  await page.waitForTimeout(180);
+  const progressBeforeSeek = await rename.evaluate((node) =>
+    Number.parseFloat(node.style.getPropertyValue("--tab-progress")),
+  );
+  expect(progressBeforeSeek).toBeGreaterThan(0);
+  expect(progressBeforeSeek).toBeLessThan(1);
+
+  const scrubber = section.locator("[data-demo-progress]");
+  await scrubber.evaluate((node) => {
+    const input = node as HTMLInputElement;
+    input.value = "500";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(scrubber).toHaveValue("500");
+  await expect(section.locator('[data-demo-action="pause"]')).toHaveText("Play");
+  await expect.poll(() => rename.evaluate((node) =>
+    Number.parseFloat(node.style.getPropertyValue("--tab-progress")),
+  )).toBe(1);
+
+  await page.waitForTimeout(650);
+  await expect(rename).toHaveAttribute("aria-selected", "true");
+  await expect(switchSessions).toHaveAttribute("aria-selected", "false");
+
+  await section.locator("[data-tabbed-story]").evaluate((node) => {
+    const story = (node as TabbedStoryNode)._tabbedStory;
+    story.holdDelay = 150;
+    (node.querySelector("[data-demo-player]") as PlayerNode)._realCastPlayer.finish();
+  });
+  await expect(switchSessions).toHaveAttribute("aria-selected", "true", { timeout: 1_000 });
+});
+
 test("harness stories advance after the final frame and stop after the last tab", async ({ page }) => {
   await openReady(page);
   const section = page.locator("#harness-demo");
