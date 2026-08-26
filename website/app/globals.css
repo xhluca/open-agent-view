@@ -87,7 +87,7 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
 .story-window { margin: 12px 12px 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .09); border-radius: 9px; background: #181a1b; }
 .window-bar { height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 13px; color: #8f949a; border-bottom: 1px solid rgba(255, 255, 255, .08); font: 9px var(--font-geist-mono), monospace; }
 .window-bar strong { min-width: 0; overflow: hidden; color: #d8dad8; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.window-bar kbd { min-width: 0; max-width: 72%; overflow: hidden; padding: 6px 10px; opacity: 0; color: #c9eaec; border: 1px solid rgba(85, 211, 218, .38); border-radius: 7px; background: rgba(31, 77, 82, .34); box-shadow: 0 0 0 rgba(85, 211, 218, 0); font: 650 12px var(--font-geist-mono), monospace; text-align: right; text-overflow: ellipsis; transform: translateY(-1px) scale(.98); white-space: nowrap; }
+.window-bar kbd { min-width: 0; max-width: 72%; overflow: hidden; padding: 6px 10px; opacity: 0; color: #c9eaec; border: 1px solid rgba(85, 211, 218, .38); border-radius: 7px; background: rgba(31, 77, 82, .34); box-shadow: 0 0 0 rgba(85, 211, 218, 0); font-family: var(--font-geist-mono), monospace; font-size: 12px; font-weight: 650; text-align: right; text-overflow: ellipsis; transform: translateY(-1px) scale(.98); white-space: nowrap; }
 .window-bar kbd.is-visible { animation: action-keycap 3s ease-out forwards; }
 @keyframes action-keycap {
   0% { opacity: 0; transform: translateY(-1px) scale(.98); box-shadow: 0 0 0 rgba(85, 211, 218, 0); }

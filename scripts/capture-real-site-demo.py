@@ -1049,7 +1049,7 @@ class ProviderDemo:
 SEQUENCE_DEMOS = (
     ProviderDemo("claude", "Claude Code", "claude", r"Claude Code v", "opus"),
     ProviderDemo("codex", "OpenAI Codex", "codex", r"Codex|OpenAI", "gpt-5.6-sol"),
-    ProviderDemo("pi", "Pi", "pi", r"Pi|pi", "openai/gpt-5.6-sol"),
+    ProviderDemo("pi", "Pi", "pi", r"Pi|pi", "openai-codex/gpt-5.6-sol"),
     ProviderDemo(
         "opencode",
         "OpenCode",
@@ -1519,7 +1519,8 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
     def reject_failed_turn() -> None:
         screen = terminal.screen()
         if re.search(
-            r"API Error|unsupported parameter|Agent execution terminated due to error|"
+            r"API Error|Error:\s*4\d\d|HTTP\s+4\d\d|unsupported parameter|"
+            r"Agent execution terminated due to error|"
             r"Authentication required|not authenticated|run exited without success|"
             r"Named models unavailable|Free plans can only use Auto",
             screen,
@@ -1650,6 +1651,7 @@ def capture_provider_sequence(
         prepare_complete_picker(root, environment)
         prepare_sequence_provider_state(root, environment)
         install_local_binary(repo, root)
+        prepare_cursor_demo_wrapper(root)
         prewarm_sequence_harnesses(root, environment)
 
         work = root / "home" / "work" / "acme-dashboard"
@@ -1819,6 +1821,30 @@ def install_local_binary(repo: Path, root: Path) -> None:
     bin_dir = root / "home" / ".local" / "bin"
     (bin_dir / "open-agent-view").symlink_to(binary.resolve())
     (bin_dir / "opav").symlink_to("open-agent-view")
+
+
+def prepare_cursor_demo_wrapper(root: Path) -> None:
+    """Use Cursor's documented trust flag without creating a prewarm chat.
+
+    Cursor may show its workspace-trust overlay only after OAV has allocated
+    and resumed the real chat. Accepting that overlay during the recording is
+    racy because it can repaint over the first prompt. A separate native
+    prewarm would itself create a provider conversation, so keep the real
+    executable and add only Cursor's documented global ``--trust`` option to
+    the invocations made by this disposable demo.
+    """
+
+    exposed = root / "home" / ".local" / "bin" / "cursor-agent"
+    if not exposed.is_file():
+        raise RuntimeError("real demo requires an exposed Cursor executable")
+    executable = exposed.resolve(strict=True)
+    exposed.unlink()
+    write_private_text(
+        exposed,
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(executable))} --trust \"$@\"\n",
+    )
+    exposed.chmod(0o700)
 
 
 def prewarm_sequence_harnesses(

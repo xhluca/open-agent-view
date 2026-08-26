@@ -313,6 +313,10 @@ test("uses the local asciinema player without a synthetic terminal generator or 
     "capture credentials must not be serialized into the Asciinema process argv",
   );
   assert.match(recorder, /def prewarm_sequence_harnesses\(/);
+  assert.match(recorder, /def prepare_cursor_demo_wrapper\(/);
+  assert.ok(recorder.includes('--trust \\"$@\\"'));
+  assert.match(recorder, /openai-codex\/gpt-5\.6-sol/);
+  assert.match(recorder, /Error:\\s\*4\\d\\d/);
   assert.match(recorder, /SEQUENCE_PLAYBACK_SPEED\s*=\s*0\.5/);
   assert.match(recorder, /SEQUENCE_TYPING_SPEEDUP\s*=\s*0\.8/);
   assert.match(recorder, /sequence_wait\(1\.0\)[\s\S]{0,100}terminal\.key\("Enter"/);
