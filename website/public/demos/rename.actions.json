@@ -1,29 +1,66 @@
 {
-  "duration": 5.849,
+  "duration": 15.309564910435688,
+  "proof": "multiple-native-agent-sessions",
+  "sequence": "rename-codex-then-claude",
   "actions": [
     {
-      "at": 1.17,
-      "action": "Ctrl+R \u00b7 rename session",
+      "at": 1.788,
+      "action": "Ctrl+R \u00b7 rename Codex session",
       "window": "open-agent-view"
     },
     {
-      "at": 1.303,
-      "action": "Ctrl+U \u00b7 clear current name",
+      "at": 2.616,
+      "action": "Ctrl+U \u00b7 clear Codex name",
       "window": "open-agent-view"
     },
     {
-      "at": 2.603,
-      "action": "Type release workspace",
+      "at": 3.638,
+      "action": "Type \u00b7 release-audit",
       "window": "open-agent-view"
     },
     {
-      "at": 2.726,
-      "action": "Enter \u00b7 save name",
+      "at": 4.516,
+      "action": "Enter \u00b7 save Codex name",
       "window": "open-agent-view"
     },
     {
-      "at": 2.849,
-      "action": "Renamed row visible",
+      "at": 4.642,
+      "action": "Saved Codex name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 6.268,
+      "action": "\u2193 \u00b7 select Claude session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.199,
+      "action": "Ctrl+R \u00b7 rename Claude session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 8.027,
+      "action": "Ctrl+U \u00b7 clear Claude name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 9.33,
+      "action": "Type \u00b7 frontend-refactor",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.204,
+      "action": "Enter \u00b7 save Claude name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.331,
+      "action": "Saved Claude name",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.959,
+      "action": "Both agent names visible",
       "window": "open-agent-view"
     }
   ]
