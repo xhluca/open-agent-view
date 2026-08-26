@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use super::{DiscoveryRequest, SessionSource};
+use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
 use crate::control::{
     run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
     ProviderController,
@@ -82,6 +82,13 @@ impl QwenOwnership {
             .lock()
             .map(|records| records.iter().any(|record| record.session_id == session_id))
             .unwrap_or(false)
+    }
+
+    fn snapshot(&self) -> Vec<OwnedQwenSession> {
+        self.records
+            .lock()
+            .map(|records| records.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     fn record(&self, session_id: &str, cwd: &Path, name: &str) -> Result<()> {
@@ -194,13 +201,31 @@ impl SessionSource for QwenSource {
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
-        let live = self
-            .live()?
-            .into_iter()
-            .map(|record| (record.session_id.clone(), record))
-            .collect::<BTreeMap<_, _>>();
+        Ok(self.discover_with_warnings(request)?.sessions)
+    }
+
+    fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
+        let mut warnings = Vec::new();
+        let live = match self.live() {
+            Ok(records) => records,
+            Err(error) => {
+                warnings.push(format!("Qwen live-session discovery: {error:#}"));
+                Vec::new()
+            }
+        }
+        .into_iter()
+        .map(|record| (record.session_id.clone(), record))
+        .collect::<BTreeMap<_, _>>();
+        let history = match self.history(request.history_limit.max(1)) {
+            Ok(records) => records,
+            Err(error) => {
+                warnings.push(format!("Qwen history discovery: {error:#}"));
+                Vec::new()
+            }
+        };
         let mut sessions = Vec::new();
-        for record in self.history(request.history_limit.max(1))? {
+        let mut discovered_ids = BTreeSet::new();
+        for record in history {
             let owned = self.ownership.owns(&record.session_id);
             if !request.include_external && !owned {
                 continue;
@@ -214,6 +239,7 @@ impl SessionSource for QwenSource {
             let updated_at = Some(UNIX_EPOCH + Duration::from_millis(record.mtime));
             let started_at =
                 active.map(|record| UNIX_EPOCH + Duration::from_millis(record.started_at));
+            discovered_ids.insert(record.session_id.clone());
             sessions.push(AgentSession {
                 id: format!("qwen:host:{}", record.session_id),
                 provider_session_id: record.session_id,
@@ -244,7 +270,49 @@ impl SessionSource for QwenSource {
                 capabilities: BTreeSet::from([Capability::Inspect]),
             });
         }
-        Ok(sessions)
+
+        // Qwen writes its durable history asynchronously. The exact UUID,
+        // cwd, title, and creation time in this private registry were all
+        // allocated and persisted by OAV after a successful foreground
+        // launch, so they are sufficient to keep the newly backgrounded row
+        // visible until Qwen's richer history record appears. Never synthesize
+        // an external row or infer authority from a provider process.
+        for owned in self.ownership.snapshot() {
+            if discovered_ids.contains(&owned.session_id) {
+                continue;
+            }
+            let session_key = format!("qwen:host:{}", owned.session_id);
+            let backgrounded = crate::native_session::is_backgrounded(&session_key);
+            sessions.push(AgentSession {
+                id: session_key,
+                provider_session_id: owned.session_id,
+                provider: Provider::QwenCode,
+                runtime: Runtime::Host,
+                kind: SessionKind::Managed,
+                name: owned.name.clone(),
+                cwd: owned.cwd,
+                state: if backgrounded {
+                    SessionState::Working
+                } else {
+                    SessionState::Completed
+                },
+                summary: owned.name,
+                raw_state: Some(
+                    if backgrounded {
+                        "backgrounded; awaiting Qwen history"
+                    } else {
+                        "owned; awaiting Qwen history"
+                    }
+                    .into(),
+                ),
+                pid: None,
+                started_at: Some(UNIX_EPOCH + Duration::from_millis(owned.created_at_ms)),
+                updated_at: Some(UNIX_EPOCH + Duration::from_millis(owned.created_at_ms)),
+                pull_requests: None,
+                capabilities: BTreeSet::from([Capability::Inspect]),
+            });
+        }
+        Ok(SourceDiscovery { sessions, warnings })
     }
 
     fn cancel(&self) {
@@ -611,6 +679,30 @@ mod tests {
         }
     }
 
+    struct EmptyRunner;
+
+    impl CommandRunner for EmptyRunner {
+        fn run(&self, _request: &CommandRequest) -> Result<CommandOutput> {
+            Ok(CommandOutput {
+                status: 0,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+    }
+
+    struct FailingRunner;
+
+    impl CommandRunner for FailingRunner {
+        fn run(&self, _request: &CommandRequest) -> Result<CommandOutput> {
+            Ok(CommandOutput {
+                status: 17,
+                stdout: Vec::new(),
+                stderr: b"provider store is busy".to_vec(),
+            })
+        }
+    }
+
     #[test]
     fn discovery_is_owned_by_default_and_merges_verified_live_registry() {
         let directory = tempfile::tempdir().unwrap();
@@ -650,6 +742,68 @@ mod tests {
             .iter()
             .filter(|session| session.provider_session_id.starts_with("aaaaaaaa"))
             .all(|session| session.kind == SessionKind::Unknown));
+    }
+
+    #[test]
+    fn owned_launch_is_visible_before_qwen_flushes_history() {
+        let directory = tempfile::tempdir().unwrap();
+        let ownership = QwenOwnership::load(directory.path().join("owned.json")).unwrap();
+        ownership
+            .record(
+                "11111111-2222-4333-8444-555555555555",
+                Path::new("/work"),
+                "hello",
+            )
+            .unwrap();
+        let source = QwenSource::with_runner("qwen", ownership, Arc::new(EmptyRunner));
+
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(
+            sessions[0].provider_session_id,
+            "11111111-2222-4333-8444-555555555555"
+        );
+        assert_eq!(sessions[0].name, "hello");
+        assert_eq!(sessions[0].kind, SessionKind::Managed);
+        assert_eq!(sessions[0].state, SessionState::Completed);
+        assert_eq!(
+            sessions[0].raw_state.as_deref(),
+            Some("owned; awaiting Qwen history")
+        );
+    }
+
+    #[test]
+    fn owned_launch_remains_visible_when_qwen_catalog_commands_are_temporarily_unavailable() {
+        let directory = tempfile::tempdir().unwrap();
+        let ownership = QwenOwnership::load(directory.path().join("owned.json")).unwrap();
+        ownership
+            .record(
+                "11111111-2222-4333-8444-555555555555",
+                Path::new("/work"),
+                "hello",
+            )
+            .unwrap();
+        let source = QwenSource::with_runner("qwen", ownership, Arc::new(FailingRunner));
+
+        let discovery = source
+            .discover_with_warnings(&DiscoveryRequest {
+                include_completed: true,
+                ..DiscoveryRequest::default()
+            })
+            .unwrap();
+
+        assert_eq!(discovery.sessions.len(), 1);
+        assert_eq!(discovery.sessions[0].name, "hello");
+        assert_eq!(discovery.warnings.len(), 2);
+        assert!(discovery
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("live-session")));
+        assert!(discovery
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("history")));
     }
 
     #[test]

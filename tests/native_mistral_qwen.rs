@@ -144,9 +144,11 @@ printf 'launch model=%s prompt=%s\n' "${VIBE_ACTIVE_MODEL-}" "${1-}" >> "$root/i
         r##"#!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-input=$(cat)
+IFS= read -r initialize
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"vibe-app-server","version":"test"},"capabilities":{}}}'
-case "$input" in
+IFS= read -r initialized
+IFS= read -r request
+case "$request" in
   *'config/read'*)
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"config":{"models":[{"alias":"devstral"}]}}}'
     ;;
@@ -232,9 +234,11 @@ while :; do sleep 1; done
         r##"#!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-input=$(cat)
+IFS= read -r initialize
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"vibe-app-server","version":"test"},"capabilities":{}}}'
-case "$input" in
+IFS= read -r initialized
+IFS= read -r request
+case "$request" in
   *'config/read'*)
     printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"config":{"models":[{"alias":"devstral"}]}}}'
     ;;

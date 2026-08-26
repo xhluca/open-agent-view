@@ -3,7 +3,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -174,48 +174,71 @@ impl ProcessVibeRpc {
                 self.app_server
             )
         })?;
-        let mut stdin = child.stdin.take().context("Vibe app server has no stdin")?;
-        for message in [
-            json!({
-                "jsonrpc": "2.0", "id": 1, "method": "initialize",
-                "params": {"clientInfo": {"name": "open-agent-view", "version": env!("CARGO_PKG_VERSION"), "entrypoint": "programmatic"}, "capabilities": {}}
-            }),
-            json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
-            json!({"jsonrpc": "2.0", "id": 2, "method": method, "params": params}),
-        ] {
-            serde_json::to_writer(&mut stdin, &message)?;
-            stdin.write_all(b"\n")?;
-        }
-        stdin.flush()?;
-        drop(stdin);
-        let output = wait_with_output(child, RPC_TIMEOUT)?;
-        if output.0 != 0 {
-            bail!(
-                "Mistral Vibe app server exited with status {}: {}",
-                output.0,
-                String::from_utf8_lossy(&output.2).trim()
-            );
-        }
-        if output.1.len() > MAX_RPC_OUTPUT {
-            bail!("Mistral Vibe app-server response exceeded the 8 MiB safety limit");
-        }
-        for line in BufReader::new(output.1.as_slice()).lines() {
-            let value: Value = serde_json::from_str(&line.context("failed to read Vibe RPC")?)
-                .context("invalid Mistral Vibe app-server JSON-RPC")?;
-            if value.get("id") == Some(&json!(2)) {
-                if let Some(error) = value.get("error") {
-                    bail!(
-                        "Mistral Vibe app-server request failed: {}",
-                        rpc_error(error)
-                    );
+        let stdout = child
+            .stdout
+            .take()
+            .context("Vibe app server has no stdout")?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .context("Vibe app server has no stderr")?;
+        let (line_sender, line_receiver) = mpsc::channel();
+        let stdout_reader = thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if line_sender
+                    .send(line.map_err(|error| error.to_string()))
+                    .is_err()
+                {
+                    break;
                 }
-                return value
-                    .get("result")
-                    .cloned()
-                    .context("Mistral Vibe app-server response has no result");
             }
-        }
-        bail!("Mistral Vibe app server returned no matching response")
+        });
+        let stderr_reader = thread::spawn(move || {
+            let mut output = Vec::new();
+            stderr.read_to_end(&mut output).map(|_| output)
+        });
+        let deadline = Instant::now() + RPC_TIMEOUT;
+        let mut bytes_seen = 0usize;
+        let mut stdin = child.stdin.take().context("Vibe app server has no stdin")?;
+        let interaction = (|| -> Result<Value> {
+            write_rpc_frame(
+                &mut stdin,
+                &json!({
+                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {"clientInfo": {"name": "open-agent-view", "version": env!("CARGO_PKG_VERSION"), "entrypoint": "programmatic"}, "capabilities": {}}
+                }),
+            )?;
+            stdin.flush()?;
+            receive_rpc_response(&line_receiver, 1, deadline, &mut bytes_seen)?;
+
+            // Vibe 2.24+ deliberately ignores requests sent before initialize
+            // has completed. Complete the handshake before config/session RPCs.
+            write_rpc_frame(
+                &mut stdin,
+                &json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+            )?;
+            write_rpc_frame(
+                &mut stdin,
+                &json!({"jsonrpc": "2.0", "id": 2, "method": method, "params": params}),
+            )?;
+            stdin.flush()?;
+            receive_rpc_response(&line_receiver, 2, deadline, &mut bytes_seen)
+        })();
+        drop(stdin);
+        terminate_rpc_child(&mut child);
+        let _ = stdout_reader.join();
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| anyhow!("Vibe stderr reader panicked"))??;
+        interaction.with_context(|| {
+            let detail = String::from_utf8_lossy(&stderr);
+            let detail = detail.trim();
+            if detail.is_empty() {
+                "Mistral Vibe app-server request failed".into()
+            } else {
+                format!("Mistral Vibe app-server request failed: {detail}")
+            }
+        })
     }
 }
 
@@ -717,48 +740,66 @@ fn now_millis() -> u64 {
         .as_millis() as u64
 }
 
-fn wait_with_output(mut child: Child, timeout: Duration) -> Result<(i32, Vec<u8>, Vec<u8>)> {
-    let mut stdout = child
-        .stdout
-        .take()
-        .context("Vibe app server has no stdout")?;
-    let mut stderr = child
-        .stderr
-        .take()
-        .context("Vibe app server has no stderr")?;
-    let stdout_reader = thread::spawn(move || {
-        let mut output = Vec::new();
-        stdout.read_to_end(&mut output).map(|_| output)
-    });
-    let stderr_reader = thread::spawn(move || {
-        let mut output = Vec::new();
-        stderr.read_to_end(&mut output).map(|_| output)
-    });
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            #[cfg(unix)]
-            unsafe {
-                libc::kill(-(child.id() as i32), libc::SIGKILL);
-            }
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = stdout_reader.join();
-            let _ = stderr_reader.join();
+fn write_rpc_frame(writer: &mut impl Write, message: &Value) -> Result<()> {
+    serde_json::to_writer(&mut *writer, message)?;
+    writer.write_all(b"\n")?;
+    Ok(())
+}
+
+fn receive_rpc_response(
+    receiver: &mpsc::Receiver<Result<String, String>>,
+    id: i64,
+    deadline: Instant,
+    bytes_seen: &mut usize,
+) -> Result<Value> {
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
             bail!("Mistral Vibe app-server request timed out after 10000 ms");
         }
-        thread::sleep(Duration::from_millis(10));
-    };
-    let stdout = stdout_reader
-        .join()
-        .map_err(|_| anyhow!("Vibe stdout reader panicked"))??;
-    let stderr = stderr_reader
-        .join()
-        .map_err(|_| anyhow!("Vibe stderr reader panicked"))??;
-    Ok((status.code().unwrap_or(-1), stdout, stderr))
+        let line = receiver
+            .recv_timeout(remaining)
+            .map_err(|error| match error {
+                mpsc::RecvTimeoutError::Timeout => {
+                    anyhow!("Mistral Vibe app-server request timed out after 10000 ms")
+                }
+                mpsc::RecvTimeoutError::Disconnected => {
+                    anyhow!("Mistral Vibe app server closed before response {id}")
+                }
+            })?;
+        let line = line.map_err(|error| anyhow!(error))?;
+        *bytes_seen = bytes_seen.saturating_add(line.len());
+        if *bytes_seen > MAX_RPC_OUTPUT {
+            bail!("Mistral Vibe app-server response exceeded the 8 MiB safety limit");
+        }
+        let value: Value =
+            serde_json::from_str(&line).context("invalid Mistral Vibe app-server JSON-RPC")?;
+        if value.get("id") != Some(&json!(id)) {
+            continue;
+        }
+        if let Some(error) = value.get("error") {
+            bail!(
+                "Mistral Vibe app-server request failed: {}",
+                rpc_error(error)
+            );
+        }
+        return value
+            .get("result")
+            .cloned()
+            .context("Mistral Vibe app-server response has no result");
+    }
+}
+
+fn terminate_rpc_child(child: &mut Child) {
+    if child.try_wait().ok().flatten().is_some() {
+        return;
+    }
+    #[cfg(unix)]
+    unsafe {
+        libc::kill(-(child.id() as i32), libc::SIGTERM);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn persist_private_registry(path: &Path, records: &BTreeSet<OwnedVibeSession>) -> Result<()> {
@@ -992,6 +1033,41 @@ mod tests {
             controller.available_models().unwrap(),
             vec!["devstral", "codestral"]
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_rpc_waits_for_initialize_before_sending_the_request() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let server = directory.path().join("vibe-app-server");
+        fs::write(
+            &server,
+            r#"#!/usr/bin/env python3
+import json
+import select
+import sys
+
+initialize = json.loads(sys.stdin.readline())
+if initialize.get("method") != "initialize":
+    raise SystemExit(2)
+if select.select([sys.stdin], [], [], 0.2)[0]:
+    print(json.dumps({"jsonrpc":"2.0","id":1,"error":{"message":"request arrived before initialize completed"}}), flush=True)
+    raise SystemExit(3)
+print(json.dumps({"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"fake","version":"1"}}}), flush=True)
+initialized = json.loads(sys.stdin.readline())
+request = json.loads(sys.stdin.readline())
+if initialized.get("method") != "initialized" or request.get("method") != "config/read":
+    raise SystemExit(4)
+print(json.dumps({"jsonrpc":"2.0","id":2,"result":{"config":{"models":[{"alias":"flagship"}]}}}), flush=True)
+"#,
+        )
+        .unwrap();
+        fs::set_permissions(&server, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let rpc = ProcessVibeRpc::new(server.display().to_string());
+        assert_eq!(rpc.models(directory.path()).unwrap(), vec!["flagship"]);
     }
 
     #[test]
