@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 
 use super::{DiscoveryRequest, SessionSource, SourceDiscovery};
 use crate::control::{
@@ -26,6 +26,7 @@ const MAX_CATALOG_BYTES: usize = 8 * 1024 * 1024;
 struct QwenHistoryRecord {
     session_id: String,
     cwd: PathBuf,
+    #[serde(deserialize_with = "deserialize_millis")]
     mtime: u64,
     prompt: String,
     custom_title: Option<String>,
@@ -38,7 +39,30 @@ struct QwenLiveRecord {
     session_id: String,
     cwd: PathBuf,
     name: String,
+    #[serde(deserialize_with = "deserialize_millis")]
     started_at: u64,
+}
+
+fn deserialize_millis<'de, D>(deserializer: D) -> std::result::Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    let millis = match value {
+        serde_json::Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                return Ok(value);
+            }
+            number.as_f64()
+        }
+        serde_json::Value::String(value) => value.parse::<f64>().ok(),
+        _ => None,
+    }
+    .ok_or_else(|| D::Error::custom("expected a millisecond timestamp"))?;
+    if !millis.is_finite() || millis < 0.0 || millis > u64::MAX as f64 {
+        return Err(D::Error::custom("millisecond timestamp is out of range"));
+    }
+    Ok(millis.floor() as u64)
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -85,10 +109,26 @@ impl QwenOwnership {
     }
 
     fn snapshot(&self) -> Vec<OwnedQwenSession> {
-        self.records
+        let mut records = self
+            .records
             .lock()
-            .map(|records| records.iter().cloned().collect())
-            .unwrap_or_default()
+            .map(|records| records.clone())
+            .unwrap_or_default();
+        // Discovery and control normally share one Arc, but reloading this
+        // tiny private registry also makes ownership visible across
+        // independently constructed handles and guards future process-boundary
+        // refactors.
+        // Only the already-validated owner-only file may add authority.
+        if validate_private_state_path(&self.path).is_ok() {
+            if let Ok(input) = fs::read_to_string(&self.path) {
+                if let Ok(persisted) =
+                    serde_json::from_str::<BTreeSet<OwnedQwenSession>>(&input)
+                {
+                    records.extend(persisted);
+                }
+            }
+        }
+        records.into_iter().collect()
     }
 
     fn record(&self, session_id: &str, cwd: &Path, name: &str) -> Result<()> {
@@ -206,6 +246,15 @@ impl SessionSource for QwenSource {
 
     fn discover_with_warnings(&self, request: &DiscoveryRequest) -> Result<SourceDiscovery> {
         let mut warnings = Vec::new();
+        // A dashboard keeps discovery on a long-lived worker while foreground
+        // launches run through the control handle. Snapshot the owner-only
+        // registry once per refresh so a launch persisted by either handle is
+        // used consistently for catalog matching and fallback rows.
+        let owned_records = self.ownership.snapshot();
+        let owned_ids = owned_records
+            .iter()
+            .map(|record| record.session_id.clone())
+            .collect::<BTreeSet<_>>();
         let live = match self.live() {
             Ok(records) => records,
             Err(error) => {
@@ -226,7 +275,7 @@ impl SessionSource for QwenSource {
         let mut sessions = Vec::new();
         let mut discovered_ids = BTreeSet::new();
         for record in history {
-            let owned = self.ownership.owns(&record.session_id);
+            let owned = owned_ids.contains(&record.session_id);
             if !request.include_external && !owned {
                 continue;
             }
@@ -245,10 +294,10 @@ impl SessionSource for QwenSource {
                 provider_session_id: record.session_id,
                 provider: Provider::QwenCode,
                 runtime: Runtime::Host,
-                kind: if active.is_some() {
-                    SessionKind::Interactive
-                } else if owned {
+                kind: if owned {
                     SessionKind::Managed
+                } else if active.is_some() {
+                    SessionKind::Interactive
                 } else {
                     SessionKind::Unknown
                 },
@@ -277,7 +326,7 @@ impl SessionSource for QwenSource {
         // launch, so they are sufficient to keep the newly backgrounded row
         // visible until Qwen's richer history record appears. Never synthesize
         // an external row or infer authority from a provider process.
-        for owned in self.ownership.snapshot() {
+        for owned in owned_records {
             if discovered_ids.contains(&owned.session_id) {
                 continue;
             }
@@ -720,8 +769,23 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].provider, Provider::QwenCode);
         assert_eq!(sessions[0].state, SessionState::Working);
+        assert_eq!(sessions[0].kind, SessionKind::Managed);
         assert_eq!(sessions[0].pid, Some(42));
         assert_eq!(sessions[0].name, "Parser work");
+    }
+
+    #[test]
+    fn qwen_timestamps_accept_fractional_milliseconds() {
+        let history: QwenHistoryRecord = serde_json::from_str(
+            r#"{"sessionId":"fractional","cwd":"/work","mtime":1787843988568.1904,"prompt":"hello","customTitle":null}"#,
+        )
+        .unwrap();
+        let live: QwenLiveRecord = serde_json::from_str(
+            r#"{"pid":42,"sessionId":"fractional","cwd":"/work","name":"hello","startedAt":"1787843988567.9"}"#,
+        )
+        .unwrap();
+        assert_eq!(history.mtime, 1_787_843_988_568);
+        assert_eq!(live.started_at, 1_787_843_988_567);
     }
 
     #[test]
@@ -772,6 +836,60 @@ mod tests {
             sessions[0].raw_state.as_deref(),
             Some("owned; awaiting Qwen history")
         );
+    }
+
+    #[test]
+    fn discovery_reloads_ownership_persisted_by_an_independent_handle() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("owned.json");
+        let discovery_ownership = QwenOwnership::load(path.clone()).unwrap();
+        let control_ownership = QwenOwnership::load(path).unwrap();
+        control_ownership
+            .record(
+                "11111111-2222-4333-8444-555555555555",
+                Path::new("/work"),
+                "cross-handle session",
+            )
+            .unwrap();
+        let source = QwenSource::with_runner(
+            "qwen",
+            discovery_ownership,
+            Arc::new(EmptyRunner),
+        );
+
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "cross-handle session");
+        assert_eq!(sessions[0].provider, Provider::QwenCode);
+    }
+
+    #[test]
+    fn independent_handle_ownership_matches_the_richer_provider_record() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("owned.json");
+        let discovery_ownership = QwenOwnership::load(path.clone()).unwrap();
+        let control_ownership = QwenOwnership::load(path).unwrap();
+        control_ownership
+            .record(
+                "11111111-2222-4333-8444-555555555555",
+                Path::new("/work"),
+                "launch prompt",
+            )
+            .unwrap();
+        let source = QwenSource::with_runner(
+            "qwen",
+            discovery_ownership,
+            Arc::new(FakeRunner),
+        );
+
+        let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
+
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].name, "Parser work");
+        assert_eq!(sessions[0].state, SessionState::Working);
+        assert_eq!(sessions[0].pid, Some(42));
+        assert_eq!(sessions[0].raw_state.as_deref(), Some("running"));
     }
 
     #[test]
