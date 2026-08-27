@@ -21,7 +21,7 @@ provider's native terminal—all from one queue.
 
 </div>
 
-![A real Open Agent View walkthrough: browse eleven coding-harness sessions, open a native coding CLI, send a lookup prompt, and return to the shared dashboard](docs/assets/open-agent-view.gif)
+![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)
 
 > [!NOTE]
 > Open Agent View is an early preview. Prebuilt releases currently target

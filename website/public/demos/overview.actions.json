@@ -1,57 +1,109 @@
 {
-  "duration": 16.786716088588722,
+  "duration": 27.827019258999854,
   "proof": "conversation",
-  "sequence": "eleven-session-dashboard-open-live-lookup-return",
+  "sequence": "eleven-session-dashboard-preview-two-open-kimi-lookup-return",
+  "pacing_scale": 1.25,
+  "preview_targets": [
+    "qwen",
+    "muse"
+  ],
+  "preview_seconds": 2,
+  "lookup_seconds": 7,
   "target": "kimi",
   "session_count": 11,
   "actions": [
     {
-      "at": 0.767,
+      "at": 0.766,
       "action": "Dashboard \u00b7 11 coding harnesses",
       "window": "open-agent-view"
     },
     {
-      "at": 1.892,
-      "action": "\u2193 \u00b7 browse sessions",
+      "at": 2.141,
+      "action": "\u2193 \u00b7 choose Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.517,
-      "action": "\u2193 \u00b7 browse sessions",
+      "at": 2.895,
+      "action": "\u2192 \u00b7 open Qwen Code",
       "window": "open-agent-view"
     },
     {
-      "at": 3.141,
-      "action": "\u2191 \u00b7 browse sessions",
+      "at": 3.023,
+      "action": "Qwen Code \u00b7 native session",
+      "window": "Qwen Code"
+    },
+    {
+      "at": 5.149,
+      "action": "Shift+\u2190 \u00b7 return to dashboard",
+      "window": "Qwen Code"
+    },
+    {
+      "at": 5.527,
+      "action": "Dashboard \u00b7 Qwen Code stays available",
       "window": "open-agent-view"
     },
     {
-      "at": 3.766,
-      "action": "\u2191 \u00b7 browse sessions",
+      "at": 6.277,
+      "action": "\u2193 \u00b7 choose Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 4.393,
+      "at": 7.029,
+      "action": "\u2192 \u00b7 open Muse Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.155,
+      "action": "Muse Code \u00b7 native session",
+      "window": "Muse Code"
+    },
+    {
+      "at": 9.281,
+      "action": "Shift+\u2190 \u00b7 return to dashboard",
+      "window": "Muse Code"
+    },
+    {
+      "at": 9.661,
+      "action": "Dashboard \u00b7 Muse Code stays available",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.411,
+      "action": "\u2191 \u00b7 choose Kimi Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.161,
+      "action": "\u2191 \u00b7 choose Kimi Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.913,
       "action": "\u2192 \u00b7 open Kimi Code",
       "window": "open-agent-view"
     },
     {
-      "at": 7.704,
+      "at": 12.041,
+      "action": "Kimi Code \u00b7 native session",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 16.087,
       "action": "Type \u00b7 Look up https://open-agent-view.github.io/ and tell me what it is about.",
       "window": "Kimi Code"
     },
     {
-      "at": 8.431,
+      "at": 16.965,
       "action": "Enter \u00b7 send lookup prompt",
       "window": "Kimi Code"
     },
     {
-      "at": 13.559,
+      "at": 24.098,
       "action": "Shift+\u2190 \u00b7 return to dashboard",
       "window": "Kimi Code"
     },
     {
-      "at": 13.935,
+      "at": 24.476,
       "action": "Dashboard \u00b7 Kimi Code keeps running",
       "window": "open-agent-view"
     }

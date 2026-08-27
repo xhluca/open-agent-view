@@ -10,13 +10,22 @@ Style: Action,DejaVu Sans Mono,22,&H00F4F2DD,&H00F4F2DD,&H802E3133,&HC01A1408,-1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:00.77,0:00:01.89,Action,,0,0,0,,Dashboard · 11 coding harnesses
-Dialogue: 0,0:00:01.89,0:00:02.52,Action,,0,0,0,,↓ · browse sessions
-Dialogue: 0,0:00:02.52,0:00:03.14,Action,,0,0,0,,↓ · browse sessions
-Dialogue: 0,0:00:03.14,0:00:03.77,Action,,0,0,0,,↑ · browse sessions
-Dialogue: 0,0:00:03.77,0:00:04.39,Action,,0,0,0,,↑ · browse sessions
-Dialogue: 0,0:00:04.39,0:00:07.39,Action,,0,0,0,,→ · open Kimi Code
-Dialogue: 0,0:00:07.70,0:00:08.43,Action,,0,0,0,,Type · Look up https://open-agent-view.github.io/ and tell me what it is about.
-Dialogue: 0,0:00:08.43,0:00:11.43,Action,,0,0,0,,Enter · send lookup prompt
-Dialogue: 0,0:00:13.56,0:00:13.94,Action,,0,0,0,,Shift+← · return to dashboard
-Dialogue: 0,0:00:13.94,0:00:16.79,Action,,0,0,0,,Dashboard · Kimi Code keeps running
+Dialogue: 0,0:00:00.77,0:00:02.14,Action,,0,0,0,,Dashboard · 11 coding harnesses
+Dialogue: 0,0:00:02.14,0:00:02.90,Action,,0,0,0,,↓ · choose Qwen Code
+Dialogue: 0,0:00:02.90,0:00:03.70,Action,,0,0,0,,→ · open Qwen Code
+Dialogue: 0,0:00:03.02,0:00:05.15,Action,,0,0,0,,Qwen Code · native session
+Dialogue: 0,0:00:05.15,0:00:05.53,Action,,0,0,0,,Shift+← · return to dashboard
+Dialogue: 0,0:00:05.53,0:00:06.28,Action,,0,0,0,,Dashboard · Qwen Code stays available
+Dialogue: 0,0:00:06.28,0:00:07.03,Action,,0,0,0,,↓ · choose Muse Code
+Dialogue: 0,0:00:07.03,0:00:07.83,Action,,0,0,0,,→ · open Muse Code
+Dialogue: 0,0:00:07.16,0:00:09.28,Action,,0,0,0,,Muse Code · native session
+Dialogue: 0,0:00:09.28,0:00:09.66,Action,,0,0,0,,Shift+← · return to dashboard
+Dialogue: 0,0:00:09.66,0:00:10.41,Action,,0,0,0,,Dashboard · Muse Code stays available
+Dialogue: 0,0:00:10.41,0:00:11.16,Action,,0,0,0,,↑ · choose Kimi Code
+Dialogue: 0,0:00:11.16,0:00:11.91,Action,,0,0,0,,↑ · choose Kimi Code
+Dialogue: 0,0:00:11.91,0:00:12.71,Action,,0,0,0,,→ · open Kimi Code
+Dialogue: 0,0:00:12.04,0:00:15.04,Action,,0,0,0,,Kimi Code · native session
+Dialogue: 0,0:00:16.09,0:00:16.96,Action,,0,0,0,,Type · Look up https://open-agent-view.github.io/ and tell me what it is about.
+Dialogue: 0,0:00:16.96,0:00:19.96,Action,,0,0,0,,Enter · send lookup prompt
+Dialogue: 0,0:00:24.10,0:00:24.48,Action,,0,0,0,,Shift+← · return to dashboard
+Dialogue: 0,0:00:24.48,0:00:27.48,Action,,0,0,0,,Dashboard · Kimi Code keeps running

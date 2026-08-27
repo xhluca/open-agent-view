@@ -204,9 +204,16 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
         "muse-explanation", "qwen-explanation", "kimi-explanation",
       ];
       assert.equal(manifest.proof, "conversation");
-      assert.equal(manifest.sequence, "eleven-session-dashboard-open-live-lookup-return");
+      assert.equal(
+        manifest.sequence,
+        "eleven-session-dashboard-preview-two-open-kimi-lookup-return",
+      );
+      assert.equal(manifest.pacing_scale, 1.25);
+      assert.deepEqual(manifest.preview_targets, ["qwen", "muse"]);
+      assert.equal(manifest.preview_seconds, 2);
+      assert.equal(manifest.lookup_seconds, 7);
       assert.equal(manifest.session_count, 11);
-      assert.ok(["kimi", "qwen"].includes(manifest.target));
+      assert.equal(manifest.target, "kimi");
       for (const sessionName of overviewNames) {
         if (sessionName === "qwen-explanation") {
           assert.match(visibleOutput, /qwen-explanation|Explain what is Qwen Code/);
@@ -218,13 +225,26 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
         visibleOutput,
         /Look up https:\/\/open-agent-view\.github\.io\/ and tell me what it is about\./,
       );
-      assert.ok(manifest.actions.some((action) => action.action === "↑ · browse sessions"));
-      assert.ok(manifest.actions.some((action) => action.action === "↓ · browse sessions"));
-      assert.ok(manifest.actions.some((action) => /^→ · open (?:Kimi|Qwen) Code$/.test(action.action)));
+      assert.ok(manifest.actions.some((action) => action.action === "↑ · choose Kimi Code"));
+      assert.ok(manifest.actions.some((action) => action.action === "↓ · choose Qwen Code"));
+      assert.ok(manifest.actions.some((action) => action.action === "↓ · choose Muse Code"));
+      for (const provider of ["Qwen Code", "Muse Code", "Kimi Code"]) {
+        assert.ok(manifest.actions.some((action) => action.action === `→ · open ${provider}`));
+      }
+      for (const provider of ["Qwen Code", "Muse Code"]) {
+        const opened = manifest.actions.find((action) => action.action === `${provider} · native session`);
+        const returned = manifest.actions.find((action) => (
+          action.action === "Shift+← · return to dashboard" && action.at > opened?.at
+        ));
+        assert.ok(opened && returned);
+        assert.ok(returned.at - opened.at >= 2, `${provider} should remain open for two seconds`);
+      }
       const send = manifest.actions.find((action) => action.action === "Enter · send lookup prompt");
-      const returned = manifest.actions.find((action) => action.action === "Shift+← · return to dashboard");
+      const returned = manifest.actions.findLast(
+        (action) => action.action === "Shift+← · return to dashboard",
+      );
       assert.ok(send && returned);
-      assert.ok(returned.at - send.at >= 5, "overview should observe the live response for five seconds");
+      assert.ok(returned.at - send.at >= 7, "overview should observe the live response for seven seconds");
       assert.match(visibleOutput, /Open Agent View/);
     } else if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);

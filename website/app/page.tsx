@@ -175,7 +175,7 @@ export default function Home() {
         <DemoPlayer
           story="story-overview"
           label="11 HARNESS SESSIONS · ONE DASHBOARD"
-          caption="Real Open Agent View dashboard + native harness TUI"
+          caption="Real Open Agent View dashboard + native harness TUIs"
           actionPlacement="subtitle"
         />
       </section>

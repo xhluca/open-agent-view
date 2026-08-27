@@ -34,7 +34,7 @@ agg \
   --theme github-dark \
   --font-size 16 \
   --speed 1 \
-  --idle-time-limit 5 \
+  --idle-time-limit 8 \
   --last-frame-duration 3 \
   "$cast" "$public_dir/oav-demo-raw.gif"
 

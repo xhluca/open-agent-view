@@ -36,8 +36,9 @@ The page has four finite terminal walkthroughs implemented by
 [`website/public/site.js`](../website/public/site.js):
 
 1. the overview starts with eleven genuine coding-harness sessions, browses
-   them with arrow keys, opens one native CLI, sends a new lookup prompt, waits
-   five seconds, and returns to the live dashboard;
+   them with arrow keys, opens two native CLIs for two seconds each, returns to
+   Kimi Code, sends a new lookup prompt, observes the real response for seven
+   seconds, and returns to the live dashboard;
 2. the install story installs from the public URL, opens the app, types
    `/harness`, and stops with every option visible;
 3. twelve tabbed harness stories begin at the same `/harness` picker, choose

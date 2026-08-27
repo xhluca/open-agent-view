@@ -2,9 +2,10 @@
 
 `open-agent-view.gif` and `open-agent-view.png` come from one genuine terminal
 recording made on 2026-08-27. It begins with eleven real coding-harness sessions
-in the v0.1.41 dashboard, browses them with arrow keys, opens a real native
-coding-harness TUI, sends a lookup prompt, observes it for five seconds, and returns to the
-dashboard without waiting for generation to finish. It does not generate HTML
+in the v0.1.41 dashboard, browses them with arrow keys, opens two other native
+coding-harness TUIs, then opens Kimi Code, sends a lookup prompt, observes the
+real response for seven seconds, and returns to the dashboard without waiting
+for generation to finish. It does not generate HTML
 rows that imitate a terminal. Key actions are burned from the separate action
 manifest as a subtitle overlay; the recorded terminal bytes remain unchanged.
 

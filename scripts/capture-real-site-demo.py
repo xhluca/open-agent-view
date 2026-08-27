@@ -1822,42 +1822,83 @@ def capture_overview_story(
 
     action_start_index = len(terminal.actions)
     start = terminal.repaint_start()
+    pacing_scale = 1.25
     terminal.remember("Dashboard · 11 coding harnesses", "open-agent-view")
-    time.sleep(1.0)
+    time.sleep(1.0 * pacing_scale)
 
-    for key, label in (
-        ("Down", "↓ · browse sessions"),
-        ("Down", "↓ · browse sessions"),
-        ("Up", "↑ · browse sessions"),
-        ("Up", "↑ · browse sessions"),
-    ):
-        terminal.key(key, label, "open-agent-view")
-        time.sleep(0.5)
+    preview_specs = [
+        next(spec for spec in SEQUENCE_DEMOS if spec.id == preview_id)
+        for preview_id in ("qwen", "muse")
+    ]
+    for preview_spec in preview_specs:
+        terminal.key(
+            "Down",
+            f"↓ · choose {preview_spec.label}",
+            "open-agent-view",
+        )
+        terminal.wait_selected_row(preview_spec.label, 20)
+        time.sleep(0.5 * pacing_scale)
+        terminal.key(
+            "Right",
+            f"→ · open {preview_spec.label}",
+            "open-agent-view",
+        )
+        terminal.wait_screen_without(APP_HEADER_PATTERN, 45)
+        terminal.wait_native_screen(preview_spec.ready_pattern, 45)
+        terminal.remember(
+            f"{preview_spec.label} · native session",
+            preview_spec.label,
+        )
+        # Let the real provider TUI remain readable before returning to the
+        # same selected dashboard row.
+        time.sleep(2.0)
+        terminal.key(
+            "S-Left",
+            "Shift+← · return to dashboard",
+            preview_spec.label,
+        )
+        terminal.wait_screen(APP_HEADER_PATTERN, 45)
+        terminal.wait_selected_row(preview_spec.label, 20)
+        terminal.remember(
+            f"Dashboard · {preview_spec.label} stays available",
+            "open-agent-view",
+        )
+        time.sleep(0.5 * pacing_scale)
+
+    for _ in range(2):
+        terminal.key("Up", "↑ · choose Kimi Code", "open-agent-view")
+        time.sleep(0.5 * pacing_scale)
     terminal.wait_selected_row(target_spec.label, 20)
 
     terminal.key("Right", f"→ · open {target_spec.label}", "open-agent-view")
     terminal.wait_screen_without(APP_HEADER_PATTERN, 45)
     terminal.wait_native_screen(target_spec.ready_pattern, 45)
-    time.sleep(0.6)
+    terminal.remember(f"{target_spec.label} · native session", target_spec.label)
+    time.sleep(0.6 * pacing_scale)
 
     prompt = (
         "Look up https://open-agent-view.github.io/ "
         "and tell me what it is about."
     )
-    terminal.type_text(prompt, f"Type · {prompt}", target_spec.label, 0.032)
+    terminal.type_text(
+        prompt,
+        f"Type · {prompt}",
+        target_spec.label,
+        0.032 * pacing_scale,
+    )
     terminal.wait_screen(re.escape(prompt), 30)
-    time.sleep(0.6)
+    time.sleep(0.6 * pacing_scale)
     terminal.key("Enter", "Enter · send lookup prompt", target_spec.label)
-    # This is intentionally a literal five-second observation window. The
+    # This is intentionally a literal seven-second observation window. The
     # overview ends without waiting for the provider to finish generating.
-    time.sleep(5.0)
+    time.sleep(7.0)
     terminal.key("S-Left", "Shift+← · return to dashboard", target_spec.label)
     terminal.wait_screen(APP_HEADER_PATTERN, 45)
     terminal.remember(
         f"Dashboard · {target_spec.label} keeps running",
         "open-agent-view",
     )
-    time.sleep(1.5)
+    time.sleep(2.0)
     end = terminal.timeline_time()
 
     target = output / "overview.cast"
@@ -1883,7 +1924,11 @@ def capture_overview_story(
             {
                 "duration": end - start + 1.35 - primed_lead,
                 "proof": "conversation",
-                "sequence": "eleven-session-dashboard-open-live-lookup-return",
+                "sequence": "eleven-session-dashboard-preview-two-open-kimi-lookup-return",
+                "pacing_scale": pacing_scale,
+                "preview_targets": [spec.id for spec in preview_specs],
+                "preview_seconds": 2,
+                "lookup_seconds": 7,
                 "target": target_spec.id,
                 "session_count": 11,
                 "actions": actions,
