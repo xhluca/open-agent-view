@@ -207,7 +207,7 @@ class RealCastPlayer {
       // Playback buttons own their state transition. Letting focus start the
       // player first makes the very first Play click immediately toggle it
       // back to paused.
-      if (event.target.closest?.("[data-demo-action]")) {
+      if (event.target.closest?.('[data-demo-action="pause"]')) {
         return;
       }
       if (!this.manuallyPaused && !this.ended) {
