@@ -18,7 +18,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use super::native_owned::{poll_unique, sanitize, validate_id, NativeOwnership, OwnedNativeSession};
+use super::native_owned::{
+    poll_unique, sanitize, validate_id, NativeOwnership, OwnedNativeSession,
+};
 use super::{DiscoveryRequest, SessionSource};
 use crate::control::{
     run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
@@ -242,24 +244,18 @@ impl ProviderController for SessionMigrateNativeController {
 
     fn authenticate(&self) -> Result<ControlOutcome> {
         match self.provider {
-            Provider::OhMyPi => run_native_authentication(
-                &self.executable,
-                &["--no-session"],
-                Provider::OhMyPi,
-            ),
+            Provider::OhMyPi => {
+                run_native_authentication(&self.executable, &["--no-session"], Provider::OhMyPi)
+            }
             Provider::Grok => {
                 run_native_authentication(&self.executable, &["login"], Provider::Grok)
             }
-            Provider::KiloCode => run_native_authentication(
-                &self.executable,
-                &["auth", "login"],
-                Provider::KiloCode,
-            ),
-            Provider::OpenHands => run_native_authentication(
-                &self.executable,
-                &["login"],
-                Provider::OpenHands,
-            ),
+            Provider::KiloCode => {
+                run_native_authentication(&self.executable, &["auth", "login"], Provider::KiloCode)
+            }
+            Provider::OpenHands => {
+                run_native_authentication(&self.executable, &["login"], Provider::OpenHands)
+            }
             _ => bail!("unsupported native harness"),
         }
     }
@@ -279,13 +275,20 @@ impl ProviderController for SessionMigrateNativeController {
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
         if request.provider != self.provider {
-            bail!("the {} controller cannot launch another provider", self.provider.label());
+            bail!(
+                "the {} controller cannot launch another provider",
+                self.provider.label()
+            );
         }
         require_cwd(&request.cwd, self.provider.label())?;
         if !valid_text(&request.prompt) {
             bail!("{} prompt is invalid", self.provider.label());
         }
-        if request.model.as_deref().is_some_and(|model| !valid_text(model)) {
+        if request
+            .model
+            .as_deref()
+            .is_some_and(|model| !valid_text(model))
+        {
             bail!("{} model is invalid", self.provider.label());
         }
 
@@ -300,15 +303,17 @@ impl ProviderController for SessionMigrateNativeController {
         .map(|record| record.session_id)
         .collect::<BTreeSet<_>>();
         let launch_nonce = crate::native_session::new_session_id()?;
-        let launch_key = format!("{}:host:launch-{launch_nonce}", provider_slug(&self.provider));
-        let command = launch_command(
-            &self.provider,
-            &self.executable,
-            request,
-        )?;
+        let launch_key = format!(
+            "{}:host:launch-{launch_nonce}",
+            provider_slug(&self.provider)
+        );
+        let command = launch_command(&self.provider, &self.executable, request)?;
         let exit = crate::native_session::run(command, &launch_key)?;
         let record = poll_unique(
-            &format!("one new {} session in the requested workspace", self.provider.label()),
+            &format!(
+                "one new {} session in the requested workspace",
+                self.provider.label()
+            ),
             Duration::from_secs(8),
             || {
                 Ok(list_sessions(
@@ -320,7 +325,8 @@ impl ProviderController for SessionMigrateNativeController {
                 )?
                 .into_iter()
                 .filter(|record| {
-                    !before.contains(&record.session_id) && same_workspace(&record.cwd, &request.cwd)
+                    !before.contains(&record.session_id)
+                        && same_workspace(&record.cwd, &request.cwd)
                 })
                 .collect())
             },
@@ -380,7 +386,10 @@ impl ProviderController for SessionMigrateNativeController {
             );
         }
         if !crate::native_session::is_backgrounded(&session.id) {
-            bail!("{} is not backgrounded in this dashboard process", self.provider.label());
+            bail!(
+                "{} is not backgrounded in this dashboard process",
+                self.provider.label()
+            );
         }
         crate::native_session::terminate(&session.id)?;
         Ok(ControlOutcome {
@@ -421,7 +430,10 @@ fn require_supported(provider: &Provider) -> Result<()> {
     ) {
         Ok(())
     } else {
-        bail!("{} is not a Session Migrate native harness", provider.label())
+        bail!(
+            "{} is not a Session Migrate native harness",
+            provider.label()
+        )
     }
 }
 
@@ -502,9 +514,10 @@ fn read_owned_session(
         return Ok(None);
     };
     if let Err(error) = ensure_real_descendant(data_root, path) {
-        if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
-            error.kind() == std::io::ErrorKind::NotFound
-        }) {
+        if error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+        {
             return Ok(None);
         }
         return Err(error);
@@ -543,7 +556,11 @@ fn stored_to_agent(
     let fallback_name = owned
         .map(|record| record.name.clone())
         .unwrap_or_else(|| format!("{} session", provider.label()));
-    let lifecycle = if backgrounded { "backgrounded" } else { "saved" };
+    let lifecycle = if backgrounded {
+        "backgrounded"
+    } else {
+        "saved"
+    };
     let raw_state = record
         .model
         .as_deref()
@@ -733,10 +750,13 @@ fn list_omp_sessions(root: &Path, limit: usize) -> Result<Vec<StoredSession>> {
     let files = walk_matching(&root.join("sessions"), 3, limit, |path| {
         path.extension().and_then(|value| value.to_str()) == Some("jsonl")
     })?;
-    files.into_iter().filter_map(|path| match parse_omp_session(&path) {
-        Ok(session) => Some(Ok(session)),
-        Err(_) => None,
-    }).collect()
+    files
+        .into_iter()
+        .filter_map(|path| match parse_omp_session(&path) {
+            Ok(session) => Some(Ok(session)),
+            Err(_) => None,
+        })
+        .collect()
 }
 
 fn parse_omp_session(path: &Path) -> Result<StoredSession> {
@@ -784,7 +804,8 @@ fn parse_omp_session(path: &Path) -> Result<StoredSession> {
     validate_provider_id(&Provider::OhMyPi, &session_id)?;
     let cwd = cwd.context("Oh My Pi session omitted its workspace")?;
     require_cwd(&cwd, "Oh My Pi")?;
-    let name = title.unwrap_or_else(|| summary.clone().unwrap_or_else(|| "Oh My Pi session".into()));
+    let name =
+        title.unwrap_or_else(|| summary.clone().unwrap_or_else(|| "Oh My Pi session".into()));
     Ok(StoredSession {
         session_id,
         cwd,
@@ -801,10 +822,13 @@ fn list_grok_sessions(root: &Path, limit: usize) -> Result<Vec<StoredSession>> {
     let files = walk_matching(&root.join("sessions"), 3, limit, |path| {
         path.file_name().and_then(|value| value.to_str()) == Some("summary.json")
     })?;
-    files.into_iter().filter_map(|path| {
-        let directory = path.parent()?.to_owned();
-        parse_grok_session(&directory).ok().map(Ok)
-    }).collect()
+    files
+        .into_iter()
+        .filter_map(|path| {
+            let directory = path.parent()?.to_owned();
+            parse_grok_session(&directory).ok().map(Ok)
+        })
+        .collect()
 }
 
 fn parse_grok_session(directory: &Path) -> Result<StoredSession> {
@@ -834,20 +858,24 @@ fn parse_grok_session(directory: &Path) -> Result<StoredSession> {
                 let Ok(update) = serde_json::from_str::<Value>(&line) else {
                     continue;
                 };
-            let kind = text_at(&update, "/params/update/sessionUpdate");
-            if matches!(kind.as_deref(), Some("user_message_chunk" | "agent_message_chunk")) {
-                if text_at(&update, "/params/sessionId").as_deref() != Some(&session_id) {
-                    bail!("Grok update session ID disagreed with its summary");
-                }
-                if let Some(text) = text_at(&update, "/params/update/content/text") {
+                let kind = text_at(&update, "/params/update/sessionUpdate");
+                if matches!(
+                    kind.as_deref(),
+                    Some("user_message_chunk" | "agent_message_chunk")
+                ) {
+                    if text_at(&update, "/params/sessionId").as_deref() != Some(&session_id) {
+                        bail!("Grok update session ID disagreed with its summary");
+                    }
+                    if let Some(text) = text_at(&update, "/params/update/content/text") {
                         latest = text;
                     }
                 }
             }
         }
-        Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
-            error.kind() == std::io::ErrorKind::NotFound
-        }) => {}
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) => {}
         Err(error) => return Err(error),
     }
     Ok(StoredSession {
@@ -903,7 +931,9 @@ fn parse_kilo_sessions(input: &str) -> Result<Vec<StoredSession>> {
         return Ok(Vec::new());
     }
     let rows: Value = serde_json::from_str(input).context("invalid Kilo Code session JSON")?;
-    let rows = rows.as_array().context("Kilo Code session output was not an array")?;
+    let rows = rows
+        .as_array()
+        .context("Kilo Code session output was not an array")?;
     rows.iter()
         .map(|row| {
             let session_id = text_at(row, "/id").context("Kilo Code session omitted its ID")?;
@@ -976,7 +1006,9 @@ fn list_openhands_models(root: &Path, limit: usize) -> Result<Vec<String>> {
 
 fn parse_openhands_session(directory: &Path) -> Result<StoredSession> {
     let conversation = if directory.file_name().and_then(|value| value.to_str()) == Some("events") {
-        directory.parent().context("OpenHands events directory has no conversation")?
+        directory
+            .parent()
+            .context("OpenHands events directory has no conversation")?
     } else {
         directory
     };
@@ -993,9 +1025,13 @@ fn parse_openhands_session(directory: &Path) -> Result<StoredSession> {
     let base_state_path = conversation.join("base_state.json");
     let base = match read_json(&base_state_path, MAX_JSON_BYTES, "OpenHands base state") {
         Ok(value) => Some(value),
-        Err(error) if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
-            error.kind() == std::io::ErrorKind::NotFound
-        }) => None,
+        Err(error)
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound) =>
+        {
+            None
+        }
         Err(error) => return Err(error),
     };
     if let Some(id) = base.as_ref().and_then(|value| text_at(value, "/id")) {
@@ -1272,7 +1308,10 @@ fn same_workspace(left: &Path, right: &Path) -> bool {
 
 fn validate_session(provider: &Provider, session: &AgentSession) -> Result<()> {
     if &session.provider != provider || session.runtime != Runtime::Host {
-        bail!("the host {} controller does not own this runtime", provider.label());
+        bail!(
+            "the host {} controller does not own this runtime",
+            provider.label()
+        );
     }
     validate_provider_id(provider, &session.provider_session_id)
 }
@@ -1361,7 +1400,10 @@ mod tests {
         .unwrap();
         assert_eq!(parsed[0].session_id, "ses_fixture");
         assert_eq!(parsed[0].cwd, Path::new("/work"));
-        assert_eq!(parsed[0].updated_at, Some(UNIX_EPOCH + Duration::from_secs(2)));
+        assert_eq!(
+            parsed[0].updated_at,
+            Some(UNIX_EPOCH + Duration::from_secs(2))
+        );
     }
 
     #[test]
@@ -1420,17 +1462,16 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(state.parent().unwrap(), fs::Permissions::from_mode(0o700)).unwrap();
+            fs::set_permissions(state.parent().unwrap(), fs::Permissions::from_mode(0o700))
+                .unwrap();
         }
         let ownership = SessionMigrateNativeOwnership::load(Provider::OhMyPi, state).unwrap();
-        let source = SessionMigrateNativeSource::host(
-            Provider::OhMyPi,
-            "omp",
-            data,
-            ownership,
-        )
-        .unwrap();
-        assert!(source.discover(&DiscoveryRequest::default()).unwrap().is_empty());
+        let source =
+            SessionMigrateNativeSource::host(Provider::OhMyPi, "omp", data, ownership).unwrap();
+        assert!(source
+            .discover(&DiscoveryRequest::default())
+            .unwrap()
+            .is_empty());
         let external = source
             .discover(&DiscoveryRequest {
                 include_external: true,
@@ -1491,8 +1532,8 @@ mod tests {
 
         let nested_link = root_target.join("nested");
         symlink(directory.path(), &nested_link).unwrap();
-        let error = ensure_real_descendant(&root_target, &nested_link.join("target.json"))
-            .unwrap_err();
+        let error =
+            ensure_real_descendant(&root_target, &nested_link.join("target.json")).unwrap_err();
         assert!(error.to_string().contains("must not contain symlinks"));
     }
 
@@ -1506,7 +1547,11 @@ mod tests {
             format!(r#"{{"info":{{"id":"{UUID}","cwd":"/work"}}}}"#),
         )
         .unwrap();
-        fs::write(grok.join("updates.jsonl"), vec![b'x'; MAX_JOURNAL_BYTES as usize + 1]).unwrap();
+        fs::write(
+            grok.join("updates.jsonl"),
+            vec![b'x'; MAX_JOURNAL_BYTES as usize + 1],
+        )
+        .unwrap();
         assert!(parse_grok_session(&grok).is_err());
 
         let openhands = directory.path().join(UUID.replace('-', ""));

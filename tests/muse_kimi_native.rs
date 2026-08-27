@@ -371,19 +371,20 @@ fn write_executable(path: &Path, body: &str) {
 fn outer_pty() -> (File, File) {
     let mut master = -1;
     let mut slave = -1;
-    let size = libc::winsize {
+    let mut size = libc::winsize {
         ws_row: 24,
         ws_col: 100,
         ws_xpixel: 0,
         ws_ypixel: 0,
     };
+    let size_ptr = &mut size as *mut libc::winsize;
     let result = unsafe {
         libc::openpty(
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            &size,
+            std::ptr::null_mut(),
+            size_ptr,
         )
     };
     assert_eq!(result, 0);

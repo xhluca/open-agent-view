@@ -121,9 +121,7 @@ impl QwenOwnership {
         // Only the already-validated owner-only file may add authority.
         if validate_private_state_path(&self.path).is_ok() {
             if let Ok(input) = fs::read_to_string(&self.path) {
-                if let Ok(persisted) =
-                    serde_json::from_str::<BTreeSet<OwnedQwenSession>>(&input)
-                {
+                if let Ok(persisted) = serde_json::from_str::<BTreeSet<OwnedQwenSession>>(&input) {
                     records.extend(persisted);
                 }
             }
@@ -851,11 +849,7 @@ mod tests {
                 "cross-handle session",
             )
             .unwrap();
-        let source = QwenSource::with_runner(
-            "qwen",
-            discovery_ownership,
-            Arc::new(EmptyRunner),
-        );
+        let source = QwenSource::with_runner("qwen", discovery_ownership, Arc::new(EmptyRunner));
 
         let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
 
@@ -877,11 +871,7 @@ mod tests {
                 "launch prompt",
             )
             .unwrap();
-        let source = QwenSource::with_runner(
-            "qwen",
-            discovery_ownership,
-            Arc::new(FakeRunner),
-        );
+        let source = QwenSource::with_runner("qwen", discovery_ownership, Arc::new(FakeRunner));
 
         let sessions = source.discover(&DiscoveryRequest::default()).unwrap();
 

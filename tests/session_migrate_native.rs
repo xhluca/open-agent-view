@@ -112,7 +112,10 @@ printf '%s\n' '{{"type":"title","v":1,"title":"OMP task","updatedAt":"2026-08-26
         omp_owner,
     )
     .unwrap();
-    assert_eq!(omp_controller.available_models().unwrap(), ["anthropic/opus"]);
+    assert_eq!(
+        omp_controller.available_models().unwrap(),
+        ["anthropic/opus"]
+    );
     exercise(
         Provider::OhMyPi,
         &omp,
@@ -160,13 +163,7 @@ printf '%s\n' '{{"params":{{"sessionId":"{id}","update":{{"sessionUpdate":"agent
     )
     .unwrap();
     assert_eq!(grok_controller.available_models().unwrap(), ["grok-4.6"]);
-    exercise(
-        Provider::Grok,
-        &grok,
-        grok_root,
-        Some("grok-4.6"),
-        UUID,
-    );
+    exercise(Provider::Grok, &grok, grok_root, Some("grok-4.6"), UUID);
     grok_controller.authenticate().unwrap();
     let grok_args = fs::read_to_string(grok_log).unwrap();
     assert!(grok_args.contains("--model grok-4.6"));

@@ -845,31 +845,29 @@ if [ "${1:-}" = models ]; then printf '%s\n' 'anthropic/claude'; exit 0; fi
 exit 0"#,
         );
         let openhands = write_provider("openhands", "exit 0");
-        command
-            .env("LLM_MODEL", "openai/fixture")
-            .args([
-                "--omp-bin",
-                omp.to_str().expect("UTF-8 OMP path"),
-                "--grok-bin",
-                grok.to_str().expect("UTF-8 Grok path"),
-                "--kilo-bin",
-                kilo.to_str().expect("UTF-8 Kilo path"),
-                "--openhands-bin",
-                openhands.to_str().expect("UTF-8 OpenHands path"),
-                "--no-host-claude",
-                "--no-host-codex",
-                "--no-host-pi",
-                "--no-host-opencode",
-                "--no-host-cursor",
-                "--no-host-copilot",
-                "--no-host-antigravity",
-                "--no-host-mistral-vibe",
-                "--no-host-muse",
-                "--no-host-qwen",
-                "--no-host-kimi",
-                "--refresh-ms",
-                "60000",
-            ]);
+        command.env("LLM_MODEL", "openai/fixture").args([
+            "--omp-bin",
+            omp.to_str().expect("UTF-8 OMP path"),
+            "--grok-bin",
+            grok.to_str().expect("UTF-8 Grok path"),
+            "--kilo-bin",
+            kilo.to_str().expect("UTF-8 Kilo path"),
+            "--openhands-bin",
+            openhands.to_str().expect("UTF-8 OpenHands path"),
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-cursor",
+            "--no-host-copilot",
+            "--no-host-antigravity",
+            "--no-host-mistral-vibe",
+            "--no-host-muse",
+            "--no-host-qwen",
+            "--no-host-kimi",
+            "--refresh-ms",
+            "60000",
+        ]);
     });
 
     app.wait_for("extended-harness startup", |screen| {

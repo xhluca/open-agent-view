@@ -385,19 +385,20 @@ fn spawn_pty(command: &mut Command) -> Result<(std::process::Child, std::fs::Fil
     }
     let mut master_fd = -1;
     let mut slave_fd = -1;
-    let size = terminal_size(libc::STDIN_FILENO).unwrap_or(libc::winsize {
+    let mut size = terminal_size(libc::STDIN_FILENO).unwrap_or(libc::winsize {
         ws_row: 24,
         ws_col: 80,
         ws_xpixel: 0,
         ws_ypixel: 0,
     });
+    let size_ptr = &mut size as *mut libc::winsize;
     let opened = unsafe {
         libc::openpty(
             &mut master_fd,
             &mut slave_fd,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            &size,
+            std::ptr::null_mut(),
+            size_ptr,
         )
     };
     if opened != 0 {
@@ -427,14 +428,12 @@ fn spawn_pty(command: &mut Command) -> Result<(std::process::Child, std::fs::Fil
             Ok(())
         });
     }
-    let child = command
-        .spawn()
-        .with_context(|| {
-            format!(
-                "failed to start provider-native client {program} in {}",
-                working_directory.display()
-            )
-        })?;
+    let child = command.spawn().with_context(|| {
+        format!(
+            "failed to start provider-native client {program} in {}",
+            working_directory.display()
+        )
+    })?;
     Ok((child, master))
 }
 

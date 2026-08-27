@@ -15,8 +15,8 @@ use open_agent_view::adapters::{
     KimiSource, ManagedDockerCreateSpec, ManagedDockerService, ManagedDockerStatus,
     MistralVibeController, MistralVibeOwnership, MistralVibeSource, MuseController, MuseOwnership,
     MuseSource, OpenCodeController, OpenCodeSource, PiController, PiSource, QwenController,
-    QwenOwnership, QwenSource, TerminalHarness,
-    SessionMigrateNativeController, SessionMigrateNativeOwnership, SessionMigrateNativeSource,
+    QwenOwnership, QwenSource, SessionMigrateNativeController, SessionMigrateNativeOwnership,
+    SessionMigrateNativeSource, TerminalHarness,
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
@@ -810,7 +810,12 @@ fn main() -> Result<()> {
         for (enabled, provider, executable, ownership) in [
             (omp_enabled, Provider::OhMyPi, cli.omp_bin, omp_ownership),
             (grok_enabled, Provider::Grok, cli.grok_bin, grok_ownership),
-            (kilo_enabled, Provider::KiloCode, cli.kilo_bin, kilo_ownership),
+            (
+                kilo_enabled,
+                Provider::KiloCode,
+                cli.kilo_bin,
+                kilo_ownership,
+            ),
             (
                 openhands_enabled,
                 Provider::OpenHands,

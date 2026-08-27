@@ -14,9 +14,9 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `CHOKIDAR_USEPOLLING=true npm run dev -- --host 127.0.0.1 --port ${port}`,
+    command: `npm run export && node scripts/serve-static.mjs ${port}`,
     url: baseURL,
-    // Never accept an unrelated development server as the site under test.
+    // Exercise the exact static export that is published, not vinext's dev server.
     reuseExistingServer: false,
     timeout: 120_000,
   },

@@ -8,6 +8,18 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.43] - 2026-08-27
+
+### Fixed
+
+- Native PTY allocation now passes mutable terminal metadata on macOS, matching
+  the current `libc` signature without changing Linux behavior.
+- The hosted quality gate now uses the exact Rust 1.75 formatter required by
+  the repository's minimum supported toolchain.
+- Website browser tests serve the completed static export instead of waiting
+  for a development watcher, removing the hosted-runner startup timeout while
+  testing the same files that are published.
+
 ## [0.1.42] - 2026-08-27
 
 ### Added
