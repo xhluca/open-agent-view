@@ -2,9 +2,8 @@
 
 <h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="52" height="52"> Open Agent View</h1>
 
-**The open agent view for every local coding harness—monitor parallel sessions,
-see what needs input, and step back into each provider's native terminal from
-one queue.**
+**One agent view for every coding harness.**  
+See what’s running, what needs you, and where to step in—across 11+ harnesses.
 
 <table align="center">
   <tr>
