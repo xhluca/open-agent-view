@@ -1,6 +1,6 @@
 # Demo asset provenance
 
-`website/public/oav-demo.mp4`, `open-agent-view.gif`, and
+`website/public/open-agent-view-demo.mp4`, `open-agent-view.gif`, and
 `open-agent-view.png` come from one genuine terminal recording made on
 2026-08-27. It begins with eleven real coding-harness sessions
 in the v0.1.41 dashboard, browses them with arrow keys, opens two other native

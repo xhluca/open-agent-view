@@ -36,9 +36,9 @@ The installer also adds the shorter `opav` command. Start typing a task, press
 `Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
 available models.
 
-[![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)](https://open-agent-view.github.io/oav-demo.mp4)
+[![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)](https://open-agent-view.github.io/open-agent-view-demo.mp4)
 
-<p align="center"><a href="https://open-agent-view.github.io/oav-demo.mp4"><strong>Watch the demo as MP4 →</strong></a></p>
+<p align="center"><a href="https://open-agent-view.github.io/open-agent-view-demo.mp4"><strong>Watch the demo as MP4 →</strong></a></p>
 
 ## Why Open Agent View?
 

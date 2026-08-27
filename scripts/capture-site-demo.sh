@@ -6,7 +6,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 public_dir="$repo_root/website/public"
 cast="$public_dir/oav-demo.cast"
 gif="$public_dir/oav-demo.gif"
-video="$public_dir/oav-demo.mp4"
+video="$public_dir/open-agent-view-demo.mp4"
 poster="$public_dir/oav-demo.png"
 
 for command in python3 agg ffmpeg ffprobe; do
