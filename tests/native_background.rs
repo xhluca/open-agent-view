@@ -132,7 +132,10 @@ fn boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen
         Duration::from_secs(4),
     );
 
-    let deadline = Instant::now() + Duration::from_secs(4);
+    // macOS CI can take several seconds to reap a stopped process group after
+    // the final reattach. Keep the assertion bounded without making the
+    // platform scheduler part of the behavior under test.
+    let deadline = Instant::now() + Duration::from_secs(10);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break status;
@@ -156,12 +159,12 @@ fn queued_task_reaches_only_the_authenticated_native_editor_in_a_real_pty() {
             "-c",
             r##"stty raw -echo
 printf '\033[2J\033[HRun /login or /provider to get started.'
-if IFS= read -r -t 0.35 -n 1 early; then
+if IFS= read -r -t 1 -n 1 early; then
   printf '\r\nEARLY_INPUT:%s' "$early"
   exit 71
 fi
 printf '\r\nSend /help for help information.'
-IFS= read -r -N 29 prompt
+IFS= read -r -n 29 prompt
 prompt=${prompt%$'\r'}
 printf '\r\nRECEIVED_TASK:%s' "$prompt"
 "##,
