@@ -23,11 +23,6 @@ provider's native terminal—all from one queue.
 
 ![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)
 
-> [!NOTE]
-> Open Agent View is an early preview. Prebuilt releases currently target
-> Linux x86-64 and use your existing GitHub CLI authentication to download the
-> private release.
-
 ## Why Open Agent View?
 
 Claude Code users already know the value of an agent view: one place to follow
@@ -50,7 +45,7 @@ that created it; selecting a row opens that tool's native interface.
 
 ## Quick start
 
-Install the prebuilt binary—no Rust toolchain or Cargo required:
+Install Open Agent View:
 
 ```console
 curl -fsSL https://open-agent-view.github.io/install.sh | bash
@@ -136,18 +131,6 @@ operation is available.
 
 Exact CLI versions, model discovery, authentication behavior, platform limits,
 and provider-specific caveats live in the [provider notes](docs/exploration/README.md).
-
-## Sessions stay with their tools
-
-OAV reads each installed harness's session state and builds one local index.
-Opening a row hands the terminal to that harness; returning brings the shared
-queue back. Provider credentials and conversation history are not copied into
-the project.
-
-By default, OAV shows sessions it created or explicitly manages. Use
-`--include-external` only when you want bounded, provider-wide history. Read the
-[control and ownership model](docs/control-model.md) for the complete safety
-contract.
 
 ## Documentation
 
