@@ -2,7 +2,7 @@
 
 <h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="52" height="52"> Open Agent View</h1>
 
-**One agent view for every coding harness.**  
+**One agent view for every coding harness.**<br>
 See what’s running, what needs you, and where to step in—across 11+ harnesses.
 
 <table align="center">
