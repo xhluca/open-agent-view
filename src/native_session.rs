@@ -79,13 +79,35 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
     if terminal_is_interactive() {
         return run_pty(command, session_key, None);
     }
-    let status = command
+    command
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    #[cfg(unix)]
+    let status =
+        status_retrying_text_busy(&mut command).context("failed to open provider session")?;
+    #[cfg(not(unix))]
+    let status = command
         .status()
         .context("failed to open provider session")?;
     Ok(NativeSessionExit::Exited(status))
+}
+
+#[cfg(unix)]
+fn status_retrying_text_busy(command: &mut Command) -> io::Result<ExitStatus> {
+    const RETRIES: usize = 8;
+    const RETRY_DELAY: Duration = Duration::from_millis(25);
+
+    for attempt in 0..=RETRIES {
+        match command.status() {
+            Ok(status) => return Ok(status),
+            Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < RETRIES => {
+                thread::sleep(RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("the bounded provider spawn loop always returns")
 }
 
 /// Run a fresh provider-native client and submit input only after its parsed
@@ -1037,6 +1059,28 @@ fn truncate_to_columns(value: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn native_launch_retries_a_transient_text_busy_executable() {
+        use std::fs::OpenOptions;
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("provider");
+        std::fs::write(&executable, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let writer = OpenOptions::new().write(true).open(&executable).unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(60));
+            drop(writer);
+        });
+
+        let mut command = Command::new(&executable);
+        let status = status_retrying_text_busy(&mut command).unwrap();
+        release.join().unwrap();
+        assert!(status.success());
+    }
 
     #[cfg(unix)]
     #[test]

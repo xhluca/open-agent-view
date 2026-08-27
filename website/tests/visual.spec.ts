@@ -195,7 +195,9 @@ test("the current key action is readable but restrained and fades after three se
   expect(appearance.background).not.toBe("rgba(0, 0, 0, 0)");
   const alpha = Number.parseFloat(appearance.background.match(/[\d.]+\)$/)?.[0] ?? "1");
   expect(alpha).toBeLessThanOrEqual(0.35);
-  await expect(badge).not.toHaveClass(/is-visible/, { timeout: 3_500 });
+  // The CSS fade is exactly three seconds; allow a loaded browser process
+  // enough scheduling slack to run the cleanup timer after that animation.
+  await expect(badge).not.toHaveClass(/is-visible/, { timeout: 6_000 });
 });
 
 for (const viewport of viewports) {

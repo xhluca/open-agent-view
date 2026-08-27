@@ -236,7 +236,7 @@ printf '{"sessionId":"%s","sessionDir":"%s","workDir":"%s"}\n' "$id" "$dir" "$OA
 printf '{"title":"Kimi parser","lastPrompt":"starting","createdAt":1700000000000,"updatedAt":1700000000001,"cwd":"%s"}\n' "$OAV_WORKSPACE" > "$dir/state.json"
 stty raw -echo
 printf '\033[2J\033[HKIMI_LOGIN_SCREEN Run /login or /provider to get started.'
-if IFS= read -r -t 0.25 -n 1 early; then
+if IFS= read -r -t 1 -n 1 early; then
   printf '\r\nEARLY_TASK:%s' "$early"
   exit 71
 fi

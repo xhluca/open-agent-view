@@ -13,7 +13,7 @@ harnesses.
 </table>
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
-[![Release](https://img.shields.io/badge/release-v0.1.43-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.1.44-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
