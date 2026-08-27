@@ -1,7 +1,8 @@
 # Demo asset provenance
 
-`open-agent-view.gif` and `open-agent-view.png` come from one genuine terminal
-recording made on 2026-08-27. It begins with eleven real coding-harness sessions
+`website/public/oav-demo.mp4`, `open-agent-view.gif`, and
+`open-agent-view.png` come from one genuine terminal recording made on
+2026-08-27. It begins with eleven real coding-harness sessions
 in the v0.1.41 dashboard, browses them with arrow keys, opens two other native
 coding-harness TUIs, then opens Kimi Code, sends a lookup prompt, observes the
 real response for seven seconds, and returns to the dashboard without waiting
