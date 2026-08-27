@@ -241,7 +241,7 @@ impl Drop for PtyApp {
 #[test]
 fn all_supported_providers_coexist_in_one_real_terminal() {
     let _serial = serialize_real_tty_test();
-    let mut app = PtyApp::spawn_fixture(150, 36, "all-providers-sessions.json");
+    let mut app = PtyApp::spawn_fixture(150, 44, "all-providers-sessions.json");
     let startup = app.wait_for("all-provider dashboard", |screen| {
         screen.contains("pi-refactor")
             && screen.contains("opencode-api")
@@ -252,6 +252,10 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
             && screen.contains("muse-ui-pass")
             && screen.contains("qwen-parser-work")
             && screen.contains("kimi-test-plan")
+            && screen.contains("omp-extension-review")
+            && screen.contains("grok-code-review")
+            && screen.contains("kilo-feature-pass")
+            && screen.contains("openhands-test-run")
     });
     assert_lines_fit(&startup, 150);
     for (session, provider) in [
@@ -266,6 +270,10 @@ fn all_supported_providers_coexist_in_one_real_terminal() {
         ("muse-ui-pass", "Muse Code"),
         ("qwen-parser-work", "Qwen Code"),
         ("kimi-test-plan", "Kimi Code"),
+        ("omp-extension-review", "Oh My Pi"),
+        ("grok-code-review", "Grok"),
+        ("kilo-feature-pass", "Kilo Code"),
+        ("openhands-test-run", "OpenHands"),
     ] {
         let row = startup
             .lines()
@@ -738,6 +746,10 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
             "--no-host-muse",
             "--no-host-qwen",
             "--no-host-kimi",
+            "--no-host-omp",
+            "--no-host-grok",
+            "--no-host-kilo",
+            "--no-host-openhands",
             "--include-external",
             "--refresh-ms",
             "60000",
@@ -799,6 +811,111 @@ fn harness_picker_switches_visible_backends_without_losing_the_draft() {
     app.send(ESC);
     app.wait_for("slash harness composer close", |screen| {
         screen.contains("describe a task · /help for commands")
+    });
+    app.exit_cleanly();
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn session_migrate_harnesses_and_models_are_selectable_in_a_real_tui() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 32, |command, home| {
+        let write_provider = |name: &str, body: &str| {
+            let path = home.path().join(name);
+            fs::write(&path, format!("#!/bin/sh\nset -eu\n{body}\n"))
+                .expect("write native harness fixture");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+                .expect("make native harness fixture executable");
+            path
+        };
+        let omp = write_provider(
+            "omp",
+            r#"if [ "${1:-}" = models ]; then printf '%s\n' '{"models":[{"selector":"anthropic/opus"}]}' ; exit 0; fi
+exit 0"#,
+        );
+        let grok = write_provider(
+            "grok",
+            r#"if [ "${1:-}" = models ]; then printf '%s\n' 'Available models:' '* grok-4.6 (default)'; exit 0; fi
+exit 0"#,
+        );
+        let kilo = write_provider(
+            "kilo",
+            r#"if [ "${1:-}" = session ]; then printf '%s\n' '[]'; exit 0; fi
+if [ "${1:-}" = models ]; then printf '%s\n' 'anthropic/claude'; exit 0; fi
+exit 0"#,
+        );
+        let openhands = write_provider("openhands", "exit 0");
+        command
+            .env("LLM_MODEL", "openai/fixture")
+            .args([
+                "--omp-bin",
+                omp.to_str().expect("UTF-8 OMP path"),
+                "--grok-bin",
+                grok.to_str().expect("UTF-8 Grok path"),
+                "--kilo-bin",
+                kilo.to_str().expect("UTF-8 Kilo path"),
+                "--openhands-bin",
+                openhands.to_str().expect("UTF-8 OpenHands path"),
+                "--no-host-claude",
+                "--no-host-codex",
+                "--no-host-pi",
+                "--no-host-opencode",
+                "--no-host-cursor",
+                "--no-host-copilot",
+                "--no-host-antigravity",
+                "--no-host-mistral-vibe",
+                "--no-host-muse",
+                "--no-host-qwen",
+                "--no-host-kimi",
+                "--refresh-ms",
+                "60000",
+            ]);
+    });
+
+    app.wait_for("extended-harness startup", |screen| {
+        screen.contains("Open Agent View") && !screen.contains("loading")
+    });
+    app.send(b"test every harness");
+    app.send(b"\t");
+    app.wait_for("five extended harness choices", |screen| {
+        screen.contains("choose harness · 1/5")
+            && screen.contains("Oh My Pi")
+            && screen.contains("Grok")
+            && screen.contains("Kilo Code")
+            && screen.contains("OpenHands")
+            && screen.contains("Terminal")
+    });
+    for (choice, label, model) in [
+        (b"1", "Oh My Pi", "anthropic/opus"),
+        (b"2", "Grok", "grok-4.6"),
+        (b"3", "Kilo Code", "anthropic/claude"),
+        (b"4", "OpenHands", "openai/fixture"),
+    ] {
+        app.send(choice);
+        app.wait_for("selected extended harness", |screen| {
+            screen.contains(&format!("harness {label} · model default"))
+                && screen.contains("test every harness")
+        });
+        app.send(SHIFT_TAB);
+        app.wait_for("extended harness model catalog", |screen| {
+            screen.contains(&format!("choose {label} model")) && screen.contains(model)
+        });
+        app.send(ESC);
+        app.wait_for("model picker returns to preserved draft", |screen| {
+            screen.contains(&format!("harness {label} · model default"))
+                && screen.contains("test every harness")
+        });
+        if choice != b"4" {
+            app.send(b"\t");
+            app.wait_for("reopened extended harness picker", |screen| {
+                screen.contains("choose harness")
+            });
+        }
+    }
+
+    app.send(ESC);
+    app.wait_for("extended harness composer close", |screen| {
+        !screen.contains("new task · harness") && screen.contains("describe a task")
     });
     app.exit_cleanly();
 }

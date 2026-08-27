@@ -332,6 +332,10 @@ impl ControlHub {
             Provider::MuseCode => "muse",
             Provider::QwenCode => "qwen",
             Provider::KimiCode => "kimi",
+            Provider::OhMyPi => "omp",
+            Provider::Grok => "grok",
+            Provider::KiloCode => "kilo",
+            Provider::OpenHands => "openhands",
             Provider::Terminal => unreachable!("handled above"),
             Provider::Other(_) => bail!("setup is unavailable for this provider"),
         };

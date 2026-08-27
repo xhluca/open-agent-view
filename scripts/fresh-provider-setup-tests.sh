@@ -9,7 +9,7 @@ guest="${repo_root}/scripts/fresh-provider-setup-case.sh"
 if (( $# > 0 )); then
   providers=("$@")
 else
-  providers=(claude codex pi opencode cursor copilot antigravity mistral-vibe muse qwen kimi)
+  providers=(claude codex pi opencode cursor copilot antigravity mistral-vibe muse qwen kimi omp grok kilo openhands)
 fi
 staging=""
 
@@ -38,6 +38,7 @@ for provider in "${providers[@]}"; do
     --security-opt no-new-privileges:true \
     --pids-limit 256 \
     --tmpfs /tmp:rw,exec,nosuid,nodev,size=3g \
+    --env HOME=/tmp/oav-home \
     --volume "${staging}/open-agent-view:/usr/local/bin/open-agent-view:ro" \
     --volume "${staging}/setup-case.sh:/usr/local/bin/setup-case.sh:ro" \
     "$image" \

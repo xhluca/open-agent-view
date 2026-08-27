@@ -3,7 +3,7 @@
 <h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="52" height="52"> Open Agent View</h1>
 
 **One agent view for every coding harness.**<br>
-See what’s running, what needs you, and where to step in. Available for 11+
+See what’s running, what needs you, and where to step in. Available for 15+
 harnesses.
 
 <table align="center">
@@ -13,7 +13,7 @@ harnesses.
 </table>
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
-[![Release](https://img.shields.io/badge/release-v0.1.41-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.1.42-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
@@ -36,7 +36,7 @@ The installer also adds the shorter `opav` command. Start typing a task, press
 `Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
 available models.
 
-[![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)](https://open-agent-view.github.io/open-agent-view-demo.mp4)
+[![A real Open Agent View walkthrough: browse coding-harness sessions, preview native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)](https://open-agent-view.github.io/open-agent-view-demo.mp4)
 
 <p align="center"><a href="https://open-agent-view.github.io/open-agent-view-demo.mp4"><strong>Watch the demo as MP4 →</strong></a></p>
 
@@ -47,9 +47,10 @@ background work and notice when an agent needs help. Other coding harnesses
 should not require a separate pile of terminal tabs.
 
 Open Agent View brings Claude Code, Codex, Cursor, GitHub Copilot, OpenCode, Pi,
-Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, and ordinary terminal
-jobs into one open-source dashboard. The conversation still lives in the tool
-that created it; selecting a row opens that tool's native interface.
+Oh My Pi, Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Grok,
+Kilo Code, OpenHands, and ordinary terminal jobs into one open-source dashboard.
+The conversation still lives in the harness that created it; selecting a row
+opens that harness's native interface.
 
 - **Know where to look.** Sessions are grouped as waiting for input, working,
   completed, or unknown, with the harness shown on every row.
@@ -100,6 +101,12 @@ one dashboard.
     <td align="center"><a href="https://github.com/MoonshotAI/kimi-cli"><img src="https://session-migrate.github.io/agents/kimi-code.svg" width="64" height="64" alt="Kimi Code logo"><br><strong>Kimi Code</strong></a></td>
     <td align="center"><a href="docs/cli.md"><img src="website/public/providers/terminal.svg" width="64" height="64" alt="Terminal icon"><br><strong>Terminal</strong></a></td>
   </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/can1357/oh-my-pi"><img src="https://session-migrate.github.io/agents/oh-my-pi.svg" width="64" height="64" alt="Oh My Pi logo"><br><strong>Oh My Pi</strong></a></td>
+    <td align="center"><a href="https://github.com/xai-org/grok-build"><img src="https://session-migrate.github.io/agents/grok.svg" width="64" height="64" alt="Grok logo"><br><strong>Grok</strong></a></td>
+    <td align="center"><a href="https://github.com/Kilo-Org/kilocode"><img src="https://session-migrate.github.io/agents/kilo-code.svg" width="64" height="64" alt="Kilo Code logo"><br><strong>Kilo Code</strong></a></td>
+    <td align="center"><a href="https://github.com/OpenHands/OpenHands-CLI"><img src="https://session-migrate.github.io/agents/openhands.svg" width="64" height="64" alt="OpenHands logo"><br><strong>OpenHands</strong></a></td>
+  </tr>
 </table>
 
 <details>
@@ -118,12 +125,19 @@ one dashboard.
 | Muse Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | Qwen Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | Kimi Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Oh My Pi | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Grok | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| Kilo Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
+| OpenHands | ✓ | ✓¹ | ✓ | ✓ | — | — | ✓ | — |
 | Terminal | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 
 `✓` means OAV exposes the feature for sessions it owns. A dash means the
 session still appears in the dashboard, but that action stays in the harness's
 native interface. “Delete / archive” is checked when at least one safe removal
 operation is available.
+
+¹ OpenHands model choices are read from its saved configurations and
+`LLM_MODEL`; an exact model ID can also be entered directly.
 
 </details>
 

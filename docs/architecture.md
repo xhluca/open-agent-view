@@ -13,7 +13,8 @@ normalized session model
   |
 provider adapters (Claude, Codex, Pi, OpenCode, Cursor, Copilot,
                    Antigravity, Mistral Vibe, Muse Code, Qwen Code,
-                   Kimi Code, Docker, fixtures)
+                   Kimi Code, Oh My Pi, Grok, Kilo Code, OpenHands,
+                   Docker, fixtures)
 ```
 
 The TUI does not interpret provider-specific JSON or invoke CLIs directly.

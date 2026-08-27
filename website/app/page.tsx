@@ -3,7 +3,7 @@ import { DemoPlayer } from "./DemoPlayer";
 
 const installCommand = "curl -fsSL https://open-agent-view.github.io/install.sh | bash";
 
-const providers = [
+const demoProviders = [
   { id: "claude", name: "Claude Code", icon: "/providers/claude.svg" },
   { id: "codex", name: "OpenAI Codex", icon: "/providers/codex.png" },
   { id: "pi", name: "Pi", icon: "/providers/pi.svg" },
@@ -17,6 +17,16 @@ const providers = [
   { id: "kimi", name: "Kimi Code", mark: "K" },
   { id: "terminal", name: "Terminal", icon: "/providers/terminal.svg" },
 ] as const;
+
+const supportedProviders = [
+  ...demoProviders,
+  { id: "omp", name: "Oh My Pi", mark: "OMP" },
+  { id: "grok", name: "Grok", mark: "G" },
+  { id: "kilo", name: "Kilo Code", mark: "Ki" },
+  { id: "openhands", name: "OpenHands", mark: "OH" },
+] as const;
+
+type Provider = (typeof supportedProviders)[number];
 
 const controlTabs = [
   ["rename", "Rename"],
@@ -47,9 +57,13 @@ function ExternalArrow() {
   );
 }
 
-function ProviderMark({ provider }: { provider: (typeof providers)[number] }) {
+function ProviderMark({ provider }: { provider: Provider }) {
   return (
-    <span className={`provider-mark provider-${provider.id}`} aria-hidden="true">
+    <span
+      className={`provider-mark provider-${provider.id}`}
+      aria-hidden="true"
+      title={provider.name}
+    >
       {"icon" in provider ? (
         <>
           {/* Local provider marks avoid third-party requests at runtime. */}
@@ -91,7 +105,7 @@ function StoryTabs({
 }
 
 export default function Home() {
-  const harnessTabs = providers.map(({ id, name }) => [id, name] as const);
+  const harnessTabs = demoProviders.map(({ id, name }) => [id, name] as const);
 
   return (
     <main>
@@ -126,7 +140,7 @@ export default function Home() {
         <p className="eyebrow"><span /> Local agents, one workspace</p>
         <h1><span>Monitor every agent.</span><span>Step in when it matters.</span></h1>
         <p className="hero-copy">
-          One live dashboard for every coding harness. Jump into any native
+          One live dashboard for 15 coding harnesses. Jump into any native
           session, then return without losing your place.
         </p>
         <div className="hero-actions">
@@ -150,7 +164,7 @@ export default function Home() {
           </a>
         </div>
         <div className="provider-row" aria-label="Choose a harness demo">
-          {providers.map((provider) => (
+          {demoProviders.map((provider) => (
             <a
               href="#harness-demo"
               data-select-harness={provider.id}
@@ -259,7 +273,7 @@ export default function Home() {
         <div className="architecture-map" aria-label="Open Agent View architecture">
           <div className="provider-stack">
             <span>Provider CLIs</span>
-            <div>{providers.filter((provider) => provider.id !== "terminal").map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
+            <div>{supportedProviders.filter((provider) => provider.id !== "terminal").map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
             <small>Each CLI keeps its own login, models, and conversation history.</small>
           </div>
           <div className="flow-arrow"><b>read</b><i>→</i><em>session names, status, and recent activity</em></div>

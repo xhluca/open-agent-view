@@ -74,7 +74,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
-  assert.match(html, /One live dashboard for every coding harness/);
+  assert.match(html, /One live dashboard for 15 coding harnesses/);
   assert.match(html, /Eleven harnesses/);
   assert.match(html, /11 HARNESS SESSIONS · ONE DASHBOARD/);
   assert.match(html, /return without losing your place/);
@@ -123,6 +123,10 @@ test("server-renders real recording controls, provider tabs, and canonical metad
     assert.match(html, new RegExp(`Watch the ${label} demo`));
   }
 
+  for (const label of ["Oh My Pi", "Grok", "Kilo Code", "OpenHands"]) {
+    assert.match(html, new RegExp(`title="${label}"`));
+  }
+
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   assert.doesNotMatch(html, /Keep the conversation|Small commands|Fast context switches|One list|other tools|shared list/);
   assert.doesNotMatch(html, /raw\.githubusercontent\.com/);
@@ -130,9 +134,12 @@ test("server-renders real recording controls, provider tabs, and canonical metad
 });
 
 test("publishes genuine cast v2 recordings and action timelines for setup and every harness", async () => {
-  const cargo = await readFile(new URL("../Cargo.toml", root), "utf8");
-  const currentVersion = cargo.match(/^version = "([^"]+)"$/m)?.[1];
-  assert.ok(currentVersion, "Cargo.toml should declare the release version");
+  const recordingMetadata = JSON.parse(
+    await readFile(new URL("public/demos/version.json", root), "utf8"),
+  );
+  const recordingVersion = recordingMetadata.open_agent_view;
+  assert.match(recordingVersion, /^\d+\.\d+\.\d+$/);
+  assert.equal(recordingMetadata.kind, "real_terminal_recordings");
 
   const accumulatedSessionNames = [];
   for (const [name, , manifestName] of demos) {
@@ -162,8 +169,8 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
     assert.deepEqual(
       [...new Set(renderedVersions)],
-      [currentVersion],
-      `${name}.cast should contain only the current Open Agent View release`,
+      [recordingVersion],
+      `${name}.cast should contain only its declared real Open Agent View release`,
     );
 
     assert.ok(Number.isFinite(manifest.duration) && manifest.duration > 1);
@@ -384,8 +391,8 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
   assert.ok(readmeVersions.length > 0, "README source cast should show Open Agent View");
   assert.deepEqual(
     [...new Set(readmeVersions)],
-    [currentVersion],
-    "README media should contain only the current Open Agent View release",
+    [recordingVersion],
+    "README media should contain only its declared real Open Agent View release",
   );
 });
 

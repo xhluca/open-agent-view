@@ -163,14 +163,14 @@ checks; the guide also contains release gates that are not yet complete.
   shell, backgrounds it with the native gesture, discovers and resumes its exact
   preserved screen, stops it with Ctrl+X, and deletes the completed row with a
   second Ctrl+X. Provider login PTYs use the same isolated registry.
-- `tests/setup_installer.rs` covers all eleven coding-agent installers with an
+- `tests/setup_installer.rs` covers all fifteen coding-harness installers with an
   isolated `PATH` and fake curl/bash/npm. For every provider it proves non-TTY
   setup refuses before download without `--yes`, confirmed setup uses only the
   exact official URL or package, creates the configured executable, and emits
   the next authentication step. A second Linux case hands every already
   installed provider's exact login arguments to a real PTY.
 - `scripts/fresh-provider-setup-tests.sh` is the networked, explicitly invoked
-  E2E tier. It starts eleven independent containers from the pinned
+  E2E tier. It starts fifteen independent containers from the pinned
   `node:22-bookworm-slim` digest with empty homes and no mounted credentials or
   workspaces, lets the real OAV binary run each current official installer,
   verifies the installed executable/version, and requires a native PTY login
@@ -182,6 +182,9 @@ checks; the guide also contains release gates that are not yet complete.
   disposable containers were removed. Vibe's real passive app-server RPC,
   Qwen's real JSONL inventory, Muse's credential-free echo provider, and
   Kimi's unauthenticated provider catalog are also probed in those containers.
+  On 2026-08-27 the same empty-home gate passed for Oh My Pi 18.0.8, Grok
+  1.0.5 (`5115b46bc9`), Kilo Code 7.5.5, and OpenHands SDK 1.16.1. No account
+  state or project workspace was mounted into any of those containers.
 - `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
   `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
   the exact repository request, install-directory propagation, successful
@@ -192,13 +195,18 @@ checks; the guide also contains release gates that are not yet complete.
   selection, Enter confirmation, Escape cancellation, model reset on a real
   switch, and draft preservation throughout; no provider process receives a
   prompt.
+- A second isolated real-PTY case enables only Oh My Pi, Grok, Kilo Code,
+  OpenHands, and Terminal. It verifies that all five appear in the real harness
+  picker, selects each coding harness with a numbered key, opens its
+  asynchronous model picker, checks the exact native model ID, and returns to
+  the unchanged task draft after every selection.
 - A provider-enabled PTY regression returns two Claude rows, deliberately
   stalls the next provider refresh for two seconds, and verifies that both
   exact selected-row arrow repaints and dashboard exit still finish within 750
   milliseconds. It also asserts that an unchanged frame emits no idle terminal
   output and that cancellation leaves no fake provider child behind. This
   catches accidental provider I/O or unconditional redraws on the input thread.
-- The canonical fixture and a real 150×36 PTY render all eleven coding
+- The canonical fixture and a real 150×36 PTY render all fifteen coding
   providers plus Terminal together, require every provider-specific row label,
   and retain collision-free normalized IDs.
 - A 500-session real-PTY stress case verifies that only the terminal-sized page
@@ -367,7 +375,7 @@ checks; the guide also contains release gates that are not yet complete.
   an empty store; Antigravity again returned `1.1.14`. Exact image digests,
   commands, and outputs are in
   `docs/exploration/fresh-container-provider-validation.md`.
-- The canonical eleven-agent-plus-Terminal fixture passed
+- The canonical fifteen-agent-plus-Terminal fixture passed
   `all_supported_providers_coexist_in_one_real_terminal`, including provider
   labels, contextual help, alternate-screen entry, and terminal restoration.
   The same real-PTY test now opens a managed Pi reply composer, a managed
@@ -427,7 +435,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Every current TUI action route, all normalized states, provider onboarding, and large-queue behavior in a real PTY | Serialized `real_tty` harness using canonical/generated fixtures and fake account-scoped provider CLIs | Verified |
 | Default completed-history visibility and bounded bulk archive planning | 1,000-row real PTY, misbehaving-source central-filter tests, real Claude 2.1.236 probe, provider command trap, planner/executor and CLI parser tests | Verified |
 | 70,000-row navigation/grouping and local-hide scaling | Cached-group application regression plus one-pass hidden-registry regression | Verified deterministically |
-| Searchable async model catalogs, native auth retry, and exact modeled launch | All eleven agent catalog parsers/transports or explicit exact-ID fallbacks, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
+| Searchable async model catalogs, native auth retry, and exact modeled launch | All fifteen harness catalog parsers/transports or explicit exact-ID fallbacks, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
 | Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 18 parsed cast/action pairs, 270 extracted audit frames, and desktop/Mac-laptop/phone Playwright and Axe gates | Verified |

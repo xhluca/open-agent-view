@@ -145,6 +145,10 @@ fn canonical_visual_fixture_contains_every_supported_provider_without_id_collisi
         Provider::MuseCode,
         Provider::QwenCode,
         Provider::KimiCode,
+        Provider::OhMyPi,
+        Provider::Grok,
+        Provider::KiloCode,
+        Provider::OpenHands,
         Provider::Terminal,
     ] {
         assert!(

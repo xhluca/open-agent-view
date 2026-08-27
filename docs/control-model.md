@@ -353,6 +353,29 @@ visibility only. Unknown ACP client requests
 are rejected explicitly, and pending permission requests are never answered
 automatically.
 
+## Oh My Pi, Grok, Kilo Code, and OpenHands ownership
+
+These native harnesses expose durable session identities and native resume
+commands. OAV observes their bounded native inventories but never adopts an
+existing record as managed. A foreground launch snapshots the inventory first,
+then records ownership only when exactly one new ID appears in the requested
+workspace. The private registry stores no credentials or transcript bodies.
+
+| Operation | Exact OAV-created session | External saved session |
+| --- | --- | --- |
+| Discover | Private owner record plus provider-native inventory | Only with `--include-external` |
+| Inspect | Bounded name, latest visible message, workspace, and timestamps | Same read-only projection |
+| Open | Exact native resume command | Exact native resume command |
+| Launch | Foreground native TUI with the selected exact model and prompt | Disabled |
+| Interrupt | Exact retained native frontend in the current dashboard process | Disabled |
+| Reply / approval / delete | Native interface only | Disabled |
+
+Oh My Pi JSONL, Grok JSON/update logs, and OpenHands event files are bounded and
+read without following symlinks. Kilo Code discovery uses a bounded `SELECT`
+through its official JSON `kilo db` interface; it does not read message bodies.
+See the [integration contract](exploration/session-migrate-native-integrations.md)
+for the exact commands and state roots.
+
 ## Managed Docker ownership
 
 `open-agent-view docker create` accepts only a digest-pinned image and creates a

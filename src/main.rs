@@ -16,6 +16,7 @@ use open_agent_view::adapters::{
     MistralVibeController, MistralVibeOwnership, MistralVibeSource, MuseController, MuseOwnership,
     MuseSource, OpenCodeController, OpenCodeSource, PiController, PiSource, QwenController,
     QwenOwnership, QwenSource, TerminalHarness,
+    SessionMigrateNativeController, SessionMigrateNativeOwnership, SessionMigrateNativeSource,
 };
 #[cfg(target_os = "linux")]
 use open_agent_view::adapters::{CursorSource, CursorSupervisor};
@@ -48,6 +49,13 @@ enum LaunchProvider {
     Muse,
     Qwen,
     Kimi,
+    #[value(name = "omp", alias = "oh-my-pi")]
+    Omp,
+    Grok,
+    #[value(name = "kilo", alias = "kilo-code")]
+    Kilo,
+    #[value(name = "openhands")]
+    OpenHands,
     Terminal,
 }
 
@@ -330,6 +338,38 @@ struct Cli {
     #[arg(long)]
     no_host_kimi: bool,
 
+    /// Oh My Pi executable used for native discovery, launch, and resume.
+    #[arg(long, default_value = "omp", value_name = "PATH", global = true)]
+    omp_bin: String,
+
+    /// Disable Oh My Pi discovery and control on the host.
+    #[arg(long)]
+    no_host_omp: bool,
+
+    /// Grok executable used for native discovery, launch, and resume.
+    #[arg(long, default_value = "grok", value_name = "PATH", global = true)]
+    grok_bin: String,
+
+    /// Disable Grok discovery and control on the host.
+    #[arg(long)]
+    no_host_grok: bool,
+
+    /// Kilo Code executable used for discovery, native launch, and resume.
+    #[arg(long, default_value = "kilo", value_name = "PATH", global = true)]
+    kilo_bin: String,
+
+    /// Disable Kilo Code discovery and control on the host.
+    #[arg(long)]
+    no_host_kilo: bool,
+
+    /// OpenHands executable used for native discovery, launch, and resume.
+    #[arg(long, default_value = "openhands", value_name = "PATH", global = true)]
+    openhands_bin: String,
+
+    /// Disable OpenHands discovery and control on the host.
+    #[arg(long)]
+    no_host_openhands: bool,
+
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
     #[arg(long = "docker-container", value_name = "NAME_OR_ID", global = true)]
     docker_containers: Vec<String>,
@@ -380,6 +420,10 @@ fn main() -> Result<()> {
                     (Provider::MuseCode, cli.muse_bin.clone()),
                     (Provider::QwenCode, cli.qwen_bin.clone()),
                     (Provider::KimiCode, cli.kimi_bin.clone()),
+                    (Provider::OhMyPi, cli.omp_bin.clone()),
+                    (Provider::Grok, cli.grok_bin.clone()),
+                    (Provider::KiloCode, cli.kilo_bin.clone()),
+                    (Provider::OpenHands, cli.openhands_bin.clone()),
                 ];
                 let report = diagnose(&provider_bins, &cli.docker_bin, &cli.docker_containers);
                 if cli.json {
@@ -439,6 +483,15 @@ fn main() -> Result<()> {
         host_providers_enabled && !cli.no_host_qwen && executable_available(&cli.qwen_bin);
     let kimi_enabled =
         host_providers_enabled && !cli.no_host_kimi && executable_available(&cli.kimi_bin);
+    let omp_enabled =
+        host_providers_enabled && !cli.no_host_omp && executable_available(&cli.omp_bin);
+    let grok_enabled =
+        host_providers_enabled && !cli.no_host_grok && executable_available(&cli.grok_bin);
+    let kilo_enabled =
+        host_providers_enabled && !cli.no_host_kilo && executable_available(&cli.kilo_bin);
+    let openhands_enabled = host_providers_enabled
+        && !cli.no_host_openhands
+        && executable_available(&cli.openhands_bin);
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,
@@ -455,6 +508,10 @@ fn main() -> Result<()> {
         LaunchProvider::Muse => Provider::MuseCode,
         LaunchProvider::Qwen => Provider::QwenCode,
         LaunchProvider::Kimi => Provider::KimiCode,
+        LaunchProvider::Omp => Provider::OhMyPi,
+        LaunchProvider::Grok => Provider::Grok,
+        LaunchProvider::Kilo => Provider::KiloCode,
+        LaunchProvider::OpenHands => Provider::OpenHands,
         LaunchProvider::Terminal => Provider::Terminal,
     };
     let pi_session_dir = if !pi_enabled {
@@ -500,6 +557,18 @@ fn main() -> Result<()> {
     let muse_ownership = muse_enabled.then(MuseOwnership::load_default).transpose()?;
     let qwen_ownership = qwen_enabled.then(QwenOwnership::load_default).transpose()?;
     let kimi_ownership = kimi_enabled.then(KimiOwnership::load_default).transpose()?;
+    let omp_ownership = omp_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::OhMyPi))
+        .transpose()?;
+    let grok_ownership = grok_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::Grok))
+        .transpose()?;
+    let kilo_ownership = kilo_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::KiloCode))
+        .transpose()?;
+    let openhands_ownership = openhands_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::OpenHands))
+        .transpose()?;
     let terminal_harness = provider_io_enabled.then(|| Arc::new(TerminalHarness::new()));
     if provider_io_enabled {
         if let Some(session_dir) = &pi_session_dir {
@@ -595,6 +664,42 @@ fn main() -> Result<()> {
                     .expect("Kimi ownership exists when enabled")
                     .clone(),
             )?))?;
+        }
+        for (enabled, provider, executable, ownership) in [
+            (
+                omp_enabled,
+                Provider::OhMyPi,
+                cli.omp_bin.clone(),
+                omp_ownership.clone(),
+            ),
+            (
+                grok_enabled,
+                Provider::Grok,
+                cli.grok_bin.clone(),
+                grok_ownership.clone(),
+            ),
+            (
+                kilo_enabled,
+                Provider::KiloCode,
+                cli.kilo_bin.clone(),
+                kilo_ownership.clone(),
+            ),
+            (
+                openhands_enabled,
+                Provider::OpenHands,
+                cli.openhands_bin.clone(),
+                openhands_ownership.clone(),
+            ),
+        ] {
+            if enabled {
+                control.register_controller(Arc::new(
+                    SessionMigrateNativeController::host_default(
+                        provider,
+                        executable,
+                        ownership.expect("native harness ownership exists when enabled"),
+                    )?,
+                ))?;
+            }
         }
         control.register_controller(
             terminal_harness
@@ -701,6 +806,25 @@ fn main() -> Result<()> {
             engine.add_source(KimiSource::host_default(
                 kimi_ownership.expect("Kimi ownership exists when enabled"),
             )?);
+        }
+        for (enabled, provider, executable, ownership) in [
+            (omp_enabled, Provider::OhMyPi, cli.omp_bin, omp_ownership),
+            (grok_enabled, Provider::Grok, cli.grok_bin, grok_ownership),
+            (kilo_enabled, Provider::KiloCode, cli.kilo_bin, kilo_ownership),
+            (
+                openhands_enabled,
+                Provider::OpenHands,
+                cli.openhands_bin,
+                openhands_ownership,
+            ),
+        ] {
+            if enabled {
+                engine.add_source(SessionMigrateNativeSource::host_default(
+                    provider,
+                    executable,
+                    ownership.expect("native harness ownership exists when enabled"),
+                )?);
+            }
         }
         if let Some(terminal_harness) = terminal_harness {
             engine.add_source(terminal_harness);
@@ -1171,6 +1295,38 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
                 url: "https://code.kimi.com/kimi-code/install.sh",
             },
         ),
+        LaunchProvider::Omp => (
+            "Oh My Pi",
+            cli.omp_bin.as_str(),
+            vec!["--no-session"],
+            HarnessInstaller::Script {
+                url: "https://omp.sh/install",
+            },
+        ),
+        LaunchProvider::Grok => (
+            "Grok",
+            cli.grok_bin.as_str(),
+            vec!["login"],
+            HarnessInstaller::Script {
+                url: "https://x.ai/cli/install.sh",
+            },
+        ),
+        LaunchProvider::Kilo => (
+            "Kilo Code",
+            cli.kilo_bin.as_str(),
+            vec!["auth", "login"],
+            HarnessInstaller::Npm {
+                package: "@kilocode/cli",
+            },
+        ),
+        LaunchProvider::OpenHands => (
+            "OpenHands",
+            cli.openhands_bin.as_str(),
+            vec!["login"],
+            HarnessInstaller::Script {
+                url: "https://install.openhands.dev/install.sh",
+            },
+        ),
         LaunchProvider::Terminal => unreachable!("handled above"),
     };
     let already_installed = executable_available(executable);
@@ -1242,8 +1398,10 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
             return Ok(());
         }
     }
-    if provider == LaunchProvider::Pi {
-        println!("Pi opens its native no-session UI; run `/login` there, then exit when setup is complete.");
+    if provider == LaunchProvider::Pi || provider == LaunchProvider::Omp {
+        println!(
+            "{label} opens its native no-session UI; run `/login` there, then exit when setup is complete."
+        );
     } else if provider == LaunchProvider::Qwen {
         println!(
             "Qwen Code opens its native UI; run `/auth` there, then exit when setup is complete."
@@ -1278,6 +1436,10 @@ fn launch_provider_value(provider: LaunchProvider) -> &'static str {
         LaunchProvider::Muse => "muse",
         LaunchProvider::Qwen => "qwen",
         LaunchProvider::Kimi => "kimi",
+        LaunchProvider::Omp => "omp",
+        LaunchProvider::Grok => "grok",
+        LaunchProvider::Kilo => "kilo",
+        LaunchProvider::OpenHands => "openhands",
         LaunchProvider::Terminal => "terminal",
     }
 }
@@ -1501,6 +1663,10 @@ fn resolve_default_provider_bins(cli: &mut Cli) {
         &mut cli.muse_bin,
         &mut cli.qwen_bin,
         &mut cli.kimi_bin,
+        &mut cli.omp_bin,
+        &mut cli.grok_bin,
+        &mut cli.kilo_bin,
+        &mut cli.openhands_bin,
     ] {
         if let Some(path) = resolve_executable(executable) {
             *executable = path.to_string_lossy().into_owned();
@@ -1550,6 +1716,9 @@ fn provider_fallback_directories(program: &str) -> &'static [&'static str] {
         "muse" => &[".local/bin"],
         "qwen" => &[".local/bin", ".npm-global/bin"],
         "kimi" => &[".local/bin"],
+        "omp" | "openhands" => &[".local/bin"],
+        "grok" => &[".grok/bin", ".local/bin"],
+        "kilo" => &[".local/bin", ".npm-global/bin"],
         "claude" | "pi" => &[".local/bin", ".npm-global/bin"],
         _ => &[],
     }
@@ -1982,6 +2151,10 @@ mod tests {
             "--no-host-muse",
             "--no-host-qwen",
             "--no-host-kimi",
+            "--no-host-omp",
+            "--no-host-grok",
+            "--no-host-kilo",
+            "--no-host-openhands",
             "--all",
             "--include-interactive",
             "--include-external",
@@ -2013,6 +2186,10 @@ mod tests {
         assert!(cli.no_host_muse);
         assert!(cli.no_host_qwen);
         assert!(cli.no_host_kimi);
+        assert!(cli.no_host_omp);
+        assert!(cli.no_host_grok);
+        assert!(cli.no_host_kilo);
+        assert!(cli.no_host_openhands);
         assert!(cli.all);
         assert!(cli.include_interactive);
         assert!(cli.include_external);
@@ -2046,6 +2223,12 @@ mod tests {
             ("muse", LaunchProvider::Muse),
             ("qwen", LaunchProvider::Qwen),
             ("kimi", LaunchProvider::Kimi),
+            ("omp", LaunchProvider::Omp),
+            ("oh-my-pi", LaunchProvider::Omp),
+            ("grok", LaunchProvider::Grok),
+            ("kilo", LaunchProvider::Kilo),
+            ("kilo-code", LaunchProvider::Kilo),
+            ("openhands", LaunchProvider::OpenHands),
             ("terminal", LaunchProvider::Terminal),
         ] {
             let cli =

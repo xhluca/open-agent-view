@@ -6,21 +6,20 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.41 is the current published release. Hosted jobs were
+Version 0.1.42 is the current published release. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
-release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.41)
+release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.42)
 contains only:
 
 ```text
-open-agent-view-0.1.41-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.41-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.42-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.42-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
-and smoke-tested both before publication and through the published
-release. Its SHA-256 digest is
-`e8a7298d67c8bcf4d4641ca0647e745b8cd1457290338a785dcbe88f159df07a`.
-No ARM64 or macOS artifact is claimed for v0.1.41. Version 0.1.2 was the
+and smoke-tested both before publication and through the published release.
+The adjacent `.sha256` release asset records the verified archive digest.
+No ARM64 or macOS artifact is claimed for v0.1.42. Version 0.1.2 was the
 initial published release. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates

@@ -53,6 +53,10 @@ fn readme_keeps_the_feature_matrix_inside_a_disclosure() {
         "Muse Code",
         "Qwen Code",
         "Kimi Code",
+        "Oh My Pi",
+        "Grok",
+        "Kilo Code",
+        "OpenHands",
         "Terminal",
     ] {
         assert!(

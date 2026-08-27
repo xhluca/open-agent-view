@@ -8,6 +8,29 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.42] - 2026-08-27
+
+### Added
+
+- Added Oh My Pi, Grok, Kilo Code, and OpenHands to the host harness matrix,
+  completing parity with Session Migrate's fifteen coding harnesses. Each has
+  foreground native launch, exact resume, model discovery, native login/setup,
+  bounded session discovery, and an OAV-private ownership record.
+
+### Security
+
+- New provider readers validate native IDs, cap file and record counts, reject
+  symlinked state, and grant interrupt authority only after exactly one new
+  session is correlated with an OAV launch in the requested workspace.
+
+### Tests
+
+- Added deterministic process-contract tests and a real-PTY harness/model
+  picker test for all four integrations. The fresh-container gate installs each
+  current official CLI into an empty home and verifies its version, help,
+  resume/session surface, auth handoff, and credential-free model or inventory
+  surface where available.
+
 ## [0.1.41] - 2026-08-26
 
 ### Fixed

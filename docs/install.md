@@ -7,19 +7,19 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The manually published v0.1.41 release currently covers:
+The manually published v0.1.42 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.41 does not claim artifacts for them because they were not built and
+but v0.1.42 does not claim artifacts for them because they were not built and
 tested on native machines:
 
 - Linux ARM64 with glibc 2.35 or newer
 - macOS x86_64
 - macOS Apple silicon
 
-The installer stops with an explicit explanation when v0.1.41 is requested on
+The installer stops with an explicit explanation when v0.1.42 is requested on
 one of those hosts. Use a source build there until a complete native release is
 published; do not reuse the Linux binary.
 
@@ -40,13 +40,23 @@ open-agent-view setup opencode
 open-agent-view setup cursor
 open-agent-view setup copilot
 open-agent-view setup antigravity
+open-agent-view setup mistral-vibe
+open-agent-view setup muse
+open-agent-view setup qwen
+open-agent-view setup kimi
+open-agent-view setup omp
+open-agent-view setup grok
+open-agent-view setup kilo
+open-agent-view setup openhands
 ```
 
 For a non-interactive script, review the named source first and add `--yes`.
 Official shell installers are downloaded to a private temporary file and then
 executed; OAV does not pipe a network response directly into a shell. Codex and
 Pi use their official npm packages. A failed download/install leaves the
-existing OAV binary and provider state alone. Restart `open-agent-view` after a
+existing OAV binary and provider state alone. Oh My Pi, Grok, and OpenHands use
+their official shell installers; Kilo Code uses `@kilocode/cli` from npm.
+Restart `open-agent-view` after a
 new harness is installed, select it with Tab, and use Shift+Tab for models.
 When authentication is required, Enter in the model picker hands the terminal
 to the provider's native login and reloads the account catalog afterward. From

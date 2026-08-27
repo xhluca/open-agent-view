@@ -1564,6 +1564,10 @@ mod tests {
             (Provider::MuseCode, "Muse Code"),
             (Provider::QwenCode, "Qwen Code"),
             (Provider::KimiCode, "Kimi Code"),
+            (Provider::OhMyPi, "Oh My Pi"),
+            (Provider::Grok, "Grok"),
+            (Provider::KiloCode, "Kilo Code"),
+            (Provider::OpenHands, "OpenHands"),
             (Provider::Terminal, "Terminal"),
         ];
 

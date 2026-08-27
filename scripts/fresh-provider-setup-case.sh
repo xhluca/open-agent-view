@@ -3,11 +3,10 @@
 set -euo pipefail
 
 provider="${1:?provider is required}"
-export HOME=/tmp/oav-home
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_CACHE_HOME="${HOME}/.cache"
 export XDG_STATE_HOME="${HOME}/.local/state"
-export PATH="${HOME}/.local/bin:${HOME}/.opencode/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="${HOME}/.local/bin:${HOME}/.grok/bin:${HOME}/.opencode/bin:/usr/local/bin:/usr/bin:/bin"
 export MUSE_INSTALL_DIR="${HOME}/.local/bin"
 export MUSE_NO_MODIFY_PATH=1
 export KIMI_INSTALL_DIR="${HOME}/.local"
@@ -47,6 +46,10 @@ case "$provider" in
   muse) executable="$(command -v muse)" ;;
   qwen) executable="$(command -v qwen)" ;;
   kimi) executable="$(command -v kimi)" ;;
+  omp) executable="$(command -v omp)" ;;
+  grok) executable="$(command -v grok)" ;;
+  kilo) executable="$(command -v kilo)" ;;
+  openhands) executable="$(command -v openhands)" ;;
   *) printf 'unknown provider: %s\n' "$provider" >&2; exit 2 ;;
 esac
 
@@ -67,12 +70,62 @@ version="$($executable --version 2>&1 | grep -m1 -E '[0-9]+\.[0-9]+' || true)"
   exit 1
 }
 
-timeout 20 "$executable" --help >/dev/null 2>&1 || {
+help_output="/tmp/${provider}-help.log"
+timeout 20 "$executable" --help >"$help_output" 2>&1 || {
   printf 'installed %s executable did not expose help\n' "$provider" >&2
   exit 1
 }
 
 case "$provider" in
+  omp)
+    grep -Eq -- '--resume|Resume' "$help_output" || {
+      printf 'Oh My Pi help omitted native resume\n' >&2
+      exit 1
+    }
+    timeout 30 "$executable" models list --no-extensions --json >"/tmp/${provider}-models.json" 2>&1 || {
+      printf 'Oh My Pi auth-free model catalog failed\n' >&2
+      exit 1
+    }
+    node -e 'const value=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!Array.isArray(value.models) || value.models.some((row) => typeof row.selector !== "string")) process.exit(1)' \
+      "/tmp/${provider}-models.json" || {
+        printf 'Oh My Pi model catalog was not a selector array\n' >&2
+        exit 1
+      }
+    ;;
+  grok)
+    grep -Eq -- '--resume|Resume' "$help_output" || {
+      printf 'Grok help omitted native resume\n' >&2
+      exit 1
+    }
+    ;;
+  kilo)
+    grep -Eq -- '--session|session' "$help_output" || {
+      printf 'Kilo Code help omitted native sessions\n' >&2
+      exit 1
+    }
+    timeout 30 "$executable" db \
+      'SELECT id, title, directory, time_created AS created, time_updated AS updated FROM session ORDER BY time_updated DESC LIMIT 1' \
+      --format json \
+      >"/tmp/${provider}-sessions.json" 2>&1 || {
+        printf 'Kilo Code auth-free session inventory failed\n' >&2
+        exit 1
+      }
+    node -e 'const value=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); if (!Array.isArray(value)) process.exit(1)' \
+      "/tmp/${provider}-sessions.json" || {
+        printf 'Kilo Code session inventory was not JSON\n' >&2
+        exit 1
+      }
+    ;;
+  openhands)
+    grep -Eq -- '--resume|Resume' "$help_output" || {
+      printf 'OpenHands help omitted native resume\n' >&2
+      exit 1
+    }
+    grep -Eq -- '--task|Task' "$help_output" || {
+      printf 'OpenHands help omitted task launch\n' >&2
+      exit 1
+    }
+    ;;
   mistral-vibe)
     app_server="$(command -v vibe-app-server)"
     [[ -x "$app_server" ]] || {

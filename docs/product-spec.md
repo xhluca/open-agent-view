@@ -46,8 +46,10 @@ capability; no integration is described as having a uniform full lifecycle.
 
 ## Runtime scope
 
-- Host Claude, Codex, Pi, OpenCode, Cursor, GitHub Copilot, and Antigravity via
-  their documented CLI/protocol surfaces and explicit ownership boundaries.
+- Host Claude, Codex, Pi, Oh My Pi, OpenCode, Cursor, GitHub Copilot,
+  Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Grok, Kilo Code,
+  and OpenHands via documented CLI/protocol surfaces and explicit ownership
+  boundaries.
 - A built-in process-local Terminal target for ordinary interactive shells and
   resumable provider install/login jobs; task text is a name, never evaluated.
 - Native foreground launch where the provider exposes a full-screen interface,

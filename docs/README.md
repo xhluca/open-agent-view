@@ -39,6 +39,7 @@ Start with the guide for the job you are doing.
 - [Muse Code native-log integration](exploration/muse-code-integration.md)
 - [Qwen Code session-CLI integration](exploration/qwen-code-integration.md)
 - [Kimi Code native-store integration](exploration/kimi-code-integration.md)
+- [Oh My Pi, Grok, Kilo Code, and OpenHands native integrations](exploration/session-migrate-native-integrations.md)
 - [Docker runtime boundary](exploration/docker-runtime.md)
 - [Fresh-container provider validation](exploration/fresh-container-provider-validation.md)
 - [Main-account and container regressions](exploration/main-account-container-regressions.md)

@@ -53,9 +53,13 @@ Open Agent View is already up to date.
 | `--muse-bin PATH` / `--no-host-muse` | Select or disable Muse Code native control and owned local-history discovery. |
 | `--qwen-bin PATH` / `--no-host-qwen` | Select or disable Qwen Code native control plus bounded session/live discovery. |
 | `--kimi-bin PATH` / `--no-host-kimi` | Select or disable Kimi Code native control and owned local-index discovery. |
+| `--omp-bin PATH` / `--no-host-omp` | Select or disable Oh My Pi native control plus bounded JSONL discovery. |
+| `--grok-bin PATH` / `--no-host-grok` | Select or disable Grok native control plus bounded summary/update discovery. |
+| `--kilo-bin PATH` / `--no-host-kilo` | Select or disable Kilo Code native control plus bounded, read-only metadata discovery through `kilo db`. |
+| `--openhands-bin PATH` / `--no-host-openhands` | Select or disable OpenHands native control plus bounded event-store discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
-| `--harness` / `--launch-provider claude\|codex\|pi\|opencode\|cursor\|copilot\|antigravity\|mistral-vibe\|muse\|qwen\|kimi\|terminal` | Initial harness for new-session prompts; default Claude. Managed Pi, OpenCode, and Cursor launch require Linux; Copilot authority lasts for this dashboard process; Antigravity, Mistral Vibe, Muse, Qwen, and Kimi use native full-screen UIs; Terminal opens the user's shell. |
+| `--harness` / `--launch-provider claude\|codex\|pi\|omp\|opencode\|cursor\|copilot\|antigravity\|mistral-vibe\|muse\|qwen\|kimi\|grok\|kilo\|openhands\|terminal` | Initial harness for new-session prompts; default Claude. Each configured coding harness opens its native full-screen UI; Terminal opens the user's shell. `oh-my-pi` and `kilo-code` are accepted aliases. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
 
@@ -94,7 +98,7 @@ open-agent-view setup HARNESS
 open-agent-view setup HARNESS --yes
 ```
 
-`HARNESS` accepts the eleven coding-agent values plus `terminal` (which is built
+`HARNESS` accepts the fifteen coding-harness values plus `terminal` (which is built
 in and needs no installation). Without `--yes`, setup requires
 an interactive terminal confirmation naming the exact download/package source.
 In non-interactive use it refuses before network or installer execution. Shell
@@ -134,7 +138,11 @@ aliases advertised beside `--model` in `claude --help`; Codex requests all
 visible pages of App Server `model/list`; Pi parses `pi --offline
 --list-models`; OpenCode parses `opencode models`; Cursor parses `cursor-agent
 models`; Copilot queries its headless SDK `models.list` without creating a
-session; and Antigravity parses `agy models`. A catalog is informative,
+session; Antigravity parses `agy models`; Oh My Pi parses
+`omp models list --no-extensions --json`; Grok parses `grok models`; Kilo Code
+parses `kilo models`; and OpenHands reads
+model IDs from its saved configuration plus `LLM_MODEL`. An exact OpenHands ID
+can also be entered directly. A catalog is informative,
 not proof that the current account can successfully invoke every listed model.
 
 A launch-time authentication failure follows the same route: OAV preserves the
@@ -144,7 +152,8 @@ passive footer where Enter would open an unrelated selected row.
 
 The native setup surfaces are `claude auth login`, `codex login`, Pi's
 no-session TUI (`/login` inside Pi), `opencode auth login`, `cursor-agent login`,
-`copilot login`, and Antigravity's first-run `agy` flow. OAV suspends its
+`copilot login`, Antigravity's first-run `agy` flow, Oh My Pi's no-session TUI,
+`grok login`, `kilo auth login`, and `openhands login`. OAV suspends its
 alternate screen before these commands and never reads or copies credentials.
 The setup/login UI always gets its own private terminal; Left/Right twice at a
 cursor boundary or Shift+Left/Right anywhere backgrounds it as a visible
@@ -355,9 +364,8 @@ and mount details.
 
 ## TUI keys and mode behavior
 
-Every session row spells out its provider name: Claude, Codex, Pi, OpenCode,
-Cursor, GitHub Copilot, Antigravity, Terminal, or the adapter-provided name for a future
-provider. Provider identity takes priority over task summary width on narrow
+Every session row spells out its provider name, including Oh My Pi, Grok, Kilo
+Code, and OpenHands. Provider identity takes priority over task summary width on narrow
 terminals. Peek expands the selected row with the full host or container runtime
 label.
 
@@ -383,7 +391,7 @@ label.
 | Harness picker | `↑` / `↓`, `←` / `→`, or `tab` / `shift+tab` | Preview configured launch-capable harnesses with wraparound. |
 | Harness picker | `enter` or `1`–`9` | Select the highlighted or numbered harness and return to the unchanged draft; changing harness resets the model to its default. |
 | Harness picker | `esc` | Return to the unchanged draft without switching harnesses. |
-| New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select Claude, Codex, Pi, OpenCode, Cursor, Copilot, Antigravity, or Terminal when its launch controller is available; `/provider` is an alias. |
+| New-task composer | `/harness` / `/harness NAME` | Open the picker or directly select any configured harness when its launch controller is available; `/provider` is an alias. |
 | New-task composer | `/model` | Asynchronously load the selected harness's account/catalog model list and open a searchable picker. |
 | Terminal composer | `/shell` / `/shell NAME` | Open the shell picker or select an installed shell; `/model` remains an exact alias while Terminal is selected. Missing supported shells appear as explicit native package-manager install actions. |
 | Model picker | type, `backspace`, `↑` / `↓`, `tab` / `shift+tab`, `page up` / `page down` | Filter and navigate catalog results; provider discovery stays off the input thread. |

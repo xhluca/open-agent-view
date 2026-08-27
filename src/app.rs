@@ -1380,6 +1380,9 @@ fn provider_alias(provider: &Provider) -> String {
         Provider::MuseCode => "muse".into(),
         Provider::QwenCode => "qwen".into(),
         Provider::KimiCode => "kimi".into(),
+        Provider::OhMyPi => "omp".into(),
+        Provider::KiloCode => "kilo".into(),
+        Provider::OpenHands => "openhands".into(),
         _ => normalize_provider_name(provider.label()),
     }
 }
@@ -1397,6 +1400,10 @@ fn known_provider(value: &str) -> Option<Provider> {
         "muse" | "musecode" => Some(Provider::MuseCode),
         "qwen" | "qwencode" => Some(Provider::QwenCode),
         "kimi" | "kimicode" => Some(Provider::KimiCode),
+        "omp" | "ohmypi" => Some(Provider::OhMyPi),
+        "grok" | "grokbuild" => Some(Provider::Grok),
+        "kilo" | "kilocode" => Some(Provider::KiloCode),
+        "openhands" => Some(Provider::OpenHands),
         "terminal" | "shell" => Some(Provider::Terminal),
         _ => None,
     }
@@ -1986,6 +1993,14 @@ mod tests {
             Provider::Cursor,
             Provider::GitHubCopilot,
             Provider::Antigravity,
+            Provider::MistralVibe,
+            Provider::MuseCode,
+            Provider::QwenCode,
+            Provider::KimiCode,
+            Provider::OhMyPi,
+            Provider::Grok,
+            Provider::KiloCode,
+            Provider::OpenHands,
         ] {
             for inline_capability in [
                 Capability::Reply,
@@ -2475,6 +2490,11 @@ mod tests {
             ("muse", Provider::MuseCode),
             ("qwen", Provider::QwenCode),
             ("kimi", Provider::KimiCode),
+            ("omp", Provider::OhMyPi),
+            ("oh-my-pi", Provider::OhMyPi),
+            ("grok", Provider::Grok),
+            ("kilo", Provider::KiloCode),
+            ("openhands", Provider::OpenHands),
         ] {
             app.start_new_session(None);
             app.input = format!("/setup {name}");

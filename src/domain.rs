@@ -26,6 +26,12 @@ pub enum Provider {
     QwenCode,
     #[serde(rename = "kimi_code")]
     KimiCode,
+    #[serde(rename = "oh_my_pi")]
+    OhMyPi,
+    Grok,
+    #[serde(rename = "kilo_code")]
+    KiloCode,
+    OpenHands,
     Terminal,
     Other(String),
 }
@@ -44,6 +50,10 @@ impl Provider {
             Self::MuseCode => "Muse Code",
             Self::QwenCode => "Qwen Code",
             Self::KimiCode => "Kimi Code",
+            Self::OhMyPi => "Oh My Pi",
+            Self::Grok => "Grok",
+            Self::KiloCode => "Kilo Code",
+            Self::OpenHands => "OpenHands",
             Self::Terminal => "Terminal",
             Self::Other(name) => name,
         }
@@ -301,6 +311,10 @@ mod tests {
             (Provider::MuseCode, "\"muse_code\"", "Muse Code"),
             (Provider::QwenCode, "\"qwen_code\"", "Qwen Code"),
             (Provider::KimiCode, "\"kimi_code\"", "Kimi Code"),
+            (Provider::OhMyPi, "\"oh_my_pi\"", "Oh My Pi"),
+            (Provider::Grok, "\"grok\"", "Grok"),
+            (Provider::KiloCode, "\"kilo_code\"", "Kilo Code"),
+            (Provider::OpenHands, "\"open_hands\"", "OpenHands"),
             (Provider::Terminal, "\"terminal\"", "Terminal"),
         ];
 

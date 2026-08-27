@@ -146,8 +146,8 @@ first reach the provider editor. At a cursor boundary the first arrow displays
 a 1.6-second bottom-line hint; repeat the same arrow to background only that
 frontend and return to the dashboard. Shift+Left/Right returns immediately.
 The managed backend remains alive, and Enter or Right on the same dashboard
-row restores the exact retained screen. This applies to
-Claude, Codex, Pi, OpenCode, Cursor, Copilot, and Antigravity native opens.
+row restores the exact retained screen. This applies to every configured
+native harness, including Oh My Pi, Grok, Kilo Code, and OpenHands.
 
 Older builds handed the terminal directly to the provider, so Pi/OpenCode Left
 did nothing and Claude consumed it for its own agent view. `ctrl+c` in that
@@ -180,9 +180,10 @@ terminal, restores the dashboard, and reloads the exact account catalog. Left
 backgrounds the login as a visible Terminal row; Enter/Right resumes that
 exact screen rather than attaching to the last agent. `/login` starts the same
 handoff explicitly, while `/setup HARNESS` also checks installation and can run
-the confirmed official installer. OAV never asks you to paste a token into its UI. Pi's setup
-is its no-session TUI; choose `/login` there. Antigravity uses its first-run
-browser login.
+the confirmed official installer. OAV never asks you to paste a token into its
+UI. Pi and Oh My Pi setup use their no-session TUIs; choose `/login` there.
+Antigravity uses its first-run browser login. Grok, Kilo Code, and OpenHands use
+`grok login`, `kilo auth login`, and `openhands login` respectively.
 
 The same picker now opens automatically when a direct Cursor or Copilot launch
 fails authentication. The task draft remains intact; Enter no longer acts on
@@ -193,8 +194,10 @@ can manufacture.
 
 For deeper diagnosis, run the provider surface directly in the same shell:
 `claude --help`, a healthy managed Codex App Server, `pi --offline
---list-models`, `opencode models`, `cursor-agent models`, `copilot login`, or
-`agy models`. Pi/OpenCode entries normally use
+--list-models`, `opencode models`, `cursor-agent models`, `copilot login`,
+`agy models`, `omp models list --no-extensions --json`, `grok models`, or
+`kilo models`. OpenHands also accepts an exact model ID through `LLM_MODEL`.
+Pi/OpenCode entries normally use
 `provider/model` form. A listed model can still fail later because the account,
 credentials, region, or provider configuration does not authorize it.
 

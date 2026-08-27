@@ -158,7 +158,7 @@ stopped at the bounded browser/device-auth boundary without authenticating.
 ## Together in the dashboard
 
 Provider-specific protocol tests prove isolation and authority. Coexistence is
-covered separately by the canonical eleven-agent-plus-Terminal fixture in one
+covered separately by the canonical fifteen-agent-plus-Terminal fixture in one
 real Unix PTY:
 
 ```console

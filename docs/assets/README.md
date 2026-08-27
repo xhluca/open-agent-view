@@ -11,6 +11,9 @@ rows that imitate a terminal. Key actions are burned from the separate action
 manifest as a subtitle overlay; the recorded terminal bytes remain unchanged.
 
 The source casts live in [`website/public/demos`](../../website/public/demos).
+Their exact recorded OAV version is declared in
+[`version.json`](../../website/public/demos/version.json); release metadata is
+never rewritten into terminal bytes after capture.
 [`scripts/capture-real-site-demo.py`](../../scripts/capture-real-site-demo.py)
 records the actual shell, OAV binary, and provider CLIs through private tmux and
 Asciinema sessions. For the authenticated provider clips it copies the minimum

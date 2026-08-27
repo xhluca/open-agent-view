@@ -34,6 +34,9 @@ as stable contracts.
 - [`qwen-code-integration.md`](qwen-code-integration.md) — Qwen Code's JSONL
   history/live inventory, caller-supplied session identity, and exact model-ID
   boundary.
+- [`session-migrate-native-integrations.md`](session-migrate-native-integrations.md)
+  — Oh My Pi, Grok, Kilo Code, and OpenHands discovery, model, launch, resume,
+  login, and ownership boundaries.
 - [`fresh-container-provider-validation.md`](fresh-container-provider-validation.md)
   — no-mount official installer and protocol smoke tests.
 - [`main-account-container-regressions.md`](main-account-container-regressions.md)

@@ -88,6 +88,30 @@ const SETUP_CASES: &[SetupCase] = &[
         installer: InstallerKind::Script("https://code.kimi.com/kimi-code/install.sh"),
         login_args: "login",
     },
+    SetupCase {
+        harness: "omp",
+        binary_flag: "--omp-bin",
+        installer: InstallerKind::Script("https://omp.sh/install"),
+        login_args: "--no-session",
+    },
+    SetupCase {
+        harness: "grok",
+        binary_flag: "--grok-bin",
+        installer: InstallerKind::Script("https://x.ai/cli/install.sh"),
+        login_args: "login",
+    },
+    SetupCase {
+        harness: "kilo",
+        binary_flag: "--kilo-bin",
+        installer: InstallerKind::Npm("@kilocode/cli"),
+        login_args: "auth login",
+    },
+    SetupCase {
+        harness: "openhands",
+        binary_flag: "--openhands-bin",
+        installer: InstallerKind::Script("https://install.openhands.dev/install.sh"),
+        login_args: "login",
+    },
 ];
 
 fn write_executable(path: &Path, body: &str) {
