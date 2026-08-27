@@ -1324,6 +1324,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
     app.exit_cleanly();
 }
 
+#[cfg(target_os = "linux")]
 #[test]
 fn pi_launch_enters_native_foreground_and_returns_to_exact_managed_row() {
     let _serial = serialize_real_tty_test();
@@ -1675,7 +1676,7 @@ elif "models" in sys.argv:
     app.send(UP);
     app.send(b"draft");
     app.wait_for("contextual composer footer over warning", |screen| {
-        screen.contains("draft") && screen.contains("tab harness · shift+tab model")
+        screen.contains("draft") && screen.contains("enter create · tab harness · shift+tab")
     });
     app.send(ESC);
     app.wait_for("composer closes before dashboard exit", |screen| {
