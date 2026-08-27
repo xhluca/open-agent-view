@@ -1,25 +1,40 @@
 <div align="center">
 
-<img src="website/public/favicon.svg" alt="Open Agent View" width="76" height="76">
+<h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="52" height="52"> Open Agent View</h1>
 
-# Open Agent View
+**The open agent view for every local coding harness—monitor parallel sessions,
+see what needs input, and step back into each provider's native terminal from
+one queue.**
 
-**The open agent view for every local coding harness.**
-
-Monitor parallel sessions, see what needs input, and step back into each
-provider's native terminal—all from one queue.
-
-[Website](https://open-agent-view.github.io/) ·
-[Install](docs/install.md) ·
-[Keyboard guide](docs/cli.md) ·
-[Provider notes](docs/exploration/README.md) ·
-[Roadmap](ROADMAP.md)
+<table align="center">
+  <tr>
+    <td align="center"><a href="https://open-agent-view.github.io/"><strong>Explore the website →</strong></a></td>
+  </tr>
+</table>
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
 [![Release](https://img.shields.io/badge/release-v0.1.41-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
+
+## Quick start
+
+Install Open Agent View:
+
+```console
+curl -fsSL https://open-agent-view.github.io/install.sh | bash
+```
+
+Launch the dashboard:
+
+```console
+open-agent-view
+```
+
+The installer also adds the shorter `opav` command. Start typing a task, press
+`Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
+available models.
 
 ![A real Open Agent View walkthrough: browse eleven coding-harness sessions, preview two native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)
 
@@ -42,25 +57,6 @@ that created it; selecting a row opens that tool's native interface.
   renders the page that fits the terminal.
 - **Use controls OAV can prove.** Stop, reply, archive, and delete are offered
   only when the selected provider and session support them safely.
-
-## Quick start
-
-Install Open Agent View:
-
-```console
-curl -fsSL https://open-agent-view.github.io/install.sh | bash
-```
-
-Open a project and launch the dashboard:
-
-```console
-cd your-project
-open-agent-view
-```
-
-The installer also adds the shorter `opav` command. Start typing a task, press
-`Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
-available models.
 
 ## The everyday workflow
 
