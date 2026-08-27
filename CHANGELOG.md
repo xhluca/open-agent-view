@@ -16,6 +16,9 @@ and future released versions are intended to follow Semantic Versioning.
   Open Agent View owns instead of racing a shell-created background job whose
   process-group behavior differs across macOS runners. The test retains a
   strict three-second bound against a ten-second child command.
+- The isolated authenticated-editor PTY fixture now exits its dedicated child
+  process directly after explicit native cleanup, avoiding macOS Intel test
+  harness delays after the exact provider has already completed.
 
 ## [0.1.44] - 2026-08-27
 

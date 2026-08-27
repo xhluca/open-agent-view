@@ -177,7 +177,12 @@ printf '\r\nRECEIVED_TASK:%s' "$prompt"
         )
         .unwrap();
         assert!(matches!(exit, NativeSessionExit::Exited(status) if status.success()));
-        return;
+        native_session::shutdown_all();
+        // This branch is already an isolated child test process with its own
+        // controlling terminal. Exit directly after the exact provider has
+        // completed: the macOS Intel test harness can otherwise retain that
+        // handed-back PTY for several seconds after the assertion succeeds.
+        std::process::exit(0);
     }
 
     let (mut master, slave) = outer_pty();
