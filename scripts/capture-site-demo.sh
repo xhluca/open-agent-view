@@ -9,7 +9,7 @@ gif="$public_dir/oav-demo.gif"
 video="$public_dir/oav-demo.mp4"
 poster="$public_dir/oav-demo.png"
 
-for command in python3 agg ffmpeg; do
+for command in python3 agg ffmpeg ffprobe; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'missing required demo tool: %s\n' "$command" >&2
     exit 1
@@ -40,10 +40,19 @@ agg \
 
 ffmpeg -hide_banner -loglevel error -y \
   -i "$public_dir/oav-demo-raw.gif" \
-  -vf "ass='$public_dir/oav-demo.ass',pad=ceil(iw/2)*2:ceil(ih/2)*2" \
+  -vf "fps=30,ass='$public_dir/oav-demo.ass',pad=ceil(iw/2)*2:ceil(ih/2)*2" \
   -movflags +faststart \
   -pix_fmt yuv420p \
   "$video"
+
+video_frame_rate="$(
+  ffprobe -v error -select_streams v:0 \
+    -show_entries stream=avg_frame_rate -of default=nw=1:nk=1 "$video"
+)"
+test "$video_frame_rate" = "30/1" || {
+  printf 'unexpected demo frame rate: %s (expected 30/1)\n' "$video_frame_rate" >&2
+  exit 1
+}
 
 ffmpeg -hide_banner -loglevel error -y \
   -i "$video" \
