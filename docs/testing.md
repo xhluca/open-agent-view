@@ -66,6 +66,8 @@ checks; the guide also contains release gates that are not yet complete.
   native background, exact reattach, verified interrupt, and fresh exact resume
   for both providers. Vibe also covers bounded delayed correlation and
   ambiguity refusal; Qwen covers immediate launch-failure rollback.
+  Qwen adapter tests also cover fractional millisecond JSONL timestamps and
+  ownership persisted through an independently loaded private-registry handle.
 - `tests/managed_cursor_copilot.rs` drives the public `ProviderController`
   surface rather than private supervisor helpers. It covers managed launch,
   enrich, inspect, reply, interrupt, exact one-shot approval, duplicate
@@ -428,7 +430,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Searchable async model catalogs, native auth retry, and exact modeled launch | All eleven agent catalog parsers/transports or explicit exact-ID fallbacks, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
-| Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 17 parsed cast/action pairs, 255 extracted audit frames, and desktop/Mac-laptop/phone Playwright and Axe gates | Verified |
+| Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 18 parsed cast/action pairs, 270 extracted audit frames, and desktop/Mac-laptop/phone Playwright and Axe gates | Verified |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |
 | OpenCode authenticated loopback launch/reconnect/inspect/reply/interrupt/model ownership | Disposable managed-server fixture with exact model payload plus isolated real credential-empty server probe | Verified on Linux |

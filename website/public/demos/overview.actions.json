@@ -1,0 +1,59 @@
+{
+  "duration": 16.786716088588722,
+  "proof": "conversation",
+  "sequence": "eleven-session-dashboard-open-live-lookup-return",
+  "target": "kimi",
+  "session_count": 11,
+  "actions": [
+    {
+      "at": 0.767,
+      "action": "Dashboard \u00b7 11 coding harnesses",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 1.892,
+      "action": "\u2193 \u00b7 browse sessions",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.517,
+      "action": "\u2193 \u00b7 browse sessions",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.141,
+      "action": "\u2191 \u00b7 browse sessions",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 3.766,
+      "action": "\u2191 \u00b7 browse sessions",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.393,
+      "action": "\u2192 \u00b7 open Kimi Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 7.704,
+      "action": "Type \u00b7 Look up https://open-agent-view.github.io/ and tell me what it is about.",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 8.431,
+      "action": "Enter \u00b7 send lookup prompt",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 13.559,
+      "action": "Shift+\u2190 \u00b7 return to dashboard",
+      "window": "Kimi Code"
+    },
+    {
+      "at": 13.935,
+      "action": "Dashboard \u00b7 Kimi Code keeps running",
+      "window": "open-agent-view"
+    }
+  ]
+}

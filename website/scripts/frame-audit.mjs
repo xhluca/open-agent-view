@@ -9,7 +9,8 @@ import { extname, join, normalize } from "node:path";
 import { chromium } from "@playwright/test";
 
 const stories = [
-  ["setup", "#start"],
+  ["overview", "#start"],
+  ["setup", "#install"],
   ["claude", "#harness-demo"],
   ["codex", "#harness-demo"],
   ["pi", "#harness-demo"],
@@ -68,7 +69,7 @@ function serveStatic() {
 }
 
 async function chooseStory(page, id, section) {
-  if (id !== "setup") {
+  if (id !== "setup" && id !== "overview") {
     await page.locator(`${section} [data-story-tab="${id}"]`).click();
   }
   const player = page.locator(`${section} [data-demo-player]`);
@@ -99,10 +100,14 @@ async function seekAndAudit(player, position) {
     const termGrid = root.querySelector(".ap-term").getBoundingClientRect();
     const badge = root.querySelector("[data-demo-last-action]");
     const badgeStyle = getComputedStyle(badge);
+    const stage = root.querySelector(".story-stage").getBoundingClientRect();
+    const badgeBounds = badge.getBoundingClientRect();
     return {
       action: badge.textContent.trim(),
       badgeBorder: badgeStyle.borderTopStyle,
       badgeBackground: badgeStyle.backgroundColor,
+      badgeBounds: { top: badgeBounds.top, bottom: badgeBounds.bottom, left: badgeBounds.left, right: badgeBounds.right },
+      stage: { top: stage.top, bottom: stage.bottom, left: stage.left, right: stage.right },
       covers: root.querySelectorAll(".story-frame-cover").length,
       wrappers: root.querySelectorAll(".ap-wrapper").length,
       screen: { top: screen.top, bottom: screen.bottom, left: screen.left, right: screen.right },
@@ -132,6 +137,12 @@ try {
         assert.ok(audit.action.length > 0, `${id}/${viewportName}: action badge is empty`);
         assert.equal(audit.badgeBorder, "solid", `${id}/${viewportName}: action keycap has no border`);
         assert.notEqual(audit.badgeBackground, "rgba(0, 0, 0, 0)", `${id}/${viewportName}: action keycap is transparent`);
+        assert.ok(audit.badgeBounds.left >= audit.stage.left - 1, `${id}/${viewportName}: action label escapes left`);
+        assert.ok(audit.badgeBounds.right <= audit.stage.right + 1, `${id}/${viewportName}: action label escapes right`);
+        if (id === "overview") {
+          assert.ok(audit.badgeBounds.bottom > audit.stage.top + ((audit.stage.bottom - audit.stage.top) * 0.82), `${id}/${viewportName}: subtitle is not in the lower terminal region`);
+          assert.ok(audit.badgeBounds.bottom <= audit.stage.bottom + 1, `${id}/${viewportName}: subtitle escapes terminal`);
+        }
         assert.ok(audit.terminal.top >= audit.screen.top - 1, `${id}/${viewportName}: terminal is cropped at top`);
         assert.ok(audit.terminal.bottom <= audit.screen.bottom + 1, `${id}/${viewportName}: terminal footer is cropped`);
         assert.ok(audit.termGrid.bottom <= audit.screen.bottom + 1, `${id}/${viewportName}: final terminal row is cropped`);

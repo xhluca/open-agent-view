@@ -35,6 +35,11 @@ document.addEventListener("click", async (event) => {
 });
 
 const STORIES = {
+  "story-overview": {
+    cast: "/demos/overview.cast",
+    actions: "/demos/overview.actions.json",
+    speed: 1,
+  },
   "story-setup": {
     cast: "/demos/setup.cast",
     actions: "/demos/setup.actions.json",

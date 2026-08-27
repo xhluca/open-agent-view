@@ -7,9 +7,16 @@ type DemoPlayerProps = {
   label: string;
   caption: string;
   autoPlay?: boolean;
+  actionPlacement?: "topbar" | "subtitle";
 };
 
-export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlayerProps) {
+export function DemoPlayer({
+  story,
+  label,
+  caption,
+  autoPlay = true,
+  actionPlacement = "topbar",
+}: DemoPlayerProps) {
   useEffect(() => {
     const browserWindow = window as Window & { __oavReactHydrated?: boolean };
     browserWindow.__oavReactHydrated = true;
@@ -40,10 +47,17 @@ export function DemoPlayer({ story, label, caption, autoPlay = true }: DemoPlaye
       <div className="story-window">
         <div className="window-bar">
           <strong data-demo-window suppressHydrationWarning>open-agent-view</strong>
-          <kbd data-demo-last-action role="status" aria-live="polite" suppressHydrationWarning>Ready</kbd>
+          {actionPlacement === "topbar" ? (
+            <kbd data-demo-last-action role="status" aria-live="polite" aria-atomic="true" suppressHydrationWarning>Ready</kbd>
+          ) : null}
         </div>
-        <div data-demo-screen role="region" aria-label={label} suppressHydrationWarning>
-          <p>Loading the real terminal recording…</p>
+        <div className="story-stage">
+          <div data-demo-screen role="region" aria-label={label} suppressHydrationWarning>
+            <p>Loading the real terminal recording…</p>
+          </div>
+          {actionPlacement === "subtitle" ? (
+            <kbd className="story-action-subtitle" data-demo-last-action role="status" aria-live="polite" aria-atomic="true" suppressHydrationWarning>Ready</kbd>
+          ) : null}
         </div>
       </div>
       <label className="story-scrubber">

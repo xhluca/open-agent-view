@@ -1,0 +1,22 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1291
+PlayResY: 784
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Action,DejaVu Sans Mono,22,&H00F4F2DD,&H00F4F2DD,&H802E3133,&HC01A1408,-1,0,0,0,100,100,0,0,3,1,0,2,70,70,42,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.77,0:00:01.89,Action,,0,0,0,,Dashboard · 11 coding harnesses
+Dialogue: 0,0:00:01.89,0:00:02.52,Action,,0,0,0,,↓ · browse sessions
+Dialogue: 0,0:00:02.52,0:00:03.14,Action,,0,0,0,,↓ · browse sessions
+Dialogue: 0,0:00:03.14,0:00:03.77,Action,,0,0,0,,↑ · browse sessions
+Dialogue: 0,0:00:03.77,0:00:04.39,Action,,0,0,0,,↑ · browse sessions
+Dialogue: 0,0:00:04.39,0:00:07.39,Action,,0,0,0,,→ · open Kimi Code
+Dialogue: 0,0:00:07.70,0:00:08.43,Action,,0,0,0,,Type · Look up https://open-agent-view.github.io/ and tell me what it is about.
+Dialogue: 0,0:00:08.43,0:00:11.43,Action,,0,0,0,,Enter · send lookup prompt
+Dialogue: 0,0:00:13.56,0:00:13.94,Action,,0,0,0,,Shift+← · return to dashboard
+Dialogue: 0,0:00:13.94,0:00:16.79,Action,,0,0,0,,Dashboard · Kimi Code keeps running

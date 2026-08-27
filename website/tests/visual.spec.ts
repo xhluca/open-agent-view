@@ -53,6 +53,7 @@ for (const viewport of viewports) {
     await expect(page.locator(".provider-row img")).toHaveCount(10);
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.locator("#start .ap-wrapper")).toHaveCount(1);
+    await expect(page.locator("#install .ap-wrapper")).toHaveCount(1);
     await expect(page.locator("#harness-demo .ap-wrapper")).toHaveCount(1);
 
     const actions = page.locator(".hero-actions [data-copy-command]");
@@ -81,7 +82,7 @@ for (const viewport of viewports) {
 test("real player controls are accessible and the final frame does not loop", async ({ page }) => {
   await openReady(page);
 
-  const setup = page.locator("#start [data-demo-player]");
+  const setup = page.locator("#install [data-demo-player]");
   await expect(setup.locator("[data-demo-window]")).toHaveText("Terminal");
   await expect(page.locator("#harness-demo [data-demo-window]")).toHaveText("open-agent-view");
   await setup.scrollIntoViewIfNeeded();
@@ -122,12 +123,12 @@ test("recordings stay paused on load and only the focused player advances", asyn
   expect(settled.every(({ active }) => !active)).toBe(true);
   expect(settled.every(({ time }, index) => Math.abs(time - initial[index].time) < 0.05)).toBe(true);
 
-  const setup = page.locator("#start [data-demo-player]");
-  await setup.scrollIntoViewIfNeeded();
-  await setup.getByRole("button", { name: "Restart demo" }).focus();
-  await expect(setup).toHaveAttribute("data-playback-focused", "true");
-  await expect(setup.getByRole("button", { name: "Pause demo" })).toHaveText("Pause");
-  await expect.poll(() => setup.evaluate((node) => (
+  const overview = page.locator("#start [data-demo-player]");
+  await overview.scrollIntoViewIfNeeded();
+  await overview.getByRole("button", { name: "Restart demo" }).focus();
+  await expect(overview).toHaveAttribute("data-playback-focused", "true");
+  await expect(overview.getByRole("button", { name: "Pause demo" })).toHaveText("Pause");
+  await expect.poll(() => overview.evaluate((node) => (
     (node as PlayerNode)._realCastPlayer.currentTime()
   ))).toBeGreaterThan(0.2);
   const harness = page.locator("#harness-demo [data-demo-player]");
@@ -138,13 +139,13 @@ test("recordings stay paused on load and only the focused player advances", asyn
   await expect.poll(() => harness.evaluate((node) => (
     (node as PlayerNode)._realCastPlayer.currentTime()
   ))).toBeGreaterThan(0.2);
-  await expect(setup).toHaveAttribute("data-playback-focused", "false");
+  await expect(overview).toHaveAttribute("data-playback-focused", "false");
   await page.waitForTimeout(150);
-  const pausedSetupTime = await setup.evaluate((node) => (
+  const pausedSetupTime = await overview.evaluate((node) => (
     (node as PlayerNode)._realCastPlayer.currentTime()
   ));
   await page.waitForTimeout(450);
-  const afterFocusChange = await setup.evaluate((node) => (
+  const afterFocusChange = await overview.evaluate((node) => (
     (node as PlayerNode)._realCastPlayer.currentTime()
   ));
   expect(Math.abs(afterFocusChange - pausedSetupTime)).toBeLessThan(0.03);
@@ -181,6 +182,41 @@ test("the current key action is readable but restrained and fades after three se
   expect(alpha).toBeLessThanOrEqual(0.35);
   await expect(badge).not.toHaveClass(/is-visible/, { timeout: 3_500 });
 });
+
+for (const viewport of viewports) {
+  test(`${viewport.name} keeps overview actions in a readable terminal subtitle`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await openReady(page);
+    const player = page.locator("#start [data-demo-player]");
+    await player.scrollIntoViewIfNeeded();
+    await player.evaluate((node) => {
+      const controller = (node as PlayerNode)._realCastPlayer;
+      controller.pause();
+      controller.seekTo(Math.min(2, controller.manifest.duration * 0.15));
+      controller.update(Math.min(2, controller.manifest.duration * 0.15));
+    });
+    const subtitle = player.locator(".story-action-subtitle");
+    await expect(subtitle).toHaveAttribute("role", "status");
+    await expect(subtitle).toHaveAttribute("aria-atomic", "true");
+    const geometry = await player.evaluate((node) => {
+      const stage = node.querySelector(".story-stage")!.getBoundingClientRect();
+      const subtitle = node.querySelector(".story-action-subtitle")!.getBoundingClientRect();
+      const style = getComputedStyle(node.querySelector(".story-action-subtitle")!);
+      return {
+        stage: { left: stage.left, right: stage.right, top: stage.top, bottom: stage.bottom },
+        subtitle: { left: subtitle.left, right: subtitle.right, top: subtitle.top, bottom: subtitle.bottom },
+        background: style.backgroundColor,
+        pointerEvents: style.pointerEvents,
+      };
+    });
+    expect(geometry.subtitle.left).toBeGreaterThanOrEqual(geometry.stage.left - 1);
+    expect(geometry.subtitle.right).toBeLessThanOrEqual(geometry.stage.right + 1);
+    expect(geometry.subtitle.bottom).toBeLessThanOrEqual(geometry.stage.bottom + 1);
+    expect(geometry.subtitle.bottom).toBeGreaterThan(geometry.stage.top + (geometry.stage.bottom - geometry.stage.top) * 0.82);
+    expect(geometry.background).not.toBe("rgba(0, 0, 0, 0)");
+    expect(geometry.pointerEvents).toBe("none");
+  });
+}
 
 test("every provider logo jumps to its real recording and tabs support arrow navigation", async ({ page }) => {
   await openReady(page);
@@ -224,7 +260,7 @@ test("the second copy control copies exactly the full executable name", async ({
 test("internal navigation and prominent GitHub actions use distinct link language", async ({ page }) => {
   await openReady(page);
 
-  const internal = page.locator(".nav-internal").getByRole("link", { name: "Start" });
+  const internal = page.locator(".nav-internal").getByRole("link", { name: "Demo" });
   await expect(internal).toHaveAttribute("href", "#start");
   await expect(internal).not.toHaveAttribute("target", "_blank");
 
@@ -367,7 +403,8 @@ test("every story keeps the complete terminal and a clear action keycap", async 
   await page.setViewportSize({ width: 1440, height: 900 });
   await openReady(page);
   const stories = [
-    ["setup", "#start"],
+    ["overview", "#start"],
+    ["setup", "#install"],
     ...harnesses.map(([id]) => [id, "#harness-demo"]),
     ["rename", "#controls"],
     ["switch", "#controls"],
@@ -377,7 +414,7 @@ test("every story keeps the complete terminal and a clear action keycap", async 
 
   for (const [id, sectionSelector] of stories) {
     const section = page.locator(sectionSelector);
-    if (id !== "setup") await section.locator(`[data-story-tab="${id}"]`).click();
+    if (!["setup", "overview"].includes(id)) await section.locator(`[data-story-tab="${id}"]`).click();
     const player = section.locator("[data-demo-player]");
     await expect(player).toHaveAttribute("data-story", `story-${id}`);
     await expect(player.locator(".ap-wrapper")).toHaveCount(1);

@@ -23,6 +23,7 @@ const demos = [
   ["qwen", "Qwen Code", "Qwen Code"],
   ["kimi", "Kimi Code", "Kimi Code"],
   ["terminal", "Terminal", "Terminal"],
+  ["overview", null, null],
   ["rename", null, null],
   ["switch", null, null],
   ["model", null, null],
@@ -74,6 +75,8 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
   assert.match(html, /One live dashboard for every coding harness/);
+  assert.match(html, /Eleven harnesses/);
+  assert.match(html, /11 HARNESS SESSIONS · ONE DASHBOARD/);
   assert.match(html, /return without losing your place/);
   assert.match(html, /Choose any harness/);
   assert.match(html, /Work in its native CLI/);
@@ -87,6 +90,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /class="external-arrow"/);
   assert.match(html, /opens in a new tab/);
   assert.match(html, /data-story="story-setup"/);
+  assert.match(html, /data-story="story-overview"/);
   assert.match(html, /aria-label="INSTALL · OPEN · \/HARNESS playback controls"/);
   assert.match(html, /aria-label="Seek through INSTALL · OPEN · \/HARNESS"/);
   assert.match(html, /role="tablist" aria-label="Harness demos"/);
@@ -103,7 +107,13 @@ test("server-renders real recording controls, provider tabs, and canonical metad
     (html.match(/href="https:\/\/github\.com\/xhluca\/open-agent-view"/g) ?? []).length >= 4,
     "GitHub should be prominent in the header, hero, repository banner, and footer",
   );
-  assert.match(html, /href="#start">Start<\/a>/);
+  assert.match(html, /href="#start">Demo<\/a>/);
+  assert.match(html, /href="#install">Install<\/a>/);
+  assert.ok(
+    html.indexOf('id="start"') < html.indexOf('id="install"'),
+    "the eleven-session overview should precede the standalone installer section",
+  );
+  assert.match(html, /class="story-action-subtitle"[^>]*data-demo-last-action[^>]*aria-atomic="true"/);
   assert.match(html, /href="https:\/\/github\.com\/xhluca\/open-agent-view" target="_blank" rel="noreferrer"/);
 
   for (const [id, label] of demos.slice(1, 13)) {
@@ -186,7 +196,37 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       assert.equal(manifest.timing_adjustments, undefined);
     }
 
-    if (name === "setup") {
+    if (name === "overview") {
+      const overviewNames = [
+        "claude-explanation", "codex-explanation", "pi-explanation",
+        "opencode-explanation", "cursor-explanation", "copilot-explanation",
+        "antigravity-explanation", "mistral-vibe-explanation",
+        "muse-explanation", "qwen-explanation", "kimi-explanation",
+      ];
+      assert.equal(manifest.proof, "conversation");
+      assert.equal(manifest.sequence, "eleven-session-dashboard-open-live-lookup-return");
+      assert.equal(manifest.session_count, 11);
+      assert.ok(["kimi", "qwen"].includes(manifest.target));
+      for (const sessionName of overviewNames) {
+        if (sessionName === "qwen-explanation") {
+          assert.match(visibleOutput, /qwen-explanation|Explain what is Qwen Code/);
+        } else {
+          assert.match(visibleOutput, new RegExp(escapeRegExp(sessionName)));
+        }
+      }
+      assert.match(
+        visibleOutput,
+        /Look up https:\/\/open-agent-view\.github\.io\/ and tell me what it is about\./,
+      );
+      assert.ok(manifest.actions.some((action) => action.action === "↑ · browse sessions"));
+      assert.ok(manifest.actions.some((action) => action.action === "↓ · browse sessions"));
+      assert.ok(manifest.actions.some((action) => /^→ · open (?:Kimi|Qwen) Code$/.test(action.action)));
+      const send = manifest.actions.find((action) => action.action === "Enter · send lookup prompt");
+      const returned = manifest.actions.find((action) => action.action === "Shift+← · return to dashboard");
+      assert.ok(send && returned);
+      assert.ok(returned.at - send.at >= 5, "overview should observe the live response for five seconds");
+      assert.match(visibleOutput, /Open Agent View/);
+    } else if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
       assert.match(visibleOutput, /\$ opav\b/);
       for (const choice of [
@@ -317,6 +357,8 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
   }
 
   const readmeCast = await readFile(new URL("public/oav-demo.cast", root), "utf8");
+  const overviewCast = await readFile(new URL("public/demos/overview.cast", root), "utf8");
+  assert.equal(readmeCast, overviewCast, "README media should use the exact overview recording");
   const readmeVersions = [...readmeCast.matchAll(/Open Agent View v(\d+\.\d+\.\d+)/g)]
     .map((match) => match[1]);
   assert.ok(readmeVersions.length > 0, "README source cast should show Open Agent View");
@@ -351,8 +393,8 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   const playbackSpeeds = [...script.matchAll(/speed:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
   assert.deepEqual(
     playbackSpeeds,
-    [1, ...Array(12).fill(0.6), ...Array(4).fill(1)],
-    "the harness stories should play 20% faster while setup and controls remain literal 1×",
+    [1, 1, ...Array(12).fill(0.6), ...Array(4).fill(1)],
+    "overview, setup, and controls should stay literal while harness stories play at 0.6×",
   );
   assert.match(script, /retainFrame\(\)/);
   assert.match(script, /story-frame-cover/);

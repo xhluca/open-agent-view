@@ -102,7 +102,8 @@ export default function Home() {
         </a>
         <div className="nav-links">
           <div className="nav-internal" aria-label="On this page">
-            <a href="#start">Start</a>
+            <a href="#start">Demo</a>
+            <a href="#install">Install</a>
             <a href="#harness-demo">Harnesses</a>
             <a href="#controls">Controls</a>
             <a href="#architecture">How it works</a>
@@ -144,7 +145,7 @@ export default function Home() {
             <ExternalArrow />
           </a>
           <a className="internal-button" href="#start">
-            <span>Watch the real demo</span>
+            <span>Watch the dashboard demo</span>
             <span className="internal-arrow" aria-hidden="true">↓</span>
           </a>
         </div>
@@ -165,7 +166,23 @@ export default function Home() {
 
       <section className="guided section shell" id="start">
         <div className="section-heading">
-          <div><p className="section-label">01 · START</p><h2>Install once.<br />Choose any harness.</h2></div>
+          <div><p className="section-label">01 · OVERVIEW</p><h2>Eleven harnesses.<br />One live dashboard.</h2></div>
+          <p>
+            Move through every coding-agent session, open its native CLI, send
+            new work, and return while it keeps running.
+          </p>
+        </div>
+        <DemoPlayer
+          story="story-overview"
+          label="11 HARNESS SESSIONS · ONE DASHBOARD"
+          caption="Real Open Agent View dashboard + native harness TUI"
+          actionPlacement="subtitle"
+        />
+      </section>
+
+      <section className="guided section shell" id="install">
+        <div className="section-heading">
+          <div><p className="section-label">02 · INSTALL</p><h2>Install once.<br />Choose any harness.</h2></div>
           <p>
             This is a real terminal recording: the installer is typed, the
             downloaded <code>opav</code> binary opens, and the actual harness
@@ -181,7 +198,7 @@ export default function Home() {
 
       <section className="guided section shell" id="harness-demo">
         <div className="section-heading">
-          <div><p className="section-label">02 · WORK</p><h2>Choose any harness.<br />Work in its native CLI.</h2></div>
+          <div><p className="section-label">03 · WORK</p><h2>Choose any harness.<br />Work in its native CLI.</h2></div>
           <p>
             Start Claude Code, Codex, Pi, or another supported harness from the
             same workspace. Every session stays visible in Open Agent View while
@@ -206,7 +223,7 @@ export default function Home() {
 
       <section className="guided section shell" id="controls">
         <div className="section-heading">
-          <div><p className="section-label">03 · CONTROL</p><h2>Manage every session.<br />From one dashboard.</h2></div>
+          <div><p className="section-label">04 · CONTROL</p><h2>Manage every session.<br />From one dashboard.</h2></div>
           <p>
             Rename sessions, move between active agents, choose models, and
             complete sign-in or setup without losing track of the rest.

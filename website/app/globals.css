@@ -103,15 +103,23 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
 .story-controls button { min-width: 46px; padding: 7px 9px; border: 1px solid rgba(255, 255, 255, .1); border-radius: 6px; background: #171c21; color: #aeb2b7; font: 10px var(--font-geist-mono), monospace; cursor: pointer; }
 .story-controls button:hover, .story-controls button:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .5); outline: none; }
 .story-window { margin: 12px 12px 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .09); border-radius: 9px; background: #181a1b; }
+.story-stage { position: relative; }
 .window-bar { height: 38px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 13px; color: #8f949a; border-bottom: 1px solid rgba(255, 255, 255, .08); font: 9px var(--font-geist-mono), monospace; }
 .window-bar strong { min-width: 0; overflow: hidden; color: #d8dad8; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .window-bar kbd { min-width: 0; max-width: 72%; overflow: hidden; padding: 6px 10px; opacity: 0; color: #c9eaec; border: 1px solid rgba(85, 211, 218, .38); border-radius: 7px; background: rgba(31, 77, 82, .34); box-shadow: 0 0 0 rgba(85, 211, 218, 0); font-family: var(--font-geist-mono), monospace; font-size: 12px; font-weight: 650; text-align: right; text-overflow: ellipsis; transform: translateY(-1px) scale(.98); white-space: nowrap; }
 .window-bar kbd.is-visible { animation: action-keycap 3s ease-out forwards; }
+.story-action-subtitle { position: absolute; z-index: 6; left: 50%; bottom: 3.5%; width: max-content; max-width: min(90%, 760px); overflow-wrap: anywhere; padding: 9px 16px; opacity: 0; color: #d7f5f4; border: 1px solid rgba(85, 211, 218, .34); border-radius: 7px; background: rgba(8, 17, 21, .78); box-shadow: 0 5px 24px rgba(0, 0, 0, .28); font: 650 clamp(11px, 1.35vw, 16px) var(--font-geist-mono), monospace; line-height: 1.35; text-align: center; transform: translateX(-50%); white-space: normal; pointer-events: none; }
+.story-action-subtitle.is-visible { animation: action-subtitle 3s ease-out forwards; }
 @keyframes action-keycap {
   0% { opacity: 0; transform: translateY(-1px) scale(.98); box-shadow: 0 0 0 rgba(85, 211, 218, 0); }
   7% { opacity: 1; transform: translateY(0) scale(1.015); box-shadow: 0 0 12px rgba(85, 211, 218, .24); }
   15%, 74% { opacity: 1; transform: translateY(0) scale(1); box-shadow: 0 0 7px rgba(85, 211, 218, .12); }
   100% { opacity: 0; transform: translateY(0) scale(1); box-shadow: 0 0 0 rgba(85, 211, 218, 0); }
+}
+@keyframes action-subtitle {
+  0% { opacity: 0; transform: translate(-50%, 4px); }
+  8%, 76% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
 }
 .story-window [data-demo-screen] { position: relative; width: 100%; height: auto; aspect-ratio: 1.715; margin: 0; overflow: hidden; color: #cfd2d3; background: #181a1b; }
 .story-window [data-demo-screen] > p { margin: 0; padding: 20px; color: var(--muted); font: 12px var(--font-geist-mono), monospace; }
@@ -200,6 +208,7 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
   .story-controls { width: 100%; display: grid; grid-template-columns: repeat(4, 1fr); }
   .story-controls button { min-width: 0; padding-inline: 4px; }
   .story-window { margin: 7px 7px 0; }
+  .story-action-subtitle { bottom: 3%; max-width: 92%; padding: 6px 9px; font-size: clamp(8px, 2.6vw, 12px); }
   .story-window [data-demo-screen] { min-height: 0; height: auto; aspect-ratio: 1.715; }
   .story-player figcaption { display: grid; }
   .repository-banner { align-items: stretch; flex-direction: column; margin-bottom: 48px; padding: 25px; }
@@ -212,4 +221,5 @@ h2 { margin: 20px 0 0; font-size: clamp(47px, 6vw, 78px); line-height: .95; lett
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  .story-action-subtitle.is-visible { opacity: 1; transform: translate(-50%, 0); }
 }

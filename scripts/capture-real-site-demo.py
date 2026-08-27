@@ -1598,7 +1598,6 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
     if spec.id == "claude":
         terminal.mark_timing("claude-launch-end")
     if spec.id == "codex":
-        terminal.wait_screen(r"Working\s*\([^\n]*esc to interrupt", 90)
         terminal.mark_timing("codex-working-1-start")
         terminal.wait_codex_response_started(baseline)
         terminal.mark_timing("codex-working-1-end")
@@ -1624,7 +1623,6 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
     baseline = terminal.screen()
     terminal.key("Enter", "Enter · send explanation", spec.label)
     if spec.id == "codex":
-        terminal.wait_screen(r"Working\s*\([^\n]*esc to interrupt", 90)
         terminal.mark_timing("codex-working-2-start")
         terminal.wait_codex_response_started(baseline)
         terminal.mark_timing("codex-working-2-end")
@@ -1636,6 +1634,58 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
     )
     reject_failed_turn()
     terminal.remember("Explanation response complete", spec.label)
+
+
+def run_native_overview_seed(terminal: RealTerminal, spec: ProviderDemo) -> None:
+    """Create one genuine, settled provider session outside the overview clip.
+
+    The overview needs a populated dashboard, not a replay of every longer
+    Section 2 conversation. A single real greeting proves each provider can
+    launch and respond while avoiding unrelated web lookups during pre-roll.
+    """
+
+    for attempt in range(1, 4):
+        baseline = terminal.screen()
+        sequence_type_line(
+            terminal,
+            "hello",
+            f"Enter · prelaunch {spec.label}",
+            "open-agent-view",
+            0.04,
+        )
+        deadline = time.monotonic() + 90
+        while re.search(APP_HEADER_PATTERN, terminal.screen()):
+            screen = terminal.screen()
+            if re.search(r"launch failed:", screen, re.IGNORECASE):
+                if attempt == 3:
+                    tail = screen[-2400:].replace(str(Path.home()), "~")
+                    raise RuntimeError(
+                        f"{spec.label} failed all three real overview launches: {tail!r}"
+                    )
+                terminal.remember(
+                    f"Retry {spec.label} launch · {attempt + 1}/3",
+                    "open-agent-view",
+                )
+                time.sleep(2.0)
+                break
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"{spec.label} did not open its native TUI")
+            time.sleep(0.1)
+        else:
+            terminal.wait_native_screen(spec.ready_pattern, 90)
+            if spec.id == "codex":
+                terminal.wait_codex_response_started(baseline)
+            terminal.wait_screen_settled(
+                baseline,
+                provider=spec.label,
+                minimum_wait=0.75,
+                stable_for=1.5,
+            )
+            terminal.key("S-Left", "Shift+← · background seeded session", spec.label)
+            terminal.wait_screen(APP_HEADER_PATTERN, 45)
+            terminal.remember("Seeded session visible", "open-agent-view")
+            sequence_wait(0.75)
+            return
 
 
 def write_sequence_recording(
@@ -1738,6 +1788,123 @@ def write_sequence_recording(
             *prior_names,
         ],
     )
+
+
+def capture_overview_story(
+    root: Path,
+    output: Path,
+    terminal: RealTerminal,
+    session_names: list[str],
+    target_spec: ProviderDemo,
+) -> None:
+    """Record the short, genuine dashboard-to-native opening walkthrough."""
+
+    expected_names = [f"{spec.id}-explanation" for spec in SEQUENCE_DEMOS[:-1]]
+    if session_names != expected_names:
+        raise RuntimeError(
+            "overview requires the eleven completed coding-harness sessions; "
+            f"got {session_names!r}"
+        )
+
+    terminal.wait_screen_without(r"choose harness", 30)
+    terminal.wait_selected_row(target_spec.label, 20)
+    for name in session_names:
+        if name == "qwen-explanation":
+            terminal.wait_screen(r"qwen-explanation|Explain what is Qwen Code", 20)
+        else:
+            terminal.wait_screen(re.escape(name), 20)
+    counts = re.search(
+        r"(\d+) awaiting input · (\d+) working · (\d+) completed",
+        terminal.screen(),
+    )
+    if counts is None or sum(int(value) for value in counts.groups()) != 11:
+        raise RuntimeError("overview dashboard does not contain exactly eleven sessions")
+
+    action_start_index = len(terminal.actions)
+    start = terminal.repaint_start()
+    terminal.remember("Dashboard · 11 coding harnesses", "open-agent-view")
+    time.sleep(1.0)
+
+    for key, label in (
+        ("Down", "↓ · browse sessions"),
+        ("Down", "↓ · browse sessions"),
+        ("Up", "↑ · browse sessions"),
+        ("Up", "↑ · browse sessions"),
+    ):
+        terminal.key(key, label, "open-agent-view")
+        time.sleep(0.5)
+    terminal.wait_selected_row(target_spec.label, 20)
+
+    terminal.key("Right", f"→ · open {target_spec.label}", "open-agent-view")
+    terminal.wait_screen_without(APP_HEADER_PATTERN, 45)
+    terminal.wait_native_screen(target_spec.ready_pattern, 45)
+    time.sleep(0.6)
+
+    prompt = (
+        "Look up https://open-agent-view.github.io/ "
+        "and tell me what it is about."
+    )
+    terminal.type_text(prompt, f"Type · {prompt}", target_spec.label, 0.032)
+    terminal.wait_screen(re.escape(prompt), 30)
+    time.sleep(0.6)
+    terminal.key("Enter", "Enter · send lookup prompt", target_spec.label)
+    # This is intentionally a literal five-second observation window. The
+    # overview ends without waiting for the provider to finish generating.
+    time.sleep(5.0)
+    terminal.key("S-Left", "Shift+← · return to dashboard", target_spec.label)
+    terminal.wait_screen(APP_HEADER_PATTERN, 45)
+    terminal.remember(
+        f"Dashboard · {target_spec.label} keeps running",
+        "open-agent-view",
+    )
+    time.sleep(1.5)
+    end = terminal.timeline_time()
+
+    target = output / "overview.cast"
+    write_trimmed_cast(
+        terminal.raw_cast,
+        target,
+        start,
+        end,
+        public_path_replacements(root),
+    )
+    primed_lead = prime_first_terminal_frame(target)
+    actions = [
+        {
+            **item,
+            "at": max(0.0, round(float(item["at"]) - start - primed_lead, 3)),
+        }
+        for item in terminal.actions[action_start_index:]
+        if start <= float(item["at"]) <= end
+    ]
+    action_path = output / "overview.actions.json"
+    action_path.write_text(
+        json.dumps(
+            {
+                "duration": end - start + 1.35 - primed_lead,
+                "proof": "conversation",
+                "sequence": "eleven-session-dashboard-open-live-lookup-return",
+                "target": target_spec.id,
+                "session_count": 11,
+                "actions": actions,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    action_path.chmod(0o644)
+    validate_public_cast(
+        target,
+        [
+            APP_HEADER,
+            *(name for name in session_names if name != "qwen-explanation"),
+            "Qwen Code",
+            target_spec.label,
+            prompt,
+        ],
+    )
+    print("captured real eleven-session overview story", flush=True)
 
 
 def capture_multi_session_rename(
@@ -1896,6 +2063,8 @@ def capture_provider_sequence(
     *,
     through: str | None = None,
     capture_rename: bool = False,
+    capture_overview: bool = False,
+    write_stories: bool = True,
 ) -> None:
     # Provider supervisors use Unix sockets. Keep the private root short so
     # every provider stays comfortably below sockaddr_un path limits.
@@ -1918,7 +2087,7 @@ def capture_provider_sequence(
             "--launch-cwd",
             str(work),
             "--refresh-ms",
-            "30000",
+            "3600000",
             "--harness",
             "claude",
         ]
@@ -1964,6 +2133,7 @@ def capture_provider_sequence(
             sequence_wait(1.5)
 
             select_sequence_model(terminal, spec)
+            needs_native_return = True
             if spec.id == "terminal":
                 sequence_type_line(
                     terminal,
@@ -1976,22 +2146,43 @@ def capture_provider_sequence(
                 terminal.wait_screen(spec.ready_pattern, 30)
                 run_terminal_sequence_turns(terminal, spec)
             else:
-                run_native_sequence_turns(terminal, spec)
+                try:
+                    if capture_overview:
+                        run_native_overview_seed(terminal, spec)
+                        needs_native_return = False
+                    else:
+                        run_native_sequence_turns(terminal, spec)
+                except RuntimeError:
+                    row_label = SEQUENCE_ROW_LABELS[spec.id]
+                    screen = terminal.screen()
+                    if not (
+                        capture_overview
+                        and re.search(APP_HEADER_PATTERN, screen)
+                        and row_label in screen
+                    ):
+                        raise
+                    terminal.remember(
+                        f"{spec.label} session created; native attach unavailable",
+                        "open-agent-view",
+                    )
+                    sequence_wait(1.0)
+                    needs_native_return = False
 
-            return_draft = "Now, I can navigate back to panel with Shift + Left Arrow"
-            sequence_type_text(
-                terminal,
-                return_draft,
-                "Type · explain return shortcut",
-                spec.label,
-                0.04,
-            )
-            terminal.wait_screen(re.escape(return_draft), 30)
-            sequence_wait(1.5)
-            terminal.key("S-Left", "Shift+← · return to panel", spec.label)
-            terminal.wait_screen(APP_HEADER_PATTERN, 45)
-            terminal.remember("Returned to shared dashboard", "open-agent-view")
-            sequence_wait(3.75)
+            if needs_native_return:
+                return_draft = "Now, I can navigate back to panel with Shift + Left Arrow"
+                sequence_type_text(
+                    terminal,
+                    return_draft,
+                    "Type · explain return shortcut",
+                    spec.label,
+                    0.04,
+                )
+                terminal.wait_screen(re.escape(return_draft), 30)
+                sequence_wait(1.5)
+                terminal.key("S-Left", "Shift+← · return to panel", spec.label)
+                terminal.wait_screen(APP_HEADER_PATTERN, 45)
+                terminal.remember("Returned to shared dashboard", "open-agent-view")
+                sequence_wait(3.75)
 
             # The launch result selects the exact provider/session ID. Refuse
             # to record a rename unless that newly created row is actually
@@ -2037,17 +2228,44 @@ def capture_provider_sequence(
             sequence_wait(1.5)
             end = terminal.timeline_time()
             previous_names.append(renamed)
-            write_sequence_recording(
-                root,
-                output,
-                terminal,
-                spec,
-                start,
-                end,
-                previous_names[:-1],
-                action_start_index,
-            )
+            if write_stories:
+                write_sequence_recording(
+                    root,
+                    output,
+                    terminal,
+                    spec,
+                    start,
+                    end,
+                    previous_names[:-1],
+                    action_start_index,
+                )
             print(f"captured coherent {spec.label} story", flush=True)
+            if capture_overview and spec.id == "kimi":
+                target_spec = next(
+                    candidate for candidate in SEQUENCE_DEMOS if candidate.id == "kimi"
+                )
+                # Record from the same private dashboard that created every
+                # row. Restarting here would turn a managed-only overview into
+                # provider-wide history and can also race supervisor shutdown.
+                terminal.key("Escape", "Esc · close harness picker", "open-agent-view")
+                terminal.wait_screen_without(r"choose harness", 30)
+                terminal.key("Escape", "Esc · focus session list", "open-agent-view")
+                terminal.wait_selected_row(target_spec.label, 20)
+                capture_overview_story(
+                    root,
+                    output,
+                    terminal,
+                    previous_names,
+                    target_spec,
+                )
+                sequence_type_line(
+                    terminal,
+                    "/harness",
+                    "Type /harness",
+                    "open-agent-view",
+                    0.07,
+                )
+                terminal.wait_screen(r"choose harness", 30)
             if capture_rename and spec.id == "codex":
                 capture_multi_session_rename(root, output, terminal, previous_names)
             if through == spec.id:
@@ -2715,7 +2933,7 @@ def capture_claude(repo: Path, output: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "demo", choices=("setup", "sequence", "claude", *PROVIDER_DEMOS, *CONTROL_DEMOS)
+        "demo", choices=("setup", "sequence", "overview", "claude", *PROVIDER_DEMOS, *CONTROL_DEMOS)
     )
     parser.add_argument(
         "--output-dir",
@@ -2738,6 +2956,14 @@ def main() -> int:
         capture_setup(repo, output)
     elif args.demo == "sequence":
         capture_provider_sequence(repo, output, through=args.through)
+    elif args.demo == "overview":
+        capture_provider_sequence(
+            repo,
+            output,
+            through="kimi",
+            capture_overview=True,
+            write_stories=False,
+        )
     elif args.demo == "claude":
         capture_claude(repo, output)
     elif args.demo in PROVIDER_DEMOS:

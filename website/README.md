@@ -29,12 +29,12 @@ dimensions and credential-shaped text, desktop/phone overflow, all playback
 controls, finite final frames, provider deep links, keyboard tabs, the delayed
 tab handoff, clipboard copy, reduced motion, and Axe accessibility checks.
 
-The website stories are deterministic and credential-free. They all use the
-single `/work/acme-dashboard` workspace and share one small player runtime in
-`public/site.js`; the independent Docker demo below validates the actual binary
-and PTY rendering path.
+The published stories are sanitized, finite recordings of the real binary and
+native provider TUIs. They use one `/work/acme-dashboard` workspace and share
+one small player runtime in `public/site.js`; no website component fabricates
+terminal rows.
 
-The real TUI demo is regenerated from an isolated Docker environment with:
+The canonical overview GIF is regenerated from its reviewed real cast with:
 
 ```console
 ../scripts/capture-site-demo.sh

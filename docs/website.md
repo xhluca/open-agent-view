@@ -24,7 +24,7 @@ viewports, reject horizontal overflow,
 exercise every timeline control, provider deep links, keyboard-accessible tabs,
 finite next-tab handoff, countdown cancellation after a rewind, clipboard copy,
 and reduced motion, then run Axe.
-Rendered-HTML tests also parse all 17 genuine cast-v2 recordings and their
+Rendered-HTML tests also parse all 18 genuine cast-v2 recordings and their
 action timelines, reject private paths/account identities/credential-like
 material, require canonical Open Graph metadata and the locally vendored marks,
 and compare the published installer byte-for-byte with the application
@@ -32,17 +32,20 @@ installer.
 
 ## Interactive product stories
 
-The page has three finite terminal walkthroughs implemented by
+The page has four finite terminal walkthroughs implemented by
 [`website/public/site.js`](../website/public/site.js):
 
-1. the start story installs from the public URL, opens the app, types
+1. the overview starts with eleven genuine coding-harness sessions, browses
+   them with arrow keys, opens one native CLI, sends a new lookup prompt, waits
+   five seconds, and returns to the live dashboard;
+2. the install story installs from the public URL, opens the app, types
    `/harness`, and stops with every option visible;
-2. twelve tabbed harness stories begin at the same `/harness` picker, choose
+3. twelve tabbed harness stories begin at the same `/harness` picker, choose
    the tab's harness, browse and select its model (or Terminal shell), run two complete native-TUI
    turns, type the return shortcut explanation, return with Shift+Left, wait on
    the growing shared dashboard, rename the exact new row, and end at the next
    `/harness` picker; and
-3. four tabbed common-control stories explain each next action in the real
+4. four tabbed common-control stories explain each next action in the real
    bottom composer, then demonstrate multi-session rename, native-session
    switching, model search/selection, and login/setup at literal speed.
 
@@ -57,7 +60,7 @@ advance only after the current story has ended and a separate visible countdown
 has elapsed. Rewinding, restarting, replaying, or scrubbing away from the final
 frame cancels and resets that countdown. The long harness stories play at 0.6× so model browsing, native
 responses, returning, and renaming remain legible; setup and focused control
-stories remain literal 1×. Meaningful response and dashboard states are held
+stories and the overview remain literal 1×. Meaningful response and dashboard states are held
 long enough to read. Reduced-motion mode also disables automatic tab changes
 and requires an explicit tab, terminal, or Play activation.
 
@@ -98,9 +101,9 @@ official scripts before recording starts. It copies no provider login state;
 this lets the released `/harness` picker show every supported choice without
 inventing rows or authenticating an account.
 
-[`scripts/capture-site-demo.sh`](../scripts/capture-site-demo.sh) joins the
-reviewed real setup, Claude, and rename casts without generating terminal rows,
-then renders the finite README GIF, MP4, and poster. Asset provenance and exact
+[`scripts/capture-site-demo.sh`](../scripts/capture-site-demo.sh) renders the
+reviewed real overview cast as the finite README GIF, MP4, and poster. It burns
+the separate action timeline as subtitles without changing terminal bytes. Asset provenance and exact
 recapture commands are in [`docs/assets/README.md`](assets/README.md).
 
 The repeatable visual audit builds and exports the current site, then captures
