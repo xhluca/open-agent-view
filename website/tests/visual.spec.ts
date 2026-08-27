@@ -106,6 +106,20 @@ test("real player controls are accessible and the final frame does not loop", as
   await expect(setup.locator(".ap-wrapper")).toHaveCount(1);
 });
 
+test("the first Play click advances an untouched recording", async ({ page }) => {
+  await page.goto("/");
+  const player = page.locator("#start [data-demo-player]");
+  await player.scrollIntoViewIfNeeded();
+  await player.locator(".ap-wrapper").waitFor();
+
+  const toggle = player.locator('[data-demo-action="pause"]');
+  await expect(toggle).toHaveText("Play");
+  await toggle.click();
+  await expect(toggle).toHaveText("Pause");
+  await expect.poll(async () => Number(await player.locator("[data-demo-progress]").inputValue()))
+    .toBeGreaterThan(0);
+});
+
 test("recordings stay paused on load and only the focused player advances", async ({ page }) => {
   await openReady(page);
   const players = page.locator("[data-demo-player]");

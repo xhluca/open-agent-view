@@ -203,7 +203,13 @@ class RealCastPlayer {
     this.mount.addEventListener("pointerdown", () => {
       this.activate();
     });
-    this.root.addEventListener("focusin", () => {
+    this.root.addEventListener("focusin", (event) => {
+      // Playback buttons own their state transition. Letting focus start the
+      // player first makes the very first Play click immediately toggle it
+      // back to paused.
+      if (event.target.closest?.("[data-demo-action]")) {
+        return;
+      }
       if (!this.manuallyPaused && !this.ended) {
         this.userRequestedPlayback = true;
         this.playing = true;
