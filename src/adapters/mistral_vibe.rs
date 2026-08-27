@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{mpsc, Arc, Mutex};
@@ -168,7 +168,7 @@ impl ProcessVibeRpc {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        let mut child = command.spawn().with_context(|| {
+        let mut child = spawn_retrying_text_busy(&mut command).with_context(|| {
             format!(
                 "failed to start Mistral Vibe app server {}",
                 self.app_server
@@ -240,6 +240,22 @@ impl ProcessVibeRpc {
             }
         })
     }
+}
+
+fn spawn_retrying_text_busy(command: &mut Command) -> io::Result<Child> {
+    const RETRIES: usize = 8;
+    const RETRY_DELAY: Duration = Duration::from_millis(25);
+
+    for attempt in 0..=RETRIES {
+        match command.spawn() {
+            Ok(child) => return Ok(child),
+            Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < RETRIES => {
+                thread::sleep(RETRY_DELAY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("the bounded Mistral Vibe app-server spawn loop always returns")
 }
 
 impl VibeRpc for ProcessVibeRpc {
@@ -382,7 +398,7 @@ impl MistralVibeController {
                     session
                         .cwd
                         .as_deref()
-                        .map(|cwd| cwd == request.cwd)
+                        .map(|cwd| same_existing_path(cwd, &request.cwd))
                         .unwrap_or(true)
                 })
                 .collect::<Vec<_>>();
@@ -398,6 +414,15 @@ impl MistralVibeController {
             }
         }
     }
+}
+
+fn same_existing_path(left: &Path, right: &Path) -> bool {
+    left == right
+        || left
+            .canonicalize()
+            .ok()
+            .zip(right.canonicalize().ok())
+            .is_some_and(|(left, right)| left == right)
 }
 
 impl ProviderController for MistralVibeController {
@@ -1193,5 +1218,18 @@ print(json.dumps({"jsonrpc":"2.0","id":2,"result":{"config":{"models":[{"alias":
         assert_eq!(correlated.id, "delayed");
         assert!(started.elapsed() >= SESSION_CORRELATION_INTERVAL * 2);
         assert!(started.elapsed() < SESSION_CORRELATION_TIMEOUT);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn correlation_accepts_equivalent_canonical_workspace_paths() {
+        use std::os::unix::fs::symlink;
+
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let alias = directory.path().join("workspace-alias");
+        fs::create_dir(&workspace).unwrap();
+        symlink(&workspace, &alias).unwrap();
+        assert!(same_existing_path(&workspace, &alias));
     }
 }

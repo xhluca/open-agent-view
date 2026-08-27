@@ -12,10 +12,12 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Fixed
 
-- Provider-native launches and Codex App Server connections retry a short-lived
-  `ETXTBSY` error from executable replacement or delayed filesystem close,
-  covering Linux runners and user-local CLI upgrades without masking
-  persistent launch failures.
+- Provider-native launches plus Codex and Mistral Vibe App Server connections
+  retry a short-lived `ETXTBSY` error from executable replacement or delayed
+  filesystem close, covering Linux runners and user-local CLI upgrades without
+  masking persistent launch failures.
+- Mistral Vibe launch correlation now recognizes canonical workspace aliases,
+  including macOS's `/var` and `/private/var` views of the same directory.
 - The real native PTY contract tests now use timeout and byte-reading options
   supported by macOS Bash 3.2, allow bounded process-group reaping on slower
   runners, and the website animation assertion allows loaded browsers to

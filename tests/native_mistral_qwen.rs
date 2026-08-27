@@ -225,7 +225,8 @@ set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 if [[ "${1:-}" == --resume ]]; then
   [[ "${2:-}" == vibe-owned ]]
-  printf 'VIBE_RESUME_EXACT'
+  printf 'VIBE_RESUME_EXACT\n'
+  sleep 1
   exit 0
 fi
 now=$(($(date +%s) * 1000))
@@ -320,7 +321,8 @@ if [[ "${1:-} ${2:-}" == 'sessions ps' ]]; then
   exit 0
 fi
 if [[ "${1:-}" == --resume ]]; then
-  printf 'QWEN_RESUME_EXACT'
+  printf 'QWEN_RESUME_EXACT\n'
+  sleep 1
   exit 0
 fi
 session=''
