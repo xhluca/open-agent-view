@@ -132,6 +132,10 @@ fn boundary_arrows_and_shift_shortcuts_background_and_reattach_the_native_screen
         Duration::from_secs(4),
     );
 
+    // macOS may stop the nested test runner itself while its foreground PTY
+    // group is handed back for the third time. Every behavior assertion above
+    // has completed; make sure the child can run its bounded cleanup and exit.
+    let _ = unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGCONT) };
     // macOS CI can take several seconds to reap a stopped process group after
     // the final reattach. Keep the assertion bounded without making the
     // platform scheduler part of the behavior under test.
