@@ -242,7 +242,7 @@ fn run_child_scenario() {
     let mut first = Command::new("bash");
     first.args([
         "-c",
-        r"stty raw -echo; printf '\033[2J\033[HNATIVE_READY'; IFS= read -r -n 3 key; if [[ $key == $'\033[D' ]]; then printf '\r\nPLAIN_LEFT_RECEIVED'; else printf '\r\nWRONG_ARROW_BYTES'; fi; while :; do sleep 1; done",
+        r"stty raw -echo; printf '\033[2J\033[HNATIVE_READY'; IFS= read -r -n 3 key; if [[ $key == $'\033[D' ]]; then printf '\r\nPLAIN_LEFT_RECEIVED'; else printf '\r\nWRONG_ARROW_BYTES'; fi; exec sleep 60",
     ]);
     assert!(matches!(
         native_session::run(first, "provider:host:test").unwrap(),

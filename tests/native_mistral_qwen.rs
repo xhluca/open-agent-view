@@ -233,7 +233,7 @@ now=$(($(date +%s) * 1000))
 printf '{"id":"vibe-owned","title":"Vibe owned","preview":"owned task","status":{"type":"idle"},"createdAt":%s,"updatedAt":%s,"cwd":"%s","model":"devstral"}\n' "$now" "$now" "$(pwd)" > "$root/session.json"
 stty raw -echo
 printf '\033[2J\033[HVIBE_NATIVE_READY'
-while :; do sleep 1; done
+exec sleep 60
 "##,
     );
     executable(
@@ -343,7 +343,7 @@ printf '{"pid":%s,"sessionId":"%s","cwd":"%s","name":"Qwen owned","startedAt":%s
 trap 'rm -f "$root/live.jsonl"; exit 0' TERM INT EXIT
 stty raw -echo
 printf '\033[2J\033[HQWEN_NATIVE_READY'
-while :; do sleep 1; done
+exec sleep 60
 "##,
     );
     let ownership = QwenOwnership::load(directory.path().join("owned.json")).unwrap();

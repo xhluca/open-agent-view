@@ -19,9 +19,9 @@ and future released versions are intended to follow Semantic Versioning.
 - Mistral Vibe launch correlation now recognizes canonical workspace aliases,
   including macOS's `/var` and `/private/var` views of the same directory.
 - The real native PTY contract tests now use timeout and byte-reading options
-  supported by macOS Bash 3.2, allow bounded process-group reaping on slower
-  runners, and the website animation assertion allows loaded browsers to
-  schedule cleanup after the exact three-second CSS fade.
+  supported by macOS Bash 3.2 and direct finite provider processes that avoid
+  shell job-control reaping races; the website animation assertion also allows
+  loaded browsers to schedule cleanup after the exact three-second CSS fade.
 
 ## [0.1.43] - 2026-08-27
 

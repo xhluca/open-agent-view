@@ -174,7 +174,7 @@ printf '{"payload":{"event":{"kind":"started","prompt":"fix the native parser"}}
 printf '{"payload":{"event":{"kind":"assistant_message_committed","text":"Muse answer"}}}\n' >> "$dir/session.jsonl"
 stty raw -echo
 printf '\033[2J\033[HMUSE_NATIVE_READY'
-while :; do sleep 1; done
+exec sleep 60
 "##,
     );
     let ownership = MuseOwnership::load(directory.path().join("muse-owned.json")).unwrap();
@@ -244,7 +244,7 @@ printf '\033[2J\033[HSend /help for help information.'
 prompt=$(dd bs=1 count=28 status=none)
 printf '\r\nKIMI_TASK:%s' "$prompt"
 printf '{"title":"Kimi parser","lastPrompt":"%s","createdAt":1700000000000,"updatedAt":1700000000002,"cwd":"%s"}\n' "$prompt" "$OAV_WORKSPACE" > "$dir/state.json"
-while :; do sleep 1; done
+exec sleep 60
 "##,
     );
     let ownership = KimiOwnership::load(directory.path().join("kimi-owned.json")).unwrap();
