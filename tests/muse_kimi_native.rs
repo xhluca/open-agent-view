@@ -29,7 +29,11 @@ fn private_tempdir() -> tempfile::TempDir {
 fn muse_controller_launch_discover_reattach_interrupt_and_exact_open_use_real_ptys() {
     if std::env::var(CHILD_PROVIDER).as_deref() == Ok("muse") {
         run_muse_child();
-        return;
+        open_agent_view::native_session::shutdown_all();
+        // The native scenario already runs in a dedicated child with its own
+        // controlling PTY. Avoid handing that PTY back through a second test
+        // harness teardown, which can stall on macOS runners.
+        std::process::exit(0);
     }
     run_outer("muse", "MUSE", "fix the native parser");
 }
@@ -38,7 +42,8 @@ fn muse_controller_launch_discover_reattach_interrupt_and_exact_open_use_real_pt
 fn kimi_controller_gates_task_then_discovers_reattaches_interrupts_and_opens_exactly() {
     if std::env::var(CHILD_PROVIDER).as_deref() == Ok("kimi") {
         run_kimi_child();
-        return;
+        open_agent_view::native_session::shutdown_all();
+        std::process::exit(0);
     }
     run_outer("kimi", "KIMI", "fix the authenticated parser");
 }
@@ -327,9 +332,7 @@ impl Drop for ChildGuard {
         if self.reaped {
             return;
         }
-        unsafe {
-            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGTERM);
-        }
+        signal_owned_child(&self.child, libc::SIGTERM);
         let deadline = Instant::now() + Duration::from_millis(500);
         while Instant::now() < deadline {
             if matches!(self.child.try_wait(), Ok(Some(_))) {
@@ -338,11 +341,22 @@ impl Drop for ChildGuard {
             }
             thread::sleep(Duration::from_millis(10));
         }
-        unsafe {
-            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+        signal_owned_child(&self.child, libc::SIGKILL);
+        let reap_deadline = Instant::now() + Duration::from_secs(1);
+        while Instant::now() < reap_deadline {
+            if matches!(self.child.try_wait(), Ok(Some(_))) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
         }
-        let _ = self.child.wait();
         self.reaped = true;
+    }
+}
+
+fn signal_owned_child(child: &std::process::Child, signal: libc::c_int) {
+    let pid = child.id() as libc::pid_t;
+    if unsafe { libc::kill(-pid, signal) } < 0 {
+        let _ = unsafe { libc::kill(pid, signal) };
     }
 }
 

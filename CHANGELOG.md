@@ -19,6 +19,9 @@ and future released versions are intended to follow Semantic Versioning.
 - The isolated authenticated-editor PTY fixture now exits its dedicated child
   process directly after explicit native cleanup, avoiding macOS Intel test
   harness delays after the exact provider has already completed.
+- Muse and Kimi native lifecycle fixtures use the same explicit isolated-child
+  exit plus bounded process-group/direct-child cleanup, preventing a retained
+  controlling PTY from hanging Apple-silicon CI after the scenario completes.
 
 ## [0.1.44] - 2026-08-27
 
