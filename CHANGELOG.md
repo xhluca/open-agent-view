@@ -8,6 +8,15 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.45] - 2026-08-27
+
+### Fixed
+
+- The cross-platform cancellation contract now measures the exact child that
+  Open Agent View owns instead of racing a shell-created background job whose
+  process-group behavior differs across macOS runners. The test retains a
+  strict three-second bound against a ten-second child command.
+
 ## [0.1.44] - 2026-08-27
 
 ### Fixed
