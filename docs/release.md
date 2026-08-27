@@ -6,7 +6,7 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.41 is the current private-preview release. Hosted jobs were
+Version 0.1.41 is the current published release. Hosted jobs were
 unavailable, so the maintainer explicitly authorized a manual Linux x86-64
 release. The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.41)
 contains only:
@@ -17,21 +17,19 @@ open-agent-view-0.1.41-x86_64-unknown-linux-gnu.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
-and smoke-tested both before publication and through the published private
+and smoke-tested both before publication and through the published
 release. Its SHA-256 digest is
 `e8a7298d67c8bcf4d4641ca0647e745b8cd1457290338a785dcbe88f159df07a`.
 No ARM64 or macOS artifact is claimed for v0.1.41. Version 0.1.2 was the
-initial published preview. The
+initial published release. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
 terminal-repaint race, and a Linux-only managed-Pi assumption in a macOS PTY
 test. The unpublished `v0.1.11` tag is likewise retained after its ARM Linux
 runner exposed an insecure shared-state initialization order under a `0022`
-umask; v0.1.12 fixes it and tests that umask explicitly. The repository is
-private, so preview installation requires an
-authenticated GitHub account until the project is made public. A version tag
-alone is not sufficient:
+umask; v0.1.12 fixes it and tests that umask explicitly. A version tag alone is
+not sufficient:
 For future complete native releases, publish the archive and checksum for every
 advertised target:
 
@@ -83,12 +81,10 @@ pushed manually with [`scripts/publish-site.sh`](../scripts/publish-site.sh).
 The README deliberately uses repository-owned status badges. Its **Tests**
 badge links to the complete evidence record in
 [`docs/testing.md`](testing.md), and its static release badge must match the
-crate version. A dynamic Shields release badge cannot read this private
-repository and incorrectly reports `repo not found`; the GitHub Actions badge
-would likewise describe hosted-runner availability rather than the documented
-manual release gate when jobs are rejected before startup. A regression test
-keeps both unavailable endpoints out of the README and prevents the release
-badge from drifting behind the package version.
+crate version. The GitHub Actions badge would describe hosted-runner
+availability rather than the documented manual release gate when jobs are
+rejected before startup. A regression test keeps that endpoint out of the
+README and prevents the release badge from drifting behind the package version.
 
 The current manual Linux builder establishes the documented glibc 2.35 floor.
 Windows and older GNU/Linux systems are not release targets yet. The installer
@@ -131,7 +127,8 @@ and cleanup result.
 
 Then:
 
-1. finish the release gates in [`ROADMAP.md`](../ROADMAP.md);
+1. complete the release gates above and record the evidence in
+   [`docs/testing.md`](testing.md);
 2. update [`CHANGELOG.md`](../CHANGELOG.md);
 3. set the intended version in `Cargo.toml` and `Cargo.lock`;
 4. review the exact release commit; and

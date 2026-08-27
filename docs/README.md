@@ -1,8 +1,6 @@
 # Documentation index
 
-Open Agent View is an early private preview. Start with the guide for the job you
-are doing; do not infer release readiness from the package version in
-`Cargo.toml`.
+Start with the guide for the job you are doing.
 
 ## Operate the dashboard
 
@@ -21,7 +19,6 @@ are doing; do not infer release readiness from the package version in
 ## Understand or maintain the implementation
 
 - [Architecture](architecture.md)
-- [Roadmap and release status](../ROADMAP.md)
 - [Release guide](release.md)
 - [README design study](readme-inspiration.md)
 - [Contribution guide](../CONTRIBUTING.md)

@@ -19,9 +19,9 @@ opav update
 opav upgrade               # alias of update
 ```
 
-`update` downloads the repository's current installer (using authenticated
-`gh api` first for the private preview, then public `curl` as a fallback) and
-runs it for the current install directory. The installer still resolves a
+`update` downloads the repository's current installer (using `gh api` when the
+GitHub CLI is available, then public `curl` as a fallback) and runs it for the
+current install directory. The installer still resolves a
 published release asset and verifies its SHA-256 checksum before replacing the
 binary. `OAV_REPO` and `OAV_INSTALL_DIR` retain their documented installer
 overrides. The final line verifies the binary that was installed and reports

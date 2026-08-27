@@ -5,12 +5,6 @@ also creates `opav` as a short symlink. The normal installation downloads a veri
 binary: Rust and Cargo are not user prerequisites. An unrelated existing
 `opav` command is never overwritten.
 
-> [!IMPORTANT]
-> The repository and its preview releases are currently private. An authorized
-> GitHub account is required to read the installer and download release assets.
-> See the [release guide](release.md) for the packaging and verification
-> contract.
-
 ## Supported platforms
 
 The manually published v0.1.41 release currently covers:
@@ -63,17 +57,7 @@ prevents setup from inheriting the last opened agent UI.
 
 ## One-line installation
 
-An authorized user of the current private repository can fetch the installer
-and release with GitHub CLI authentication:
-
-```console
-gh auth login
-gh api \
-  -H "Accept: application/vnd.github.raw+json" \
-  repos/xhluca/open-agent-view/contents/install.sh | bash
-```
-
-After the repository and first release become public, the equivalent command is:
+Install the latest published release:
 
 ```console
 curl -fsSL \

@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes will be documented here. Open Agent View remains an early
-private preview and may change before a public stable release.
+All notable changes will be documented here. Open Agent View uses a `0.x`
+release line and may change before a stable release.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and future released versions are intended to follow Semantic Versioning.
@@ -957,8 +957,8 @@ repaint race, respectively. Neither tag was moved or reused.
 
 ### Known limitations
 
-- Version 0.1.2 is a private preview rather than a supported public stable
-  release or package-registry distribution.
+- Version 0.1.2 was not a supported stable release or package-registry
+  distribution.
 - No authenticated Claude/Codex lifecycle has been recorded inside the fresh
   credential-free Docker TUI probes.
 - Durable Pi, OpenCode, and Cursor managed control require Linux. External

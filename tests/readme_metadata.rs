@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 #[test]
-fn readme_status_badges_work_for_a_private_repository() {
+fn readme_status_badges_match_release_metadata() {
     let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
     let readme = fs::read_to_string(readme_path).expect("read README");
     let release_badge = format!(
@@ -24,7 +24,7 @@ fn readme_status_badges_work_for_a_private_repository() {
     );
     assert!(
         !readme.contains("img.shields.io/github/v/release"),
-        "Shields cannot query releases from the private repository"
+        "README intentionally uses its version-matched static release badge"
     );
 }
 

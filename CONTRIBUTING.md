@@ -1,8 +1,7 @@
 # Contributing
 
-Open Agent View is currently developed in a private repository. Contributions
-are accepted from authorized collaborators; public contribution and support
-channels have not been announced.
+Open Agent View welcomes focused pull requests with matching tests and
+documentation. Use GitHub issues for reproducible bugs and scoped proposals.
 
 ## Before changing code
 
@@ -43,7 +42,7 @@ interpolation for session, prompt, path, or container values.
 - Require an exact target and explicit confirmation for destructive actions.
 - Never persist structured answers, credentials, or raw secrets in fixtures,
   diagnostics, screenshots, or commits.
-- Update operator documentation, the roadmap, and changelog when behavior or
+- Update operator documentation and the changelog when behavior or
   safety boundaries change.
 - Make coherent commits with tests and documentation that describe the same
   state. Do not mark a path verified merely because code was added.
