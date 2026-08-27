@@ -18,6 +18,8 @@ and future released versions are intended to follow Semantic Versioning.
   masking persistent launch failures.
 - Mistral Vibe launch correlation now recognizes canonical workspace aliases,
   including macOS's `/var` and `/private/var` views of the same directory.
+- Native frontend cleanup falls back to signaling the exact OAV-owned child if
+  macOS temporarily cannot address its process group during a stop transition.
 - The real native PTY contract tests now use timeout and byte-reading options
   supported by macOS Bash 3.2 and direct finite provider processes that avoid
   shell job-control reaping races; the website animation assertion also allows

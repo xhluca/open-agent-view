@@ -377,7 +377,16 @@ fn terminate_detached(session: &mut DetachedSession) {
             }
             Ok(None) | Err(_) => {
                 signal_group(session.child.id(), libc::SIGKILL);
-                let _ = session.child.wait();
+                // Never turn dashboard shutdown into an unbounded wait. The
+                // exact child has received an uncatchable signal above; reap
+                // it opportunistically while keeping cleanup latency bounded.
+                let reap_deadline = Instant::now() + Duration::from_secs(1);
+                while Instant::now() < reap_deadline {
+                    if matches!(session.child.try_wait(), Ok(Some(_))) {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
                 break;
             }
         }
@@ -676,7 +685,15 @@ fn copy_available(
 
 #[cfg(unix)]
 fn signal_group(pid: u32, signal: libc::c_int) {
-    let _ = unsafe { libc::kill(-(pid as libc::pid_t), signal) };
+    let pid = pid as libc::pid_t;
+    // A provider spawned through `setsid` should be its process-group leader,
+    // but macOS can report ESRCH for the group during a rapid stop/continue
+    // transition while the child itself is still waitable. The direct fallback
+    // remains scoped to the exact child OAV spawned and prevents shutdown from
+    // waiting forever on a frontend that never received the signal.
+    if unsafe { libc::kill(-pid, signal) } < 0 {
+        let _ = unsafe { libc::kill(pid, signal) };
+    }
 }
 
 #[cfg(unix)]
