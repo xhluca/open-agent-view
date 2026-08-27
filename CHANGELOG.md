@@ -12,9 +12,10 @@ and future released versions are intended to follow Semantic Versioning.
 
 ### Fixed
 
-- Provider-native launches retry a short-lived `ETXTBSY` error from executable
-  replacement or delayed filesystem close, covering Linux ARM runners and
-  user-local CLI upgrades without masking persistent launch failures.
+- Provider-native launches and Codex App Server connections retry a short-lived
+  `ETXTBSY` error from executable replacement or delayed filesystem close,
+  covering Linux runners and user-local CLI upgrades without masking
+  persistent launch failures.
 - The real Kimi PTY contract test now uses the integer timeout supported by
   macOS Bash 3.2, and the website animation assertion allows loaded browsers
   to schedule cleanup after the exact three-second CSS fade.

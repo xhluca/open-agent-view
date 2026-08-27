@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -153,7 +153,7 @@ impl AppServerClient {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
-        let mut child = command.spawn().with_context(|| {
+        let mut child = spawn_retrying_text_busy(&mut command).with_context(|| {
             format!(
                 "failed to start App Server transport {} {}",
                 program,
@@ -352,6 +352,28 @@ impl AppServerClient {
             }
         }
         Ok(())
+    }
+}
+
+fn spawn_retrying_text_busy(command: &mut Command) -> io::Result<Child> {
+    #[cfg(unix)]
+    {
+        const RETRIES: usize = 8;
+        const RETRY_DELAY: Duration = Duration::from_millis(25);
+        for attempt in 0..=RETRIES {
+            match command.spawn() {
+                Ok(child) => return Ok(child),
+                Err(error) if error.raw_os_error() == Some(libc::ETXTBSY) && attempt < RETRIES => {
+                    thread::sleep(RETRY_DELAY);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("the bounded App Server spawn loop always returns")
+    }
+    #[cfg(not(unix))]
+    {
+        command.spawn()
     }
 }
 
