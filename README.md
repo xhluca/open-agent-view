@@ -18,9 +18,7 @@ harnesses plus Terminal.
 
 </div>
 
-Install Open Agent View:
-
-macOS or Linux:
+Install Open Agent View on macOS or Linux:
 
 ```console
 curl -fsSL https://open-agent-view.github.io/install.sh | bash
