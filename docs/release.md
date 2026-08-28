@@ -6,25 +6,30 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.47 is the current published release. The
-[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.47)
+Version 0.1.48 is the current published release. The
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.48)
 contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.47-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.47-x86_64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.47-x86_64-apple-darwin.tar.gz
-open-agent-view-0.1.47-x86_64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.47-aarch64-apple-darwin.tar.gz
-open-agent-view-0.1.47-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.48-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.48-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.48-aarch64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.48-aarch64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.48-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.48-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.48-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.48-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.48-x86_64-pc-windows-msvc.zip
+open-agent-view-0.1.48-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested both before publication and through the published release.
 The adjacent `.sha256` release asset records the verified archive digest.
-No Linux ARM64 artifact is claimed for v0.1.47. Apple silicon was exercised on
-the native `mbp` host. The Intel archive was executed through Rosetta and the
-same commit was built and tested by the native Intel macOS CI runner. Version
+Apple silicon was exercised on the native `mbp` host. The Intel archive was
+executed through Rosetta and the same commit was built and tested by the native
+Intel macOS CI runner. Linux ARM64 and Windows x64 were built, tested, packaged,
+and installer-tested on native hosted runners. Version
 0.1.2 was the initial published release. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
@@ -46,6 +51,8 @@ open-agent-view-VERSION-x86_64-apple-darwin.tar.gz
 open-agent-view-VERSION-x86_64-apple-darwin.tar.gz.sha256
 open-agent-view-VERSION-aarch64-apple-darwin.tar.gz
 open-agent-view-VERSION-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-VERSION-x86_64-pc-windows-msvc.zip
+open-agent-view-VERSION-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 ## Manual native release procedure
@@ -65,13 +72,15 @@ Apple silicon, and execute the packaged binary through Rosetta before
 publication. `scripts/package-release.sh` uses GNU tar's reproducibility flags
 on Linux and disables AppleDouble metadata when packaging with BSD tar.
 
-Extract and smoke-test the archive, test `install.sh` against a temporary local
+Extract and smoke-test the archive, test `install.sh` or `install.ps1` against a temporary local
 release root, create and push an annotated version tag, then publish exactly the
 verified archive and checksum with `gh release create`. Never
 upload an untested cross-compiled artifact merely to fill the matrix.
-The archive contains only the canonical `open-agent-view` executable. The
-installer creates a relative `opav` symlink after version verification and
-leaves an unrelated existing command untouched.
+Unix archives contain the canonical `open-agent-view` executable and the
+installer creates a relative `opav` symlink after version verification.
+Windows archives contain `open-agent-view.exe`; the PowerShell installer copies
+the verified executable to `opav.exe` because ordinary Windows installations
+cannot rely on developer-mode symlinks.
 
 ## Publication policy
 
@@ -90,9 +99,8 @@ rejected before startup. A regression test keeps that endpoint out of the
 README and prevents the release badge from drifting behind the package version.
 
 The current manual Linux builder establishes the documented glibc 2.35 floor.
-Windows and older GNU/Linux systems are not release targets yet. The installer
-fails clearly on unsupported systems instead of downloading an incompatible
-binary.
+Older GNU/Linux systems and Windows ARM64 are not release targets yet. Each
+installer fails clearly instead of downloading an incompatible binary.
 
 ## Prepare a release
 
@@ -104,6 +112,8 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 scripts/real-tui-tests.sh
 scripts/test-installer.sh
+# On a native Windows x64 runner:
+.\scripts\test-installer.ps1
 ```
 
 For a release containing the completed/model/lifecycle changes, retain evidence

@@ -12,8 +12,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use crate::adapters::parse_claude_sessions;
+use crate::codex_rpc::{AppServerClient, AppServerInvocation};
 use crate::codex_supervisor::{CodexReplyMode, CodexSupervisor};
 use crate::domain::{
     AgentSession, Capability, LaunchTarget, Provider, Runtime, SessionKind, SessionSnapshot,
@@ -186,18 +188,28 @@ impl ControlHub {
             );
             claude_registry = Some(registry);
         }
-        let codex = if config.provider_io_enabled && config.codex_enabled {
+        let codex = if config.provider_io_enabled && config.codex_enabled && cfg!(unix) {
             let supervisor = Arc::new(CodexSupervisor::host(config.codex_bin.clone())?);
             controllers.insert(
                 Provider::Codex,
                 Arc::new(CodexController {
-                    supervisor: supervisor.clone(),
+                    supervisor: Some(supervisor.clone()),
                     codex_bin: config.codex_bin.clone(),
                     docker_bin: config.docker_bin.clone(),
                 }),
             );
             Some(supervisor)
         } else {
+            if config.provider_io_enabled && config.codex_enabled {
+                controllers.insert(
+                    Provider::Codex,
+                    Arc::new(CodexController {
+                        supervisor: None,
+                        codex_bin: config.codex_bin.clone(),
+                        docker_bin: config.docker_bin.clone(),
+                    }),
+                );
+            }
             None
         };
         Ok(Self {
@@ -959,7 +971,7 @@ impl ProviderController for ClaudeController {
 }
 
 struct CodexController {
-    supervisor: Arc<CodexSupervisor>,
+    supervisor: Option<Arc<CodexSupervisor>>,
     codex_bin: String,
     docker_bin: String,
 }
@@ -974,11 +986,18 @@ impl ProviderController for CodexController {
     }
 
     fn launch_presentation(&self) -> LaunchPresentation {
-        LaunchPresentation::DeferredForeground
+        if self.supervisor.is_some() {
+            LaunchPresentation::DeferredForeground
+        } else {
+            LaunchPresentation::Foreground
+        }
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
-        self.supervisor.available_models()
+        match &self.supervisor {
+            Some(supervisor) => supervisor.available_models(),
+            None => portable_codex_models(&self.codex_bin),
+        }
     }
 
     fn supports_authentication(&self) -> bool {
@@ -990,11 +1009,17 @@ impl ProviderController for CodexController {
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
-        self.supervisor.enrich(snapshot);
+        if let Some(supervisor) = &self.supervisor {
+            supervisor.enrich(snapshot);
+        }
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        let thread_id = self.supervisor.launch_with_model(
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .context("durable Codex background launch is unavailable on this platform")?;
+        let thread_id = supervisor.launch_with_model(
             &request.prompt,
             &request.cwd,
             request.model.as_deref(),
@@ -1005,8 +1030,40 @@ impl ProviderController for CodexController {
         })
     }
 
+    fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if self.supervisor.is_some() {
+            return self.launch(request);
+        }
+        if request.provider != Provider::Codex || request.prompt.trim().is_empty() {
+            bail!("the Codex launch prompt cannot be empty");
+        }
+        let mut command = Command::new(&self.codex_bin);
+        if let Some(model) = request.model.as_deref() {
+            command.args(["--model", model]);
+        }
+        command.arg(request.prompt.trim()).current_dir(&request.cwd);
+        match crate::native_session::run(command, "codex:portable:new")? {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: "backgrounded Codex session; refresh to discover its thread".into(),
+                provider_session_hint: None,
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: "returned from Codex; refresh to discover its thread".into(),
+                    provider_session_hint: None,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Codex exited with status {status}")
+            }
+        }
+    }
+
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        self.supervisor.interrupt(session)?;
+        self.supervisor
+            .as_ref()
+            .context("managed Codex interrupt is unavailable on this platform")?
+            .interrupt(session)?;
         Ok(ControlOutcome {
             message: format!(
                 "interrupted managed Codex thread {}",
@@ -1018,7 +1075,11 @@ impl ProviderController for CodexController {
 
     fn inspect(&self, session: &AgentSession) -> Result<String> {
         match session.runtime {
-            Runtime::Host => self.supervisor.inspect(session),
+            Runtime::Host => self
+                .supervisor
+                .as_ref()
+                .context("managed Codex inspection is unavailable on this platform")?
+                .inspect(session),
             Runtime::Docker { .. } => {
                 bail!("Docker Codex transcript inspection is observe-only")
             }
@@ -1029,7 +1090,11 @@ impl ProviderController for CodexController {
         if session.runtime != Runtime::Host {
             bail!("inline reply is supported only for owned host Codex threads");
         }
-        let mode = self.supervisor.reply(session, prompt)?;
+        let mode = self
+            .supervisor
+            .as_ref()
+            .context("managed Codex reply is unavailable on this platform")?
+            .reply(session, prompt)?;
         let verb = match mode {
             CodexReplyMode::Started => "started a new turn for",
             CodexReplyMode::Steered => "steered the active turn for",
@@ -1044,7 +1109,10 @@ impl ProviderController for CodexController {
     }
 
     fn archive(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        self.supervisor.archive(session)?;
+        self.supervisor
+            .as_ref()
+            .context("managed Codex archive is unavailable on this platform")?
+            .archive(session)?;
         Ok(ControlOutcome {
             message: format!(
                 "archived managed Codex thread {}",
@@ -1058,7 +1126,10 @@ impl ProviderController for CodexController {
         if session.runtime != Runtime::Host {
             bail!("inline approvals are supported only for owned host Codex threads");
         }
-        self.supervisor.respond_approval(session, accept)?;
+        self.supervisor
+            .as_ref()
+            .context("managed Codex approval is unavailable on this platform")?
+            .respond_approval(session, accept)?;
         Ok(ControlOutcome {
             message: format!(
                 "sent {} for managed Codex thread {}; awaiting provider resolution",
@@ -1077,7 +1148,11 @@ impl ProviderController for CodexController {
         if session.runtime != Runtime::Host {
             bail!("structured input is supported only for owned host Codex threads");
         }
-        let progress = self.supervisor.respond_user_input(session, answer)?;
+        let progress = self
+            .supervisor
+            .as_ref()
+            .context("managed Codex input is unavailable on this platform")?
+            .respond_user_input(session, answer)?;
         let message = if progress.submitted {
             format!(
                 "submitted {}/{} Codex answers; awaiting provider resolution",
@@ -1096,7 +1171,10 @@ impl ProviderController for CodexController {
     }
 
     fn delete(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        self.supervisor.delete(session)?;
+        self.supervisor
+            .as_ref()
+            .context("managed Codex deletion is unavailable on this platform")?
+            .delete(session)?;
         Ok(ControlOutcome {
             message: format!(
                 "deleted managed Codex thread {}",
@@ -1107,7 +1185,10 @@ impl ProviderController for CodexController {
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        let remote = self.supervisor.remote_url_if_owned(session);
+        let remote = self
+            .supervisor
+            .as_ref()
+            .and_then(|supervisor| supervisor.remote_url_if_owned(session));
         let command = match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.codex_bin);
@@ -1134,6 +1215,60 @@ impl ProviderController for CodexController {
         };
         run_interactive(command, session)
     }
+}
+
+/// Query the account-aware Codex catalog through a short-lived stdio App
+/// Server. Windows cannot use the durable Unix-socket supervisor, but model
+/// selection should remain available before handing the console to Codex.
+fn portable_codex_models(executable: &str) -> Result<Vec<String>> {
+    const PAGE_SIZE: u64 = 100;
+    const MAX_PAGES: usize = 200;
+    const MAX_MODELS: usize = 20_000;
+
+    let mut client = AppServerClient::connect(&AppServerInvocation::direct(executable))?;
+    let mut cursor: Option<String> = None;
+    let mut seen = BTreeSet::new();
+    let mut models = Vec::new();
+    for _ in 0..MAX_PAGES {
+        let response = client.request(
+            "model/list",
+            json!({
+                "cursor": cursor,
+                "limit": PAGE_SIZE,
+                "includeHidden": false
+            }),
+        )?;
+        let page = response
+            .get("data")
+            .and_then(Value::as_array)
+            .context("model/list response omitted data")?;
+        for item in page {
+            if item.get("hidden").and_then(Value::as_bool) == Some(true) {
+                continue;
+            }
+            let model = item
+                .get("model")
+                .or_else(|| item.get("id"))
+                .and_then(Value::as_str)
+                .context("model/list item omitted model and id")?;
+            let model = validate_model(Some(model.to_owned()))?
+                .context("Codex model/list returned an empty model")?;
+            if seen.insert(model.clone()) {
+                models.push(model);
+            }
+            if models.len() > MAX_MODELS {
+                bail!("Codex model catalog exceeded {MAX_MODELS} entries");
+            }
+        }
+        cursor = response
+            .get("nextCursor")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        if cursor.is_none() {
+            return Ok(models);
+        }
+    }
+    bail!("Codex model catalog pagination did not terminate")
 }
 
 fn run_interactive(command: Command, session: &AgentSession) -> Result<ControlOutcome> {

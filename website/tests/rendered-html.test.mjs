@@ -475,11 +475,13 @@ test("uses the local asciinema player without a synthetic terminal generator or 
 });
 
 test("keeps the public installer byte-identical to the application installer", async () => {
-  const [source, published] = await Promise.all([
-    readFile(new URL("../../install.sh", import.meta.url)),
-    readFile(new URL("public/install.sh", root)),
-  ]);
-  assert.deepEqual(published, source);
+  for (const installer of ["install.sh", "install.ps1"]) {
+    const [source, published] = await Promise.all([
+      readFile(new URL(`../../${installer}`, import.meta.url)),
+      readFile(new URL(`public/${installer}`, root)),
+    ]);
+    assert.deepEqual(published, source, `${installer} should match its repository source`);
+  }
 });
 
 test("publishes a source-backed 1200 by 630 social preview", async () => {

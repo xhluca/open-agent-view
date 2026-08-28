@@ -39,7 +39,7 @@ npm --prefix "$website_dir" run test:visual
 npm --prefix "$website_dir" run export
 
 source_dir="${website_dir}/dist/static"
-[[ -f "${source_dir}/index.html" && -f "${source_dir}/install.sh" ]] || {
+[[ -f "${source_dir}/index.html" && -f "${source_dir}/install.sh" && -f "${source_dir}/install.ps1" ]] || {
   printf 'static export is incomplete: %s\n' "$source_dir" >&2
   exit 1
 }

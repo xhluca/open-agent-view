@@ -4,6 +4,7 @@ mod codex;
 mod copilot;
 mod copilot_managed;
 mod cursor;
+#[cfg(target_os = "linux")]
 mod cursor_managed;
 mod docker;
 mod fixture;
@@ -43,6 +44,7 @@ pub use cursor::{
     parse_cursor_chat_id, parse_cursor_stream_event, CursorCommandSpec, CursorController,
     CursorInvocation, CursorStreamEvent,
 };
+#[cfg(target_os = "linux")]
 pub use cursor_managed::{default_cursor_state_dir, CursorSource, CursorSupervisor};
 pub use docker::DockerTarget;
 pub use fixture::FixtureSource;

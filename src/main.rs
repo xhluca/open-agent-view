@@ -402,6 +402,7 @@ struct Cli {
 }
 
 fn main() -> Result<()> {
+    configure_platform_environment()?;
     let mut cli = Cli::parse();
     resolve_default_provider_bins(&mut cli);
     if let Some(command) = cli.command.as_ref() {
@@ -723,6 +724,11 @@ fn main() -> Result<()> {
                 } else {
                     engine.add_source(CodexSource::managed_owned(supervisor));
                 }
+            } else {
+                // Native Windows uses a short-lived stdio App Server for
+                // discovery. Mutating controls remain disabled because there
+                // is no durable Unix-socket ownership proof on that platform.
+                engine.add_source(CodexSource::host(cli.codex_bin.clone()));
             }
         }
         if let Some(session_dir) = pi_session_dir {
@@ -871,6 +877,25 @@ fn main() -> Result<()> {
         session_aliases,
     )?;
 
+    Ok(())
+}
+
+/// Keep the existing XDG-style state layout usable from native PowerShell and
+/// Command Prompt, where `HOME` is normally absent but `USERPROFILE` is set.
+fn configure_platform_environment() -> Result<()> {
+    #[cfg(windows)]
+    if std::env::var_os("HOME").is_none() {
+        let home = std::env::var_os("USERPROFILE")
+            .or_else(|| {
+                Some(
+                    PathBuf::from(std::env::var_os("HOMEDRIVE")?)
+                        .join(std::env::var_os("HOMEPATH")?)
+                        .into_os_string(),
+                )
+            })
+            .context("Windows user profile is unavailable (USERPROFILE is not set)")?;
+        std::env::set_var("HOME", home);
+    }
     Ok(())
 }
 
@@ -1533,7 +1558,12 @@ fn run_self_update() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
     }
-    let script = directory.join("install.sh");
+    let installer_name = if cfg!(windows) {
+        "install.ps1"
+    } else {
+        "install.sh"
+    };
+    let script = directory.join(installer_name);
     let result = (|| -> Result<()> {
         println!("Checking for the latest Open Agent View release…");
         let mut downloaded = false;
@@ -1544,7 +1574,7 @@ fn run_self_update() -> Result<()> {
                     "api",
                     "-H",
                     "Accept: application/vnd.github.raw+json",
-                    &format!("repos/{repository}/contents/install.sh"),
+                    &format!("repos/{repository}/contents/{installer_name}"),
                 ])
                 .stdin(Stdio::null())
                 .stdout(Stdio::from(output))
@@ -1564,7 +1594,7 @@ fn run_self_update() -> Result<()> {
                 ])
                 .arg(&script)
                 .arg(format!(
-                    "https://raw.githubusercontent.com/{repository}/main/install.sh"
+                    "https://raw.githubusercontent.com/{repository}/main/{installer_name}"
                 ))
                 .stdin(Stdio::null())
                 .stdout(Stdio::inherit())
@@ -1593,6 +1623,7 @@ fn run_self_update() -> Result<()> {
                     .map(|home| home.join(".local/bin"))
             })
             .context("could not determine the current Open Agent View install directory")?;
+        #[cfg(not(windows))]
         let status = Command::new("bash")
             .arg(&script)
             .env("OAV_REPO", &repository)
@@ -1602,6 +1633,17 @@ fn run_self_update() -> Result<()> {
             .stderr(Stdio::inherit())
             .status()
             .context("failed to start the Open Agent View installer")?;
+        #[cfg(windows)]
+        let status = Command::new("powershell.exe")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+            .arg(&script)
+            .args(["-Repo", &repository, "-InstallDir"])
+            .arg(&install_dir)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .status()
+            .context("failed to start the Open Agent View PowerShell installer")?;
         if !status.success() {
             bail!("Open Agent View update exited with status {status}");
         }
@@ -1619,7 +1661,11 @@ fn run_self_update() -> Result<()> {
 }
 
 fn installed_open_agent_view_version(install_dir: &std::path::Path) -> Result<String> {
-    let executable = install_dir.join("open-agent-view");
+    let executable = install_dir.join(if cfg!(windows) {
+        "open-agent-view.exe"
+    } else {
+        "open-agent-view"
+    });
     let output = Command::new(&executable)
         .arg("--version")
         .stdin(Stdio::null())
@@ -1694,11 +1740,18 @@ fn resolve_executable_from(
 ) -> Option<PathBuf> {
     let candidate = std::path::Path::new(program);
     if candidate.components().count() > 1 {
-        return executable_file(candidate).then(|| candidate.to_path_buf());
+        return executable_names(program)
+            .into_iter()
+            .map(PathBuf::from)
+            .find(|candidate| executable_file(candidate));
     }
     if let Some(candidate) = search_path.and_then(|path| {
         std::env::split_paths(path)
-            .map(|directory| directory.join(program))
+            .flat_map(|directory| {
+                executable_names(program)
+                    .into_iter()
+                    .map(move |name| directory.join(name))
+            })
             .find(|candidate| executable_file(candidate))
     }) {
         return Some(candidate);
@@ -1707,8 +1760,36 @@ fn resolve_executable_from(
     let home = PathBuf::from(home?);
     provider_fallback_directories(program)
         .iter()
-        .map(|directory| home.join(directory).join(program))
+        .flat_map(|directory| {
+            let root = home.join(directory);
+            executable_names(program)
+                .into_iter()
+                .map(move |name| root.join(name))
+        })
         .find(|candidate| executable_file(candidate))
+}
+
+#[cfg(not(windows))]
+fn executable_names(program: &str) -> Vec<std::ffi::OsString> {
+    vec![program.into()]
+}
+
+#[cfg(windows)]
+fn executable_names(program: &str) -> Vec<std::ffi::OsString> {
+    let path = std::path::Path::new(program);
+    if path.extension().is_some() {
+        return vec![program.into()];
+    }
+    let extensions = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+    let mut names = vec![program.into()];
+    names.extend(
+        extensions
+            .split(';')
+            .map(str::trim)
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| format!("{program}{extension}")),
+    );
+    names.into_iter().map(Into::into).collect()
 }
 
 fn provider_fallback_directories(program: &str) -> &'static [&'static str] {

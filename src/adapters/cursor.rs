@@ -1,11 +1,13 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+#[cfg(target_os = "linux")]
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
+#[cfg(target_os = "linux")]
 use super::cursor_managed::CursorSupervisor;
 use crate::control::{
     run_native_authentication, ControlOutcome, LaunchMode, LaunchPresentation, LaunchRequest,
@@ -229,6 +231,7 @@ pub fn parse_cursor_chat_id(output: &str) -> Result<String> {
 /// so this controller intentionally offers native resume only.
 pub struct CursorController {
     invocation: CursorInvocation,
+    #[cfg(target_os = "linux")]
     supervisor: Option<Arc<CursorSupervisor>>,
 }
 
@@ -236,12 +239,14 @@ impl CursorController {
     pub fn host(executable: impl Into<String>) -> Self {
         Self {
             invocation: CursorInvocation::host(executable),
+            #[cfg(target_os = "linux")]
             supervisor: None,
         }
     }
 
     /// Control both native external sessions and the exact processes launched
     /// through this supervisor. Only the latter gain inline capabilities.
+    #[cfg(target_os = "linux")]
     pub fn managed(supervisor: Arc<CursorSupervisor>) -> Self {
         Self {
             invocation: CursorInvocation::host(supervisor.executable()),
@@ -256,11 +261,11 @@ impl ProviderController for CursorController {
     }
 
     fn launch_mode(&self) -> LaunchMode {
+        #[cfg(target_os = "linux")]
         if self.supervisor.is_some() {
-            LaunchMode::SelectableModel
-        } else {
-            LaunchMode::Unavailable
+            return LaunchMode::SelectableModel;
         }
+        LaunchMode::Unavailable
     }
 
     fn launch_presentation(&self) -> LaunchPresentation {
@@ -270,7 +275,12 @@ impl ProviderController for CursorController {
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
-        self.managed_supervisor()?.available_models()
+        #[cfg(target_os = "linux")]
+        {
+            self.managed_supervisor()?.available_models()
+        }
+        #[cfg(not(target_os = "linux"))]
+        bail!("managed Cursor model discovery is unavailable on this platform")
     }
 
     fn supports_authentication(&self) -> bool {
@@ -282,24 +292,29 @@ impl ProviderController for CursorController {
     }
 
     fn enrich(&self, snapshot: &mut SessionSnapshot) {
+        #[cfg(target_os = "linux")]
         if let Some(supervisor) = &self.supervisor {
             supervisor.enrich(snapshot);
         }
+        #[cfg(not(target_os = "linux"))]
+        let _ = snapshot;
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
         if request.provider != Provider::Cursor {
             bail!("the Cursor controller cannot launch another provider");
         }
-        let supervisor = self
-            .supervisor
-            .as_ref()
-            .context("managed Cursor launch is not configured")?;
+        #[cfg(target_os = "linux")]
+        let supervisor = self.managed_supervisor()?;
+        #[cfg(not(target_os = "linux"))]
+        bail!("managed Cursor launch is unavailable on this platform");
+        #[cfg(target_os = "linux")]
         let session_id = supervisor.allocate_chat_with_model(
             &request.prompt,
             &request.cwd,
             request.model.as_deref(),
         )?;
+        #[cfg(target_os = "linux")]
         Ok(ControlOutcome {
             message: format!("launched managed Cursor session {session_id}"),
             provider_session_hint: Some(session_id),
@@ -310,19 +325,26 @@ impl ProviderController for CursorController {
         if request.provider != Provider::Cursor {
             bail!("the Cursor controller cannot launch another provider");
         }
+        #[cfg(target_os = "linux")]
         let supervisor = self.managed_supervisor()?;
+        #[cfg(not(target_os = "linux"))]
+        bail!("managed Cursor launch is unavailable on this platform");
+        #[cfg(target_os = "linux")]
         let session_id = supervisor.allocate_chat_with_model(
             &request.prompt,
             &request.cwd,
             request.model.as_deref(),
         )?;
+        #[cfg(target_os = "linux")]
         let spec = self.invocation.resume_with_prompt(
             &session_id,
             &request.cwd,
             &request.prompt,
             request.model.as_deref(),
         )?;
+        #[cfg(target_os = "linux")]
         let key = format!("cursor:host:{session_id}");
+        #[cfg(target_os = "linux")]
         match crate::native_session::run(spec.command(), &key)? {
             crate::native_session::NativeSessionExit::Backgrounded => {
                 supervisor.mark_native_opened(&session_id)?;
@@ -348,40 +370,65 @@ impl ProviderController for CursorController {
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
-        self.managed_supervisor()?.interrupt(session)?;
-        Ok(ControlOutcome {
-            message: format!("interrupted {}", session.name),
-            provider_session_hint: None,
-        })
+        #[cfg(target_os = "linux")]
+        {
+            self.managed_supervisor()?.interrupt(session)?;
+            Ok(ControlOutcome {
+                message: format!("interrupted {}", session.name),
+                provider_session_hint: None,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        bail!("managed Cursor interrupt is unavailable on this platform")
     }
 
     fn inspect(&self, session: &AgentSession) -> Result<String> {
-        self.managed_supervisor()?.inspect(session)
+        #[cfg(target_os = "linux")]
+        {
+            self.managed_supervisor()?.inspect(session)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = session;
+            bail!("managed Cursor inspection is unavailable on this platform")
+        }
     }
 
     fn reply(&self, session: &AgentSession, prompt: &str) -> Result<ControlOutcome> {
-        self.managed_supervisor()?.reply(session, prompt)?;
-        Ok(ControlOutcome {
-            message: format!("sent a new turn to {}", session.name),
-            provider_session_hint: None,
-        })
+        #[cfg(target_os = "linux")]
+        {
+            self.managed_supervisor()?.reply(session, prompt)?;
+            Ok(ControlOutcome {
+                message: format!("sent a new turn to {}", session.name),
+                provider_session_hint: None,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (session, prompt);
+            bail!("managed Cursor reply is unavailable on this platform")
+        }
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         if session.provider != Provider::Cursor || session.runtime != Runtime::Host {
             bail!("the Cursor host controller cannot open this session");
         }
+        #[cfg(target_os = "linux")]
         if let Some(supervisor) = &self.supervisor {
             if supervisor.owns(session) && supervisor.is_running(session)? {
                 bail!("interrupt the active managed Cursor turn before opening it natively");
             }
         }
+        #[cfg(target_os = "linux")]
         let pending_native = self
             .supervisor
             .as_ref()
             .map(|supervisor| supervisor.pending_native_launch(session))
             .transpose()?
             .flatten();
+        #[cfg(not(target_os = "linux"))]
+        let pending_native: Option<(String, Option<String>)> = None;
         let spec = if let Some((prompt, model)) = pending_native {
             self.invocation.resume_with_prompt(
                 &session.provider_session_id,
@@ -395,6 +442,7 @@ impl ProviderController for CursorController {
         };
         match crate::native_session::run(spec.command(), &session.id)? {
             crate::native_session::NativeSessionExit::Backgrounded => {
+                #[cfg(target_os = "linux")]
                 if let Some(supervisor) = &self.supervisor {
                     if supervisor.owns(session) {
                         supervisor.mark_native_opened(&session.provider_session_id)?;
@@ -406,6 +454,7 @@ impl ProviderController for CursorController {
                 })
             }
             crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                #[cfg(target_os = "linux")]
                 if let Some(supervisor) = &self.supervisor {
                     if supervisor.owns(session) {
                         supervisor.mark_native_opened(&session.provider_session_id)?;
@@ -424,6 +473,7 @@ impl ProviderController for CursorController {
 }
 
 impl CursorController {
+    #[cfg(target_os = "linux")]
     fn managed_supervisor(&self) -> Result<&CursorSupervisor> {
         self.supervisor
             .as_deref()

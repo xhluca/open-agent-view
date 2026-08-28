@@ -8,7 +8,6 @@
 //! the same row resumes the exact stopped frontend and screen.
 
 use std::collections::BTreeMap;
-use std::fs::File;
 use std::io::{self, Read, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, FromRawFd};
@@ -48,10 +47,7 @@ pub enum NativeSessionExit {
 /// and its later dashboard row use the same unambiguous key.
 pub fn new_session_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
-    File::open("/dev/urandom")
-        .context("failed to open the operating system random source")?
-        .read_exact(&mut bytes)
-        .context("failed to generate a provider session ID")?;
+    getrandom::getrandom(&mut bytes).context("failed to generate a provider session ID")?;
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Ok(format!(

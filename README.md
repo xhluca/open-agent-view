@@ -13,7 +13,7 @@ harnesses plus Terminal.
 </table>
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
-[![Release](https://img.shields.io/badge/release-v0.1.47-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.1.48-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
@@ -22,8 +22,16 @@ harnesses plus Terminal.
 
 Install Open Agent View:
 
+macOS or Linux:
+
 ```console
 curl -fsSL https://open-agent-view.github.io/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://open-agent-view.github.io/install.ps1 | iex
 ```
 
 Launch the dashboard:

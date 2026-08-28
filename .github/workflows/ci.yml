@@ -38,16 +38,54 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
           - runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
           - runner: macos-15-intel
+            target: x86_64-apple-darwin
           - runner: macos-15
+            target: aarch64-apple-darwin
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@1.75.0
       - run: cargo test --locked
-      - run: cargo build --release --locked
+      - run: cargo build --release --locked --target ${{ matrix.target }}
       - run: scripts/test-installer.sh
+      - run: scripts/package-release.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            dist/*.tar.gz
+            dist/*.tar.gz.sha256
+
+  windows-portability:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - run: cargo test --locked
+      - run: cargo build --release --locked --target x86_64-pc-windows-msvc
+      - name: Test native startup without HOME
+        shell: pwsh
+        run: |
+          Remove-Item Env:HOME -ErrorAction SilentlyContinue
+          $env:USERPROFILE = Join-Path $env:RUNNER_TEMP "oav-profile"
+          New-Item -ItemType Directory -Path $env:USERPROFILE -Force | Out-Null
+          $json = & .\target\x86_64-pc-windows-msvc\release\open-agent-view.exe --json --no-host-providers | ConvertFrom-Json
+          if ($json.sessions.Count -ne 0 -or $json.warnings.Count -ne 0) { throw "unexpected smoke-test output" }
+      - shell: pwsh
+        run: .\scripts\test-installer.ps1
+      - shell: pwsh
+        run: .\scripts\package-release.ps1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-x86_64-pc-windows-msvc
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
 
   website:
     runs-on: ubuntu-latest

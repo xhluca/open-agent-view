@@ -1,6 +1,6 @@
 [package]
 name = "open-agent-view"
-version = "0.1.47"
+version = "0.1.48"
 edition = "2021"
 rust-version = "1.75"
 description = "Open terminal dashboard for supervising multiple coding-agent CLIs"
@@ -19,6 +19,7 @@ path = "src/main.rs"
 anyhow = "=1.0.86"
 clap = { version = "=4.5.4", features = ["derive"] }
 crossterm = "=0.27.0"
+getrandom = "=0.2.17"
 libc = "=0.2.189"
 ratatui = "=0.26.3"
 serde = { version = "=1.0.203", features = ["derive"] }

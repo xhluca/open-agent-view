@@ -1448,7 +1448,7 @@ fn with_locked_registry<T>(
     result
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;

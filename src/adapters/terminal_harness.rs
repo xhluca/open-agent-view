@@ -26,6 +26,7 @@ use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionKind, Se
 static TERMINAL_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 pub const SHELL_INSTALL_PREFIX: &str = "install-shell:";
+#[cfg(unix)]
 const SUPPORTED_SHELLS: &[(&str, &str)] = &[
     ("bash", "bash"),
     ("zsh", "zsh"),
@@ -33,6 +34,13 @@ const SUPPORTED_SHELLS: &[(&str, &str)] = &[
     ("nu", "nushell"),
     ("xonsh", "xonsh"),
     ("elvish", "elvish"),
+];
+#[cfg(windows)]
+const SUPPORTED_SHELLS: &[(&str, &str)] = &[
+    ("pwsh", "Microsoft.PowerShell"),
+    ("powershell", ""),
+    ("cmd", ""),
+    ("nu", "Nushell.Nushell"),
 ];
 
 #[derive(Clone, Debug)]
@@ -182,11 +190,7 @@ impl ProviderController for TerminalHarness {
     }
 
     fn launch_mode(&self) -> LaunchMode {
-        if cfg!(unix) {
-            LaunchMode::SelectableModel
-        } else {
-            LaunchMode::Unavailable
-        }
+        LaunchMode::SelectableModel
     }
 
     fn launch_presentation(&self) -> LaunchPresentation {
@@ -364,7 +368,26 @@ fn configured_shell() -> String {
         .filter(|shell| {
             !shell.is_empty() && shell.len() <= 4096 && !shell.chars().any(char::is_control)
         })
-        .unwrap_or_else(|| "/bin/sh".into())
+        .or({
+            #[cfg(windows)]
+            {
+                std::env::var("COMSPEC").ok()
+            }
+            #[cfg(not(windows))]
+            {
+                None
+            }
+        })
+        .unwrap_or_else(|| {
+            #[cfg(windows)]
+            {
+                "cmd.exe".into()
+            }
+            #[cfg(not(windows))]
+            {
+                "/bin/sh".into()
+            }
+        })
 }
 
 pub fn is_shell_install_choice(value: &str) -> bool {
@@ -387,22 +410,54 @@ fn supported_shell(name: &str) -> Option<(&'static str, &'static str)> {
 }
 
 fn shell_label(shell: &str) -> &str {
-    Path::new(shell)
+    let label = Path::new(shell)
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or(shell)
+        .unwrap_or(shell);
+    #[cfg(windows)]
+    {
+        return label.strip_suffix(".exe").unwrap_or(label);
+    }
+    #[cfg(not(windows))]
+    label
 }
 
 fn executable_path(name: &str) -> Option<PathBuf> {
-    if name.contains('/') {
+    if name.contains('/') || name.contains('\\') {
         let path = PathBuf::from(name);
         return executable_file(&path).then_some(path);
     }
     std::env::var_os("PATH").and_then(|value| {
         std::env::split_paths(&value)
-            .map(|directory| directory.join(name))
+            .flat_map(|directory| {
+                shell_executable_names(name)
+                    .into_iter()
+                    .map(move |candidate| directory.join(candidate))
+            })
             .find(|candidate| executable_file(candidate))
     })
+}
+
+#[cfg(not(windows))]
+fn shell_executable_names(name: &str) -> Vec<String> {
+    vec![name.into()]
+}
+
+#[cfg(windows)]
+fn shell_executable_names(name: &str) -> Vec<String> {
+    if Path::new(name).extension().is_some() {
+        return vec![name.into()];
+    }
+    let mut names = vec![name.into()];
+    names.extend(
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
+            .split(';')
+            .map(str::trim)
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| format!("{name}{extension}")),
+    );
+    names
 }
 
 fn executable_file(path: &Path) -> bool {
@@ -431,7 +486,10 @@ fn shell_choices() -> Vec<String> {
         }
         if executable_path(shell).is_some() {
             choices.push((*shell).to_owned());
-        } else {
+        } else if !supported_shell(shell)
+            .map(|(_, package)| package.is_empty())
+            .unwrap_or(true)
+        {
             choices.push(format!("{SHELL_INSTALL_PREFIX}{shell}"));
         }
     }
@@ -474,41 +532,64 @@ struct ShellInstallPlan {
 
 fn shell_install_plan(shell: &str) -> Result<ShellInstallPlan> {
     let (_, package) = supported_shell(shell).context("unsupported shell installation choice")?;
-    let manager = if let Some(brew) = executable_path("brew") {
-        brew
-    } else if let Some(apt) = executable_path("apt-get") {
-        apt
-    } else if let Some(dnf) = executable_path("dnf") {
-        dnf
-    } else if let Some(pacman) = executable_path("pacman") {
-        pacman
-    } else if let Some(zypper) = executable_path("zypper") {
-        zypper
-    } else {
-        bail!("no supported package manager was found (brew, apt-get, dnf, pacman, or zypper)");
-    };
-    let manager_name = manager
-        .file_name()
-        .and_then(|name| name.to_str())
-        .context("package manager path has no executable name")?;
-    let mut args = package_manager_args(manager_name, package)?;
-
-    #[cfg(unix)]
-    if manager_name != "brew" && unsafe { libc::geteuid() } != 0 {
-        let sudo = executable_path("sudo")
-            .context("installing this shell requires root access, but sudo was not found")?;
-        args.insert(0, manager.to_string_lossy().into_owned());
+    if package.is_empty() {
+        bail!("{shell} is supplied by Windows and cannot be installed by Open Agent View");
+    }
+    #[cfg(windows)]
+    {
+        let manager = executable_path("winget")
+            .context("installing this shell requires Windows Package Manager (winget)")?;
         return Ok(ShellInstallPlan {
-            program: sudo,
-            args,
+            program: manager,
+            args: vec![
+                "install".into(),
+                "--id".into(),
+                package.into(),
+                "--exact".into(),
+                "--accept-package-agreements".into(),
+                "--accept-source-agreements".into(),
+            ],
         });
     }
-    Ok(ShellInstallPlan {
-        program: manager,
-        args,
-    })
+    #[cfg(unix)]
+    {
+        let manager = if let Some(brew) = executable_path("brew") {
+            brew
+        } else if let Some(apt) = executable_path("apt-get") {
+            apt
+        } else if let Some(dnf) = executable_path("dnf") {
+            dnf
+        } else if let Some(pacman) = executable_path("pacman") {
+            pacman
+        } else if let Some(zypper) = executable_path("zypper") {
+            zypper
+        } else {
+            bail!("no supported package manager was found (brew, apt-get, dnf, pacman, or zypper)");
+        };
+        let manager_name = manager
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("package manager path has no executable name")?;
+        let mut args = package_manager_args(manager_name, package)?;
+
+        #[cfg(unix)]
+        if manager_name != "brew" && unsafe { libc::geteuid() } != 0 {
+            let sudo = executable_path("sudo")
+                .context("installing this shell requires root access, but sudo was not found")?;
+            args.insert(0, manager.to_string_lossy().into_owned());
+            return Ok(ShellInstallPlan {
+                program: sudo,
+                args,
+            });
+        }
+        Ok(ShellInstallPlan {
+            program: manager,
+            args,
+        })
+    }
 }
 
+#[cfg(unix)]
 fn package_manager_args(manager: &str, package: &str) -> Result<Vec<String>> {
     let verb = match manager {
         "brew" | "apt-get" | "dnf" | "zypper" => "install",
@@ -602,6 +683,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn shell_install_plans_use_argument_arrays_and_exact_package_names() {
         assert_eq!(
@@ -614,6 +696,18 @@ mod tests {
         );
         assert!(package_manager_args("sh", "fish").is_err());
         assert_eq!(supported_shell("nu"), Some(("nu", "nushell")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_shell_catalog_uses_native_executables_and_winget_ids() {
+        assert_eq!(
+            supported_shell("pwsh"),
+            Some(("pwsh", "Microsoft.PowerShell"))
+        );
+        assert_eq!(supported_shell("powershell"), Some(("powershell", "")));
+        assert_eq!(supported_shell("cmd"), Some(("cmd", "")));
+        assert_eq!(supported_shell("nu"), Some(("nu", "Nushell.Nushell")));
     }
 
     #[test]

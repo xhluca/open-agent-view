@@ -8,6 +8,35 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.48] - 2026-08-28
+
+### Added
+
+- Added a native Windows x64 release, checksum-verifying PowerShell installer,
+  `open-agent-view.exe` and `opav.exe` commands, user-local `PATH` setup, and a
+  Windows-aware PowerShell, Command Prompt, Nushell, and PowerShell 7 picker.
+- Native Windows can discover sessions, run the dashboard and JSON output,
+  choose account-aware Codex models through a short-lived App Server, and hand
+  the console to supported provider CLIs in the foreground. WSL 2 remains the
+  path for Unix-socket supervision and background/resume gestures.
+
+### Fixed
+
+- Executable discovery now honors Windows `PATHEXT`, including `.exe` tools
+  and npm `.cmd` shims, and maps `USERPROFILE` to the existing user-local state
+  layout when `HOME` is absent.
+- Native session identifiers use the operating system random source on every
+  platform instead of opening `/dev/urandom` directly.
+
+### Tests
+
+- Added a Docker-hosted Windows cross-compilation gate for the library and all
+  test targets, plus a native `windows-latest` gate for the complete Rust test
+  suite, provider-free startup without `HOME`, packaging, checksum rejection,
+  and installation of both command names.
+- Every advertised Unix and Windows target now uploads its tested archive and
+  adjacent SHA-256 file from the native CI runner that built it.
+
 ## [0.1.47] - 2026-08-28
 
 ### Fixed

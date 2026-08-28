@@ -7,17 +7,17 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The v0.1.47 release currently covers:
+The v0.1.48 release covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
+- Linux ARM64 with glibc 2.35 or newer
 - macOS Apple silicon
 - macOS Intel
+- Windows x64
 
-The installer and checked-in native release contract also define these targets,
-but v0.1.47 does not claim an artifact for Linux ARM64 because it was not
-packaged and exercised on a native ARM64 Linux machine:
-
-- Linux ARM64 with glibc 2.35 or newer
+The PowerShell installer selects the `x86_64-pc-windows-msvc` archive,
+verifies SHA-256, installs `open-agent-view.exe` and `opav.exe` without
+administrator privileges, and adds the user-local directory to `PATH`.
 
 Apple-silicon installation is exercised natively. The Intel archive is built
 for `x86_64-apple-darwin`, exercised through Rosetta, and independently built
@@ -68,17 +68,31 @@ prevents setup from inheriting the last opened agent UI.
 
 ## One-line installation
 
-Install the latest published release:
+Install the latest published release on macOS or Linux:
 
 ```console
 curl -fsSL \
   https://raw.githubusercontent.com/xhluca/open-agent-view/main/install.sh | bash
 ```
 
-Both commands install to `~/.local/bin/open-agent-view`; `opav` invokes that
-same file. If the directory is not
-already on `PATH`, the installer prints the exact next step. It does not change
-shell startup files.
+On Windows, run this in PowerShell:
+
+```powershell
+irm https://open-agent-view.github.io/install.ps1 | iex
+```
+
+Native Windows opens provider CLIs in the foreground and returns to the
+dashboard when their native process exits. Durable Unix-socket supervision and
+the Shift+Arrow background gesture remain available through WSL 2; Windows
+ConPTY background/resume is not claimed yet. Session discovery, filtering,
+renaming, model selection, provider login handoff, foreground launch, JSON
+output, and the built-in PowerShell/Command Prompt terminal picker run natively.
+
+The Unix installer writes `~/.local/bin/open-agent-view` and creates an `opav`
+symlink. The Windows installer writes `open-agent-view.exe` and `opav.exe` to
+`%LOCALAPPDATA%\Programs\OpenAgentView\bin` and adds that directory to the user
+`PATH`. It never requires administrator privileges or edits a PowerShell
+profile.
 
 Install a specific version or location with script arguments:
 
@@ -88,8 +102,10 @@ curl -fsSL \
   bash -s -- --version MAJOR.MINOR.PATCH --install-dir /absolute/bin
 ```
 
-The installer requires `curl`, `tar`, `install`, `ln`, `readlink`, and either `sha256sum` or
+The Unix installer requires `curl`, `tar`, `install`, `ln`, `readlink`, and either `sha256sum` or
 `shasum`. Run `./install.sh --help` for all arguments and environment variables.
+The Windows installer requires Windows PowerShell 5.1 or PowerShell 7 and uses
+only built-in archive and checksum commands.
 
 ## Verify the installation
 
