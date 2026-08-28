@@ -19,12 +19,13 @@ opav update
 opav upgrade               # alias of update
 ```
 
-`update` downloads the repository's current installer (using `gh api` when the
-GitHub CLI is available, then public `curl` as a fallback) and runs it for the
-current install directory. The installer still resolves a
+`update` downloads the repository's public installer over HTTPS and runs it for
+the current install directory. Neither installation nor updating requires the
+GitHub CLI. The installer still resolves a
 published release asset and verifies its SHA-256 checksum before replacing the
 binary. `OAV_REPO` and `OAV_INSTALL_DIR` retain their documented installer
-overrides. The final line verifies the binary that was installed and reports
+overrides; `GH_TOKEN` is optional and only needed for API rate limits or private
+forks. The final line verifies the binary that was installed and reports
 `Updated Open Agent View from X to Y.`; if both versions match, it reports that
 Open Agent View is already up to date.
 

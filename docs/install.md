@@ -7,14 +7,14 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The v0.1.46 release currently covers:
+The v0.1.47 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 - macOS Apple silicon
 - macOS Intel
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.46 does not claim an artifact for Linux ARM64 because it was not
+but v0.1.47 does not claim an artifact for Linux ARM64 because it was not
 packaged and exercised on a native ARM64 Linux machine:
 
 - Linux ARM64 with glibc 2.35 or newer

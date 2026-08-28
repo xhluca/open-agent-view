@@ -33,7 +33,7 @@ Environment variables:
   OAV_VERSION            Version to install, or "latest"
   OAV_INSTALL_DIR        Installation directory
   OAV_REPO               GitHub repository
-  GH_TOKEN               Token used by gh or curl for a private repository
+  GH_TOKEN               Optional token for API rate limits or a private fork
 
 The installer downloads a prebuilt archive and verifies its SHA-256 checksum.
 It installs open-agent-view plus the opav shorthand symlink.
@@ -87,13 +87,6 @@ case "${os}/${architecture}" in
   *) fail "no prebuilt release is available for ${os}/${architecture}; see docs/install.md for supported platforms" ;;
 esac
 
-gh_is_authenticated=false
-if [[ -z "$release_base_url" ]] && command -v gh >/dev/null 2>&1; then
-  if gh auth status --hostname github.com >/dev/null 2>&1; then
-    gh_is_authenticated=true
-  fi
-fi
-
 curl_args=(--fail --silent --show-error --location --retry 3 --proto '=https,file' --tlsv1.2)
 if [[ -n "${GH_TOKEN:-}" ]]; then
   curl_args+=(--header "Authorization: Bearer ${GH_TOKEN}")
@@ -101,15 +94,10 @@ if [[ -n "${GH_TOKEN:-}" ]]; then
 fi
 
 if [[ "$requested_version" == "latest" ]]; then
-  if [[ "$gh_is_authenticated" == true ]]; then
-    tag="$(gh api "repos/${repo}/releases/latest" --jq .tag_name 2>/dev/null)" ||
-      fail "no release found for ${repo}; the first release must be published before binary installation works"
-  else
-    release_json="$(curl "${curl_args[@]}" "${github_api_url}/repos/${repo}/releases/latest")" ||
-      fail "no release found for ${repo}; authenticate with 'gh auth login' if the repository is private"
-    tag="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
-    [[ -n "$tag" ]] || fail "the latest release response did not contain a tag"
-  fi
+  release_json="$(curl "${curl_args[@]}" "${github_api_url}/repos/${repo}/releases/latest")" ||
+    fail "no release found for ${repo}; set GH_TOKEN only when using a private fork or encountering API rate limits"
+  tag="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
+  [[ -n "$tag" ]] || fail "the latest release response did not contain a tag"
 else
   tag="v${requested_version#v}"
 fi
@@ -149,12 +137,6 @@ if [[ -n "$release_base_url" ]]; then
   base="${release_base_url%/}/${tag}"
   curl "${curl_args[@]}" --output "${temp_dir}/${archive}" "${base}/${archive}"
   curl "${curl_args[@]}" --output "${temp_dir}/${checksum}" "${base}/${checksum}"
-elif [[ "$gh_is_authenticated" == true ]]; then
-  gh release download "$tag" \
-    --repo "$repo" \
-    --pattern "$archive" \
-    --pattern "$checksum" \
-    --dir "$temp_dir"
 else
   base="https://github.com/${repo}/releases/download/${tag}"
   curl "${curl_args[@]}" --output "${temp_dir}/${archive}" "${base}/${archive}"

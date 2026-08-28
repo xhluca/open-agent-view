@@ -101,8 +101,9 @@ struct PendingQuestion {
 /// WebSocket protocol directly over that socket.
 /// Persisted PID identity is verified before reuse. Normal dashboard lifecycle
 /// never signals a PID loaded from disk; explicit [`Self::shutdown_server`]
-/// cleanup uses a Linux pidfd and revalidates the exact recorded process before
-/// signaling it.
+/// cleanup uses a stable Linux pidfd before signaling. macOS deliberately does
+/// not expose explicit supervisor shutdown until an equivalent stable signaling
+/// primitive is available; normal launch, reconnect, and control remain durable.
 pub struct CodexSupervisor {
     codex_bin: String,
     state_dir: PathBuf,
@@ -117,7 +118,7 @@ pub struct CodexSupervisor {
 #[derive(Clone, Copy)]
 enum SupervisorClientTransport {
     UnixWebSocket,
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(all(test, unix))]
     ProcessProxy,
 }
 
@@ -158,7 +159,7 @@ impl CodexSupervisor {
         )
     }
 
-    #[cfg(all(test, target_os = "linux"))]
+    #[cfg(all(test, unix))]
     fn with_state_dir(codex_bin: impl Into<String>, state_dir: PathBuf) -> Result<Self> {
         Self::with_state_dir_and_transport(
             codex_bin,
@@ -1052,7 +1053,7 @@ impl CodexSupervisor {
             SupervisorClientTransport::UnixWebSocket => {
                 AppServerInvocation::unix_websocket(server.socket_path.clone())
             }
-            #[cfg(all(test, target_os = "linux"))]
+            #[cfg(all(test, unix))]
             SupervisorClientTransport::ProcessProxy => {
                 AppServerInvocation::proxy(self.codex_bin.clone(), &server.socket_path)
             }
@@ -1844,12 +1845,12 @@ fn default_state_dir() -> Result<PathBuf> {
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(unix))]
     {
         let _ = path;
-        bail!("durable Codex supervision currently requires Linux PID identity verification")
+        bail!("durable Codex supervision requires Unix process identity verification")
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
@@ -2034,10 +2035,15 @@ fn record_uses_executable(record: &SupervisorRecord, configured: &str) -> bool {
 }
 
 fn is_missing_process(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<std::io::Error>()
-        .map(|error| error.kind() == std::io::ErrorKind::NotFound)
-        .unwrap_or(false)
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .map(|error| {
+                error.kind() == std::io::ErrorKind::NotFound
+                    || matches!(error.raw_os_error(), Some(libc::ENOENT) | Some(libc::ESRCH))
+            })
+            .unwrap_or(false)
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -2055,7 +2061,16 @@ fn process_start_token(pid: u32) -> Result<String> {
         .context("/proc process stat omitted starttime")
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn process_start_token(pid: u32) -> Result<String> {
+    let info = darwin_process_info(pid)?;
+    Ok(format!(
+        "{}:{}",
+        info.pbi_start_tvsec, info.pbi_start_tvusec
+    ))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn process_start_token(_: u32) -> Result<String> {
     bail!("process start-token verification is unavailable on this platform")
 }
@@ -2065,7 +2080,125 @@ fn process_cmdline(pid: u32) -> Result<Vec<u8>> {
     fs::read(format!("/proc/{pid}/cmdline")).map_err(Into::into)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn process_cmdline(pid: u32) -> Result<Vec<u8>> {
+    use std::mem::size_of;
+
+    let mut argument_limit = 0_i32;
+    let mut argument_limit_size = size_of::<libc::c_int>();
+    let mut argument_limit_mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    let result = unsafe {
+        libc::sysctl(
+            argument_limit_mib.as_mut_ptr(),
+            argument_limit_mib.len() as libc::c_uint,
+            (&mut argument_limit as *mut libc::c_int).cast(),
+            &mut argument_limit_size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error())
+            .context("failed to read the macOS process argument limit");
+    }
+    if argument_limit <= 0 || argument_limit as usize > 16 * 1024 * 1024 {
+        bail!("macOS reported an invalid process argument limit");
+    }
+
+    let mut bytes = vec![0_u8; argument_limit as usize];
+    let mut bytes_len = bytes.len();
+    let mut arguments_mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as libc::c_int];
+    let result = unsafe {
+        libc::sysctl(
+            arguments_mib.as_mut_ptr(),
+            arguments_mib.len() as libc::c_uint,
+            bytes.as_mut_ptr().cast(),
+            &mut bytes_len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if result != 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("failed to read command line for macOS process {pid}"));
+    }
+    bytes.truncate(bytes_len);
+    parse_darwin_process_arguments(&bytes)
+}
+
+#[cfg(target_os = "macos")]
+fn darwin_process_info(pid: u32) -> Result<libc::proc_bsdinfo> {
+    use std::mem::{size_of, MaybeUninit};
+
+    let mut info = MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+    let expected = size_of::<libc::proc_bsdinfo>();
+    let returned = unsafe {
+        libc::proc_pidinfo(
+            pid as libc::c_int,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            expected as libc::c_int,
+        )
+    };
+    if returned == 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("failed to inspect macOS process {pid}"));
+    }
+    if returned != expected as libc::c_int {
+        bail!("macOS returned incomplete identity information for process {pid}");
+    }
+    let info = unsafe { info.assume_init() };
+    if info.pbi_pid != pid {
+        bail!("macOS returned identity information for the wrong process");
+    }
+    Ok(info)
+}
+
+#[cfg(target_os = "macos")]
+fn parse_darwin_process_arguments(bytes: &[u8]) -> Result<Vec<u8>> {
+    use std::mem::size_of;
+
+    let header = bytes
+        .get(..size_of::<libc::c_int>())
+        .context("macOS process arguments omitted argc")?;
+    let argc = libc::c_int::from_ne_bytes(
+        header
+            .try_into()
+            .expect("argc slice has the platform integer width"),
+    );
+    if argc <= 0 || argc as usize > 100_000 {
+        bail!("macOS process arguments reported an invalid argc");
+    }
+
+    let mut cursor = size_of::<libc::c_int>();
+    while bytes.get(cursor).is_some_and(|byte| *byte != 0) {
+        cursor += 1;
+    }
+    if cursor >= bytes.len() {
+        bail!("macOS process arguments omitted the executable terminator");
+    }
+    while bytes.get(cursor) == Some(&0) {
+        cursor += 1;
+    }
+
+    let mut command_line = Vec::new();
+    for _ in 0..argc {
+        let remaining = bytes
+            .get(cursor..)
+            .context("macOS process arguments ended before argc")?;
+        let argument_len = remaining
+            .iter()
+            .position(|byte| *byte == 0)
+            .context("macOS process argument was not NUL terminated")?;
+        command_line.extend_from_slice(&remaining[..argument_len]);
+        command_line.push(0);
+        cursor += argument_len + 1;
+    }
+    Ok(command_line)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn process_cmdline(_: u32) -> Result<Vec<u8>> {
     bail!("process command-line verification is unavailable on this platform")
 }
@@ -2130,7 +2263,80 @@ fn unix_socket_listener_owner(path: &Path, timeout: Duration) -> Result<u32> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
+fn unix_socket_listener_owner(path: &Path, timeout: Duration) -> Result<u32> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let deadline = Instant::now() + timeout;
+    let expected_path = path.to_string_lossy();
+    let expected_listen = format!("unix://{expected_path}");
+    loop {
+        let output = Command::new("/usr/sbin/lsof")
+            .args(["-n", "-a", "-U", "-F0pn", "--"])
+            .arg(path)
+            .env("LC_ALL", "C")
+            .output()
+            .context("failed to inspect the macOS Unix socket owner with /usr/sbin/lsof")?;
+        if output.status.success() || output.status.code() == Some(1) {
+            let mut current_pid = None;
+            let mut candidates = BTreeSet::new();
+            for field in output.stdout.split(|byte| *byte == 0) {
+                let field = field
+                    .strip_prefix(b"\n")
+                    .or_else(|| field.strip_prefix(b"\r\n"))
+                    .unwrap_or(field);
+                match field.split_first() {
+                    Some((b'p', value)) => {
+                        current_pid = std::str::from_utf8(value)
+                            .ok()
+                            .and_then(|value| value.parse::<u32>().ok());
+                    }
+                    Some((b'n', value))
+                        if value == expected_path.as_bytes()
+                            || value == path.as_os_str().as_bytes() =>
+                    {
+                        if let Some(pid) = current_pid {
+                            candidates.insert(pid);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for pid in candidates {
+                let Ok(info) = darwin_process_info(pid) else {
+                    continue;
+                };
+                if info.pbi_uid != effective_uid()? {
+                    continue;
+                }
+                let Ok(cmdline) = process_cmdline(pid) else {
+                    continue;
+                };
+                let exact_listener = cmdline
+                    .split(|byte| *byte == 0)
+                    .filter_map(|argument| std::str::from_utf8(argument).ok())
+                    .any(|argument| argument == expected_listen);
+                if exact_listener {
+                    return Ok(pid);
+                }
+            }
+        } else if Instant::now() >= deadline {
+            bail!(
+                "failed to resolve macOS Unix socket owner: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "timed out resolving the process that owns Unix socket {}",
+                path.display()
+            );
+        }
+        thread::sleep(Duration::from_millis(40));
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 fn unix_socket_listener_owner(_: &Path, _: Duration) -> Result<u32> {
     bail!("Unix socket listener ownership verification is unavailable on this platform")
 }
@@ -2350,12 +2556,12 @@ fn now_millis() -> u64 {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::os::unix::fs::PermissionsExt;
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use std::sync::Arc;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     use tempfile::tempdir;
 
     #[cfg(target_os = "linux")]
@@ -2364,7 +2570,7 @@ mod tests {
 
     use super::*;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn stale_pid_identity_is_never_treated_as_live() {
         let record = SupervisorRecord {
@@ -2379,6 +2585,38 @@ mod tests {
         };
 
         assert!(!verify_process(&record).unwrap());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_durable_server_starts_with_exact_identity_and_reconnects() {
+        let directory = tempdir().unwrap();
+        let state_dir = directory.path().join("state");
+        let mock = directory.path().join("mock-codex.py");
+        fs::write(&mock, MOCK_CODEX).unwrap();
+        fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let first = Arc::new(
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir.clone()).unwrap(),
+        );
+        assert_eq!(
+            first.available_models().unwrap(),
+            vec!["gpt-visible", "gpt-second"]
+        );
+        let first_record = first.live_record().unwrap();
+        let _process_guard = VerifiedTestProcess(first_record.clone());
+        assert!(verify_process(&first_record).unwrap());
+        assert_eq!(
+            fs::metadata(&state_dir).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+
+        let second = CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap();
+        assert_eq!(
+            second.available_models().unwrap(),
+            vec!["gpt-visible", "gpt-second"]
+        );
+        assert!(second.live_record().unwrap().same_process(&first_record));
     }
 
     #[cfg(target_os = "linux")]
@@ -2926,33 +3164,34 @@ mod tests {
 
     /// Reaps the exact mock child created by this test, including on panic.
     /// It never signals a PID after either identity token stops matching.
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     struct VerifiedTestProcess(SupervisorRecord);
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     impl Drop for VerifiedTestProcess {
         fn drop(&mut self) {
             if !verify_process(&self.0).unwrap_or(false) {
                 return;
             }
             unsafe { libc::kill(self.0.pid as i32, libc::SIGTERM) };
-            if reap_test_process(self.0.pid, Duration::from_secs(1)) {
+            if reap_test_process(&self.0, Duration::from_secs(1)) {
                 return;
             }
             if verify_process(&self.0).unwrap_or(false) {
                 unsafe { libc::kill(self.0.pid as i32, libc::SIGKILL) };
-                let _ = reap_test_process(self.0.pid, Duration::from_secs(1));
+                let _ = reap_test_process(&self.0, Duration::from_secs(1));
             }
         }
     }
 
-    #[cfg(target_os = "linux")]
-    fn reap_test_process(pid: u32, timeout: Duration) -> bool {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    fn reap_test_process(record: &SupervisorRecord, timeout: Duration) -> bool {
         let deadline = Instant::now() + timeout;
         loop {
             let mut status = 0;
-            let waited = unsafe { libc::waitpid(pid as i32, &mut status, libc::WNOHANG) };
-            if waited == pid as i32 || (waited < 0 && !Path::new(&format!("/proc/{pid}")).exists())
+            let waited = unsafe { libc::waitpid(record.pid as i32, &mut status, libc::WNOHANG) };
+            if waited == record.pid as i32
+                || (waited < 0 && !verify_process(record).unwrap_or(false))
             {
                 return true;
             }
@@ -2990,7 +3229,7 @@ mod tests {
         assert!(!session.capabilities.contains(&Capability::Interrupt));
     }
 
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     const MOCK_CODEX: &str = r#"#!/usr/bin/env python3
 import json, os, socket, sys, threading
 

@@ -127,14 +127,17 @@ or `~/.local/state/open-agent-view/codex-supervisor/`. The directory is
 current-user-owned and mode `0700`; its lock, log, and JSON record are regular
 current-user-owned files with no group/other access. The record contains the
 PID of the native process that owns the listening socket (not merely an npm
-wrapper), Linux `/proc` start token, exact command line, socket path, and owned
-thread/turn IDs.
+wrapper), platform process-start token, exact command line, socket path, and
+owned thread/turn IDs. Linux uses `/proc`; macOS uses native process metadata,
+`KERN_PROCARGS2`, and exact system inspection of the private Unix-socket owner.
 
 Before reconnecting or changing an ownership record, the supervisor verifies
 both the persisted start token and exact command line. Normal discovery and
 dashboard shutdown never signal a PID loaded from disk. Explicit idle-delete
-recovery opens a pidfd first, revalidates the full identity, and signals only
-through that stable kernel handle. A dead or mismatched record causes a new uniquely named
+recovery on Linux opens a pidfd first, revalidates the full identity, and
+signals only through that stable kernel handle. macOS refuses that exceptional
+restart rather than signal through a reusable numeric PID. A dead or mismatched
+record causes a new uniquely named
 socket to be created; a verified live process with an unavailable socket is
 reported as an error and is not replaced. This deliberately favors avoiding
 the wrong process over automatic cleanup.
@@ -410,8 +413,11 @@ state.
 - There is not yet a `open-agent-view` status/stop command for the detached Codex
   server. Logs append without rotation. Stale sockets and unverified PIDs are
   intentionally left untouched.
-- Durable Codex supervision currently requires Linux because safe PID reuse
-  detection relies on `/proc/<pid>/stat` and `/proc/<pid>/cmdline`.
+- Durable Codex supervision supports Linux and macOS. Linux verifies `/proc`
+  start time, argv, and socket ownership; macOS verifies `proc_pidinfo` start
+  time, `KERN_PROCARGS2` argv, and the exact private Unix-socket owner. Explicit
+  pidfd-based idle-delete recovery remains Linux-only and safely refuses on
+  macOS.
 - Durable Pi supervision has the same Linux process-identity requirement;
   unrelated Pi sessions remain inspect/open-only on every platform.
 - Managed OpenCode reconnect requires an authenticated loopback server plus

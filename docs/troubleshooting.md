@@ -304,8 +304,10 @@ $XDG_STATE_HOME/open-agent-view/codex-supervisor/
 
 or `~/.local/state/open-agent-view/codex-supervisor/`. `app-server.log` is the
 first diagnostic to inspect locally. The supervisor validates the recorded
-Linux PID start token, exact command line, socket location, user ownership, and
-file modes before reuse.
+platform process-start token, exact command line, socket owner and location,
+user ownership, and file modes before reuse. Linux reads those facts from
+`/proc`; macOS uses `proc_pidinfo`, `KERN_PROCARGS2`, and the system
+`/usr/sbin/lsof` against the private Unix socket.
 
 - A dead or identity-mismatched record is not used to signal a process. The
   next managed startup uses a new unique socket and leaves stale socket files
@@ -328,11 +330,13 @@ Codex 0.147 can withhold `thread/delete` responses for a thread still loaded by
 its owning App Server. OAV first archives the exact idle thread. It never calls
 a timeout “deleted”: success requires the normal response or the exact
 `thread/deleted` notification. If the owner wedges and every OAV-owned turn is
-idle, OAV can stop the exact listener through a revalidated pidfd, finish the
+idle on Linux, OAV can stop the exact listener through a revalidated pidfd, finish the
 same ID through an isolated App Server, restart the durable owner, and restore
 the remaining ownership records. A private recovery lock makes other dashboard
 connections wait across that replacement. This recovery can take tens of
-seconds.
+seconds. macOS refuses this exceptional restart because it does not expose a
+pidfd-equivalent stable signaling handle; ordinary launch, reconnect, reply,
+interrupt, archive, and successful deletion remain supported.
 
 OAV refuses that restart while any owned Codex turn is active. Finish or
 interrupt the named work and retry. Do not remove the supervisor record or kill

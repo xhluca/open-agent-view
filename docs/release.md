@@ -6,23 +6,23 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.46 is the current published release. The
-[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.46)
+Version 0.1.47 is the current published release. The
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.47)
 contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.46-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.46-x86_64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.46-x86_64-apple-darwin.tar.gz
-open-agent-view-0.1.46-x86_64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.46-aarch64-apple-darwin.tar.gz
-open-agent-view-0.1.46-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.47-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.47-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.47-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.47-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.47-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.47-aarch64-apple-darwin.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested both before publication and through the published release.
 The adjacent `.sha256` release asset records the verified archive digest.
-No Linux ARM64 artifact is claimed for v0.1.46. Apple silicon was exercised on
+No Linux ARM64 artifact is claimed for v0.1.47. Apple silicon was exercised on
 the native `mbp` host. The Intel archive was executed through Rosetta and the
 same commit was built and tested by the native Intel macOS CI runner. Version
 0.1.2 was the initial published release. The

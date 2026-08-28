@@ -174,7 +174,9 @@ dashboard persists only a provider/runtime/session ownership record and invokes
 the supported `attach`, `logs`, and `stop` commands. Managed host Codex uses one
 detached App Server listening with WebSocket framing on a private Unix socket.
 The dashboard reconnects to that endpoint and grants control only for exact
-thread and active-turn IDs stored with its verified Linux process identity.
+thread and active-turn IDs stored with its verified process identity. Linux
+uses `/proc`; macOS uses native start metadata and argv plus exact inspection
+of the private Unix-socket owner.
 Server-initiated requests are reduced into a volatile per-connection queue;
 they are never reconstructed from transcript files. A separate process-held
 controller lease ensures that only one dashboard instance advertises response

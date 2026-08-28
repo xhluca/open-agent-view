@@ -10,6 +10,30 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## v0.1.47 macOS Codex supervision gate (2026-08-28)
+
+- A native Apple-silicon test starts a disposable Codex App Server on a private
+  Unix socket, resolves its exact listener PID, records its native process-start
+  token and full argv, completes a real `model/list` RPC, and reconnects a
+  second supervisor to that same verified process. The test also checks the
+  `0700` state directory and uses an identity-rechecking cleanup guard.
+- Rustfmt, warning-free Clippy, and the complete locked suite passed on the real
+  Apple-silicon `mbp`. The same complete suite passed for the
+  `x86_64-apple-darwin` build under Rosetta, including the macOS Codex test and
+  real-PTY interaction coverage.
+- The native ARM and Intel release archives were built from the same tree,
+  checksum-verified, and installed into separate empty Mac homes with the real
+  Bash 3.2 installer. Both `open-agent-view` and `opav` reported 0.1.47. The
+  native installed binary also initialized with an explicit Codex executable,
+  proving the previous startup-fatal Linux-only identity guard is gone.
+- The complete locked Linux suite passed. The packaged Linux x86-64 archive was
+  checksum-verified and installed into an empty home in the pinned Debian 12
+  image; both command names reported 0.1.47 and an isolated provider-free JSON
+  snapshot returned no sessions or warnings.
+- Installer tests put a deliberately failing `gh` executable first on `PATH`
+  and still complete the public latest-release flow, proving that public
+  installation no longer invokes or requires GitHub CLI authentication.
+
 ## v0.1.46 cross-platform installer gate (2026-08-28)
 
 - Linux x86-64: Rust 1.75 ran the complete locked test suite and produced the
@@ -214,7 +238,7 @@ checks; the guide also contains release gates that are not yet complete.
   1.0.5 (`5115b46bc9`), Kilo Code 7.5.5, and OpenHands SDK 1.16.1. No account
   state or project workspace was mounted into any of those containers.
 - `tests/self_update.rs` runs `--version`, `-v`, and `-V`, then exercises both
-  `update` and `upgrade` with isolated fake `gh`/`bash` commands. It verifies
+  `update` and `upgrade` with isolated fake `curl`/`bash` commands. It verifies
   the exact repository request, install-directory propagation, successful
   handoff, and cleanup of the downloaded installer without network access.
 - A dedicated Linux isolated real-PTY case enables fake Claude and managed Pi
@@ -530,11 +554,13 @@ examples.
   shell command assembled from user input.
 - An existing session has no stop capability unless its provider/runtime key is
   present in the local ownership registry written at launch time.
-- The durable Codex record stores PID start time and exact command-line bytes;
-  both must match `/proc` before reuse. Explicit idle recovery opens a pidfd and
-  revalidates the complete identity before signaling that exact process; normal
-  dashboard exit never signals it, and stale sockets are not unlinked
-  automatically. Shared/exclusive private recovery locking keeps other
+- The durable Codex record stores PID start time and exact command-line bytes.
+  Linux matches both through `/proc`; macOS matches `proc_pidinfo` start time,
+  `KERN_PROCARGS2` argv, and the exact owner of the private Unix socket. Explicit
+  Linux idle recovery opens a pidfd and revalidates the complete identity before
+  signaling that exact process; macOS safely refuses that exceptional restart.
+  Normal dashboard exit never signals the server, and stale sockets are not
+  unlinked automatically. Shared/exclusive private recovery locking keeps other
   dashboards from attaching during the bounded replacement window.
 - Managed Codex launches use `on-request` approvals and `workspace-write`, with
   no danger-full-access or approval-bypass fallback.

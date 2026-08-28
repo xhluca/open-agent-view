@@ -214,33 +214,18 @@ fake_bin="${temp_root}/fake-bin"
 install -d "$fake_bin"
 cat >"${fake_bin}/gh" <<'EOF'
 #!/usr/bin/env bash
-set -euo pipefail
-case "${1:-} ${2:-}" in
-  "auth status") exit 0 ;;
-  "api repos/xhluca/open-agent-view/releases/latest") printf '%s\n' "${OAV_TEST_TAG}" ;;
-  "release download")
-    destination=""
-    shift 2
-    while (($#)); do
-      case "$1" in
-        --dir) destination="$2"; shift 2 ;;
-        *) shift ;;
-      esac
-    done
-    find "${OAV_TEST_RELEASE_DIR}" -maxdepth 1 -type f -exec cp {} "$destination/" \;
-    ;;
-  *) printf 'unexpected gh invocation: %s\n' "$*" >&2; exit 1 ;;
-esac
+printf 'installer unexpectedly invoked gh: %s\n' "$*" >&2
+exit 97
 EOF
 chmod 0755 "${fake_bin}/gh"
-private_home="${temp_root}/private-home"
+public_home="${temp_root}/public-home"
 PATH="${fake_bin}:/usr/bin:/bin" \
-  HOME="$private_home" \
-  OAV_TEST_TAG="$tag" \
-  OAV_TEST_RELEASE_DIR="$release_dir" \
+  HOME="$public_home" \
+  OAV_GITHUB_API_URL="file://${api_root}" \
+  OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >/dev/null
-[[ -x "${private_home}/.local/bin/open-agent-view" ]] ||
-  fail "authenticated private-release path did not install"
+[[ -x "${public_home}/.local/bin/open-agent-view" ]] ||
+  fail "public release path did not install without gh"
 
 bash "${repo_dir}/install.sh" --help | grep -F "never installs Rust" >/dev/null ||
   fail "installer help does not state the no-Rust behavior"

@@ -615,9 +615,8 @@ Do not call tools, inspect files, or modify the workspace unless explicitly aske
             "CHOKIDAR_INTERVAL": "1000",
             "UV_TOOL_BIN_DIR": str(bin_dir),
             "UV_TOOL_DIR": str(root / "data" / "uv" / "tools"),
-            # The application repository is currently private.  The public
-            # installer uses gh for its authenticated release fallback; this
-            # points at the existing config without copying it into the demo.
+            # Provider login flows may consult GitHub CLI state. Point at the
+            # existing config without copying credentials into the demo home.
             "GH_CONFIG_DIR": os.environ.get(
                 "GH_CONFIG_DIR", str(Path.home() / ".config" / "gh")
             ),

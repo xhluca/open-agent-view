@@ -8,6 +8,20 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.47] - 2026-08-28
+
+### Fixed
+
+- macOS now verifies durable Codex App Server identity with native process
+  start metadata, exact argv, and exact private Unix-socket ownership, so a
+  configured Codex CLI no longer prevents `opav` from opening.
+- The public installer and self-update path no longer invoke or require an
+  authenticated GitHub CLI. They use public HTTPS release metadata and assets;
+  `GH_TOKEN` remains an optional override for rate limits or private forks.
+- Exceptional pidfd-based Codex restart remains Linux-only. macOS now supports
+  normal launch, reconnect, reply, interrupt, archive, and deletion while
+  safely refusing that one unstable numeric-PID fallback.
+
 ## [0.1.46] - 2026-08-28
 
 ### Added
