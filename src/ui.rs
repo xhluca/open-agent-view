@@ -1900,7 +1900,18 @@ mod tests {
     #[test]
     fn directory_view_header_tracks_the_selected_project() {
         let mut item = session("worker", SessionState::Working);
-        item.cwd = PathBuf::from("/different/project/.claude/worktrees/topic");
+        let (worktree, project) = if cfg!(windows) {
+            (
+                r"C:\different\project\.claude\worktrees\topic",
+                r"C:\different\project",
+            )
+        } else {
+            (
+                "/different/project/.claude/worktrees/topic",
+                "/different/project",
+            )
+        };
+        item.cwd = PathBuf::from(worktree);
         let mut app = App::new(SessionSnapshot {
             sessions: vec![item],
             warnings: vec![],
@@ -1912,8 +1923,8 @@ mod tests {
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let rendered = buffer_text(terminal.backend().buffer());
 
-        assert!(rendered.contains("Claude · /different/project"));
-        assert!(rendered.contains("/different/project"));
+        assert!(rendered.contains(&format!("Claude · {project}")));
+        assert!(rendered.contains(project));
         assert!(!rendered.contains(".claude/worktrees"));
     }
 
@@ -1969,10 +1980,12 @@ mod tests {
         );
         app.start_new_session(None);
         app.open_model_picker();
-        app.set_available_models(
-            Provider::Terminal,
-            Ok(vec!["bash".into(), "install-shell:fish".into()]),
-        );
+        let (shell, install, install_label) = if cfg!(windows) {
+            ("cmd", "install-shell:nu", "nu · install")
+        } else {
+            ("bash", "install-shell:fish", "fish · install")
+        };
+        app.set_available_models(Provider::Terminal, Ok(vec![shell.into(), install.into()]));
         app.model_selection = 2;
         let backend = TestBackend::new(100, 24);
         let mut terminal = Terminal::new(backend).unwrap();
@@ -1983,7 +1996,7 @@ mod tests {
         assert!(rendered.contains("new task · harness Terminal · shell default"));
         assert!(rendered.contains("choose Terminal shell · 3 results"));
         assert!(rendered.contains("Default shell"));
-        assert!(rendered.contains("fish · install"));
+        assert!(rendered.contains(install_label));
         assert!(rendered.contains("enter install in native package manager"));
         assert!(!rendered.contains("install-shell:"));
     }

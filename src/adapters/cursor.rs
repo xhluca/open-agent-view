@@ -548,6 +548,7 @@ fn require_model(model: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn builds_shell_free_resume_and_safe_print_invocations() {
         let invocation = CursorInvocation::host("cursor-agent");

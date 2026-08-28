@@ -18,6 +18,13 @@ try {
     if ((& $canonical --version | Out-String).Trim() -ne "open-agent-view $version") { throw "canonical executable version mismatch" }
     if ((& $alias --version | Out-String).Trim() -ne "open-agent-view $version") { throw "opav shorthand version mismatch" }
 
+    $waiter = Start-Process powershell.exe -ArgumentList "-NoProfile", "-Command", "Start-Sleep -Seconds 2" -PassThru
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    & (Join-Path $repo "install.ps1") -Version $version -InstallDir $install -ReleaseBaseUrl (Join-Path $temporary "releases") -WaitForProcessId $waiter.Id -PreviousVersion "0.0.0" -SkipPathUpdate
+    $timer.Stop()
+    if ($timer.Elapsed.TotalSeconds -lt 1.5) { throw "installer did not wait for the running process before replacement" }
+    if ((& $canonical --version | Out-String).Trim() -ne "open-agent-view $version") { throw "waited replacement produced the wrong executable" }
+
     $checksum = Get-ChildItem -LiteralPath $release -Filter '*.sha256' | Select-Object -First 1
     $original = Get-Content -LiteralPath $checksum.FullName -Raw
     ('0' * 64) + '  broken.zip' | Set-Content -LiteralPath $checksum.FullName -Encoding ascii

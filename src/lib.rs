@@ -8,6 +8,7 @@ pub mod codex_supervisor;
 pub mod control;
 pub mod doctor;
 pub mod domain;
+pub(crate) mod fs_util;
 pub mod hidden;
 pub mod maintenance;
 pub mod native_session;

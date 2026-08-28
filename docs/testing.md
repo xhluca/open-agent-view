@@ -10,6 +10,29 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## v0.1.48 native Windows x64 gate (2026-08-28)
+
+- The complete locked Rust suite is compiled and executed on a native
+  `windows-latest` runner, not under Wine. Windows-specific coverage includes
+  Win32 atomic state-file replacement, `USERPROFILE` operation without
+  `HOME`, Windows worktree paths, POSIX Docker container paths from a Windows
+  host, operating-system random IDs, and the PowerShell/Command Prompt shell
+  catalog.
+- The same runner builds `x86_64-pc-windows-msvc`, starts the release binary in
+  provider-free JSON mode, packages the `.exe` into the documented ZIP, and
+  exercises the PowerShell installer against that local release. The installer
+  test verifies both command names, checksum rejection without replacing a
+  working installation, and waiting for a running process before an update
+  replaces Windows executables.
+- A separate disposable Linux Docker environment installs MinGW and the Rust
+  Windows GNU standard library, then compiles the library and every test target
+  for `x86_64-pc-windows-gnu`. This is a supplementary portability check; the
+  native MSVC runner is the release acceptance gate.
+- Native Windows intentionally uses foreground provider handoff. Durable
+  Unix-socket supervision and PTY background/resume gestures remain available
+  through WSL 2 until a ConPTY implementation can preserve the same ownership
+  and return guarantees.
+
 ## v0.1.47 macOS Codex supervision gate (2026-08-28)
 
 - A native Apple-silicon test starts a disposable Codex App Server on a private
@@ -490,6 +513,7 @@ task inside a fresh container remains a separate opt-in credentialed test.
 | Searchable async model catalogs, native auth retry, and exact modeled launch | All fifteen harness catalog parsers/transports or explicit exact-ID fallbacks, mock App Server/RPC/HTTP/ACP/headless payload assertions, signed-out real-PTY flows, and isolated setup terminals | Verified deterministically |
 | Post-launch refresh/selection without blocking input | Slow-launch worker regression plus exact provider/session hint tests | Verified deterministically |
 | Canonical synthetic fixture at wide, narrow, and tiny sizes in fresh Docker PTYs | Reproducible procedure in `tui-validation.md` | Verified manually |
+| Windows x64 dashboard, JSON startup, state persistence, packaging, checksum installer, and update-safe executable replacement | Native Windows Server runner plus supplementary Docker cross-compilation of every test target | Verified on Windows |
 | Public website real-terminal stories, privacy, responsive layout, player controls, reduced motion, and accessibility | 18 parsed cast/action pairs, 270 extracted audit frames, and desktop/Mac-laptop/phone Playwright and Axe gates | Verified |
 | Codex request replay and exact response ownership | Disposable mock App Server | Verified |
 | Pi durable RPC launch/reconnect/reply/request/stop/delete/native handoff/model ownership | Disposable mock RPC plus isolated real non-model protocol/TUI/catalog probes | Verified on Linux |

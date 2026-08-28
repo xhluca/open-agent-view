@@ -1348,6 +1348,7 @@ mod tests {
 
     const UUID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 
+    #[cfg(unix)]
     #[test]
     fn omp_current_title_slot_and_latest_message_are_projected() {
         let directory = tempfile::tempdir().unwrap();
@@ -1369,6 +1370,7 @@ mod tests {
         assert_eq!(session.model.as_deref(), Some("fixture"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn grok_summary_and_update_log_are_projected() {
         let directory = tempfile::tempdir().unwrap();
@@ -1392,6 +1394,7 @@ mod tests {
         assert_eq!(parsed.model.as_deref(), Some("grok-4.6"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn kilo_json_uses_documented_fields_and_millisecond_times() {
         let parsed = parse_kilo_sessions(
@@ -1406,6 +1409,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn openhands_base_state_and_latest_message_are_projected() {
         let directory = tempfile::tempdir().unwrap();
@@ -1446,6 +1450,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn source_defaults_to_owned_rows_and_external_is_explicit() {
         let directory = tempfile::tempdir().unwrap();

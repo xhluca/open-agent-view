@@ -1558,6 +1558,8 @@ fn run_self_update() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))?;
     }
+    #[cfg(windows)]
+    let mut cleanup_staging = true;
     let installer_name = if cfg!(windows) {
         "install.ps1"
     } else {
@@ -1634,32 +1636,58 @@ fn run_self_update() -> Result<()> {
             .status()
             .context("failed to start the Open Agent View installer")?;
         #[cfg(windows)]
-        let status = Command::new("powershell.exe")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-            .arg(&script)
-            .args(["-Repo", &repository, "-InstallDir"])
-            .arg(&install_dir)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("failed to start the Open Agent View PowerShell installer")?;
-        if !status.success() {
-            bail!("Open Agent View update exited with status {status}");
+        {
+            Command::new("powershell.exe")
+                .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+                .arg(&script)
+                .arg("-Repo")
+                .arg(&repository)
+                .arg("-InstallDir")
+                .arg(&install_dir)
+                .arg("-WaitForProcessId")
+                .arg(std::process::id().to_string())
+                .arg("-PreviousVersion")
+                .arg(previous_version)
+                .arg("-CleanupStaging")
+                .stdin(Stdio::null())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .context("failed to start the Open Agent View PowerShell installer")?;
+            cleanup_staging = false;
+            println!(
+                "Open Agent View {previous_version} will update after this command exits; the installer will report the installed version."
+            );
+            return Ok(());
         }
-        let installed_version = installed_open_agent_view_version(&install_dir)?;
-        if installed_version == previous_version {
-            println!("Open Agent View is already up to date at {installed_version}.");
-        } else {
-            println!("Updated Open Agent View from {previous_version} to {installed_version}.");
+        #[cfg(not(windows))]
+        {
+            if !status.success() {
+                bail!("Open Agent View update exited with status {status}");
+            }
+            let installed_version = installed_open_agent_view_version(&install_dir)?;
+            if installed_version == previous_version {
+                println!("Open Agent View is already up to date at {installed_version}.");
+            } else {
+                println!("Updated Open Agent View from {previous_version} to {installed_version}.");
+            }
+            Ok(())
         }
-        Ok(())
     })();
-    let _ = std::fs::remove_file(&script);
-    let _ = std::fs::remove_dir(&directory);
+    #[cfg(not(windows))]
+    {
+        let _ = std::fs::remove_file(&script);
+        let _ = std::fs::remove_dir(&directory);
+    }
+    #[cfg(windows)]
+    if cleanup_staging {
+        let _ = std::fs::remove_file(&script);
+        let _ = std::fs::remove_dir(&directory);
+    }
     result
 }
 
+#[cfg(not(windows))]
 fn installed_open_agent_view_version(install_dir: &std::path::Path) -> Result<String> {
     let executable = install_dir.join(if cfg!(windows) {
         "open-agent-view.exe"

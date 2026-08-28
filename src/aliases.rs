@@ -267,7 +267,7 @@ fn write_registry(path: &Path, records: &BTreeMap<String, SessionAliasRecord>) -
         serde_json::to_writer_pretty(&mut file, &document)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, path)
+        crate::fs_util::replace_file(&temporary, path)
             .with_context(|| format!("failed to replace {}", path.display()))?;
         Ok(())
     })();

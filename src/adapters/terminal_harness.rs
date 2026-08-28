@@ -659,7 +659,10 @@ mod tests {
 
     #[test]
     fn shell_install_markers_are_bounded_to_the_supported_catalog() {
+        #[cfg(unix)]
         assert!(is_shell_install_choice("install-shell:fish"));
+        #[cfg(windows)]
+        assert!(is_shell_install_choice("install-shell:pwsh"));
         assert_eq!(shell_install_name("install-shell:nu"), Some("nu"));
         assert!(!is_shell_install_choice("install-shell:made-up"));
         assert!(!is_shell_install_choice("bash"));

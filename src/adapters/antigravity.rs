@@ -219,7 +219,7 @@ impl AntigravityOwnership {
         serde_json::to_writer_pretty(&mut file, &*records)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(temporary, &self.path)?;
+        crate::fs_util::replace_file(&temporary, &self.path)?;
         Ok(())
     }
 
@@ -1168,7 +1168,7 @@ fn persist_model_cache(path: &Path, cache: &CachedAntigravityModels) -> Result<(
     serde_json::to_writer(&mut file, cache)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
-    fs::rename(temporary, path)?;
+    crate::fs_util::replace_file(&temporary, path)?;
     Ok(())
 }
 
@@ -1218,6 +1218,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn parses_only_the_documented_workspace_cache_shape() {
         let sessions = parse_antigravity_last_conversations(
@@ -1306,6 +1307,7 @@ mod tests {
         assert!(error.contains("deleted-workspace"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn builds_shell_free_native_resume_and_never_bypasses_permissions() {
         let invocation = AntigravityInvocation::host("agy");

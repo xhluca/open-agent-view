@@ -1956,7 +1956,8 @@ fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
     let bytes = serde_json::to_vec_pretty(record)?;
     file.write_all(&bytes)?;
     file.sync_all()?;
-    fs::rename(&temporary, path).with_context(|| format!("failed to replace {}", path.display()))
+    crate::fs_util::replace_file(&temporary, path)
+        .with_context(|| format!("failed to replace {}", path.display()))
 }
 
 #[cfg(target_os = "linux")]

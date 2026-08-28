@@ -338,7 +338,7 @@ fn read_all(mut reader: impl Read) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

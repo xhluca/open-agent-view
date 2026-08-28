@@ -1,9 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(test)]
-use std::fs::File;
 use std::fs::{self, OpenOptions};
-#[cfg(test)]
-use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
@@ -1395,7 +1391,7 @@ impl OwnershipRegistry {
             .with_context(|| format!("failed to write {}", temporary.display()))?;
         file.write_all(&bytes)?;
         file.sync_all()?;
-        fs::rename(&temporary, &self.path).with_context(|| {
+        crate::fs_util::replace_file(&temporary, &self.path).with_context(|| {
             format!(
                 "failed to replace ownership registry {}",
                 self.path.display()
@@ -1438,10 +1434,7 @@ fn parse_claude_background_id(output: &str) -> Result<String> {
 #[cfg(test)]
 fn generate_session_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
-    File::open("/dev/urandom")
-        .context("failed to open the operating system random source")?
-        .read_exact(&mut bytes)
-        .context("failed to generate a Claude session ID")?;
+    getrandom::getrandom(&mut bytes).context("failed to generate a Claude session ID")?;
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     Ok(format!(

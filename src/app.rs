@@ -1707,15 +1707,20 @@ mod tests {
     #[test]
     fn claude_worktrees_group_under_the_owning_project() {
         let mut item = session("one", SessionState::Working);
-        item.cwd = PathBuf::from("/repo/.claude/worktrees/topic/src");
+        let (worktree, project) = if cfg!(windows) {
+            (r"C:\repo\.claude\worktrees\topic\src", r"C:\repo")
+        } else {
+            ("/repo/.claude/worktrees/topic/src", "/repo")
+        };
+        item.cwd = PathBuf::from(worktree);
         let mut app = App::new(SessionSnapshot {
             sessions: vec![item],
             warnings: vec![],
         });
         app.toggle_view();
 
-        assert_eq!(app.groups()[0].label, "/repo");
-        assert_eq!(app.groups()[0].key, "cwd:/repo");
+        assert_eq!(app.groups()[0].label, project);
+        assert_eq!(app.groups()[0].key, format!("cwd:{project}"));
     }
 
     #[test]
@@ -2526,16 +2531,18 @@ mod tests {
                 provider: Provider::Terminal
             }
         );
-        app.set_available_models(
-            Provider::Terminal,
-            Ok(vec!["bash".into(), "install-shell:fish".into()]),
-        );
+        let (shell, install) = if cfg!(windows) {
+            ("cmd", "install-shell:nu")
+        } else {
+            ("bash", "install-shell:fish")
+        };
+        app.set_available_models(Provider::Terminal, Ok(vec![shell.into(), install.into()]));
         app.model_selection = 2;
         assert_eq!(
             app.activate(),
             AppAction::SetupLaunchOption {
                 provider: Provider::Terminal,
-                option: "install-shell:fish".into(),
+                option: install.into(),
             }
         );
         assert_eq!(app.overlay, Overlay::ModelPicker);
@@ -2543,7 +2550,7 @@ mod tests {
 
         app.model_selection = 1;
         assert_eq!(app.activate(), AppAction::None);
-        assert_eq!(app.launch_model.as_deref(), Some("bash"));
+        assert_eq!(app.launch_model.as_deref(), Some(shell));
 
         app.start_new_session(None);
         app.input = "/model zsh".into();

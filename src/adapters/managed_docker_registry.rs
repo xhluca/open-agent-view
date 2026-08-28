@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -198,12 +198,13 @@ impl ManagedDockerRegistry {
             file.write_all(&bytes)?;
             file.write_all(b"\n")?;
             file.sync_all()?;
-            fs::rename(&temporary, &self.path).with_context(|| {
+            crate::fs_util::replace_file(&temporary, &self.path).with_context(|| {
                 format!(
                     "failed to atomically replace managed Docker registry {}",
                     self.path.display()
                 )
             })?;
+            #[cfg(unix)]
             File::open(parent)?.sync_all()?;
             ensure_private_regular_file(&self.path)?;
             Ok(())
@@ -371,9 +372,7 @@ pub fn default_managed_docker_registry_path() -> Result<PathBuf> {
 
 pub fn generate_managed_instance_id() -> Result<String> {
     let mut bytes = [0_u8; 16];
-    File::open("/dev/urandom")
-        .context("failed to open the operating system random source")?
-        .read_exact(&mut bytes)
+    getrandom::getrandom(&mut bytes)
         .context("failed to generate a managed-container instance ID")?;
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -602,6 +601,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn registry_rejects_group_readable_file() {
         let directory = private_tempdir();

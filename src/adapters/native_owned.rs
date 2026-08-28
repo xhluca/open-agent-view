@@ -201,7 +201,7 @@ fn persist(path: &Path, records: &BTreeSet<OwnedNativeSession>, label: &str) -> 
         serde_json::to_writer_pretty(&mut file, records)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        crate::fs_util::replace_file(&temporary, path)?;
         #[cfg(unix)]
         File::open(parent)?.sync_all()?;
         Ok(())

@@ -642,6 +642,7 @@ mod tests {
         log
     }
 
+    #[cfg(unix)]
     #[test]
     fn invocation_uses_documented_launch_and_resume_argv() {
         let invocation = MuseInvocation::host("muse");

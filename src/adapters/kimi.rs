@@ -640,6 +640,7 @@ mod tests {
         session
     }
 
+    #[cfg(unix)]
     #[test]
     fn invocation_queues_prompt_in_native_tui_and_uses_documented_resume() {
         let invocation = KimiInvocation::host("kimi");
@@ -663,6 +664,7 @@ mod tests {
             .is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn index_tombstones_and_owned_filter_are_applied() {
         let directory = tempfile::tempdir().unwrap();
@@ -701,6 +703,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn external_history_is_explicit_and_never_marked_managed() {
         let directory = tempfile::tempdir().unwrap();

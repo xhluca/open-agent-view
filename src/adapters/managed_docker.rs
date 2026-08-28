@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -630,18 +630,18 @@ fn validate_mount_source(path: &Path, label: &str) -> Result<()> {
 }
 
 fn validate_container_path(path: &Path, label: &str) -> Result<()> {
-    if !path.is_absolute() || path == Path::new("/") {
-        bail!("{label} must be an absolute non-root path");
-    }
-    if path
-        .components()
-        .any(|part| matches!(part, Component::ParentDir))
-    {
-        bail!("{label} cannot contain parent traversal");
-    }
+    // Docker provider commands target Linux containers even when the OAV host
+    // is Windows. Validate the container path as a POSIX path instead of using
+    // host-native `Path::is_absolute`, which rejects `/workspace` on Windows.
     let text = path
         .to_str()
         .with_context(|| format!("{label} is not valid UTF-8"))?;
+    if !text.starts_with('/') || text == "/" {
+        bail!("{label} must be an absolute non-root path");
+    }
+    if text.split('/').any(|part| part == "..") {
+        bail!("{label} cannot contain parent traversal");
+    }
     if text.as_bytes().contains(&0) {
         bail!("{label} cannot contain NUL");
     }

@@ -1408,7 +1408,7 @@ fn write_registry(path: &Path, registry: &CopilotRegistry) -> Result<()> {
         serde_json::to_writer_pretty(&mut file, registry)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, path)
+        crate::fs_util::replace_file(&temporary, path)
             .with_context(|| format!("failed to replace {}", path.display()))?;
         ensure_private_regular_file(path)
     })();

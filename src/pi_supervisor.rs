@@ -1334,7 +1334,7 @@ fn save_record(path: &Path, record: &SupervisorRecord) -> Result<()> {
         serde_json::to_writer_pretty(&mut file, record)?;
         file.write_all(b"\n")?;
         file.sync_all()?;
-        fs::rename(&temporary, path)?;
+        crate::fs_util::replace_file(&temporary, path)?;
         Ok(())
     })();
     if result.is_err() {
