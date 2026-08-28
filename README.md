@@ -18,8 +18,6 @@ harnesses plus Terminal.
 
 </div>
 
-## Quick start
-
 Install Open Agent View:
 
 macOS or Linux:
@@ -28,11 +26,14 @@ macOS or Linux:
 curl -fsSL https://open-agent-view.github.io/install.sh | bash
 ```
 
-Windows PowerShell:
+<details>
+<summary>Windows PowerShell</summary>
 
 ```powershell
 irm https://open-agent-view.github.io/install.ps1 | iex
 ```
+
+</details>
 
 Launch the dashboard:
 

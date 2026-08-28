@@ -31,6 +31,18 @@ fn read_readme() -> String {
         .replace("\r\n", "\n")
 }
 
+fn disclosure_containing<'a>(readme: &'a str, marker: &str) -> &'a str {
+    let marker_offset = readme.find(marker).expect("disclosure marker");
+    let details_start = readme[..marker_offset]
+        .rfind("<details>")
+        .expect("opening disclosure");
+    let details_end = readme[marker_offset..]
+        .find("</details>")
+        .map(|offset| marker_offset + offset)
+        .expect("closed disclosure");
+    &readme[details_start..details_end]
+}
+
 #[test]
 fn readme_status_badges_match_release_metadata() {
     let readme = read_readme();
@@ -60,12 +72,7 @@ fn readme_status_badges_match_release_metadata() {
 #[test]
 fn readme_keeps_the_feature_matrix_inside_a_disclosure() {
     let readme = read_readme();
-    let details_start = readme.find("<details>").expect("feature disclosure");
-    let details_end = readme[details_start..]
-        .find("</details>")
-        .map(|offset| details_start + offset)
-        .expect("closed feature disclosure");
-    let details = &readme[details_start..details_end];
+    let details = disclosure_containing(&readme, "Compare feature support by harness");
 
     assert!(details.contains("Compare feature support by harness"));
     assert!(details.contains("| Harness | Launch | Model / shell picker |"));
@@ -78,6 +85,15 @@ fn readme_keeps_the_feature_matrix_inside_a_disclosure() {
             "feature disclosure is missing {harness}"
         );
     }
+}
+
+#[test]
+fn readme_collapses_the_windows_install_command() {
+    let readme = read_readme();
+    let details = disclosure_containing(&readme, "Windows PowerShell");
+
+    assert!(details.contains("irm https://open-agent-view.github.io/install.ps1 | iex"));
+    assert!(!readme.contains("## Quick start"));
 }
 
 #[test]
