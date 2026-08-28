@@ -24,10 +24,16 @@ fn public_harness_names() -> Vec<String> {
         .collect()
 }
 
+fn read_readme() -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+    fs::read_to_string(path)
+        .expect("read README")
+        .replace("\r\n", "\n")
+}
+
 #[test]
 fn readme_status_badges_match_release_metadata() {
-    let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
-    let readme = fs::read_to_string(readme_path).expect("read README");
+    let readme = read_readme();
     let release_badge = format!(
         "https://img.shields.io/badge/release-v{}-55d3da.svg",
         env!("CARGO_PKG_VERSION")
@@ -53,8 +59,7 @@ fn readme_status_badges_match_release_metadata() {
 
 #[test]
 fn readme_keeps_the_feature_matrix_inside_a_disclosure() {
-    let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
-    let readme = fs::read_to_string(readme_path).expect("read README");
+    let readme = read_readme();
     let details_start = readme.find("<details>").expect("feature disclosure");
     let details_end = readme[details_start..]
         .find("</details>")
@@ -89,8 +94,7 @@ fn product_readme_and_website_share_one_exact_harness_inventory() {
     );
     assert_eq!(catalog_names.len(), Provider::CODING_HARNESS_COUNT);
 
-    let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
-    let readme = fs::read_to_string(readme_path).expect("read README");
+    let readme = read_readme();
     assert!(
         readme.contains("15 coding\nharnesses plus Terminal"),
         "README must state the exact coding-harness and Terminal counts"
