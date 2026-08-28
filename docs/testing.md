@@ -10,6 +10,34 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## v0.1.46 cross-platform installer gate (2026-08-28)
+
+- Linux x86-64: Rust 1.75 ran the complete locked test suite and produced the
+  release archive with `scripts/package-release.sh`. The verified archive was
+  mounted read-only into a fresh
+  `debian:12-slim@sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241`
+  container. From an empty home, the real installer checksum-verified the
+  archive, installed both commands, reported `open-agent-view 0.1.46` through
+  `open-agent-view` and `opav`, and returned empty `sessions` and `warnings`
+  through `--json --no-host-providers`.
+- macOS Apple silicon: the isolated `mbp` build used Rust 1.75 and the system
+  Apple clang toolchain. Rustfmt, warning-free Clippy, the complete macOS test
+  suite (including real PTYs), and the release build passed. The real Bash 3.2
+  installer test suite then passed without GNU coreutils. From an empty home,
+  the packaged `aarch64-apple-darwin` archive checksum-verified, installed both
+  commands, reported 0.1.46, and returned an empty JSON snapshot.
+- macOS Intel: the same reviewed tree was built for
+  `x86_64-apple-darwin`. The exact packaged binary executed through Rosetta,
+  and the installer was forced through the Intel `uname` path so archive
+  selection, checksum verification, extraction, atomic installation, the
+  `opav` symlink, version output, and empty JSON smoke test all exercised the
+  Intel artifact rather than the native ARM binary. The native Intel CI runner
+  independently builds and tests the same commit.
+- `scripts/test-installer.sh` now packages the current crate version for every
+  target mapping. It also keeps a dedicated v0.1.45 regression proving legacy
+  Linux-only releases still fail clearly on macOS instead of requesting a
+  nonexistent or incompatible artifact.
+
 ## Automated checks
 
 - `cargo test --locked`: domain normalization, provider parsing, App Server

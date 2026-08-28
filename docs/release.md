@@ -6,21 +6,26 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.45 is the current published release. The maintainer explicitly
-authorized a manual Linux x86-64 release after the complete local release gate.
-The [published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.45)
-contains only:
+Version 0.1.46 is the current published release. The
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.46)
+contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.45-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.45-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.46-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.46-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.46-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.46-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.46-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.46-aarch64-apple-darwin.tar.gz.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
 and smoke-tested both before publication and through the published release.
 The adjacent `.sha256` release asset records the verified archive digest.
-No ARM64 or macOS artifact is claimed for v0.1.45. Version 0.1.2 was the
-initial published release. The
+No Linux ARM64 artifact is claimed for v0.1.46. Apple silicon was exercised on
+the native `mbp` host. The Intel archive was executed through Rosetta and the
+same commit was built and tested by the native Intel macOS CI runner. Version
+0.1.2 was the initial published release. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates
 exposed, respectively, a macOS portability error, an incremental
@@ -43,23 +48,22 @@ open-agent-view-VERSION-aarch64-apple-darwin.tar.gz
 open-agent-view-VERSION-aarch64-apple-darwin.tar.gz.sha256
 ```
 
-## Manual Linux x86-64 release procedure
+## Manual native release procedure
 
 After the full local gate below, create the same deterministic package shape as
 the native workflow:
 
 ```console
-version="$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "open-agent-view") | .version')"
 target=x86_64-unknown-linux-gnu
-stem="open-agent-view-${version}-${target}"
-install -d "dist/${stem}"
-install -m 0755 target/release/open-agent-view "dist/${stem}/open-agent-view"
-install -m 0644 LICENSE README.md "dist/${stem}/"
-source_date_epoch="$(git show -s --format=%ct HEAD)"
-tar --sort=name --mtime="@${source_date_epoch}" --owner=0 --group=0 \
-  --numeric-owner -C dist -czf "dist/${stem}.tar.gz" "${stem}"
-(cd dist && sha256sum "${stem}.tar.gz" >"${stem}.tar.gz.sha256")
+cargo build --release --locked --target "$target"
+scripts/package-release.sh "$target"
 ```
+
+Run the same two commands on a native macOS builder with
+`aarch64-apple-darwin`. Add the `x86_64-apple-darwin` Rust target, build it on
+Apple silicon, and execute the packaged binary through Rosetta before
+publication. `scripts/package-release.sh` uses GNU tar's reproducibility flags
+on Linux and disables AppleDouble metadata when packaging with BSD tar.
 
 Extract and smoke-test the archive, test `install.sh` against a temporary local
 release root, create and push an annotated version tag, then publish exactly the

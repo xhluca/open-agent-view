@@ -8,6 +8,24 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.46] - 2026-08-28
+
+### Added
+
+- The binary release now includes native Apple-silicon and Intel macOS
+  archives alongside Linux x86-64, so the one-line installer works on all
+  three published targets without Rust or Cargo.
+
+### Fixed
+
+- The installer now represents the legacy Linux-only release range with a
+  bounded version check instead of an error-prone list of every patch release.
+- Native Linux ARM64 and both macOS CI runners execute the complete installer
+  and native archive-packaging contracts in addition to compiling and testing
+  the application.
+- macOS warning-clean builds no longer compile a Linux-only Codex supervisor
+  cleanup helper that cannot be called on that platform.
+
 ## [0.1.45] - 2026-08-27
 
 ### Fixed

@@ -7,21 +7,22 @@ binary: Rust and Cargo are not user prerequisites. An unrelated existing
 
 ## Supported platforms
 
-The manually published v0.1.45 release currently covers:
+The v0.1.46 release currently covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
+- macOS Apple silicon
+- macOS Intel
 
 The installer and checked-in native release contract also define these targets,
-but v0.1.45 does not claim artifacts for them because they were not built and
-tested on native machines:
+but v0.1.46 does not claim an artifact for Linux ARM64 because it was not
+packaged and exercised on a native ARM64 Linux machine:
 
 - Linux ARM64 with glibc 2.35 or newer
-- macOS x86_64
-- macOS Apple silicon
 
-The installer stops with an explicit explanation when v0.1.45 is requested on
-one of those hosts. Use a source build there until a complete native release is
-published; do not reuse the Linux binary.
+Apple-silicon installation is exercised natively. The Intel archive is built
+for `x86_64-apple-darwin`, exercised through Rosetta, and independently built
+and tested on the native Intel macOS CI runner. The installer selects the
+archive from `uname` and never reuses a Linux binary on macOS.
 
 The dashboard needs an interactive terminal. `--json` works without a TTY.
 All provider CLIs and Docker are optional; install only the providers you

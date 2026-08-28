@@ -6,14 +6,14 @@ repo_dir="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 temp_root="$(mktemp -d "${TMPDIR:-/tmp}/open-agent-view-installer-test.XXXXXX")"
 trap 'rm -rf -- "$temp_root"' EXIT HUP INT TERM
 
-version="0.1.0"
-tag="v${version}"
-release_dir="${temp_root}/releases/${tag}"
 current_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' "${repo_dir}/Cargo.toml" | head -n 1)"
 [[ -n "$current_version" ]] || {
   printf 'installer tests could not read the current package version\n' >&2
   exit 1
 }
+version="$current_version"
+tag="v${version}"
+release_dir="${temp_root}/releases/${tag}"
 
 case "$(uname -s)/$(uname -m)" in
   Linux/x86_64 | Linux/amd64) host_target="x86_64-unknown-linux-gnu" ;;
@@ -29,6 +29,32 @@ fail() {
   printf 'installer test failed: %s\n' "$*" >&2
   exit 1
 }
+
+package_binary="${temp_root}/package-binary"
+cat >"$package_binary" <<EOF
+#!/usr/bin/env sh
+if [ "\${1:-}" = "--version" ]; then
+  echo "open-agent-view ${version}"
+  exit 0
+fi
+echo fixture-binary
+EOF
+chmod 0755 "$package_binary"
+package_dist="${temp_root}/package-dist"
+OAV_DIST_DIR="$package_dist" \
+  "${repo_dir}/scripts/package-release.sh" "$host_target" "$package_binary" >/dev/null
+[[ -f "${package_dist}/${host_archive}" ]] || fail "native release archive was not packaged"
+[[ -f "${package_dist}/${host_archive}.sha256" ]] || fail "native release checksum was not packaged"
+(
+  cd "$package_dist"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum -c "${host_archive}.sha256" >/dev/null
+  else
+    shasum -a 256 -c "${host_archive}.sha256" >/dev/null
+  fi
+)
+tar -tzf "${package_dist}/${host_archive}" | grep -F "${host_stem}/open-agent-view" >/dev/null ||
+  fail "native release archive is missing the executable"
 
 make_release() {
   local root="$1"
@@ -144,14 +170,14 @@ grep -F "no prebuilt release is available for FreeBSD" "${temp_root}/platform.ou
 
 if _OAV_TEST_UNAME_S=Darwin \
   _OAV_TEST_UNAME_M=arm64 \
-  OAV_VERSION="$current_version" \
+  OAV_VERSION="0.1.45" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh" >"${temp_root}/manual-scope.out" 2>&1; then
-  fail "the Linux-only v${current_version} release accepted a macOS target"
+  fail "the Linux-only v0.1.45 release accepted a macOS target"
 fi
-grep -F "v${current_version} was manually published only for Linux x86_64" \
+grep -F "v0.1.45 was manually published only for Linux x86_64" \
   "${temp_root}/manual-scope.out" >/dev/null ||
-  fail "the v${current_version} manual platform scope was not explained"
+  fail "the v0.1.45 manual platform scope was not explained"
 
 platforms=(
   "Linux x86_64"
@@ -191,7 +217,7 @@ cat >"${fake_bin}/gh" <<'EOF'
 set -euo pipefail
 case "${1:-} ${2:-}" in
   "auth status") exit 0 ;;
-  "api repos/xhluca/open-agent-view/releases/latest") printf 'v0.1.0\n' ;;
+  "api repos/xhluca/open-agent-view/releases/latest") printf '%s\n' "${OAV_TEST_TAG}" ;;
   "release download")
     destination=""
     shift 2
@@ -210,6 +236,7 @@ chmod 0755 "${fake_bin}/gh"
 private_home="${temp_root}/private-home"
 PATH="${fake_bin}:/usr/bin:/bin" \
   HOME="$private_home" \
+  OAV_TEST_TAG="$tag" \
   OAV_TEST_RELEASE_DIR="$release_dir" \
   bash "${repo_dir}/install.sh" >/dev/null
 [[ -x "${private_home}/.local/bin/open-agent-view" ]] ||

@@ -2,7 +2,9 @@
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 #[derive(Clone, Copy)]
@@ -16,6 +18,7 @@ struct SetupCase {
     harness: &'static str,
     binary_flag: &'static str,
     installer: InstallerKind,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     login_args: &'static str,
 }
 
