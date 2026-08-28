@@ -25,6 +25,12 @@ and future released versions are intended to follow Semantic Versioning.
   the application.
 - macOS warning-clean builds no longer compile a Linux-only Codex supervisor
   cleanup helper that cannot be called on that platform.
+- The completed-history real-PTY regression now waits for its asynchronous
+  fixture refusal and sends one context-sensitive Escape, removing a
+  fast-runner race that could quit the dashboard and write to a closed PTY.
+- That debug-mode 1,000-row PTY test retains the sub-750 ms Linux budget and
+  uses a two-second macOS process-start budget, while still applying the same
+  sub-750 ms navigation and bounded-output requirements on every platform.
 
 ## [0.1.45] - 2026-08-27
 
