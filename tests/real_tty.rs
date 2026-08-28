@@ -1183,7 +1183,9 @@ printf '%s\n' 'backgrounded · deadbeef'
         "dashboard restoration after Claude Left",
     );
     let returned = app.wait_for("new Claude row selected after backgrounding", |screen| {
-        screen.contains("Open Agent View") && screen.contains("new-claude-task")
+        screen.contains("Open Agent View")
+            && screen.contains("new-claude-task")
+            && screen.contains("backgrounded new-claude-task")
     });
     assert!(returned.contains("Claude"));
     assert!(returned.contains("backgrounded new-claude-task"));
