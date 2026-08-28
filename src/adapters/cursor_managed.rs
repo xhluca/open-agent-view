@@ -1216,7 +1216,17 @@ while :; do sleep 1; done
         let session = wait_for_session(&supervisor, &request, SessionState::Working);
         assert!(session.pid.is_some());
         assert!(session.capabilities.contains(&Capability::Interrupt));
-        assert_eq!(supervisor.inspect(&session).unwrap(), "working");
+        let inspection_deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if supervisor.inspect(&session).unwrap() == "working" {
+                break;
+            }
+            assert!(
+                Instant::now() < inspection_deadline,
+                "Cursor never flushed its first assistant output"
+            );
+            thread::sleep(Duration::from_millis(25));
+        }
 
         supervisor.interrupt(&session).unwrap();
         let interrupted = wait_for_session(&supervisor, &request, SessionState::NeedsInput);
