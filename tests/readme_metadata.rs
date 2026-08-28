@@ -5,8 +5,7 @@ use open_agent_view::domain::Provider;
 use serde_json::Value;
 
 fn public_harness_names() -> Vec<String> {
-    let catalog_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("website/app/harnesses.json");
+    let catalog_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("website/app/harnesses.json");
     let catalog: Value = serde_json::from_str(
         &fs::read_to_string(catalog_path).expect("read public harness catalog"),
     )
@@ -99,7 +98,11 @@ fn product_readme_and_website_share_one_exact_harness_inventory() {
 
     let feature_rows = catalog_names
         .iter()
-        .map(|name| readme.find(&format!("| {name} |")).expect("README feature row"))
+        .map(|name| {
+            readme
+                .find(&format!("| {name} |"))
+                .expect("README feature row")
+        })
         .collect::<Vec<_>>();
     assert!(
         feature_rows.windows(2).all(|pair| pair[0] < pair[1]),
