@@ -14,22 +14,29 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://open-agent-view.github.io"),
-  title: "Open Agent View — One control surface for local coding agents",
+  title: "Open Agent View: One dashboard for every coding agent",
   description:
-    "Discover, follow, and safely control local coding-agent sessions from one terminal.",
+    "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
   alternates: { canonical: "/" },
   icons: { icon: "/favicon.svg" },
   openGraph: {
     type: "website",
     url: "/",
-    title: "Open Agent View",
-    description: "One control surface for all your local coding agents.",
-    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Open Agent View" }],
+    title: "Open Agent View: One dashboard for every coding agent",
+    description:
+      "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
+    images: [{
+      url: "/og.png",
+      width: 1200,
+      height: 630,
+      alt: "Open Agent View dashboard monitoring Claude, Codex, Cursor, Copilot, OpenCode, Pi, and nine more coding harnesses",
+    }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Open Agent View",
-    description: "One control surface for all your local coding agents.",
+    title: "Open Agent View: One dashboard for every coding agent",
+    description:
+      "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
     images: ["/og.png"],
   },
 };

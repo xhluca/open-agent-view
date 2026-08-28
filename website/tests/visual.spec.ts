@@ -44,6 +44,18 @@ async function openReady(page: import("@playwright/test").Page) {
   await page.waitForTimeout(750);
 }
 
+test("social preview renders at the large-card dimensions", async ({ page }, testInfo) => {
+  await page.goto("/og.png");
+  const image = page.locator("img");
+  await expect(image).toBeVisible();
+  const dimensions = await image.evaluate((node: HTMLImageElement) => ({
+    width: node.naturalWidth,
+    height: node.naturalHeight,
+  }));
+  expect(dimensions).toEqual({ width: 1200, height: 630 });
+  await page.screenshot({ path: testInfo.outputPath("social-preview.png") });
+});
+
 for (const viewport of viewports) {
   test(`${viewport.name} renders real players without horizontal overflow`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);

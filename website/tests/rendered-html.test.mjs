@@ -102,7 +102,13 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /https:\/\/open-agent-view\.github\.io\/install\.sh/);
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
+  assert.match(html, /property="og:title" content="Open Agent View: One dashboard for every coding agent"/);
+  assert.match(html, /property="og:description" content="Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard\."/);
+  assert.match(html, /property="og:image:width" content="1200"/);
+  assert.match(html, /property="og:image:height" content="630"/);
+  assert.match(html, /property="og:image:alt" content="Open Agent View dashboard monitoring Claude, Codex, Cursor, Copilot, OpenCode, Pi, and nine more coding harnesses"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
+  assert.match(html, /name="twitter:title" content="Open Agent View: One dashboard for every coding agent"/);
   assert.ok(
     (html.match(/href="https:\/\/github\.com\/xhluca\/open-agent-view"/g) ?? []).length >= 4,
     "GitHub should be prominent in the header, hero, repository banner, and footer",
@@ -469,4 +475,21 @@ test("keeps the public installer byte-identical to the application installer", a
     readFile(new URL("public/install.sh", root)),
   ]);
   assert.deepEqual(published, source);
+});
+
+test("publishes a source-backed 1200 by 630 social preview", async () => {
+  const [source, image] = await Promise.all([
+    readFile(new URL("assets/og.svg", root), "utf8"),
+    readFile(new URL("public/og.png", root)),
+  ]);
+
+  assert.match(source, /Every coding agent\./);
+  assert.match(source, /One live dashboard\./);
+  assert.match(source, /15 HARNESSES/);
+  assert.match(source, /Claude · Codex · Cursor · Copilot/);
+  assert.match(source, /Oh My Pi · Grok · Kilo Code · OpenHands/);
+  assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(image.readUInt32BE(16), 1200);
+  assert.equal(image.readUInt32BE(20), 630);
+  assert.ok(image.length > 100_000, "the preview should contain the finished dashboard artwork");
 });

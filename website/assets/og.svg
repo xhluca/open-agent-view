@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">Open Agent View</title>
+  <desc id="desc">Every coding agent in one live dashboard. Monitor fifteen local coding harnesses, see what needs input, and step into each native CLI.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071015"/>
+      <stop offset="0.58" stop-color="#09151a"/>
+      <stop offset="1" stop-color="#061014"/>
+    </linearGradient>
+    <radialGradient id="cyan-halo" cx="78%" cy="42%" r="52%">
+      <stop offset="0" stop-color="#49c7df" stop-opacity="0.18"/>
+      <stop offset="0.55" stop-color="#49c7df" stop-opacity="0.045"/>
+      <stop offset="1" stop-color="#49c7df" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="green-halo" cx="16%" cy="82%" r="38%">
+      <stop offset="0" stop-color="#69d58b" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#69d58b" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="logo-blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6ed9ea"/>
+      <stop offset="1" stop-color="#2e9eff"/>
+    </linearGradient>
+    <linearGradient id="card-line" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#65d7e8" stop-opacity="0.48"/>
+      <stop offset="0.45" stop-color="#5f8290" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#6cdd8e" stop-opacity="0.27"/>
+    </linearGradient>
+    <pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse">
+      <path d="M52 0H0V52" fill="none" stroke="#d8edf2" stroke-opacity="0.055" stroke-width="1"/>
+      <circle cx="0" cy="0" r="1.3" fill="#d8edf2" fill-opacity="0.12"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="175%">
+      <feDropShadow dx="0" dy="22" stdDeviation="25" flood-color="#00080b" flood-opacity="0.72"/>
+    </filter>
+    <filter id="soft-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#cyan-halo)"/>
+  <rect width="1200" height="630" fill="url(#green-halo)"/>
+
+  <g transform="translate(64 53)">
+    <rect x="0" y="0" width="26" height="26" rx="7" fill="#2e9eff"/>
+    <rect x="31" y="0" width="18" height="18" rx="5" fill="#0c79d8"/>
+    <rect x="0" y="31" width="18" height="18" rx="5" fill="#0c79d8"/>
+    <path d="M26 26h16a10 10 0 0 1 10 10v16H36a10 10 0 0 1-10-10Z" fill="#68c4ff"/>
+  </g>
+  <text x="132" y="87" fill="#f5f7f5" font-family="DejaVu Sans, sans-serif" font-size="28" font-weight="700" letter-spacing="-0.8">Open Agent View</text>
+  <g transform="translate(414 65)">
+    <rect width="132" height="34" rx="17" fill="#102128" stroke="#69d58b" stroke-opacity="0.42"/>
+    <circle cx="18" cy="17" r="5" fill="#69d58b"/>
+    <text x="32" y="22" fill="#b9c6c9" font-family="DejaVu Sans, sans-serif" font-size="13" font-weight="700" letter-spacing="1.5">OPEN SOURCE</text>
+  </g>
+
+  <text x="64" y="190" fill="#f7f8f6" font-family="DejaVu Sans, sans-serif" font-size="50" font-weight="700" letter-spacing="-2.4">Every coding agent.</text>
+  <text x="64" y="250" fill="#f7f8f6" font-family="DejaVu Sans, sans-serif" font-size="50" font-weight="700" letter-spacing="-2.4">One live dashboard.</text>
+  <text x="67" y="315" fill="#a8b7bc" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="400">See what's running, what needs you,</text>
+  <text x="67" y="348" fill="#a8b7bc" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="400">and where to step in.</text>
+
+  <g transform="translate(600 53)" filter="url(#shadow)">
+    <rect width="546" height="451" rx="18" fill="#0c1317" stroke="url(#card-line)" stroke-width="1.5"/>
+    <rect x="1" y="1" width="544" height="449" rx="17" fill="none" stroke="#ffffff" stroke-opacity="0.045"/>
+    <path d="M0 54H546" stroke="#73848a" stroke-opacity="0.24"/>
+    <circle cx="24" cy="27" r="5" fill="#69d58b"/>
+    <circle cx="24" cy="27" r="11" fill="#69d58b" fill-opacity="0.16" filter="url(#soft-glow)"/>
+    <text x="41" y="33" fill="#e9efee" font-family="DejaVu Sans Mono, monospace" font-size="18" font-weight="700">open-agent-view</text>
+    <text x="520" y="32" fill="#809096" font-family="DejaVu Sans Mono, monospace" font-size="13" text-anchor="end">~/work</text>
+
+    <g font-family="DejaVu Sans Mono, monospace">
+      <text x="20" y="79" fill="#61cfdf" font-size="13">◇◇</text>
+      <text x="52" y="79" fill="#9aa8ac" font-size="13">2 awaiting input  ·  3 working  ·  2 completed</text>
+
+      <text x="20" y="113" fill="#e7eceb" font-size="15" font-weight="700">Needs input</text>
+      <circle cx="30" cy="135" r="4" fill="#f2c94c"/>
+      <text x="44" y="141" fill="#eef2f1" font-size="15" font-weight="700">api-review</text>
+      <text x="186" y="141" fill="#61cfdf" font-size="14">Claude</text>
+      <text x="275" y="141" fill="#a6b0b3" font-size="13">Approve command?</text>
+      <text x="520" y="141" fill="#7f8d91" font-size="13" text-anchor="end">18s</text>
+
+      <text x="20" y="174" fill="#e7eceb" font-size="15" font-weight="700">Working</text>
+      <circle cx="30" cy="197" r="4" fill="#61cfdf"/>
+      <text x="44" y="203" fill="#eef2f1" font-size="15" font-weight="700">release-notes</text>
+      <text x="186" y="203" fill="#61cfdf" font-size="14">Codex</text>
+      <text x="275" y="203" fill="#a6b0b3" font-size="13">Drafting changelog...</text>
+      <text x="520" y="203" fill="#7f8d91" font-size="13" text-anchor="end">42s</text>
+      <rect x="13" y="215" width="520" height="29" rx="4" fill="#5f6f75" fill-opacity="0.22"/>
+      <circle cx="30" cy="230" r="4" fill="#61cfdf"/>
+      <text x="44" y="236" fill="#ffffff" font-size="15" font-weight="700">frontend-fix</text>
+      <text x="186" y="236" fill="#61cfdf" font-size="14">Cursor</text>
+      <text x="275" y="236" fill="#bac3c5" font-size="13">Running tests...</text>
+      <text x="520" y="236" fill="#9aa7aa" font-size="13" text-anchor="end">1m</text>
+      <circle cx="30" cy="263" r="4" fill="#61cfdf"/>
+      <text x="44" y="269" fill="#eef2f1" font-size="15" font-weight="700">database-index</text>
+      <text x="186" y="269" fill="#61cfdf" font-size="14">Pi</text>
+      <text x="275" y="269" fill="#a6b0b3" font-size="13">Reading schema...</text>
+      <text x="520" y="269" fill="#7f8d91" font-size="13" text-anchor="end">2m</text>
+
+      <text x="20" y="307" fill="#e7eceb" font-size="15" font-weight="700">Completed</text>
+      <circle cx="30" cy="329" r="4" fill="#69d58b"/>
+      <text x="44" y="335" fill="#eef2f1" font-size="15" font-weight="700">data-cleanup</text>
+      <text x="186" y="335" fill="#61cfdf" font-size="14">OpenCode</text>
+      <text x="275" y="335" fill="#a6b0b3" font-size="13">Done</text>
+      <text x="520" y="335" fill="#7f8d91" font-size="13" text-anchor="end">3m</text>
+      <circle cx="30" cy="362" r="4" fill="#69d58b"/>
+      <text x="44" y="368" fill="#eef2f1" font-size="15" font-weight="700">unit-tests</text>
+      <text x="186" y="368" fill="#61cfdf" font-size="14">Copilot</text>
+      <text x="275" y="368" fill="#a6b0b3" font-size="13">47 passed</text>
+      <text x="520" y="368" fill="#7f8d91" font-size="13" text-anchor="end">5m</text>
+
+      <path d="M15 402H531" stroke="#79898e" stroke-opacity="0.45"/>
+      <text x="21" y="429" fill="#61cfdf" font-size="17" font-weight="700">›</text>
+      <text x="42" y="429" fill="#8e9b9f" font-size="14">describe a task  ·  /help for commands</text>
+    </g>
+  </g>
+
+  <g transform="translate(64 414)">
+    <rect width="176" height="45" rx="22.5" fill="#0e1b20" stroke="#58cfe0" stroke-opacity="0.48"/>
+    <text x="88" y="29" fill="#d8e1e2" font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="700" letter-spacing="1.2" text-anchor="middle">15 HARNESSES</text>
+    <rect x="190" width="150" height="45" rx="22.5" fill="#0e1b20" stroke="#58cfe0" stroke-opacity="0.31"/>
+    <text x="265" y="29" fill="#d8e1e2" font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="700" letter-spacing="1.2" text-anchor="middle">NATIVE CLIs</text>
+    <rect x="354" width="167" height="45" rx="22.5" fill="#0e1b20" stroke="#69d58b" stroke-opacity="0.38"/>
+    <text x="437.5" y="29" fill="#d8e1e2" font-family="DejaVu Sans, sans-serif" font-size="15" font-weight="700" letter-spacing="1.2" text-anchor="middle">ONE WORKSPACE</text>
+  </g>
+
+  <path d="M64 531H1146" stroke="#88a1a8" stroke-opacity="0.20"/>
+  <text x="64" y="568" fill="#61cfdf" font-family="DejaVu Sans Mono, monospace" font-size="15" font-weight="700">Claude · Codex · Cursor · Copilot · OpenCode · Pi · Antigravity · Vibe</text>
+  <text x="64" y="594" fill="#61cfdf" font-family="DejaVu Sans Mono, monospace" font-size="15" font-weight="700">Muse · Qwen · Kimi · Oh My Pi · Grok · Kilo Code · OpenHands</text>
+  <text x="1136" y="594" fill="#77878c" font-family="DejaVu Sans Mono, monospace" font-size="13" text-anchor="end">open-agent-view.github.io</text>
+</svg>
