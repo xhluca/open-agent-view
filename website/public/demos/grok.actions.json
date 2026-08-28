@@ -1,134 +1,132 @@
 {
-  "duration": 30.442868,
+  "duration": 28.558504307497017,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.787,
-      "action": "Enter \u00b7 choose Claude Code",
+      "at": 0.78,
+      "action": "\u2193 \u00b7 highlight Grok",
       "window": "open-agent-view"
     },
     {
-      "at": 2.008,
+      "at": 1.507,
+      "action": "Enter \u00b7 choose Grok",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.671,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 2.644,
+      "at": 3.296,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.842,
+      "at": 3.428,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.317,
+      "at": 3.889,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.779,
+      "at": 4.351,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.531,
-      "action": "Search \u00b7 opus",
+      "at": 5.217,
+      "action": "Search \u00b7 gpt-5.4",
       "window": "open-agent-view"
     },
     {
-      "at": 5.415,
-      "action": "Enter \u00b7 select opus",
+      "at": 6.101,
+      "action": "Enter \u00b7 select gpt-5.4",
       "window": "open-agent-view"
     },
     {
-      "at": 6.658,
-      "action": "Enter \u00b7 start Claude Code",
+      "at": 7.338,
+      "action": "Enter \u00b7 start Grok",
       "window": "open-agent-view"
     },
     {
-      "at": 7.284,
+      "at": 7.963,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 10.977,
+      "at": 11.538,
       "action": "Hello response complete",
-      "window": "Claude Code"
+      "window": "Grok"
     },
     {
-      "at": 12.398,
-      "action": "Type \u00b7 Explain what is Claude Code",
-      "window": "Claude Code"
+      "at": 12.62,
+      "action": "Type \u00b7 Explain what is Grok",
+      "window": "Grok"
     },
     {
-      "at": 13.029,
+      "at": 13.251,
       "action": "Enter \u00b7 send explanation",
-      "window": "Claude Code"
+      "window": "Grok"
     },
     {
-      "at": 19.161,
+      "at": 16.56,
       "action": "Explanation response complete",
-      "window": "Claude Code"
+      "window": "Grok"
     },
     {
-      "at": 21.34,
+      "at": 18.736,
       "action": "Type \u00b7 explain return shortcut",
-      "window": "Claude Code"
+      "window": "Grok"
     },
     {
-      "at": 22.217,
+      "at": 19.614,
       "action": "Shift+\u2190 \u00b7 return to panel",
-      "window": "Claude Code"
+      "window": "Grok"
     },
     {
-      "at": 22.595,
+      "at": 19.995,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 24.601,
+      "at": 22.822,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 24.728,
+      "at": 22.949,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 25.788,
-      "action": "Type \u00b7 claude-explanation",
+      "at": 23.902,
+      "action": "Type \u00b7 grok-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 26.413,
+      "at": 24.526,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 26.539,
+      "at": 24.652,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 27.715,
+      "at": 25.829,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 28.339,
+      "at": 26.453,
       "action": "Enter",
       "window": "open-agent-view"
-    }
-  ],
-  "timing_adjustments": [
-    {
-      "label": "Claude launch/background handoff",
-      "source_duration": 6.621,
-      "retimed_duration": 1.8
     }
   ]
 }

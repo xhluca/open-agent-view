@@ -2,8 +2,8 @@
 
 `website/public/open-agent-view-demo.mp4`, `open-agent-view.gif`, and
 `open-agent-view.png` come from one genuine terminal recording made on
-2026-08-27. It begins with eleven real coding-harness sessions
-in the v0.1.41 dashboard, browses them with arrow keys, opens two other native
+2026-08-28. It begins with eleven real coding-harness sessions
+in the v0.1.48 dashboard, browses them with arrow keys, opens two other native
 coding-harness TUIs, then opens Kimi Code, sends a lookup prompt, observes the
 real response for seven seconds, and returns to the dashboard without waiting
 for generation to finish. It does not generate HTML
@@ -33,8 +33,8 @@ Recapture the canonical overview and all state it genuinely depends on with:
 python3 scripts/capture-real-site-demo.py overview
 ```
 
-The website publishes 18 real TUI recordings: the eleven-session overview,
-install/setup, all twelve selectable targets, and rename/switch/model/login controls. The twelve target recordings
+The website publishes 22 real TUI recordings: the eleven-session overview,
+install/setup, all sixteen selectable targets, and rename/switch/model/login controls. The sixteen target recordings
 share one disposable workspace and show the exact picker, model, two-turn,
 return, rename, and next-picker loop, preserving each earlier session row.
 The control recordings add bottom-composer teaching text; rename uses a dense

@@ -24,7 +24,7 @@ viewports, reject horizontal overflow,
 exercise every timeline control, provider deep links, keyboard-accessible tabs,
 finite next-tab handoff, countdown cancellation after a rewind, clipboard copy,
 and reduced motion, then run Axe.
-Rendered-HTML tests also parse all 18 genuine cast-v2 recordings and their
+Rendered-HTML tests also parse all 22 genuine cast-v2 recordings and their
 action timelines, reject private paths/account identities/credential-like
 material, require canonical Open Graph metadata and the locally vendored marks,
 and compare the published installer byte-for-byte with the application
@@ -41,7 +41,7 @@ The page has four finite terminal walkthroughs implemented by
    seconds, and returns to the live dashboard;
 2. the install story installs from the public URL, opens the app, types
    `/harness`, and stops with every option visible;
-3. twelve tabbed harness stories begin at the same `/harness` picker, choose
+3. sixteen tabbed harness stories begin at the same `/harness` picker, choose
    the tab's harness, browse and select its model (or Terminal shell), run two complete native-TUI
    turns, type the return shortcut explanation, return with Shift+Left, wait on
    the growing shared dashboard, rename the exact new row, and end at the next

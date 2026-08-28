@@ -50,7 +50,9 @@ APP_HEADER = f"Open Agent View v{EXPECTED_VERSION}"
 APP_HEADER_PATTERN = re.escape(APP_HEADER)
 INSTALL_COMMAND = "curl -fsSL https://open-agent-view.github.io/install.sh | bash"
 SECRET_PATTERN = re.compile(
-    r"api[_-]?key|oauth[_-]?token|authorization:\s*bearer|ghp_|sk-[A-Za-z0-9]",
+    r"api[_-]?key|oauth[_-]?token|authorization:\s*bearer|"
+    r"(?<![A-Za-z0-9])ghp_[A-Za-z0-9]{8,}|"
+    r"(?<![A-Za-z0-9])sk-[A-Za-z0-9_-]{8,}",
     re.I,
 )
 EMAIL_PATTERN = re.compile(
@@ -594,7 +596,8 @@ Do not call tools, inspect files, or modify the workspace unless explicitly aske
     values.update(
         {
             "PATH": (
-                f"{bin_dir}:{root / 'bin'}:{root / 'home' / '.kimi-code' / 'bin'}:"
+                f"{bin_dir}:{root / 'bin'}:{root / 'home' / '.grok' / 'bin'}:"
+                f"{root / 'home' / '.kimi-code' / 'bin'}:"
                 "/usr/local/pkgs/bin:/usr/local/bin:/usr/bin:/bin"
             ),
             # The OSC marker is invisible in the terminal, but lets the driver
@@ -606,6 +609,7 @@ Do not call tools, inspect files, or modify the workspace unless explicitly aske
             "MUSE_NO_MODIFY_PATH": "1",
             "QWEN_INSTALL_BIN_DIR": str(bin_dir),
             "QWEN_NO_MODIFY_PATH": "1",
+            "NPM_CONFIG_PREFIX": str(root / "home" / ".local"),
             "KIMI_INSTALL_DIR": str(root / "home" / ".kimi-code"),
             "KIMI_NO_MODIFY_PATH": "1",
             # The shared CI/user account can legitimately exhaust Linux's
@@ -647,6 +651,10 @@ def expose_installed_providers(root: Path, required: tuple[str, ...]) -> None:
             Path.home() / ".npm-global/bin/qwen",
         ],
         "kimi": [Path.home() / ".local/bin/kimi"],
+        "omp": [Path.home() / ".local/bin/omp"],
+        "grok": [Path.home() / ".grok/bin/grok", Path.home() / ".local/bin/grok"],
+        "kilo": [Path.home() / ".local/bin/kilo", Path.home() / ".npm-global/bin/kilo"],
+        "openhands": [Path.home() / ".local/bin/openhands"],
     }
     destination = root / "home" / ".local" / "bin"
     for name in required:
@@ -681,9 +689,10 @@ def prepare_complete_picker(root: Path, environment: dict[str, str]) -> None:
             "copilot",
             "agy",
             "muse",
+            "openhands",
         ),
     )
-    installers = (
+    script_installers = (
         (
             "Mistral Vibe",
             "https://mistral.ai/vibe/install.sh",
@@ -699,8 +708,33 @@ def prepare_complete_picker(root: Path, environment: dict[str, str]) -> None:
             "https://code.kimi.com/kimi-code/install.sh",
             ("kimi",),
         ),
+        (
+            "Oh My Pi",
+            "https://omp.sh/install",
+            ("omp",),
+        ),
+        (
+            "Grok",
+            "https://x.ai/cli/install.sh",
+            ("grok",),
+        ),
+        (
+            "OpenHands",
+            "https://install.openhands.dev/install.sh",
+            ("openhands",),
+        ),
     )
-    for label, url, executables in installers:
+    for label, url, executables in script_installers:
+        search_path = environment["PATH"].split(os.pathsep)
+        if all(
+            any(
+                (Path(directory) / executable).is_file()
+                and os.access(Path(directory) / executable, os.X_OK)
+                for directory in search_path
+            )
+            for executable in executables
+        ):
+            continue
         script = root / "tmp" / f"picker-{executables[0]}-install.sh"
         download = subprocess.run(
             [
@@ -744,6 +778,23 @@ def prepare_complete_picker(root: Path, environment: dict[str, str]) -> None:
                 raise RuntimeError(
                     f"official {label} installer did not expose {executable} in the disposable PATH"
                 )
+
+    kilo_install = subprocess.run(
+        ["npm", "install", "--global", "@kilocode/cli"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=environment,
+    )
+    if kilo_install.returncode != 0:
+        detail = (kilo_install.stderr or kilo_install.stdout)[-1500:]
+        raise RuntimeError(f"official Kilo Code npm install failed: {detail}")
+    kilo = root / "home" / ".local" / "bin" / "kilo"
+    if not kilo.is_file() or not os.access(kilo, os.X_OK):
+        raise RuntimeError(
+            "official Kilo Code npm package did not expose kilo in the disposable PATH"
+        )
 
 
 def validate_public_cast(path: Path, required: list[str]) -> None:
@@ -843,6 +894,10 @@ def capture_setup(repo: Path, output: Path) -> None:
                 "Muse Code",
                 "Qwen Code",
                 "Kimi Code",
+                "Oh My Pi",
+                "Grok",
+                "Kilo Code",
+                "OpenHands",
                 "Terminal",
             ],
         )
@@ -943,6 +998,78 @@ def require_host_secret(name: str) -> str:
         )
     RECORDER_SECRET_VALUES.add(value)
     return value
+
+
+def prepare_session_migrate_provider_state(
+    provider: str,
+    root: Path,
+    environment: dict[str, str],
+    openai_key: str,
+) -> None:
+    """Configure one extended harness in the disposable recorder home."""
+
+    home = root / "home"
+    if provider == "omp":
+        environment["PI_CODING_AGENT_DIR"] = str(home / ".omp" / "agent")
+        write_private_text(
+            home / ".omp" / "agent" / "config.yml",
+            "setupVersion: 2\n",
+        )
+    elif provider == "grok":
+        grok_home = home / ".grok"
+        environment["GROK_HOME"] = str(grok_home)
+        environment["GROK_DISABLE_AUTOUPDATER"] = "1"
+        write_private_text(
+            grok_home / "config.toml",
+            '''[cli]
+auto_update = false
+
+[models]
+default = "gpt-5.4"
+
+[features]
+telemetry = false
+feedback = false
+
+[model."gpt-5.4"]
+model = "gpt-5.4"
+base_url = "https://api.openai.com/v1"
+name = "GPT-5.4"
+env_key = "OPENAI_API_KEY"
+api_backend = "responses"
+context_window = 1047576
+''',
+        )
+    elif provider == "kilo":
+        write_private_text(
+            root / "config" / "kilo" / "kilo.jsonc",
+            json.dumps(
+                {
+                    "$schema": "https://app.kilo.ai/config.json",
+                    "model": "openai/gpt-4.1",
+                    "provider": {
+                        "openai": {
+                            "options": {"apiKey": "{env:OPENAI_API_KEY}"},
+                        }
+                    },
+                }
+            )
+            + "\n",
+        )
+        # Kilo's interactive TUI resolves direct-provider credentials from its
+        # auth store. Seed the disposable store in the same schema written by
+        # `kilo auth login`; it is private, deleted after capture, and never
+        # copied into a public cast.
+        write_private_text(
+            root / "data" / "kilo" / "auth.json",
+            json.dumps({"openai": {"type": "api", "key": openai_key}}) + "\n",
+        )
+    elif provider == "openhands":
+        environment["OPENHANDS_SUPPRESS_BANNER"] = "1"
+        environment["LLM_API_KEY"] = openai_key
+        environment["LLM_MODEL"] = "gpt-4.1"
+    else:
+        raise RuntimeError(f"unsupported extended demo provider: {provider}")
 
 
 def prepare_sequence_provider_state(
@@ -1080,6 +1207,17 @@ max_context_size = 272000
         ),
     )
 
+    # The four newest integrations use the same disposable OpenAI credential,
+    # but still run their genuine native TUIs and persistence layers. None of
+    # this private provider state is copied into the public cast.
+    for provider in ("omp", "grok", "kilo", "openhands"):
+        prepare_session_migrate_provider_state(
+            provider,
+            root,
+            environment,
+            openai_key,
+        )
+
 
 @dataclass(frozen=True)
 class ProviderDemo:
@@ -1094,7 +1232,13 @@ class ProviderDemo:
 SEQUENCE_DEMOS = (
     ProviderDemo("claude", "Claude Code", "claude", r"Claude Code v", "opus"),
     ProviderDemo("codex", "OpenAI Codex", "codex", r"Codex|OpenAI", "gpt-5.6-sol"),
-    ProviderDemo("pi", "Pi", "pi", r"Pi|pi", "openai-codex/gpt-5.6-sol"),
+    ProviderDemo(
+        "pi",
+        "Pi",
+        "pi",
+        r"Pi|pi",
+        "openai/o1-pro",
+    ),
     ProviderDemo(
         "opencode",
         "OpenCode",
@@ -1151,6 +1295,34 @@ SEQUENCE_DEMOS = (
         r"Send /help for help information\.",
         "gpt-5.4",
     ),
+    ProviderDemo(
+        "omp",
+        "Oh My Pi",
+        "omp",
+        r"Oh My Pi|omp v|OMP",
+        "openai/gpt-4.1",
+    ),
+    ProviderDemo(
+        "grok",
+        "Grok",
+        "grok",
+        r"Shift\+Tab:mode|GPT-5\.4",
+        "gpt-5.4",
+    ),
+    ProviderDemo(
+        "kilo",
+        "Kilo Code",
+        "kilo",
+        r"Kilo Code|kilo",
+        "openai/gpt-4.1",
+    ),
+    ProviderDemo(
+        "openhands",
+        "OpenHands",
+        "openhands",
+        r"OpenHands",
+        "gpt-4.1",
+    ),
     ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$", "bash"),
 )
 
@@ -1167,6 +1339,10 @@ SEQUENCE_ROW_LABELS = {
     "muse": "Muse Code",
     "qwen": "Qwen Code",
     "kimi": "Kimi Code",
+    "omp": "Oh My Pi",
+    "grok": "Grok",
+    "kilo": "Kilo Code",
+    "openhands": "OpenHands",
     "terminal": "Terminal",
 }
 
@@ -1196,6 +1372,10 @@ PROVIDER_DEMOS = {
     "muse": ProviderDemo("muse", "Muse Code", "muse", r"Muse Code|Muse", setup_only=True),
     "qwen": ProviderDemo("qwen", "Qwen Code", "qwen", r"Qwen Code|Qwen", setup_only=True),
     "kimi": ProviderDemo("kimi", "Kimi Code", "kimi", r"Kimi Code|Kimi", setup_only=True),
+    "omp": ProviderDemo("omp", "Oh My Pi", "omp", r"Oh My Pi|omp v|OMP"),
+    "grok": ProviderDemo("grok", "Grok", "grok", r"Shift\+Tab:mode|GPT-5\.4"),
+    "kilo": ProviderDemo("kilo", "Kilo Code", "kilo", r"Kilo Code|kilo"),
+    "openhands": ProviderDemo("openhands", "OpenHands", "openhands", r"OpenHands"),
     "terminal": ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
 }
 
@@ -1207,6 +1387,7 @@ def provider_disable_flags(active: str) -> list[str]:
     for provider in (
         "claude", "codex", "pi", "opencode", "cursor", "copilot", "antigravity",
         "mistral-vibe", "muse", "qwen", "kimi",
+        "omp", "grok", "kilo", "openhands",
     ):
         if provider != active:
             flags.append(f"--no-host-{provider}")
@@ -1310,11 +1491,24 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             "cursor": ("cursor-agent",),
             "copilot": ("copilot",),
             "antigravity": ("agy",),
+            "omp": ("omp",),
+            "grok": ("grok",),
+            "kilo": ("kilo",),
+            "openhands": ("openhands",),
             "terminal": (),
         }
         if not spec.setup_only:
             expose_installed_providers(root, executable_names[spec.id])
             prepare_provider_login(spec.id, root, environment)
+            if spec.id in {"omp", "grok", "kilo", "openhands"}:
+                openai_key = require_host_secret("OPENAI_API_KEY")
+                environment["OPENAI_API_KEY"] = openai_key
+                prepare_session_migrate_provider_state(
+                    spec.id,
+                    root,
+                    environment,
+                    openai_key,
+                )
         binary = repo / "target" / "release" / "open-agent-view"
         if not binary.is_file():
             raise RuntimeError("build target/release/open-agent-view before recording providers")
@@ -1517,9 +1711,27 @@ def select_sequence_model(terminal: RealTerminal, spec: ProviderDemo) -> None:
         raise RuntimeError(
             f"{spec.label} model picker closed while searching for {spec.model}"
         )
+    if spec.id == "kilo":
+        # Kilo exposes both its hosted proxy (`kilo/openai/gpt-4.1`) and the
+        # direct provider (`openai/gpt-4.1`). A substring search matches both;
+        # move past the three hosted GPT-4.1 variants to the exact direct ID.
+        for _ in range(3):
+            terminal.key(
+                "Down",
+                "↓ · choose direct OpenAI model",
+                "open-agent-view",
+            )
+            sequence_wait(0.35)
     sequence_wait(1.5)
     terminal.key("Enter", f"Enter · select {spec.model}", "open-agent-view")
     terminal.wait_screen_without(picker_pattern, 30)
+    if spec.id == "kilo":
+        terminal.wait_screen(
+            rf"harness\s+Kilo Code\s+·\s+model\s+{re.escape(spec.model)}",
+            20,
+        )
+        if "model kilo/openai/gpt-4.1" in terminal.screen():
+            raise RuntimeError("Kilo model picker selected its hosted proxy instead of openai/gpt-4.1")
     sequence_wait(1.5)
 
 
@@ -1572,7 +1784,8 @@ def run_native_sequence_turns(terminal: RealTerminal, spec: ProviderDemo) -> Non
             r"API Error|Error:\s*4\d\d|HTTP\s+4\d\d|unsupported parameter|"
             r"Agent execution terminated due to error|"
             r"Authentication required|not authenticated|run exited without success|"
-            r"Named models unavailable|Free plans can only use Auto",
+            r"Named models unavailable|Free plans can only use Auto|"
+            r"You need to sign in to use this model",
             screen,
             re.IGNORECASE,
         ):
@@ -1781,7 +1994,16 @@ def write_sequence_recording(
             (
                 "Terminal is a real shell"
                 if spec.id == "terminal"
-                else f"Explain what is {spec.label}"
+                # Grok repaints the submitted prompt in cursor-addressed
+                # fragments, so its raw asciicast never contains the prompt
+                # as one byte-contiguous string. The visible second-turn
+                # response is stable proof without relying on Grok's variable
+                # auto-generated conversation title.
+                else (
+                    "Grok is"
+                    if spec.id == "grok"
+                    else f"Explain what is {spec.label}"
+                )
             ),
             f"{spec.id}-explanation",
             *prior_names,
@@ -1798,7 +2020,10 @@ def capture_overview_story(
 ) -> None:
     """Record the short, genuine dashboard-to-native opening walkthrough."""
 
-    expected_names = [f"{spec.id}-explanation" for spec in SEQUENCE_DEMOS[:-1]]
+    expected_names = [
+        f"{spec.id}-explanation" for spec in SEQUENCE_DEMOS
+        if spec.id not in {"omp", "grok", "kilo", "openhands", "terminal"}
+    ]
     if session_names != expected_names:
         raise RuntimeError(
             "overview requires the eleven completed coding-harness sessions; "
@@ -2196,21 +2421,69 @@ def capture_provider_sequence(
                         needs_native_return = False
                     else:
                         run_native_sequence_turns(terminal, spec)
-                except RuntimeError:
+                except RuntimeError as error:
                     row_label = SEQUENCE_ROW_LABELS[spec.id]
                     screen = terminal.screen()
-                    if not (
+                    recovered_native = False
+                    if (
+                        not capture_overview
+                        and spec.id == "opencode"
+                        and re.search(APP_HEADER_PATTERN, screen)
+                        and "No such file or directory" in screen
+                    ):
+                        # OpenCode can finish its first async turn before the
+                        # native attach target becomes visible. Remove that
+                        # disposable row and restart this story from a freshly
+                        # repainted picker so the published cast contains
+                        # neither the transient error nor a phantom session.
+                        terminal.wait_selected_row(row_label)
+                        terminal.key(
+                            "C-x",
+                            "Ctrl+X · remove transient OpenCode row",
+                            "open-agent-view",
+                        )
+                        sequence_wait(1.0)
+                        sequence_type_line(
+                            terminal,
+                            "/harness",
+                            "Type /harness",
+                            "open-agent-view",
+                            0.07,
+                        )
+                        terminal.wait_screen(r"choose harness", 30)
+                        action_start_index = len(terminal.actions)
+                        start = terminal.repaint_start()
+                        terminal.wait_screen(re.escape(picker_search), 30)
+                        terminal.key(
+                            "Enter",
+                            f"Enter · choose {spec.label}",
+                            "open-agent-view",
+                        )
+                        terminal.wait_screen_without(r"choose harness", 30)
+                        terminal.wait_screen(
+                            rf"harness\s+{re.escape(picker_search)}",
+                            30,
+                        )
+                        sequence_wait(1.5)
+                        select_sequence_model(terminal, spec)
+                        run_native_sequence_turns(terminal, spec)
+                        screen = terminal.screen()
+                        recovered_native = True
+                    if recovered_native:
+                        pass
+                    elif not (
                         capture_overview
                         and re.search(APP_HEADER_PATTERN, screen)
                         and row_label in screen
                     ):
-                        raise
-                    terminal.remember(
-                        f"{spec.label} session created; native attach unavailable",
-                        "open-agent-view",
-                    )
-                    sequence_wait(1.0)
-                    needs_native_return = False
+                        raise error
+                    else:
+                        terminal.remember(
+                            f"{spec.label} session created; native attach unavailable",
+                            "open-agent-view",
+                        )
+                        sequence_wait(1.0)
+                        needs_native_return = False
 
             if needs_native_return:
                 return_draft = "Now, I can navigate back to panel with Shift + Left Arrow"
@@ -2391,6 +2664,10 @@ def prewarm_sequence_harnesses(
         ["muse", "--version"],
         ["qwen", "--version"],
         ["kimi", "provider", "list", "--json"],
+        ["omp", "models", "list", "--no-extensions", "--json"],
+        ["grok", "models"],
+        ["kilo", "models", "openai"],
+        ["openhands", "--version"],
         ["bash", "--version"],
         ["opav", "--json", "--cwd", str(work), "--history-limit", "1"],
     ]

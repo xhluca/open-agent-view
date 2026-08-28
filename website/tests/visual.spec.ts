@@ -30,6 +30,10 @@ const harnesses = [
   ["muse", "Muse Code"],
   ["qwen", "Qwen Code"],
   ["kimi", "Kimi Code"],
+  ["omp", "Oh My Pi"],
+  ["grok", "Grok"],
+  ["kilo", "Kilo Code"],
+  ["openhands", "OpenHands"],
   ["terminal", "Terminal"],
 ] as const;
 
@@ -259,6 +263,7 @@ for (const viewport of viewports) {
 }
 
 test("every provider logo jumps to its real recording and tabs support arrow navigation", async ({ page }) => {
+  test.setTimeout(60_000);
   await openReady(page);
   const section = page.locator("#harness-demo");
 

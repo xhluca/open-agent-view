@@ -1,125 +1,125 @@
 {
-  "duration": 35.5741196440115,
+  "duration": 35.575938994725234,
   "proof": "real-open-agent-view-tui",
   "sequence": "guide-rename-three-multi-harness-sessions",
   "actions": [
     {
-      "at": 3.335,
+      "at": 3.324,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 6.262,
+      "at": 6.252,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 6.386,
+      "at": 6.376,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 7.918,
+      "at": 7.907,
       "action": "Ctrl+R \u00b7 rename Claude session",
       "window": "open-agent-view"
     },
     {
-      "at": 9.055,
+      "at": 9.038,
       "action": "Ctrl+U \u00b7 clear current name",
       "window": "open-agent-view"
     },
     {
-      "at": 10.071,
+      "at": 10.053,
       "action": "Type \u00b7 launch-review",
       "window": "open-agent-view"
     },
     {
-      "at": 10.996,
+      "at": 10.977,
       "action": "Enter \u00b7 save local name",
       "window": "open-agent-view"
     },
     {
-      "at": 11.119,
+      "at": 11.1,
       "action": "Saved \u00b7 launch-review remains Claude",
       "window": "open-agent-view"
     },
     {
-      "at": 12.644,
+      "at": 12.625,
       "action": "\u2193 \u00b7 move to the next section",
       "window": "open-agent-view"
     },
     {
-      "at": 12.768,
+      "at": 12.749,
       "action": "\u2193 \u00b7 select the next agent",
       "window": "open-agent-view"
     },
     {
-      "at": 13.698,
+      "at": 13.68,
       "action": "Ctrl+R \u00b7 rename Codex session",
       "window": "open-agent-view"
     },
     {
-      "at": 14.829,
+      "at": 14.81,
       "action": "Ctrl+U \u00b7 clear current name",
       "window": "open-agent-view"
     },
     {
-      "at": 15.706,
+      "at": 15.692,
       "action": "Type \u00b7 api-cutover",
       "window": "open-agent-view"
     },
     {
-      "at": 16.631,
+      "at": 16.616,
       "action": "Enter \u00b7 save local name",
       "window": "open-agent-view"
     },
     {
-      "at": 16.755,
+      "at": 16.74,
       "action": "Saved \u00b7 api-cutover remains Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 18.279,
+      "at": 18.265,
       "action": "\u2193 \u00b7 move to the next section",
       "window": "open-agent-view"
     },
     {
-      "at": 19.211,
+      "at": 19.197,
       "action": "Ctrl+R \u00b7 rename Pi session",
       "window": "open-agent-view"
     },
     {
-      "at": 20.342,
+      "at": 20.328,
       "action": "Ctrl+U \u00b7 clear current name",
       "window": "open-agent-view"
     },
     {
-      "at": 21.082,
+      "at": 21.072,
       "action": "Type \u00b7 test-plan",
       "window": "open-agent-view"
     },
     {
-      "at": 22.006,
+      "at": 21.997,
       "action": "Enter \u00b7 save local name",
       "window": "open-agent-view"
     },
     {
-      "at": 22.129,
+      "at": 22.12,
       "action": "Saved \u00b7 test-plan remains Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 26.528,
+      "at": 26.513,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 29.658,
+      "at": 29.644,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 29.782,
+      "at": 29.768,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },

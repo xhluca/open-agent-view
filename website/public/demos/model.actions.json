@@ -1,70 +1,70 @@
 {
-  "duration": 26.99632693769455,
+  "duration": 26.198047649572374,
   "proof": "real-open-agent-view-tui",
   "sequence": "guide-browse-search-select-pi-model",
   "actions": [
     {
-      "at": 2.663,
+      "at": 2.693,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 5.593,
+      "at": 5.62,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 5.717,
+      "at": 5.748,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 6.89,
+      "at": 6.917,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 7.016,
+      "at": 7.041,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 10.985,
+      "at": 10.184,
       "action": "\u2193 \u00b7 browse available models",
       "window": "open-agent-view"
     },
     {
-      "at": 11.91,
+      "at": 11.109,
       "action": "\u2191 \u00b7 return to first result",
       "window": "open-agent-view"
     },
     {
-      "at": 13.488,
+      "at": 12.691,
       "action": "Type \u00b7 search gpt-5.4",
       "window": "open-agent-view"
     },
     {
-      "at": 15.617,
+      "at": 14.82,
       "action": "Enter \u00b7 select the filtered model",
       "window": "open-agent-view"
     },
     {
-      "at": 18.267,
+      "at": 17.468,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 21.597,
+      "at": 20.796,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 21.721,
+      "at": 20.92,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 22.445,
+      "at": 21.644,
       "action": "Selected Pi model remains visible",
       "window": "open-agent-view"
     }

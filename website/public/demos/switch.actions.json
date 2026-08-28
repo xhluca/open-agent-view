@@ -1,85 +1,85 @@
 {
-  "duration": 31.752884000623705,
+  "duration": 31.829282485171316,
   "proof": "real-open-agent-view-tui",
   "sequence": "guide-select-open-double-left-reopen-shift-left",
   "actions": [
     {
-      "at": 3.465,
+      "at": 3.493,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 6.398,
+      "at": 6.427,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 6.522,
+      "at": 6.551,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 7.252,
+      "at": 7.283,
       "action": "\u2193 \u00b7 select test-watcher",
       "window": "open-agent-view"
     },
     {
-      "at": 8.38,
+      "at": 8.41,
       "action": "\u2192 \u00b7 open selected session",
       "window": "open-agent-view"
     },
     {
-      "at": 10.008,
+      "at": 10.038,
       "action": "\u2190 \u00b7 arm return at empty prompt",
       "window": "Terminal"
     },
     {
-      "at": 11.637,
+      "at": 11.665,
       "action": "\u2190 again \u00b7 return to dashboard",
       "window": "Terminal"
     },
     {
-      "at": 14.782,
+      "at": 14.808,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 17.91,
+      "at": 17.938,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 18.034,
+      "at": 18.065,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 18.761,
+      "at": 18.807,
       "action": "Enter \u00b7 reopen test-watcher",
       "window": "open-agent-view"
     },
     {
-      "at": 20.09,
+      "at": 20.146,
       "action": "Shift+\u2190 \u00b7 return immediately",
       "window": "Terminal"
     },
     {
-      "at": 23.225,
+      "at": 23.299,
       "action": "Read \u00b7 dashboard guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 26.354,
+      "at": 26.429,
       "action": "Ctrl+U \u00b7 clear guidance",
       "window": "open-agent-view"
     },
     {
-      "at": 26.478,
+      "at": 26.553,
       "action": "Esc \u00b7 return to dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 27.202,
+      "at": 27.276,
       "action": "All managed sessions remain visible",
       "window": "open-agent-view"
     }

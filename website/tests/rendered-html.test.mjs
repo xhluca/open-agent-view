@@ -22,6 +22,10 @@ const demos = [
   ["muse", "Muse Code", "Muse Code"],
   ["qwen", "Qwen Code", "Qwen Code"],
   ["kimi", "Kimi Code", "Kimi Code"],
+  ["omp", "Oh My Pi", "Oh My Pi"],
+  ["grok", "Grok", "Grok"],
+  ["kilo", "Kilo Code", "Kilo Code"],
+  ["openhands", "OpenHands", "OpenHands"],
   ["terminal", "Terminal", "Terminal"],
   ["overview", null, null],
   ["rename", null, null],
@@ -126,16 +130,11 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /class="story-action-subtitle"[^>]*data-demo-last-action[^>]*aria-atomic="true"/);
   assert.match(html, /href="https:\/\/github\.com\/xhluca\/open-agent-view" target="_blank" rel="noreferrer"/);
 
-  for (const [id, label] of demos.slice(1, 13)) {
+  for (const [id, label] of demos.slice(1, 17)) {
     assert.match(html, new RegExp(`data-story-tab="${id}"`));
     assert.match(html, new RegExp(`data-story="story-${id}"`));
     assert.match(html, new RegExp(`data-select-harness="${id}"`));
     assert.match(html, new RegExp(`Watch the ${label} demo`));
-  }
-
-  for (const label of ["Oh My Pi", "Grok", "Kilo Code", "OpenHands"]) {
-    assert.match(html, new RegExp(`title="${label}"`));
-    assert.match(html, new RegExp(`See how ${label} is supported`));
   }
 
   assert.match(html, /data-coding-harness-count="15"/);
@@ -273,6 +272,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       for (const choice of [
         "Claude", "Codex", "Pi", "OpenCode", "Cursor", "GitHub Copilot",
         "Antigravity", "Mistral Vibe", "Muse Code", "Qwen Code", "Kimi Code", "Terminal",
+        "Oh My Pi", "Grok", "Kilo Code", "OpenHands",
       ]) {
         // Full-screen terminal renders may position words with cursor movement rather
         // than literal spaces, so assert the complete label while tolerating that.
@@ -434,7 +434,7 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   const playbackSpeeds = [...script.matchAll(/speed:\s*([0-9.]+)/g)].map((match) => Number(match[1]));
   assert.deepEqual(
     playbackSpeeds,
-    [1, 1, ...Array(12).fill(0.6), ...Array(4).fill(1)],
+    [1, 1, ...Array(16).fill(0.6), ...Array(4).fill(1)],
     "overview, setup, and controls should stay literal while harness stories play at 0.6×",
   );
   assert.match(script, /retainFrame\(\)/);
@@ -466,7 +466,7 @@ test("uses the local asciinema player without a synthetic terminal generator or 
   assert.match(recorder, /def prewarm_sequence_harnesses\(/);
   assert.match(recorder, /def prepare_cursor_demo_wrapper\(/);
   assert.ok(recorder.includes('--trust \\"$@\\"'));
-  assert.match(recorder, /openai-codex\/gpt-5\.6-sol/);
+  assert.match(recorder, /openai\/o1-pro/);
   assert.match(recorder, /Error:\\s\*4\\d\\d/);
   assert.match(recorder, /SEQUENCE_PLAYBACK_SPEED\s*=\s*0\.5/);
   assert.match(recorder, /SEQUENCE_TYPING_SPEEDUP\s*=\s*0\.8/);

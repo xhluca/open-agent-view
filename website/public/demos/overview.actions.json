@@ -1,5 +1,5 @@
 {
-  "duration": 27.827019258999854,
+  "duration": 27.834930283046706,
   "proof": "conversation",
   "sequence": "eleven-session-dashboard-preview-two-open-kimi-lookup-return",
   "pacing_scale": 1.25,
@@ -13,12 +13,12 @@
   "session_count": 11,
   "actions": [
     {
-      "at": 0.766,
+      "at": 0.745,
       "action": "Dashboard \u00b7 11 coding harnesses",
       "window": "open-agent-view"
     },
     {
-      "at": 2.141,
+      "at": 2.126,
       "action": "\u2193 \u00b7 choose Qwen Code",
       "window": "open-agent-view"
     },
@@ -28,82 +28,82 @@
       "window": "open-agent-view"
     },
     {
-      "at": 3.023,
+      "at": 3.051,
       "action": "Qwen Code \u00b7 native session",
       "window": "Qwen Code"
     },
     {
-      "at": 5.149,
+      "at": 5.177,
       "action": "Shift+\u2190 \u00b7 return to dashboard",
       "window": "Qwen Code"
     },
     {
-      "at": 5.527,
+      "at": 5.555,
       "action": "Dashboard \u00b7 Qwen Code stays available",
       "window": "open-agent-view"
     },
     {
-      "at": 6.277,
+      "at": 6.305,
       "action": "\u2193 \u00b7 choose Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 7.029,
+      "at": 7.058,
       "action": "\u2192 \u00b7 open Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 7.155,
+      "at": 7.185,
       "action": "Muse Code \u00b7 native session",
       "window": "Muse Code"
     },
     {
-      "at": 9.281,
+      "at": 9.31,
       "action": "Shift+\u2190 \u00b7 return to dashboard",
       "window": "Muse Code"
     },
     {
-      "at": 9.661,
+      "at": 9.69,
       "action": "Dashboard \u00b7 Muse Code stays available",
       "window": "open-agent-view"
     },
     {
-      "at": 10.411,
+      "at": 10.44,
       "action": "\u2191 \u00b7 choose Kimi Code",
       "window": "open-agent-view"
     },
     {
-      "at": 11.161,
+      "at": 11.189,
       "action": "\u2191 \u00b7 choose Kimi Code",
       "window": "open-agent-view"
     },
     {
-      "at": 11.913,
+      "at": 11.941,
       "action": "\u2192 \u00b7 open Kimi Code",
       "window": "open-agent-view"
     },
     {
-      "at": 12.041,
+      "at": 12.067,
       "action": "Kimi Code \u00b7 native session",
       "window": "Kimi Code"
     },
     {
-      "at": 16.087,
+      "at": 16.098,
       "action": "Type \u00b7 Look up https://open-agent-view.github.io/ and tell me what it is about.",
       "window": "Kimi Code"
     },
     {
-      "at": 16.965,
+      "at": 16.979,
       "action": "Enter \u00b7 send lookup prompt",
       "window": "Kimi Code"
     },
     {
-      "at": 24.098,
+      "at": 24.107,
       "action": "Shift+\u2190 \u00b7 return to dashboard",
       "window": "Kimi Code"
     },
     {
-      "at": 24.476,
+      "at": 24.483,
       "action": "Dashboard \u00b7 Kimi Code keeps running",
       "window": "open-agent-view"
     }

@@ -1,140 +1,140 @@
 {
-  "duration": 30.044622850065238,
+  "duration": 30.857841672695198,
   "proof": "terminal",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.749,
+      "at": 0.796,
       "action": "\u2193 \u00b7 highlight Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 1.477,
+      "at": 1.524,
       "action": "Enter \u00b7 choose Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 2.646,
+      "at": 2.695,
       "action": "Type /shell",
       "window": "open-agent-view"
     },
     {
-      "at": 3.275,
+      "at": 3.319,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 3.412,
+      "at": 3.451,
       "action": "\u2193 \u00b7 browse shells",
       "window": "open-agent-view"
     },
     {
-      "at": 3.873,
+      "at": 3.913,
       "action": "\u2193 \u00b7 browse shells",
       "window": "open-agent-view"
     },
     {
-      "at": 4.336,
+      "at": 4.375,
       "action": "\u2191 \u00b7 compare shells",
       "window": "open-agent-view"
     },
     {
-      "at": 5.096,
+      "at": 5.127,
       "action": "Search \u00b7 bash",
       "window": "open-agent-view"
     },
     {
-      "at": 5.982,
+      "at": 6.009,
       "action": "Enter \u00b7 select bash",
       "window": "open-agent-view"
     },
     {
-      "at": 8.102,
+      "at": 8.112,
       "action": "Enter \u00b7 open Terminal",
       "window": "open-agent-view"
     },
     {
-      "at": 8.731,
+      "at": 8.736,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 10.375,
+      "at": 10.351,
       "action": "Enter \u00b7 printf greeting",
       "window": "Terminal"
     },
     {
-      "at": 11.003,
+      "at": 10.975,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 12.9,
+      "at": 12.869,
       "action": "Command complete",
       "window": "Terminal"
     },
     {
-      "at": 16.151,
+      "at": 16.123,
       "action": "Enter \u00b7 printf explanation",
       "window": "Terminal"
     },
     {
-      "at": 16.779,
+      "at": 16.747,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 18.673,
+      "at": 18.645,
       "action": "Explanation complete",
       "window": "Terminal"
     },
     {
-      "at": 20.857,
+      "at": 20.817,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Terminal"
     },
     {
-      "at": 21.735,
+      "at": 21.696,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Terminal"
     },
     {
-      "at": 22.111,
+      "at": 22.076,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 24.119,
+      "at": 24.9,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 24.246,
+      "at": 25.028,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 25.406,
+      "at": 26.211,
       "action": "Type \u00b7 terminal-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 26.031,
+      "at": 26.835,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 26.154,
+      "at": 26.962,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 27.316,
+      "at": 28.129,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 27.94,
+      "at": 28.754,
       "action": "Enter",
       "window": "open-agent-view"
     }

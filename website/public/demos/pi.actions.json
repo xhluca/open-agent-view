@@ -1,130 +1,130 @@
 {
-  "duration": 35.60906023868179,
+  "duration": 67.54747599213505,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.747,
+      "at": 0.779,
       "action": "\u2193 \u00b7 highlight Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 1.475,
+      "at": 1.507,
       "action": "Enter \u00b7 choose Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 2.639,
+      "at": 2.674,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.263,
+      "at": 3.299,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 3.395,
+      "at": 3.433,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.857,
+      "at": 3.895,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.319,
+      "at": 4.357,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.796,
-      "action": "Search \u00b7 openai-codex/gpt-5.6-sol",
+      "at": 5.432,
+      "action": "Search \u00b7 openai/o1-pro",
       "window": "open-agent-view"
     },
     {
-      "at": 6.682,
-      "action": "Enter \u00b7 select openai-codex/gpt-5.6-sol",
+      "at": 6.318,
+      "action": "Enter \u00b7 select openai/o1-pro",
       "window": "open-agent-view"
     },
     {
-      "at": 7.92,
+      "at": 7.558,
       "action": "Enter \u00b7 start Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 8.545,
+      "at": 8.183,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 14.297,
+      "at": 20.197,
       "action": "Hello response complete",
       "window": "Pi"
     },
     {
-      "at": 15.284,
+      "at": 21.187,
       "action": "Type \u00b7 Explain what is Pi",
       "window": "Pi"
     },
     {
-      "at": 15.915,
+      "at": 21.818,
       "action": "Enter \u00b7 send explanation",
       "window": "Pi"
     },
     {
-      "at": 24.539,
+      "at": 55.609,
       "action": "Explanation response complete",
       "window": "Pi"
     },
     {
-      "at": 26.716,
+      "at": 57.902,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Pi"
     },
     {
-      "at": 27.599,
+      "at": 58.78,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Pi"
     },
     {
-      "at": 27.975,
+      "at": 59.16,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 29.984,
+      "at": 61.928,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 30.112,
+      "at": 62.055,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 30.962,
+      "at": 62.902,
       "action": "Type \u00b7 pi-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 31.591,
+      "at": 63.528,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 31.715,
+      "at": 63.653,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 32.882,
+      "at": 64.816,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 33.506,
+      "at": 65.441,
       "action": "Enter",
       "window": "open-agent-view"
     }

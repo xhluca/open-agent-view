@@ -1,134 +1,147 @@
 {
-  "duration": 30.442868,
+  "duration": 45.96564687174041,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.787,
-      "action": "Enter \u00b7 choose Claude Code",
+      "at": 0.779,
+      "action": "\u2193 \u00b7 highlight Kilo Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.008,
+      "at": 1.509,
+      "action": "Enter \u00b7 choose Kilo Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.724,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 2.644,
+      "at": 3.355,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 2.842,
+      "at": 3.527,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.317,
+      "at": 3.999,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.779,
+      "at": 4.473,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.531,
-      "action": "Search \u00b7 opus",
+      "at": 5.594,
+      "action": "Search \u00b7 openai/gpt-4.1",
       "window": "open-agent-view"
     },
     {
-      "at": 5.415,
-      "action": "Enter \u00b7 select opus",
+      "at": 8.518,
+      "action": "\u2193 \u00b7 choose direct OpenAI model",
       "window": "open-agent-view"
     },
     {
-      "at": 6.658,
-      "action": "Enter \u00b7 start Claude Code",
+      "at": 8.817,
+      "action": "\u2193 \u00b7 choose direct OpenAI model",
       "window": "open-agent-view"
     },
     {
-      "at": 7.284,
+      "at": 9.116,
+      "action": "\u2193 \u00b7 choose direct OpenAI model",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 10.166,
+      "action": "Enter \u00b7 select openai/gpt-4.1",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 11.41,
+      "action": "Enter \u00b7 start Kilo Code",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 12.035,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 10.977,
+      "at": 23.717,
       "action": "Hello response complete",
-      "window": "Claude Code"
+      "window": "Kilo Code"
     },
     {
-      "at": 12.398,
-      "action": "Type \u00b7 Explain what is Claude Code",
-      "window": "Claude Code"
+      "at": 25.037,
+      "action": "Type \u00b7 Explain what is Kilo Code",
+      "window": "Kilo Code"
     },
     {
-      "at": 13.029,
+      "at": 25.667,
       "action": "Enter \u00b7 send explanation",
-      "window": "Claude Code"
+      "window": "Kilo Code"
     },
     {
-      "at": 19.161,
+      "at": 30.751,
       "action": "Explanation response complete",
-      "window": "Claude Code"
+      "window": "Kilo Code"
     },
     {
-      "at": 21.34,
+      "at": 32.945,
       "action": "Type \u00b7 explain return shortcut",
-      "window": "Claude Code"
+      "window": "Kilo Code"
     },
     {
-      "at": 22.217,
+      "at": 33.832,
       "action": "Shift+\u2190 \u00b7 return to panel",
-      "window": "Claude Code"
+      "window": "Kilo Code"
     },
     {
-      "at": 22.595,
+      "at": 37.002,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 24.601,
+      "at": 40.233,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 24.728,
+      "at": 40.36,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 25.788,
-      "action": "Type \u00b7 claude-explanation",
+      "at": 41.317,
+      "action": "Type \u00b7 kilo-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 26.413,
+      "at": 41.944,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 26.539,
+      "at": 42.068,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 27.715,
+      "at": 43.238,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 28.339,
+      "at": 43.862,
       "action": "Enter",
       "window": "open-agent-view"
-    }
-  ],
-  "timing_adjustments": [
-    {
-      "label": "Claude launch/background handoff",
-      "source_duration": 6.621,
-      "retimed_duration": 1.8
     }
   ]
 }

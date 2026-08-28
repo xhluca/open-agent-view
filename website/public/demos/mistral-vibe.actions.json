@@ -1,130 +1,130 @@
 {
-  "duration": 34.20580036044314,
+  "duration": 37.42095260967542,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.745,
+      "at": 0.78,
       "action": "\u2193 \u00b7 highlight Mistral Vibe",
       "window": "open-agent-view"
     },
     {
-      "at": 1.473,
+      "at": 1.507,
       "action": "Enter \u00b7 choose Mistral Vibe",
       "window": "open-agent-view"
     },
     {
-      "at": 2.652,
+      "at": 2.671,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.277,
+      "at": 3.296,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 3.413,
+      "at": 3.431,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.875,
+      "at": 3.893,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.338,
+      "at": 4.356,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.386,
+      "at": 5.395,
       "action": "Search \u00b7 gpt41-openai",
       "window": "open-agent-view"
     },
     {
-      "at": 6.273,
+      "at": 6.279,
       "action": "Enter \u00b7 select gpt41-openai",
       "window": "open-agent-view"
     },
     {
-      "at": 7.511,
+      "at": 7.517,
       "action": "Enter \u00b7 start Mistral Vibe",
       "window": "open-agent-view"
     },
     {
-      "at": 8.14,
+      "at": 8.144,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 16.115,
+      "at": 18.425,
       "action": "Hello response complete",
       "window": "Mistral Vibe"
     },
     {
-      "at": 17.573,
+      "at": 20.118,
       "action": "Type \u00b7 Explain what is Mistral Vibe",
       "window": "Mistral Vibe"
     },
     {
-      "at": 18.205,
+      "at": 20.753,
       "action": "Enter \u00b7 send explanation",
       "window": "Mistral Vibe"
     },
     {
-      "at": 21.868,
+      "at": 23.713,
       "action": "Explanation response complete",
       "window": "Mistral Vibe"
     },
     {
-      "at": 24.038,
+      "at": 25.925,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Mistral Vibe"
     },
     {
-      "at": 24.92,
+      "at": 26.806,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Mistral Vibe"
     },
     {
-      "at": 26.059,
+      "at": 28.459,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 28.069,
+      "at": 31.285,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 28.197,
+      "at": 31.414,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 29.564,
+      "at": 32.781,
       "action": "Type \u00b7 mistral-vibe-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 30.189,
+      "at": 33.406,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 30.312,
+      "at": 33.529,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 31.478,
+      "at": 34.693,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 32.103,
+      "at": 35.318,
       "action": "Enter",
       "window": "open-agent-view"
     }

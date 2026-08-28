@@ -11,10 +11,10 @@
     { "id": "muse", "name": "Muse Code", "icon": null, "mark": "Mu", "hasDemo": true },
     { "id": "qwen", "name": "Qwen Code", "icon": "/providers/qwen.svg", "mark": null, "hasDemo": true },
     { "id": "kimi", "name": "Kimi Code", "icon": null, "mark": "K", "hasDemo": true },
-    { "id": "omp", "name": "Oh My Pi", "icon": null, "mark": "OMP", "hasDemo": false },
-    { "id": "grok", "name": "Grok", "icon": null, "mark": "G", "hasDemo": false },
-    { "id": "kilo", "name": "Kilo Code", "icon": null, "mark": "Ki", "hasDemo": false },
-    { "id": "openhands", "name": "OpenHands", "icon": null, "mark": "OH", "hasDemo": false }
+    { "id": "omp", "name": "Oh My Pi", "icon": null, "mark": "OMP", "hasDemo": true },
+    { "id": "grok", "name": "Grok", "icon": null, "mark": "G", "hasDemo": true },
+    { "id": "kilo", "name": "Kilo Code", "icon": null, "mark": "Ki", "hasDemo": true },
+    { "id": "openhands", "name": "OpenHands", "icon": null, "mark": "OH", "hasDemo": true }
   ],
   "terminal": { "id": "terminal", "name": "Terminal", "icon": "/providers/terminal.svg", "mark": null, "hasDemo": true }
 }

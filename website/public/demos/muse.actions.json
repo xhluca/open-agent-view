@@ -1,130 +1,130 @@
 {
-  "duration": 33.02211861936191,
+  "duration": 34.403521948640815,
   "proof": "conversation",
   "sequence": "picker-model-two-turns-return-rename-picker",
   "actions": [
     {
-      "at": 0.75,
+      "at": 0.785,
       "action": "\u2193 \u00b7 highlight Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 1.48,
+      "at": 1.513,
       "action": "Enter \u00b7 choose Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 2.644,
+      "at": 2.679,
       "action": "Type /model",
       "window": "open-agent-view"
     },
     {
-      "at": 3.268,
+      "at": 3.304,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 3.402,
+      "at": 3.436,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 3.864,
+      "at": 3.898,
       "action": "\u2193 \u00b7 browse models",
       "window": "open-agent-view"
     },
     {
-      "at": 4.326,
+      "at": 4.36,
       "action": "\u2191 \u00b7 compare models",
       "window": "open-agent-view"
     },
     {
-      "at": 5.614,
+      "at": 5.653,
       "action": "Search \u00b7 meta/muse-spark-1.2",
       "window": "open-agent-view"
     },
     {
-      "at": 6.502,
+      "at": 6.541,
       "action": "Enter \u00b7 select meta/muse-spark-1.2",
       "window": "open-agent-view"
     },
     {
-      "at": 7.74,
+      "at": 7.779,
       "action": "Enter \u00b7 start Muse Code",
       "window": "open-agent-view"
     },
     {
-      "at": 8.365,
+      "at": 8.404,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 11.581,
+      "at": 11.623,
       "action": "Hello response complete",
       "window": "Muse Code"
     },
     {
-      "at": 12.907,
+      "at": 12.96,
       "action": "Type \u00b7 Explain what is Muse Code",
       "window": "Muse Code"
     },
     {
-      "at": 13.537,
+      "at": 13.591,
       "action": "Enter \u00b7 send explanation",
       "window": "Muse Code"
     },
     {
-      "at": 21.821,
+      "at": 22.216,
       "action": "Explanation response complete",
       "window": "Muse Code"
     },
     {
-      "at": 24.009,
+      "at": 24.389,
       "action": "Type \u00b7 explain return shortcut",
       "window": "Muse Code"
     },
     {
-      "at": 24.891,
+      "at": 25.268,
       "action": "Shift+\u2190 \u00b7 return to panel",
       "window": "Muse Code"
     },
     {
-      "at": 25.268,
+      "at": 25.646,
       "action": "Returned to shared dashboard",
       "window": "open-agent-view"
     },
     {
-      "at": 27.275,
+      "at": 28.677,
       "action": "Ctrl+R \u00b7 rename session",
       "window": "open-agent-view"
     },
     {
-      "at": 27.402,
+      "at": 28.804,
       "action": "Ctrl+U \u00b7 clear name",
       "window": "open-agent-view"
     },
     {
-      "at": 28.383,
+      "at": 29.756,
       "action": "Type \u00b7 muse-explanation",
       "window": "open-agent-view"
     },
     {
-      "at": 29.007,
+      "at": 30.38,
       "action": "Enter \u00b7 save name",
       "window": "open-agent-view"
     },
     {
-      "at": 29.131,
+      "at": 30.506,
       "action": "Renamed session visible",
       "window": "open-agent-view"
     },
     {
-      "at": 30.293,
+      "at": 31.675,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 30.917,
+      "at": 32.3,
       "action": "Enter",
       "window": "open-agent-view"
     }

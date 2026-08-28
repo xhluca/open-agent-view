@@ -100,6 +100,26 @@ const STORIES = {
     actions: "/demos/kimi.actions.json",
     speed: 0.6,
   },
+  "story-omp": {
+    cast: "/demos/omp.cast",
+    actions: "/demos/omp.actions.json",
+    speed: 0.6,
+  },
+  "story-grok": {
+    cast: "/demos/grok.cast",
+    actions: "/demos/grok.actions.json",
+    speed: 0.6,
+  },
+  "story-kilo": {
+    cast: "/demos/kilo.cast",
+    actions: "/demos/kilo.actions.json",
+    speed: 0.6,
+  },
+  "story-openhands": {
+    cast: "/demos/openhands.cast",
+    actions: "/demos/openhands.actions.json",
+    speed: 0.6,
+  },
   "story-terminal": {
     cast: "/demos/terminal.cast",
     actions: "/demos/terminal.actions.json",
