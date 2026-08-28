@@ -32,7 +32,8 @@ try {
     Copy-Item -LiteralPath (Join-Path $repo "README.md") -Destination $stage
     Compress-Archive -Path $stage -DestinationPath $archive -Force
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
-    "$hash  $([System.IO.Path]::GetFileName($archive))" | Set-Content -LiteralPath "$archive.sha256" -Encoding ascii
+    $checksumLine = "$hash  $([System.IO.Path]::GetFileName($archive))`n"
+    [System.IO.File]::WriteAllText("$archive.sha256", $checksumLine, [System.Text.Encoding]::ASCII)
     Write-Output $archive
     Write-Output "$archive.sha256"
 } finally {

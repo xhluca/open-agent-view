@@ -26,8 +26,10 @@ try {
     if ((& $canonical --version | Out-String).Trim() -ne "open-agent-view $version") { throw "waited replacement produced the wrong executable" }
 
     $checksum = Get-ChildItem -LiteralPath $release -Filter '*.sha256' | Select-Object -First 1
-    $original = Get-Content -LiteralPath $checksum.FullName -Raw
-    ('0' * 64) + '  broken.zip' | Set-Content -LiteralPath $checksum.FullName -Encoding ascii
+    $original = [System.IO.File]::ReadAllText($checksum.FullName)
+    if ($original.Contains("`r")) { throw "release checksum must use portable LF line endings" }
+    if (-not $original.EndsWith("`n")) { throw "release checksum must end with a newline" }
+    [System.IO.File]::WriteAllText($checksum.FullName, (('0' * 64) + "  broken.zip`n"), [System.Text.Encoding]::ASCII)
     $failed = $false
     try {
         & (Join-Path $repo "install.ps1") -Version $version -InstallDir $install -ReleaseBaseUrl (Join-Path $temporary "releases") -SkipPathUpdate
@@ -35,7 +37,7 @@ try {
         $failed = $_.Exception.Message -match 'checksum verification failed'
     }
     if (-not $failed) { throw "installer accepted an invalid checksum" }
-    $original | Set-Content -LiteralPath $checksum.FullName -Encoding ascii
+    [System.IO.File]::WriteAllText($checksum.FullName, $original, [System.Text.Encoding]::ASCII)
     if ((& $canonical --version | Out-String).Trim() -ne "open-agent-view $version") { throw "failed install replaced the working executable" }
     Write-Host "Windows installer tests passed"
 } finally {
