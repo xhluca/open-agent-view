@@ -3,8 +3,8 @@
 <h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="52" height="52"> Open Agent View</h1>
 
 **One agent view for every coding harness.**<br>
-See what’s running, what needs you, and where to step in. Available for 15+
-harnesses.
+See what’s running, what needs you, and where to step in across 15 coding
+harnesses plus Terminal.
 
 <table align="center">
   <tr>
@@ -46,8 +46,8 @@ Claude Code users already know the value of an agent view: one place to follow
 background work and notice when an agent needs help. Other coding harnesses
 should not require a separate pile of terminal tabs.
 
-Open Agent View brings Claude Code, Codex, Cursor, GitHub Copilot, OpenCode, Pi,
-Oh My Pi, Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Grok,
+Open Agent View brings Claude Code, Codex, Pi, OpenCode, Cursor, GitHub Copilot,
+Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Oh My Pi, Grok,
 Kilo Code, OpenHands, and ordinary terminal jobs into one open-source dashboard.
 The conversation still lives in the harness that created it; selecting a row
 opens that harness's native interface.
@@ -79,19 +79,19 @@ commands.
 
 ## Harnesses
 
-Open Agent View brings these local coding harnesses—and regular terminals—into
-one dashboard.
+Open Agent View brings 15 local coding harnesses plus Terminal into one
+dashboard. This inventory follows the same order as the in-app harness picker.
 
 <table>
   <tr>
     <td align="center" width="25%"><a href="https://github.com/anthropics/claude-code"><img src="website/public/providers/claude.svg" width="64" height="64" alt="Claude Code logo"><br><strong>Claude Code</strong></a></td>
     <td align="center" width="25%"><a href="https://github.com/openai/codex"><img src="website/public/providers/codex.png" width="64" height="64" alt="OpenAI Codex logo"><br><strong>OpenAI Codex</strong></a></td>
-    <td align="center" width="25%"><a href="https://cursor.com/cli"><img src="website/public/providers/cursor.svg" width="64" height="64" alt="Cursor logo"><br><strong>Cursor</strong></a></td>
-    <td align="center" width="25%"><a href="https://github.com/github/copilot-cli"><img src="website/public/providers/copilot.svg" width="64" height="64" alt="GitHub Copilot logo"><br><strong>GitHub Copilot</strong></a></td>
+    <td align="center" width="25%"><a href="https://pi.dev"><img src="website/public/providers/pi.svg" width="64" height="64" alt="Pi logo"><br><strong>Pi</strong></a></td>
+    <td align="center" width="25%"><a href="https://github.com/anomalyco/opencode"><img src="website/public/providers/opencode.svg" width="64" height="64" alt="OpenCode logo"><br><strong>OpenCode</strong></a></td>
   </tr>
   <tr>
-    <td align="center"><a href="https://github.com/anomalyco/opencode"><img src="website/public/providers/opencode.svg" width="64" height="64" alt="OpenCode logo"><br><strong>OpenCode</strong></a></td>
-    <td align="center"><a href="https://pi.dev"><img src="website/public/providers/pi.svg" width="64" height="64" alt="Pi logo"><br><strong>Pi</strong></a></td>
+    <td align="center"><a href="https://cursor.com/cli"><img src="website/public/providers/cursor.svg" width="64" height="64" alt="Cursor logo"><br><strong>Cursor</strong></a></td>
+    <td align="center"><a href="https://github.com/github/copilot-cli"><img src="website/public/providers/copilot.svg" width="64" height="64" alt="GitHub Copilot logo"><br><strong>GitHub Copilot</strong></a></td>
     <td align="center"><a href="https://developers.google.com/antigravity"><img src="website/public/providers/antigravity.svg" width="64" height="64" alt="Antigravity logo"><br><strong>Antigravity</strong></a></td>
     <td align="center"><a href="https://github.com/mistralai/mistral-vibe"><img src="website/public/providers/mistral-vibe.svg" width="64" height="64" alt="Mistral Vibe logo"><br><strong>Mistral Vibe</strong></a></td>
   </tr>
@@ -99,13 +99,13 @@ one dashboard.
     <td align="center"><a href="https://dev.meta.ai/"><img src="https://session-migrate.github.io/agents/muse.svg" width="64" height="64" alt="Muse Code logo"><br><strong>Muse Code</strong></a></td>
     <td align="center"><a href="https://github.com/QwenLM/qwen-code"><img src="website/public/providers/qwen.svg" width="64" height="64" alt="Qwen Code logo"><br><strong>Qwen Code</strong></a></td>
     <td align="center"><a href="https://github.com/MoonshotAI/kimi-cli"><img src="https://session-migrate.github.io/agents/kimi-code.svg" width="64" height="64" alt="Kimi Code logo"><br><strong>Kimi Code</strong></a></td>
-    <td align="center"><a href="docs/cli.md"><img src="website/public/providers/terminal.svg" width="64" height="64" alt="Terminal icon"><br><strong>Terminal</strong></a></td>
+    <td align="center"><a href="https://github.com/can1357/oh-my-pi"><img src="https://session-migrate.github.io/agents/oh-my-pi.svg" width="64" height="64" alt="Oh My Pi logo"><br><strong>Oh My Pi</strong></a></td>
   </tr>
   <tr>
-    <td align="center"><a href="https://github.com/can1357/oh-my-pi"><img src="https://session-migrate.github.io/agents/oh-my-pi.svg" width="64" height="64" alt="Oh My Pi logo"><br><strong>Oh My Pi</strong></a></td>
     <td align="center"><a href="https://github.com/xai-org/grok-build"><img src="https://session-migrate.github.io/agents/grok.svg" width="64" height="64" alt="Grok logo"><br><strong>Grok</strong></a></td>
     <td align="center"><a href="https://github.com/Kilo-Org/kilocode"><img src="https://session-migrate.github.io/agents/kilo-code.svg" width="64" height="64" alt="Kilo Code logo"><br><strong>Kilo Code</strong></a></td>
     <td align="center"><a href="https://github.com/OpenHands/OpenHands-CLI"><img src="https://session-migrate.github.io/agents/openhands.svg" width="64" height="64" alt="OpenHands logo"><br><strong>OpenHands</strong></a></td>
+    <td align="center"><a href="docs/cli.md"><img src="website/public/providers/terminal.svg" width="64" height="64" alt="Terminal icon"><br><strong>Terminal</strong></a></td>
   </tr>
 </table>
 
@@ -116,10 +116,10 @@ one dashboard.
 | --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | Claude Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | OpenAI Codex | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Pi | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| OpenCode | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | — |
 | Cursor | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | — |
 | GitHub Copilot | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| OpenCode | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ | — |
-| Pi | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Antigravity | ✓ | ✓ | ✓ | — | — | — | ✓ | — |
 | Mistral Vibe | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | Muse Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |

@@ -74,9 +74,10 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
-  assert.match(html, /One live dashboard for 15 coding harnesses/);
-  assert.match(html, /Eleven harnesses/);
-  assert.match(html, /11 HARNESS SESSIONS · ONE DASHBOARD/);
+  assert.match(html, /One live dashboard for/);
+  assert.match(html, /15<!-- --> coding harnesses plus/);
+  assert.match(html, /Every session/);
+  assert.match(html, /REAL MULTI-HARNESS SESSIONS · ONE DASHBOARD/);
   assert.match(html, /return without losing your place/);
   assert.match(html, /Choose any harness/);
   assert.match(html, /Work in its native CLI/);
@@ -103,10 +104,10 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /property="og:title" content="Open Agent View: One dashboard for every coding agent"/);
-  assert.match(html, /property="og:description" content="Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard\."/);
+  assert.match(html, /property="og:description" content="Monitor 15 coding harnesses plus Terminal, see what needs input, and jump into each native CLI from one live dashboard\."/);
   assert.match(html, /property="og:image:width" content="1200"/);
   assert.match(html, /property="og:image:height" content="630"/);
-  assert.match(html, /property="og:image:alt" content="Open Agent View dashboard monitoring Claude, Codex, Cursor, Copilot, OpenCode, Pi, and nine more coding harnesses"/);
+  assert.match(html, /property="og:image:alt" content="Open Agent View dashboard for 15 coding harnesses plus Terminal"/);
   assert.match(html, /name="twitter:card" content="summary_large_image"/);
   assert.match(html, /name="twitter:title" content="Open Agent View: One dashboard for every coding agent"/);
   assert.ok(
@@ -117,7 +118,7 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /href="#install">Install<\/a>/);
   assert.ok(
     html.indexOf('id="start"') < html.indexOf('id="install"'),
-    "the eleven-session overview should precede the standalone installer section",
+    "the multi-harness overview should precede the standalone installer section",
   );
   assert.match(html, /class="story-action-subtitle"[^>]*data-demo-last-action[^>]*aria-atomic="true"/);
   assert.match(html, /href="https:\/\/github\.com\/xhluca\/open-agent-view" target="_blank" rel="noreferrer"/);
@@ -131,7 +132,11 @@ test("server-renders real recording controls, provider tabs, and canonical metad
 
   for (const label of ["Oh My Pi", "Grok", "Kilo Code", "OpenHands"]) {
     assert.match(html, new RegExp(`title="${label}"`));
+    assert.match(html, new RegExp(`See how ${label} is supported`));
   }
+
+  assert.match(html, /data-coding-harness-count="15"/);
+  assert.match(html, /aria-label="15 supported coding harnesses plus Terminal"/);
 
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/);
   assert.doesNotMatch(html, /Keep the conversation|Small commands|Fast context switches|One list|other tools|shared list/);
@@ -485,8 +490,8 @@ test("publishes a source-backed 1200 by 630 social preview", async () => {
 
   assert.match(source, /Every coding agent\./);
   assert.match(source, /One live dashboard\./);
-  assert.match(source, /15 HARNESSES/);
-  assert.match(source, /Claude · Codex · Cursor · Copilot/);
+  assert.match(source, /15 \+ TERMINAL/);
+  assert.match(source, /Claude · Codex · Pi · OpenCode · Cursor · Copilot/);
   assert.match(source, /Oh My Pi · Grok · Kilo Code · OpenHands/);
   assert.deepEqual([...image.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   assert.equal(image.readUInt32BE(16), 1200);

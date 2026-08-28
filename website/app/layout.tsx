@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import harnessCatalog from "./harnesses.json";
+
+const codingHarnessCount = harnessCatalog.codingHarnesses.length;
+const description = `Monitor ${codingHarnessCount} coding harnesses plus Terminal, see what needs input, and jump into each native CLI from one live dashboard.`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,28 +19,25 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://open-agent-view.github.io"),
   title: "Open Agent View: One dashboard for every coding agent",
-  description:
-    "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
+  description,
   alternates: { canonical: "/" },
   icons: { icon: "/favicon.svg" },
   openGraph: {
     type: "website",
     url: "/",
     title: "Open Agent View: One dashboard for every coding agent",
-    description:
-      "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
+    description,
     images: [{
       url: "/og.png",
       width: 1200,
       height: 630,
-      alt: "Open Agent View dashboard monitoring Claude, Codex, Cursor, Copilot, OpenCode, Pi, and nine more coding harnesses",
+      alt: `Open Agent View dashboard for ${codingHarnessCount} coding harnesses plus Terminal`,
     }],
   },
   twitter: {
     card: "summary_large_image",
     title: "Open Agent View: One dashboard for every coding agent",
-    description:
-      "Monitor 15 coding harnesses, see what needs input, and jump into each native CLI from one live dashboard.",
+    description,
     images: ["/og.png"],
   },
 };

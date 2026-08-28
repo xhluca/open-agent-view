@@ -61,7 +61,7 @@ for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await openReady(page);
     await expect(page.getByRole("heading", { name: /Monitor every agent/ })).toBeVisible();
-    await expect(page.locator(".provider-row > a")).toHaveCount(12);
+    await expect(page.locator(".provider-row > a")).toHaveCount(16);
     await expect(page.locator(".provider-row img")).toHaveCount(10);
     await expect(page.locator(".provider-stack .provider-mark")).toHaveCount(15);
     await expect(page.locator("video")).toHaveCount(0);

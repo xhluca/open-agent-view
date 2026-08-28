@@ -77,7 +77,7 @@ h1 span { display: block; }
 .internal-button:hover, .internal-button:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .45); outline: none; }
 .internal-arrow { color: var(--cyan); }
 
-.provider-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; margin-bottom: 24px; }
+.provider-row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 7px; margin-bottom: 24px; }
 .provider-row a { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; padding: 9px 6px; color: #aaaeb3; border: 1px solid rgba(255, 255, 255, .09); border-radius: 8px; background: rgba(12, 16, 20, .7); font: 9px var(--font-geist-mono), monospace; text-transform: uppercase; letter-spacing: .035em; }
 .provider-row a:hover, .provider-row a:focus-visible { color: var(--ink); border-color: rgba(85, 211, 218, .45); background: rgba(85, 211, 218, .06); outline: none; }
 .provider-row a > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

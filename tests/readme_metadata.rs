@@ -1,6 +1,30 @@
 use std::fs;
 use std::path::Path;
 
+use open_agent_view::domain::Provider;
+use serde_json::Value;
+
+fn public_harness_names() -> Vec<String> {
+    let catalog_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("website/app/harnesses.json");
+    let catalog: Value = serde_json::from_str(
+        &fs::read_to_string(catalog_path).expect("read public harness catalog"),
+    )
+    .expect("parse public harness catalog");
+
+    catalog["codingHarnesses"]
+        .as_array()
+        .expect("codingHarnesses array")
+        .iter()
+        .map(|entry| {
+            entry["name"]
+                .as_str()
+                .expect("coding harness name")
+                .to_owned()
+        })
+        .collect()
+}
+
 #[test]
 fn readme_status_badges_match_release_metadata() {
     let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
@@ -41,27 +65,44 @@ fn readme_keeps_the_feature_matrix_inside_a_disclosure() {
 
     assert!(details.contains("Compare feature support by harness"));
     assert!(details.contains("| Harness | Launch | Model / shell picker |"));
-    for harness in [
-        "Claude Code",
-        "OpenAI Codex",
-        "Cursor",
-        "GitHub Copilot",
-        "OpenCode",
-        "Pi",
-        "Antigravity",
-        "Mistral Vibe",
-        "Muse Code",
-        "Qwen Code",
-        "Kimi Code",
-        "Oh My Pi",
-        "Grok",
-        "Kilo Code",
-        "OpenHands",
-        "Terminal",
-    ] {
+    for harness in public_harness_names()
+        .into_iter()
+        .chain(["Terminal".to_owned()])
+    {
         assert!(
             details.contains(&format!("| {harness} |")),
             "feature disclosure is missing {harness}"
         );
     }
+}
+
+#[test]
+fn product_readme_and_website_share_one_exact_harness_inventory() {
+    let catalog_names = public_harness_names();
+    let product_names = Provider::CODING_HARNESSES
+        .iter()
+        .map(|provider| provider.public_name().to_owned())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        catalog_names, product_names,
+        "the public website catalog must match the product picker exactly"
+    );
+    assert_eq!(catalog_names.len(), Provider::CODING_HARNESS_COUNT);
+
+    let readme_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md");
+    let readme = fs::read_to_string(readme_path).expect("read README");
+    assert!(
+        readme.contains("15 coding\nharnesses plus Terminal"),
+        "README must state the exact coding-harness and Terminal counts"
+    );
+
+    let feature_rows = catalog_names
+        .iter()
+        .map(|name| readme.find(&format!("| {name} |")).expect("README feature row"))
+        .collect::<Vec<_>>();
+    assert!(
+        feature_rows.windows(2).all(|pair| pair[0] < pair[1]),
+        "README feature rows must follow product picker order"
+    );
 }

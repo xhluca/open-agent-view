@@ -1,32 +1,22 @@
 import { CopyCommand } from "./CopyCommand";
 import { DemoPlayer } from "./DemoPlayer";
+import harnessCatalog from "./harnesses.json";
 
 const installCommand = "curl -fsSL https://open-agent-view.github.io/install.sh | bash";
 
-const demoProviders = [
-  { id: "claude", name: "Claude Code", icon: "/providers/claude.svg" },
-  { id: "codex", name: "OpenAI Codex", icon: "/providers/codex.png" },
-  { id: "pi", name: "Pi", icon: "/providers/pi.svg" },
-  { id: "opencode", name: "OpenCode", icon: "/providers/opencode.svg" },
-  { id: "cursor", name: "Cursor", icon: "/providers/cursor.svg" },
-  { id: "copilot", name: "GitHub Copilot", icon: "/providers/copilot.svg" },
-  { id: "antigravity", name: "Antigravity", icon: "/providers/antigravity.svg" },
-  { id: "mistral-vibe", name: "Mistral Vibe", icon: "/providers/mistral-vibe.svg" },
-  { id: "muse", name: "Muse Code", mark: "Mu" },
-  { id: "qwen", name: "Qwen Code", icon: "/providers/qwen.svg" },
-  { id: "kimi", name: "Kimi Code", mark: "K" },
-  { id: "terminal", name: "Terminal", icon: "/providers/terminal.svg" },
-] as const;
+type Provider = {
+  id: string;
+  name: string;
+  icon: string | null;
+  mark: string | null;
+  hasDemo: boolean;
+};
 
-const supportedProviders = [
-  ...demoProviders,
-  { id: "omp", name: "Oh My Pi", mark: "OMP" },
-  { id: "grok", name: "Grok", mark: "G" },
-  { id: "kilo", name: "Kilo Code", mark: "Ki" },
-  { id: "openhands", name: "OpenHands", mark: "OH" },
-] as const;
-
-type Provider = (typeof supportedProviders)[number];
+const codingHarnesses: readonly Provider[] = harnessCatalog.codingHarnesses;
+const terminalHarness: Provider = harnessCatalog.terminal;
+const supportedProviders = [...codingHarnesses, terminalHarness];
+const demoProviders = supportedProviders.filter((provider) => provider.hasDemo);
+const codingHarnessCount = codingHarnesses.length;
 
 const controlTabs = [
   ["rename", "Rename"],
@@ -64,7 +54,7 @@ function ProviderMark({ provider }: { provider: Provider }) {
       aria-hidden="true"
       title={provider.name}
     >
-      {"icon" in provider ? (
+      {provider.icon ? (
         <>
           {/* Local provider marks avoid third-party requests at runtime. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -140,8 +130,9 @@ export default function Home() {
         <p className="eyebrow"><span /> Local agents, one workspace</p>
         <h1><span>Monitor every agent.</span><span>Step in when it matters.</span></h1>
         <p className="hero-copy">
-          One live dashboard for 15 coding harnesses. Jump into any native
-          session, then return without losing your place.
+          One live dashboard for {codingHarnessCount} coding harnesses plus
+          Terminal. Jump into any native session, then return without losing
+          your place.
         </p>
         <div className="hero-actions">
           <CopyCommand command={installCommand} />
@@ -163,12 +154,18 @@ export default function Home() {
             <span className="internal-arrow" aria-hidden="true">↓</span>
           </a>
         </div>
-        <div className="provider-row" aria-label="Choose a harness demo">
-          {demoProviders.map((provider) => (
+        <div
+          className="provider-row"
+          aria-label={`${codingHarnessCount} supported coding harnesses plus Terminal`}
+          data-coding-harness-count={codingHarnessCount}
+        >
+          {supportedProviders.map((provider) => (
             <a
-              href="#harness-demo"
-              data-select-harness={provider.id}
-              aria-label={`Watch the ${provider.name} demo`}
+              href={provider.hasDemo ? "#harness-demo" : "#architecture"}
+              data-select-harness={provider.hasDemo ? provider.id : undefined}
+              aria-label={provider.hasDemo
+                ? `Watch the ${provider.name} demo`
+                : `See how ${provider.name} is supported`}
               key={provider.id}
             >
               <ProviderMark provider={provider} />
@@ -180,7 +177,7 @@ export default function Home() {
 
       <section className="guided section shell" id="start">
         <div className="section-heading">
-          <div><p className="section-label">01 · OVERVIEW</p><h2>Eleven harnesses.<br />One live dashboard.</h2></div>
+          <div><p className="section-label">01 · OVERVIEW</p><h2>Every session.<br />One live dashboard.</h2></div>
           <p>
             Move through every coding-agent session, open its native CLI, send
             new work, and return while it keeps running.
@@ -188,7 +185,7 @@ export default function Home() {
         </div>
         <DemoPlayer
           story="story-overview"
-          label="11 HARNESS SESSIONS · ONE DASHBOARD"
+          label="REAL MULTI-HARNESS SESSIONS · ONE DASHBOARD"
           caption="Real Open Agent View dashboard + native harness TUIs"
           actionPlacement="subtitle"
         />
@@ -272,9 +269,9 @@ export default function Home() {
         </div>
         <div className="architecture-map" aria-label="Open Agent View architecture">
           <div className="provider-stack">
-            <span>Provider CLIs</span>
-            <div>{supportedProviders.filter((provider) => provider.id !== "terminal").map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
-            <small>Each CLI keeps its own login, models, and conversation history.</small>
+            <span>{codingHarnessCount} coding harnesses</span>
+            <div>{codingHarnesses.map((provider) => <ProviderMark key={provider.id} provider={provider} />)}</div>
+            <small>Each CLI keeps its own login, models, and conversation history. Terminal is built in separately.</small>
           </div>
           <div className="flow-arrow"><b>read</b><i>→</i><em>session names, status, and recent activity</em></div>
           <div className="oav-core">

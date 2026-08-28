@@ -37,6 +37,36 @@ pub enum Provider {
 }
 
 impl Provider {
+    /// Every coding harness supported by the product, in dashboard-picker order.
+    pub const CODING_HARNESSES: [Self; 15] = [
+        Self::Claude,
+        Self::Codex,
+        Self::Pi,
+        Self::OpenCode,
+        Self::Cursor,
+        Self::GitHubCopilot,
+        Self::Antigravity,
+        Self::MistralVibe,
+        Self::MuseCode,
+        Self::QwenCode,
+        Self::KimiCode,
+        Self::OhMyPi,
+        Self::Grok,
+        Self::KiloCode,
+        Self::OpenHands,
+    ];
+
+    pub const CODING_HARNESS_COUNT: usize = Self::CODING_HARNESSES.len();
+
+    /// The unabbreviated product name used by public documentation.
+    pub fn public_name(&self) -> &str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Codex => "OpenAI Codex",
+            _ => self.label(),
+        }
+    }
+
     pub fn label(&self) -> &str {
         match self {
             Self::Claude => "Claude",

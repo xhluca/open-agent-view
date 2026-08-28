@@ -1,0 +1,20 @@
+{
+  "codingHarnesses": [
+    { "id": "claude", "name": "Claude Code", "icon": "/providers/claude.svg", "mark": null, "hasDemo": true },
+    { "id": "codex", "name": "OpenAI Codex", "icon": "/providers/codex.png", "mark": null, "hasDemo": true },
+    { "id": "pi", "name": "Pi", "icon": "/providers/pi.svg", "mark": null, "hasDemo": true },
+    { "id": "opencode", "name": "OpenCode", "icon": "/providers/opencode.svg", "mark": null, "hasDemo": true },
+    { "id": "cursor", "name": "Cursor", "icon": "/providers/cursor.svg", "mark": null, "hasDemo": true },
+    { "id": "copilot", "name": "GitHub Copilot", "icon": "/providers/copilot.svg", "mark": null, "hasDemo": true },
+    { "id": "antigravity", "name": "Antigravity", "icon": "/providers/antigravity.svg", "mark": null, "hasDemo": true },
+    { "id": "mistral-vibe", "name": "Mistral Vibe", "icon": "/providers/mistral-vibe.svg", "mark": null, "hasDemo": true },
+    { "id": "muse", "name": "Muse Code", "icon": null, "mark": "Mu", "hasDemo": true },
+    { "id": "qwen", "name": "Qwen Code", "icon": "/providers/qwen.svg", "mark": null, "hasDemo": true },
+    { "id": "kimi", "name": "Kimi Code", "icon": null, "mark": "K", "hasDemo": true },
+    { "id": "omp", "name": "Oh My Pi", "icon": null, "mark": "OMP", "hasDemo": false },
+    { "id": "grok", "name": "Grok", "icon": null, "mark": "G", "hasDemo": false },
+    { "id": "kilo", "name": "Kilo Code", "icon": null, "mark": "Ki", "hasDemo": false },
+    { "id": "openhands", "name": "OpenHands", "icon": null, "mark": "OH", "hasDemo": false }
+  ],
+  "terminal": { "id": "terminal", "name": "Terminal", "icon": "/providers/terminal.svg", "mark": null, "hasDemo": true }
+}
