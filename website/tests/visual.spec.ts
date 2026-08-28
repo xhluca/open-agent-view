@@ -73,10 +73,16 @@ for (const viewport of viewports) {
     await expect(page.locator("#harness-demo .ap-wrapper")).toHaveCount(1);
 
     const actions = page.locator(".hero-actions [data-copy-command]");
-    await expect(actions).toHaveCount(3);
+    await expect(actions).toHaveCount(2);
     await expect(actions.nth(0)).toHaveAttribute("data-copy-command", installCommand);
-    await expect(actions.nth(1)).toHaveAttribute("data-copy-command", windowsInstallCommand);
-    await expect(actions.nth(2)).toHaveAttribute("data-copy-command", "open-agent-view");
+    await expect(actions.nth(1)).toHaveAttribute("data-copy-command", "open-agent-view");
+
+    const windowsToggle = page.getByRole("button", { name: "Windows", exact: true });
+    await expect(page.getByRole("button", { name: "macOS / Linux", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(windowsToggle).toHaveAttribute("aria-pressed", "false");
+    await windowsToggle.click();
+    await expect(actions.nth(0)).toHaveAttribute("data-copy-command", windowsInstallCommand);
+    await expect(windowsToggle).toHaveAttribute("aria-pressed", "true");
 
     const overflow = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
@@ -288,6 +294,29 @@ test("the launch copy control copies exactly the full executable name", async ({
   await command.press("Enter");
   await expect(command).toContainText("Copied");
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("open-agent-view");
+  await context.close();
+});
+
+test("the install platform toggle updates the command for mouse and keyboard users", async ({ browser }) => {
+  const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+  const page = await context.newPage();
+  await openReady(page);
+
+  const command = page.locator("[data-install-command-switcher] [data-copy-command]");
+  const unix = page.getByRole("button", { name: "macOS / Linux", exact: true });
+  const windows = page.getByRole("button", { name: "Windows", exact: true });
+
+  await windows.click();
+  await expect(command).toHaveAttribute("data-copy-command", windowsInstallCommand);
+  await command.click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(windowsInstallCommand);
+
+  await unix.focus();
+  await page.keyboard.press("Enter");
+  await expect(command).toHaveAttribute("data-copy-command", installCommand);
+  await expect(unix).toHaveAttribute("aria-pressed", "true");
+  await expect(windows).toHaveAttribute("aria-pressed", "false");
+
   await context.close();
 });
 

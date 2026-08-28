@@ -101,6 +101,9 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /data-demo-action="restart"/);
   assert.match(html, /data-copy-command="open-agent-view"/);
   assert.match(html, /https:\/\/open-agent-view\.github\.io\/install\.sh/);
+  assert.match(html, /aria-label="Installation platform"/);
+  assert.match(html, /data-install-platform="unix"/);
+  assert.match(html, /data-install-platform="windows"/);
   assert.match(html, /rel="canonical" href="https:\/\/open-agent-view\.github\.io"/);
   assert.match(html, /property="og:image" content="https:\/\/open-agent-view\.github\.io\/og\.png"/);
   assert.match(html, /property="og:title" content="Open Agent View: One dashboard for every coding agent"/);

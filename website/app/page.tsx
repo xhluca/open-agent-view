@@ -1,9 +1,7 @@
 import { CopyCommand } from "./CopyCommand";
 import { DemoPlayer } from "./DemoPlayer";
+import { InstallCommandToggle } from "./InstallCommandToggle";
 import harnessCatalog from "./harnesses.json";
-
-const installCommand = "curl -fsSL https://open-agent-view.github.io/install.sh | bash";
-const windowsInstallCommand = "irm https://open-agent-view.github.io/install.ps1 | iex";
 
 type Provider = {
   id: string;
@@ -136,8 +134,7 @@ export default function Home() {
           your place.
         </p>
         <div className="hero-actions">
-          <CopyCommand command={installCommand} comment="# macOS / Linux" />
-          <CopyCommand command={windowsInstallCommand} comment="# Windows PowerShell" />
+          <InstallCommandToggle />
           <CopyCommand command="open-agent-view" comment="# shorthand: opav" />
         </div>
         <div className="hero-resource-links">
