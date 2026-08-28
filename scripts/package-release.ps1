@@ -14,7 +14,7 @@ if (-not $Binary) { $Binary = Join-Path $repo "target\$Target\release\open-agent
 if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "release binary is missing: $Binary" }
 
 $manifest = Get-Content -LiteralPath (Join-Path $repo "Cargo.toml") -Raw
-$match = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$')
+$match = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$')
 if (-not $match.Success) { throw "could not read release version from Cargo.toml" }
 $version = $match.Groups[1].Value
 $reported = (& $Binary --version | Out-String).Trim()

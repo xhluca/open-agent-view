@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 $repo = Split-Path -Parent $PSScriptRoot
 $manifest = Get-Content -LiteralPath (Join-Path $repo "Cargo.toml") -Raw
-$version = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"$').Groups[1].Value
+$version = [regex]::Match($manifest, '(?m)^version = "([0-9]+\.[0-9]+\.[0-9]+)"\r?$').Groups[1].Value
 if (-not $version) { throw "could not read package version" }
 $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ("open-agent-view-installer-test-" + [guid]::NewGuid())
 try {

@@ -15,6 +15,9 @@ type BrowserTabbedStory = { holdDelay: number };
 type PlayerNode = HTMLElement & { _realCastPlayer: BrowserPlayer };
 type TabbedStoryNode = HTMLElement & { _tabbedStory: BrowserTabbedStory };
 
+const installCommand = "curl -fsSL https://open-agent-view.github.io/install.sh | bash";
+const windowsInstallCommand = "irm https://open-agent-view.github.io/install.ps1 | iex";
+
 const harnesses = [
   ["claude", "Claude Code"],
   ["codex", "OpenAI Codex"],
@@ -70,8 +73,10 @@ for (const viewport of viewports) {
     await expect(page.locator("#harness-demo .ap-wrapper")).toHaveCount(1);
 
     const actions = page.locator(".hero-actions [data-copy-command]");
-    await expect(actions).toHaveCount(2);
-    await expect(actions.nth(1)).toHaveAttribute("data-copy-command", "open-agent-view");
+    await expect(actions).toHaveCount(3);
+    await expect(actions.nth(0)).toHaveAttribute("data-copy-command", installCommand);
+    await expect(actions.nth(1)).toHaveAttribute("data-copy-command", windowsInstallCommand);
+    await expect(actions.nth(2)).toHaveAttribute("data-copy-command", "open-agent-view");
 
     const overflow = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
@@ -270,12 +275,12 @@ test("every provider logo jumps to its real recording and tabs support arrow nav
   await expect(section.getByRole("tab", { name: "Claude Code" })).toHaveAttribute("aria-selected", "true");
 });
 
-test("the second copy control copies exactly the full executable name", async ({ browser }) => {
+test("the launch copy control copies exactly the full executable name", async ({ browser }) => {
   const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
   const page = await context.newPage();
   await openReady(page);
 
-  const command = page.locator(".hero-actions [data-copy-command]").nth(1);
+  const command = page.locator('.hero-actions [data-copy-command="open-agent-view"]');
   await expect(command).toHaveAttribute("data-copy-command", "open-agent-view");
   await expect(command).toHaveAttribute("data-copy-ready", "true");
   await command.focus();
