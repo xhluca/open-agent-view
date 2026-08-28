@@ -4,6 +4,9 @@ param(
     [string]$InstallDir = $env:OAV_INSTALL_DIR,
     [string]$Repo = $(if ($env:OAV_REPO) { $env:OAV_REPO } else { "xhluca/open-agent-view" }),
     [string]$ReleaseBaseUrl = $env:OAV_RELEASE_BASE_URL,
+    [int]$WaitForProcessId = 0,
+    [string]$PreviousVersion = "",
+    [switch]$CleanupStaging,
     [switch]$SkipPathUpdate
 )
 
@@ -19,6 +22,14 @@ function Copy-OrDownload([string]$Source, [string]$Destination) {
         Copy-Item -LiteralPath $Source -Destination $Destination -Force
     } else {
         Invoke-WebRequest -UseBasicParsing -Uri $Source -OutFile $Destination
+    }
+}
+
+if ($WaitForProcessId -gt 0) {
+    $running = Get-Process -Id $WaitForProcessId -ErrorAction SilentlyContinue
+    if ($running) {
+        Write-OavMessage "waiting for the running Open Agent View process to exit"
+        $running.WaitForExit()
     }
 }
 
@@ -98,7 +109,24 @@ try {
     Write-OavMessage "installed open-agent-view $resolvedVersion to $InstallDir\open-agent-view.exe"
     Write-OavMessage "installed shorthand: opav"
     Write-OavMessage "open a new terminal, then run: open-agent-view (or opav)"
+    if ($PreviousVersion) {
+        if ($PreviousVersion -eq $resolvedVersion) {
+            Write-OavMessage "Open Agent View is already up to date at $resolvedVersion"
+        } else {
+            Write-OavMessage "updated Open Agent View from $PreviousVersion to $resolvedVersion"
+        }
+    }
 } finally {
     Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $temporary -Recurse -Force -ErrorAction SilentlyContinue
+    if ($CleanupStaging -and $PSCommandPath) {
+        $stagingDirectory = Split-Path -Parent $PSCommandPath
+        $stagingParent = Split-Path -Parent $stagingDirectory
+        $temporaryRoot = [System.IO.Path]::GetTempPath().TrimEnd('\', '/')
+        $stagingName = Split-Path -Leaf $stagingDirectory
+        if ($stagingParent.TrimEnd('\', '/') -eq $temporaryRoot -and $stagingName -match '^open-agent-view-update-[0-9]+-[0-9]+$') {
+            Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $stagingDirectory -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
