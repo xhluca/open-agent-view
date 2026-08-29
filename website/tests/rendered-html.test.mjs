@@ -147,11 +147,13 @@ test("server-renders real recording controls, provider tabs, and canonical metad
 });
 
 test("publishes genuine cast v2 recordings and action timelines for setup and every harness", async () => {
-  const recordingMetadata = JSON.parse(
-    await readFile(new URL("public/demos/version.json", root), "utf8"),
-  );
+  const [recordingMetadata, packageMetadata] = await Promise.all([
+    readFile(new URL("public/demos/version.json", root), "utf8").then(JSON.parse),
+    readFile(new URL("package.json", root), "utf8").then(JSON.parse),
+  ]);
   const recordingVersion = recordingMetadata.open_agent_view;
   assert.match(recordingVersion, /^\d+\.\d+\.\d+$/);
+  assert.match(packageMetadata.version, /^\d+\.\d+\.\d+$/);
   assert.equal(recordingMetadata.kind, "real_terminal_recordings");
 
   const accumulatedSessionNames = [];
@@ -182,7 +184,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
     assert.deepEqual(
       [...new Set(renderedVersions)],
-      [recordingVersion],
+      [name === "setup" ? packageMetadata.version : recordingVersion],
       `${name}.cast should contain only its declared real Open Agent View release`,
     );
 
@@ -268,7 +270,8 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       assert.match(visibleOutput, /Open Agent View/);
     } else if (name === "setup") {
       assert.match(visibleOutput, /curl -fsSL https:\/\/open-agent-view\.github\.io\/install\.sh \| bash/);
-      assert.match(visibleOutput, /\$ opav\b/);
+      assert.match(visibleOutput, /\$ oav\b/);
+      assert.doesNotMatch(visibleOutput, /\bopav\b/);
       for (const choice of [
         "Claude", "Codex", "Pi", "OpenCode", "Cursor", "GitHub Copilot",
         "Antigravity", "Mistral Vibe", "Muse Code", "Qwen Code", "Kimi Code", "Terminal",

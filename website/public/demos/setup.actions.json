@@ -1,8 +1,8 @@
 {
-  "duration": 8.706940538445473,
+  "duration": 8.623418208245278,
   "actions": [
     {
-      "at": 1.099,
+      "at": 1.104,
       "action": "Enter \u00b7 install",
       "window": "Terminal"
     },
@@ -12,42 +12,42 @@
       "window": "Terminal"
     },
     {
-      "at": 4.063,
-      "action": "Enter \u00b7 launch opav",
+      "at": 3.979,
+      "action": "Enter \u00b7 launch oav",
       "window": "Terminal"
     },
     {
-      "at": 4.186,
+      "at": 4.103,
       "action": "Enter",
       "window": "Terminal"
     },
     {
-      "at": 5.982,
+      "at": 5.898,
       "action": "Type /harness",
       "window": "open-agent-view"
     },
     {
-      "at": 6.106,
+      "at": 6.022,
       "action": "Enter",
       "window": "open-agent-view"
     },
     {
-      "at": 6.233,
+      "at": 6.149,
       "action": "\u2193 \u00b7 highlight Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 6.357,
+      "at": 6.272,
       "action": "\u2191 \u00b7 highlight Claude",
       "window": "open-agent-view"
     },
     {
-      "at": 7.481,
+      "at": 7.397,
       "action": "Esc \u00b7 close picker",
       "window": "open-agent-view"
     },
     {
-      "at": 7.605,
+      "at": 7.522,
       "action": "Esc \u00b7 quit",
       "window": "open-agent-view"
     }
