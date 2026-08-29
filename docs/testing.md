@@ -10,6 +10,21 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## v0.1.49 shorthand transition gate (2026-08-29)
+
+- The complete locked Rust suite passed with 371 library tests, all integration
+  suites, 22 deterministic real-TTY scenarios, and only the explicitly
+  credential-gated live-provider probes ignored.
+- The Unix installer test packages the current version for every advertised
+  Unix target, checksum-verifies it, and proves `open-agent-view`, `oav`, and
+  the legacy `opav` compatibility alias report the same version. It also proves
+  unrelated commands at both shorthand paths are not replaced and that normal
+  installer output does not advertise the legacy spelling.
+- The README metadata gate requires the current release badge and `oav` copy,
+  and rejects the legacy name from the primary README. The real setup recorder
+  likewise refuses any installed version that does not match the package under
+  release before it can replace the public demo.
+
 ## v0.1.48 native Windows x64 gate (2026-08-28)
 
 - The complete locked Rust suite is compiled and executed on a native

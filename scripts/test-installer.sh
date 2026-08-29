@@ -104,14 +104,18 @@ output="$({
 [[ -x "${home}/.local/bin/open-agent-view" ]] || fail "default binary was not installed"
 [[ "$("${home}/.local/bin/open-agent-view" --version)" == "open-agent-view ${version}" ]] ||
   fail "default binary reports the wrong version"
-[[ -L "${home}/.local/bin/opav" ]] || fail "opav shorthand was not installed"
+[[ -L "${home}/.local/bin/oav" ]] || fail "oav shorthand was not installed"
+[[ "$("${home}/.local/bin/oav" --version)" == "open-agent-view ${version}" ]] ||
+  fail "oav shorthand reports the wrong version"
+[[ -L "${home}/.local/bin/opav" ]] || fail "legacy opav compatibility alias was not installed"
 [[ "$("${home}/.local/bin/opav" --version)" == "open-agent-view ${version}" ]] ||
-  fail "opav shorthand reports the wrong version"
+  fail "legacy opav compatibility alias reports the wrong version"
 [[ ! -e "${home}/.local/bin/coding-agents" && ! -L "${home}/.local/bin/coding-agents" ]] ||
   fail "the retired OAV-managed compatibility symlink was retained"
 [[ "$output" != *"coding-agents"* ]] || fail "success output names the retired alias"
+[[ "$output" != *"opav"* ]] || fail "success output advertises the legacy alias"
 [[ "$output" == *"installed open-agent-view ${version}"* ]] || fail "success output is missing"
-[[ "$output" == *"installed shorthand: opav"* ]] || fail "shorthand output is missing"
+[[ "$output" == *"installed shorthand: oav"* ]] || fail "shorthand output is missing"
 [[ "$output" == *"add ${home}/.local/bin to PATH"* ]] || fail "PATH guidance is missing"
 
 custom_bin="${temp_root}/custom/bin"
@@ -122,6 +126,11 @@ PATH="${custom_bin}:/usr/bin:/bin" \
 
 collision_bin="${temp_root}/collision/bin"
 install -d "$collision_bin"
+cat >"${collision_bin}/oav" <<'EOF'
+#!/usr/bin/env sh
+echo unrelated-oav
+EOF
+chmod 0755 "${collision_bin}/oav"
 cat >"${collision_bin}/opav" <<'EOF'
 #!/usr/bin/env sh
 echo unrelated-opav
@@ -136,10 +145,12 @@ collision_output="$(OAV_VERSION="$version" \
   OAV_INSTALL_DIR="$collision_bin" \
   OAV_RELEASE_BASE_URL="file://${temp_root}/releases" \
   bash "${repo_dir}/install.sh")"
+[[ "$("${collision_bin}/oav")" == "unrelated-oav" ]] ||
+  fail "installer replaced an unrelated oav command"
 [[ "$("${collision_bin}/opav")" == "unrelated-opav" ]] ||
-  fail "installer replaced an unrelated opav command"
+  fail "installer replaced an unrelated legacy opav command"
 [[ "$collision_output" == *"left unrelated existing command in place"* ]] ||
-  fail "opav collision was not explained"
+  fail "shorthand collision was not explained"
 [[ "$("${collision_bin}/coding-agents")" == "unrelated-coding-agents" ]] ||
   fail "installer removed an unrelated command at the retired alias path"
 
@@ -229,5 +240,10 @@ PATH="${fake_bin}:/usr/bin:/bin" \
 
 bash "${repo_dir}/install.sh" --help | grep -F "never installs Rust" >/dev/null ||
   fail "installer help does not state the no-Rust behavior"
+bash "${repo_dir}/install.sh" --help | grep -F "oav shorthand" >/dev/null ||
+  fail "installer help does not advertise the oav shorthand"
+if bash "${repo_dir}/install.sh" --help | grep -F "opav" >/dev/null; then
+  fail "installer help advertises the legacy alias"
+fi
 
 printf 'installer tests passed\n'

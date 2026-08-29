@@ -135,7 +135,7 @@ export default function Home() {
         </p>
         <div className="hero-actions">
           <InstallCommandToggle />
-          <CopyCommand command="open-agent-view" comment="# shorthand: opav" />
+          <CopyCommand command="open-agent-view" comment="# shorthand: oav" />
         </div>
         <div className="hero-resource-links">
           <a
@@ -195,7 +195,7 @@ export default function Home() {
           <div><p className="section-label">02 · INSTALL</p><h2>Install once.<br />Choose any harness.</h2></div>
           <p>
             This is a real terminal recording: the installer is typed, the
-            downloaded <code>opav</code> binary opens, and the actual harness
+            downloaded <code>oav</code> binary opens, and the actual harness
             picker is navigated with the arrow keys.
           </p>
         </div>

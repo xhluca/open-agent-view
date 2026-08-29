@@ -6,21 +6,21 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.48 is the current published release. The
-[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.48)
+Version 0.1.49 is the current published release. The
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.49)
 contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.48-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.48-x86_64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.48-aarch64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.48-aarch64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.48-x86_64-apple-darwin.tar.gz
-open-agent-view-0.1.48-x86_64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.48-aarch64-apple-darwin.tar.gz
-open-agent-view-0.1.48-aarch64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.48-x86_64-pc-windows-msvc.zip
-open-agent-view-0.1.48-x86_64-pc-windows-msvc.zip.sha256
+open-agent-view-0.1.49-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.49-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.49-aarch64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.49-aarch64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.49-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.49-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.49-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.49-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.49-x86_64-pc-windows-msvc.zip
+open-agent-view-0.1.49-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,
@@ -77,10 +77,11 @@ release root, create and push an annotated version tag, then publish exactly the
 verified archive and checksum with `gh release create`. Never
 upload an untested cross-compiled artifact merely to fill the matrix.
 Unix archives contain the canonical `open-agent-view` executable and the
-installer creates a relative `opav` symlink after version verification.
-Windows archives contain `open-agent-view.exe`; the PowerShell installer copies
-the verified executable to `opav.exe` because ordinary Windows installations
-cannot rely on developer-mode symlinks.
+installer creates a relative `oav` shorthand plus the legacy `opav`
+compatibility symlink after version verification. Windows archives contain
+`open-agent-view.exe`; the PowerShell installer copies the verified executable
+to `oav.exe` and the legacy `opav.exe` name because ordinary Windows
+installations cannot rely on developer-mode symlinks.
 
 ## Publication policy
 
@@ -180,7 +181,8 @@ then exercise both authenticated and public installation paths as applicable:
 ```console
 OAV_VERSION=MAJOR.MINOR.PATCH ./install.sh
 open-agent-view --version
-opav --version
+oav --version
+opav --version # legacy compatibility check
 open-agent-view --json --no-host-providers
 ```
 

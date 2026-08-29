@@ -97,6 +97,16 @@ fn readme_collapses_the_windows_install_command() {
 }
 
 #[test]
+fn readme_advertises_only_the_current_short_command() {
+    let readme = read_readme();
+    assert!(readme.contains("shorter `oav` command"));
+    assert!(
+        !readme.contains("opav"),
+        "the legacy command belongs in detailed compatibility docs, not the README"
+    );
+}
+
+#[test]
 fn product_readme_and_website_share_one_exact_harness_inventory() {
     let catalog_names = public_harness_names();
     let product_names = Provider::CODING_HARNESSES

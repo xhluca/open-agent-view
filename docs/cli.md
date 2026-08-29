@@ -2,8 +2,9 @@
 
 This reference describes the current checkout. `open-agent-view --help` and
 `open-agent-view <subcommand> --help` remain authoritative for the installed
-binary. `opav` is the installed shorthand. Both commands execute the same canonical binary and report
-`open-agent-view VERSION`.
+binary. `oav` is the installed shorthand. The former `opav` spelling remains a
+legacy compatibility alias. All three commands execute the same canonical
+binary and report `open-agent-view VERSION`.
 
 ## Dashboard and JSON options
 
@@ -15,8 +16,8 @@ Version and self-update commands:
 
 ```console
 open-agent-view --version   # -v and -V are accepted
-opav update
-opav upgrade               # alias of update
+oav update
+oav upgrade                # alias of update
 ```
 
 `update` downloads the repository's public installer over HTTPS and runs it for

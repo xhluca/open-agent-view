@@ -8,6 +8,23 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.49] - 2026-08-29
+
+### Changed
+
+- `oav` is now the documented short command across the README, website,
+  installer output, demos, update instructions, and release verification.
+- Installers retain the former `opav` command as a guarded compatibility alias
+  without advertising it in the primary product surfaces.
+
+### Tests
+
+- Unix and Windows installer contracts verify the canonical executable, the
+  new `oav` shorthand, the legacy compatibility command, collision safety, and
+  version parity.
+- README and rendered-site regressions prevent the legacy name from returning
+  to primary documentation or demo output.
+
 ## [0.1.48] - 2026-08-28
 
 ### Added

@@ -9,7 +9,7 @@ open-agent-view doctor
 open-agent-view --json --all
 ```
 
-If the installed OAV itself is stale, `opav update` (or `opav upgrade`)
+If the installed OAV itself is stale, `oav update` (or `oav upgrade`)
 downloads and verifies the latest published release.
 
 Add the provider's `--no-host-*` flag to isolate one host adapter, and

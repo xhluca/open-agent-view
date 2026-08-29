@@ -840,9 +840,9 @@ def capture_setup(repo: Path, output: Path) -> None:
         prepare_complete_picker(root, environment)
         terminal = RealTerminal("setup", root, environment)
         terminal.type_line(INSTALL_COMMAND, "Enter · install", "Terminal", 0.012)
-        terminal.wait_for(r"installed shorthand:\s*opav", 120)
+        terminal.wait_for(r"installed shorthand:\s*oav", 120)
         time.sleep(0.6)
-        terminal.type_line("opav", "Enter · launch opav", "Terminal", 0.08)
+        terminal.type_line("oav", "Enter · launch oav", "Terminal", 0.08)
         terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(1.0)
         terminal.type_line("/harness", "Type /harness", "open-agent-view", 0.08)
@@ -1514,12 +1514,12 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             raise RuntimeError("build target/release/open-agent-view before recording providers")
         bin_dir = root / "home" / ".local" / "bin"
         (bin_dir / "open-agent-view").symlink_to(binary.resolve())
-        (bin_dir / "opav").symlink_to("open-agent-view")
+        (bin_dir / "oav").symlink_to("open-agent-view")
 
         work = root / "home" / "work" / "acme-dashboard"
         terminal = RealTerminal(spec.id, root, environment)
         command = [
-            "opav",
+            "oav",
             "--cwd",
             str(work),
             "--launch-cwd",
@@ -1531,7 +1531,7 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             *provider_disable_flags(spec.id),
         ]
         terminal.type_line(
-            shlex.join(command), "Enter · launch opav", "Terminal", 0.001
+            shlex.join(command), "Enter · launch oav", "Terminal", 0.001
         )
         terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(0.8)
@@ -1606,14 +1606,14 @@ def capture_provider(repo: Path, output: Path, spec: ProviderDemo) -> None:
             terminal.remember("Response ready", spec.label)
 
         time.sleep(2.2)
-        terminal.key("S-Left", "Shift+← · return to opav", spec.label)
+        terminal.key("S-Left", "Shift+← · return to oav", spec.label)
         terminal.wait_screen(APP_HEADER_PATTERN, 30)
         time.sleep(1.6)
         terminal.key("Right", f"→ · reopen {spec.label}", "open-agent-view")
         terminal.wait_screen(spec.ready_pattern, 60)
         terminal.remember("Session reopened", spec.label)
         time.sleep(2.2)
-        terminal.key("S-Left", "Shift+← · return to opav", spec.label)
+        terminal.key("S-Left", "Shift+← · return to oav", spec.label)
         terminal.wait_screen(APP_HEADER_PATTERN, 30)
         time.sleep(1.2)
         end = terminal.timeline_time()
@@ -2350,7 +2350,7 @@ def capture_provider_sequence(
         work = root / "home" / "work" / "acme-dashboard"
         terminal = RealTerminal("harness-sequence", root, environment)
         command = [
-            "opav",
+            "oav",
             "--cwd",
             str(work),
             "--launch-cwd",
@@ -2363,7 +2363,7 @@ def capture_provider_sequence(
         sequence_type_line(
             terminal,
             shlex.join(command),
-            "Enter · launch opav",
+            "Enter · launch oav",
             "Terminal",
             0.001,
         )
@@ -2612,7 +2612,7 @@ def install_local_binary(repo: Path, root: Path) -> None:
         raise RuntimeError("build target/release/open-agent-view before recording controls")
     bin_dir = root / "home" / ".local" / "bin"
     (bin_dir / "open-agent-view").symlink_to(binary.resolve())
-    (bin_dir / "opav").symlink_to("open-agent-view")
+    (bin_dir / "oav").symlink_to("open-agent-view")
 
 
 def prepare_cursor_demo_wrapper(root: Path) -> None:
@@ -2669,7 +2669,7 @@ def prewarm_sequence_harnesses(
         ["kilo", "models", "openai"],
         ["openhands", "--version"],
         ["bash", "--version"],
-        ["opav", "--json", "--cwd", str(work), "--history-limit", "1"],
+        ["oav", "--json", "--cwd", str(work), "--history-limit", "1"],
     ]
     print("prewarming real harness executables and model catalogs…", flush=True)
     for command in probes:
@@ -2717,7 +2717,7 @@ def start_control_dashboard(
     selected_harness = "claude" if active_provider == "all" else active_provider
     disabled = [] if active_provider == "all" else provider_disable_flags(active_provider)
     command = [
-        "opav",
+        "oav",
         "--cwd",
         str(work),
         "--launch-cwd",
@@ -2728,7 +2728,7 @@ def start_control_dashboard(
         selected_harness,
         *disabled,
     ]
-    terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
+    terminal.type_line(shlex.join(command), "Enter · launch oav", "Terminal", 0.001)
     terminal.wait_for(APP_HEADER_PATTERN, 45)
     time.sleep(0.8)
     return terminal
@@ -2804,7 +2804,7 @@ def start_fixture_control_dashboard(
     work = root / "home" / "work" / "acme-dashboard"
     terminal = RealTerminal(demo, root, environment)
     command = [
-        "opav",
+        "oav",
         "--fixture",
         str(fixture),
         "--cwd",
@@ -2814,7 +2814,7 @@ def start_fixture_control_dashboard(
         "--history-limit",
         "40",
     ]
-    terminal.type_line(shlex.join(command), "Enter · launch opav", "Terminal", 0.001)
+    terminal.type_line(shlex.join(command), "Enter · launch oav", "Terminal", 0.001)
     terminal.wait_for(APP_HEADER_PATTERN, 45)
     terminal.wait_screen(r"release-review.*Claude", 20)
     time.sleep(0.8)
@@ -2866,7 +2866,7 @@ def prepare_real_terminal_session(
         0.012,
     )
     terminal.wait_screen(re.escape(ready_message), 15)
-    terminal.key("S-Left", "Shift+← · return to opav", "Terminal")
+    terminal.key("S-Left", "Shift+← · return to oav", "Terminal")
     terminal.wait_screen(APP_HEADER_PATTERN, 30)
     terminal.wait_screen(re.escape(name), 20)
     time.sleep(0.8)
@@ -3146,7 +3146,7 @@ def capture_claude(repo: Path, output: Path) -> None:
             raise RuntimeError("build target/release/open-agent-view before recording Claude")
         bin_dir = root / "home" / ".local" / "bin"
         (bin_dir / "open-agent-view").symlink_to(binary.resolve())
-        (bin_dir / "opav").symlink_to("open-agent-view")
+        (bin_dir / "oav").symlink_to("open-agent-view")
 
         claude_config = root / "claude-config"
         private_copy(Path.home() / ".claude" / ".credentials.json", claude_config / ".credentials.json")
@@ -3163,7 +3163,7 @@ def capture_claude(repo: Path, output: Path) -> None:
         terminal = RealTerminal("claude", root, environment)
         command = " ".join(
             [
-                "opav",
+                "oav",
                 "--cwd",
                 shlex.quote(str(work)),
                 "--launch-cwd",
@@ -3178,7 +3178,7 @@ def capture_claude(repo: Path, output: Path) -> None:
                 "--no-host-antigravity",
             ]
         )
-        terminal.type_line(command, "Enter · launch opav", "Terminal", 0.001)
+        terminal.type_line(command, "Enter · launch oav", "Terminal", 0.001)
         terminal.wait_for(APP_HEADER_PATTERN, 45)
         time.sleep(0.8)
         start = terminal.repaint_start()
@@ -3199,14 +3199,14 @@ def capture_claude(repo: Path, output: Path) -> None:
         terminal.remember("Response ready", "Claude Code")
         time.sleep(2.2)
 
-        terminal.key("S-Left", "Shift+← · return to opav", "Claude Code")
+        terminal.key("S-Left", "Shift+← · return to oav", "Claude Code")
         terminal.wait_screen(APP_HEADER_PATTERN, 20)
         time.sleep(1.6)
         terminal.key("Right", "→ · reopen Claude", "open-agent-view")
         terminal.wait_screen(r"Claude Code v", 45)
         terminal.remember("Session reopened", "Claude Code")
         time.sleep(2.2)
-        terminal.key("S-Left", "Shift+← · return to opav", "Claude Code")
+        terminal.key("S-Left", "Shift+← · return to oav", "Claude Code")
         terminal.wait_screen(APP_HEADER_PATTERN, 20)
         time.sleep(1.2)
         end = terminal.timeline_time()

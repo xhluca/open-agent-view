@@ -25,6 +25,18 @@ function Copy-OrDownload([string]$Source, [string]$Destination) {
     }
 }
 
+function Install-OavAlias([string]$Source, [string]$Destination) {
+    if (Test-Path -LiteralPath $Destination) {
+        $reported = ""
+        try { $reported = (& $Destination --version 2>$null | Out-String).Trim() } catch {}
+        if ($reported -notmatch '^open-agent-view [0-9]+\.[0-9]+\.[0-9]+$') {
+            Write-OavMessage "left unrelated existing command in place: $Destination"
+            return
+        }
+    }
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
 if ($WaitForProcessId -gt 0) {
     $running = Get-Process -Id $WaitForProcessId -ErrorAction SilentlyContinue
     if ($running) {
@@ -96,7 +108,9 @@ try {
         throw "downloaded binary reported an unexpected version: $reported"
     }
     Move-Item -LiteralPath $staged -Destination (Join-Path $InstallDir "open-agent-view.exe") -Force
-    Copy-Item -LiteralPath (Join-Path $InstallDir "open-agent-view.exe") -Destination (Join-Path $InstallDir "opav.exe") -Force
+    $canonical = Join-Path $InstallDir "open-agent-view.exe"
+    Install-OavAlias $canonical (Join-Path $InstallDir "oav.exe")
+    Install-OavAlias $canonical (Join-Path $InstallDir "opav.exe")
 
     if (-not $SkipPathUpdate) {
         $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -107,8 +121,8 @@ try {
         if (($env:Path -split ';') -notcontains $InstallDir) { $env:Path = "$InstallDir;$env:Path" }
     }
     Write-OavMessage "installed open-agent-view $resolvedVersion to $InstallDir\open-agent-view.exe"
-    Write-OavMessage "installed shorthand: opav"
-    Write-OavMessage "open a new terminal, then run: open-agent-view (or opav)"
+    Write-OavMessage "installed shorthand: oav"
+    Write-OavMessage "open a new terminal, then run: open-agent-view (or oav)"
     if ($PreviousVersion) {
         if ($PreviousVersion -eq $resolvedVersion) {
             Write-OavMessage "Open Agent View is already up to date at $resolvedVersion"

@@ -12,11 +12,26 @@ try {
     & (Join-Path $repo "scripts\package-release.ps1") -Binary (Join-Path $repo "target\x86_64-pc-windows-msvc\release\open-agent-view.exe") -DistDir $release | Out-Null
     & (Join-Path $repo "install.ps1") -Version $version -InstallDir $install -ReleaseBaseUrl (Join-Path $temporary "releases") -SkipPathUpdate
     $canonical = Join-Path $install "open-agent-view.exe"
-    $alias = Join-Path $install "opav.exe"
+    $alias = Join-Path $install "oav.exe"
+    $legacyAlias = Join-Path $install "opav.exe"
     if (-not (Test-Path -LiteralPath $canonical)) { throw "canonical executable was not installed" }
-    if (-not (Test-Path -LiteralPath $alias)) { throw "opav shorthand was not installed" }
+    if (-not (Test-Path -LiteralPath $alias)) { throw "oav shorthand was not installed" }
+    if (-not (Test-Path -LiteralPath $legacyAlias)) { throw "legacy opav compatibility alias was not installed" }
     if ((& $canonical --version | Out-String).Trim() -ne "open-agent-view $version") { throw "canonical executable version mismatch" }
-    if ((& $alias --version | Out-String).Trim() -ne "open-agent-view $version") { throw "opav shorthand version mismatch" }
+    if ((& $alias --version | Out-String).Trim() -ne "open-agent-view $version") { throw "oav shorthand version mismatch" }
+    if ((& $legacyAlias --version | Out-String).Trim() -ne "open-agent-view $version") { throw "legacy opav compatibility alias version mismatch" }
+
+    $collisionInstall = Join-Path $temporary "collision"
+    New-Item -ItemType Directory -Path $collisionInstall -Force | Out-Null
+    $collisionOav = Join-Path $collisionInstall "oav.exe"
+    $collisionLegacy = Join-Path $collisionInstall "opav.exe"
+    Copy-Item -LiteralPath $env:ComSpec -Destination $collisionOav
+    Copy-Item -LiteralPath $env:ComSpec -Destination $collisionLegacy
+    $collisionOavHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collisionOav).Hash
+    $collisionLegacyHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collisionLegacy).Hash
+    & (Join-Path $repo "install.ps1") -Version $version -InstallDir $collisionInstall -ReleaseBaseUrl (Join-Path $temporary "releases") -SkipPathUpdate
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $collisionOav).Hash -ne $collisionOavHash) { throw "installer replaced an unrelated oav.exe" }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $collisionLegacy).Hash -ne $collisionLegacyHash) { throw "installer replaced an unrelated legacy opav.exe" }
 
     $waiter = Start-Process powershell.exe -ArgumentList "-NoProfile", "-Command", "Start-Sleep -Seconds 2" -PassThru
     $timer = [System.Diagnostics.Stopwatch]::StartNew()

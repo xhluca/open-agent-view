@@ -13,7 +13,7 @@ harnesses plus Terminal.
 </table>
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
-[![Release](https://img.shields.io/badge/release-v0.1.48-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.1.49-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
@@ -41,7 +41,7 @@ open-agent-view
 
 [![A real Open Agent View walkthrough: browse coding-harness sessions, preview native coding CLIs, ask Kimi Code about Open Agent View, and return to the shared dashboard](docs/assets/open-agent-view.gif)](https://open-agent-view.github.io/open-agent-view-demo.mp4)
 
-The installer also adds the shorter `opav` command. Start typing a task, press
+The installer also adds the shorter `oav` command. Start typing a task, press
 `Tab` to choose a harness, and press `Shift+Tab` to choose one of that account's
 available models.
 

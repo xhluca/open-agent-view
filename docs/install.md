@@ -1,13 +1,14 @@
 # Installation
 
 Open Agent View installs one canonical executable named `open-agent-view`. It
-also creates `opav` as a short symlink. The normal installation downloads a verified prebuilt
-binary: Rust and Cargo are not user prerequisites. An unrelated existing
-`opav` command is never overwritten.
+also creates `oav` as its short command. The former `opav` spelling remains a
+legacy compatibility alias. The normal installation downloads a verified
+prebuilt binary: Rust and Cargo are not user prerequisites. An unrelated
+existing command at either alias path is never overwritten.
 
 ## Supported platforms
 
-The v0.1.48 release covers:
+The v0.1.49 release covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 - Linux ARM64 with glibc 2.35 or newer
@@ -16,8 +17,9 @@ The v0.1.48 release covers:
 - Windows x64
 
 The PowerShell installer selects the `x86_64-pc-windows-msvc` archive,
-verifies SHA-256, installs `open-agent-view.exe` and `opav.exe` without
-administrator privileges, and adds the user-local directory to `PATH`.
+verifies SHA-256, installs `open-agent-view.exe`, `oav.exe`, and the legacy
+`opav.exe` compatibility command without administrator privileges, and adds
+the user-local directory to `PATH`.
 
 Apple-silicon installation is exercised natively. The Intel archive is built
 for `x86_64-apple-darwin`, exercised through Rosetta, and independently built
@@ -88,8 +90,9 @@ ConPTY background/resume is not claimed yet. Session discovery, filtering,
 renaming, model selection, provider login handoff, foreground launch, JSON
 output, and the built-in PowerShell/Command Prompt terminal picker run natively.
 
-The Unix installer writes `~/.local/bin/open-agent-view` and creates an `opav`
-symlink. The Windows installer writes `open-agent-view.exe` and `opav.exe` to
+The Unix installer writes `~/.local/bin/open-agent-view`, creates an `oav`
+symlink, and retains `opav` as a legacy symlink. The Windows installer writes
+the equivalent three executable names to
 `%LOCALAPPDATA%\Programs\OpenAgentView\bin` and adds that directory to the user
 `PATH`. It never requires administrator privileges or edits a PowerShell
 profile.
@@ -113,7 +116,7 @@ Start with checks that do not contact an agent provider:
 
 ```console
 open-agent-view --version
-opav --version
+oav --version
 open-agent-view --help
 open-agent-view --json --no-host-providers
 ```
@@ -137,8 +140,8 @@ interactive test.
 Use the installed shorthand:
 
 ```console
-opav update
-# or: opav upgrade
+oav update
+# or: oav upgrade
 ```
 
 The updater downloads this repository's installer, which resolves the latest
@@ -153,9 +156,9 @@ a new stable release is published.
 
 ## Uninstall
 
-Remove the executable installed at `~/.local/bin/open-agent-view` and its
-`opav` symlink, or their equivalents under the custom path
-passed to `--install-dir`.
+Remove the executable installed at `~/.local/bin/open-agent-view`, its `oav`
+symlink, and the legacy `opav` compatibility symlink, or their equivalents
+under the custom path passed to `--install-dir`.
 
 Uninstalling does not stop or delete provider sessions, containers,
 bind-mounted workspaces, state homes, or authority records. See the

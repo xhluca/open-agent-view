@@ -73,7 +73,8 @@ capability; no integration is described as having a uniform full lifecycle.
 ## Delivery
 
 - Rust and Ratatui, with Rust 1.75 as the initial MSRV.
-- A single binary named `open-agent-view`, installed with `opav` as a shorthand.
+- A single binary named `open-agent-view`, installed with `oav` as its shorthand
+  and `opav` as a legacy compatibility alias.
 - Private development repository at `xhluca/open-agent-view`, suitable for a
   later public release under the MIT license.
 - Frequent coherent commits, exploration records, architectural decisions,

@@ -36,7 +36,7 @@ Environment variables:
   GH_TOKEN               Optional token for API rate limits or a private fork
 
 The installer downloads a prebuilt archive and verifies its SHA-256 checksum.
-It installs open-agent-view plus the opav shorthand symlink.
+It installs open-agent-view plus the oav shorthand symlink.
 It never installs Rust, invokes Cargo, or edits shell configuration files.
 EOF
 }
@@ -190,6 +190,7 @@ install_alias() {
   staged_binary=""
 }
 
+install_alias oav
 install_alias opav
 
 # Retire only the exact relative compatibility symlink created by older OAV
@@ -201,8 +202,8 @@ if [[ -L "$obsolete_alias" && "$(readlink "$obsolete_alias")" == "open-agent-vie
 fi
 
 say "installed open-agent-view ${version} to ${install_dir}/open-agent-view"
-say "installed shorthand: opav"
+say "installed shorthand: oav"
 case ":${PATH}:" in
   *":${install_dir}:"*) ;;
-  *) say "add ${install_dir} to PATH, then run: open-agent-view (or opav)" ;;
+  *) say "add ${install_dir} to PATH, then run: open-agent-view (or oav)" ;;
 esac
