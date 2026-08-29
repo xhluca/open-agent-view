@@ -23,7 +23,6 @@ export function InstallCommandToggle() {
 
   return (
     <div className="install-command-switcher" data-install-command-switcher>
-      <CopyCommand command={selected.command} comment={`# ${selected.label}`} />
       <div className="install-platform-toggle" role="group" aria-label="Installation platform">
         {(Object.entries(platforms) as [Platform, (typeof platforms)[Platform]][]).map(
           ([id, option]) => (
@@ -39,6 +38,7 @@ export function InstallCommandToggle() {
           ),
         )}
       </div>
+      <CopyCommand command={selected.command} comment={`# ${selected.label}`} />
     </div>
   );
 }

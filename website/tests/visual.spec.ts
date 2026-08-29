@@ -88,6 +88,21 @@ for (const viewport of viewports) {
     await expect(actions.nth(0)).toHaveAttribute("data-copy-command", windowsInstallCommand);
     await expect(windowsToggle).toHaveAttribute("aria-pressed", "true");
 
+    const installLayout = await page.locator("[data-install-command-switcher]").evaluate((switcher) => {
+      const toggle = switcher.querySelector(".install-platform-toggle");
+      const command = switcher.querySelector("[data-copy-command]");
+      if (!(toggle instanceof HTMLElement) || !(command instanceof HTMLElement)) {
+        throw new Error("install controls are missing");
+      }
+      return {
+        toggleTop: toggle.getBoundingClientRect().top,
+        toggleHeight: toggle.getBoundingClientRect().height,
+        commandTop: command.getBoundingClientRect().top,
+      };
+    });
+    expect(installLayout.toggleTop).toBeLessThan(installLayout.commandTop);
+    expect(installLayout.toggleHeight).toBeLessThanOrEqual(28);
+
     const overflow = await page.evaluate(() => ({
       viewport: document.documentElement.clientWidth,
       content: document.documentElement.scrollWidth,
