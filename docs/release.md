@@ -105,7 +105,11 @@ installer fails clearly instead of downloading an incompatible binary.
 
 ## Prepare a release
 
-Before creating a tag:
+Before creating a tag, complete the
+[cross-platform testing procedure](cross-platform-testing.md) on the exact
+reviewed commit. Its native-runner, artifact-provenance, and public-install
+checks are release requirements, not interchangeable simulations. The core
+local commands are:
 
 ```console
 cargo fmt --all -- --check

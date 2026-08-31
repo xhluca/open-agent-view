@@ -12,6 +12,7 @@ Start with the guide for the job you are doing.
 ## Test a change
 
 - [Validation record and test layers](testing.md)
+- [Cross-platform testing on Linux, macOS, and Windows](cross-platform-testing.md)
 - [Reproduce real-TTY and fresh-container checks](tui-validation.md)
 - [Build, validate, and manually publish the website](website.md)
 - [Product specification](product-spec.md)

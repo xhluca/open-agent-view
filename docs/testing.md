@@ -5,6 +5,12 @@ They are intentionally split between deterministic tests and disposable runtime
 probes. Existing user containers and live agent sessions were never used as
 test targets for lifecycle operations.
 
+For the reusable Linux, macOS, and Windows acceptance matrix, native-versus-
+simulated test boundaries, clean public-install commands, and release artifact
+provenance checks, use the
+[cross-platform testing guide](cross-platform-testing.md). This file is the
+dated evidence log; that guide is the procedure.
+
 The reproducible commands, synthetic populated fixture, exhaustive key route,
 visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
