@@ -153,7 +153,10 @@ struct CliResult {
 #[serde(untagged)]
 enum CliWarning {
     Text(String),
-    Structured { code: Option<String>, message: String },
+    Structured {
+        code: Option<String>,
+        message: String,
+    },
 }
 
 impl CliWarning {
@@ -714,10 +717,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             outcome.warnings,
-            [
-                "retained_context: context was retained",
-                "legacy warning",
-            ]
+            ["retained_context: context was retained", "legacy warning",]
         );
     }
 
