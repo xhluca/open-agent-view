@@ -32,6 +32,7 @@ const demos = [
   ["switch", null, null],
   ["model", null, null],
   ["login", null, null],
+  ["migration", null, null],
 ];
 
 const privateMaterial = [
@@ -184,7 +185,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
     assert.deepEqual(
       [...new Set(renderedVersions)],
-      [name === "setup" ? packageMetadata.version : recordingVersion],
+      [name === "setup" || name === "migration" ? packageMetadata.version : recordingVersion],
       `${name}.cast should contain only its declared real Open Agent View release`,
     );
 
@@ -394,6 +395,23 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       assert.ok(manifest.actions.some((action) => action.action === "Native login ready"));
       assert.ok(manifest.actions.some((action) => action.action === "Returned without losing setup"));
     }
+    if (name === "migration") {
+      assert.match(visibleOutput.replace(/\s+/g, ""), /migratesession·target1\/14/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /release-review \(Codex\)/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /Migrated from Claude/i);
+      assert.equal(manifest.proof, "real-open-agent-view-tui");
+      assert.equal(
+        manifest.sequence,
+        "guide-ctrl-m-choose-target-confirm-default-name",
+      );
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Ctrl+M · migrate selected session",
+      ));
+      assert.ok(manifest.actions.some((action) => action.action === "Enter · migrate"));
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Done · imported Codex session is visible",
+      ));
+    }
 
     for (const pattern of privateMaterial) {
       assert.doesNotMatch(`${cast}\n${actionsSource}`, pattern, `${name} must not publish secrets or private machine paths`);
@@ -410,6 +428,21 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     [...new Set(readmeVersions)],
     [recordingVersion],
     "README media should contain only its declared real Open Agent View release",
+  );
+
+  const [readme, migrationGif] = await Promise.all([
+    readFile(new URL("../README.md", root), "utf8"),
+    readFile(new URL("../docs/assets/ctrl-m-migration.gif", root)),
+  ]);
+  assert.match(readme, /docs\/assets\/ctrl-m-migration\.gif/);
+  assert.equal(migrationGif.subarray(0, 6).toString("ascii"), "GIF89a");
+  assert.ok(migrationGif.length > 100_000 && migrationGif.length < 2_000_000);
+  assert.ok(migrationGif.readUInt16LE(6) >= 1_200);
+  assert.ok(migrationGif.readUInt16LE(8) >= 700);
+  assert.equal(
+    migrationGif.includes(Buffer.from("NETSCAPE2.0", "ascii")),
+    false,
+    "the focused migration GIF should finish on the imported row instead of looping",
   );
 });
 

@@ -543,6 +543,17 @@ class RealTerminal:
         run(["tmux", "send-keys", "-t", self.session, key])
         self.remember(label, window)
 
+    def literal_key(self, sequence: str, label: str, window: str) -> None:
+        """Send an exact terminal key sequence and record its visible cue.
+
+        Enhanced keyboard mode distinguishes Ctrl+M from Enter with the CSI-u
+        sequence below. tmux's named ``C-m`` key is the legacy carriage return,
+        so focused recordings must send the negotiated bytes literally.
+        """
+
+        run(["tmux", "send-keys", "-t", self.session, "-l", sequence])
+        self.remember(label, window)
+
     def type_text(self, value: str, label: str, window: str, delay: float = 0.024) -> None:
         for character in value:
             run(["tmux", "send-keys", "-t", self.session, "-l", character])
@@ -1379,7 +1390,7 @@ PROVIDER_DEMOS = {
     "terminal": ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
 }
 
-CONTROL_DEMOS = ("rename", "switch", "model", "login")
+CONTROL_DEMOS = ("rename", "switch", "model", "login", "migration")
 
 
 def provider_disable_flags(active: str) -> list[str]:
@@ -2821,6 +2832,70 @@ def start_fixture_control_dashboard(
     return terminal
 
 
+def start_migration_control_dashboard(
+    repo: Path,
+    root: Path,
+) -> RealTerminal:
+    """Start a deterministic dashboard backed by a real native conversion.
+
+    OAV reads a normal host-runtime fixture for the visible multi-session
+    dashboard. The selected Claude ID also exists in the disposable HOME in
+    Claude's native layout, so the installed session-migrate executable does
+    the actual Claude-to-Codex conversion when the recording presses Ctrl+M.
+    """
+
+    environment = base_environment(root)
+    install_local_binary(repo, root)
+    bin_dir = root / "home" / ".local" / "bin"
+    migrator = Path(require_program("session-migrate")).resolve(strict=True)
+    (bin_dir / "session-migrate").symlink_to(migrator)
+
+    fixture = prepare_control_fixture(root)
+    document = json.loads(fixture.read_text(encoding="utf-8"))
+    source_id = "30000000-0000-4000-8000-000000000000"
+    source = document["sessions"][0]
+    if source["provider"] != "claude" or source["name"] != "release-review":
+        raise RuntimeError("migration demo fixture no longer starts on release-review")
+    source["id"] = f"claude:host:{source_id}"
+    source["provider_session_id"] = source_id
+    write_private_text(fixture, json.dumps(document, indent=2) + "\n")
+
+    work = root / "home" / "work" / "acme-dashboard"
+    project_key = re.sub(r"[^A-Za-z0-9]", "-", str(work.resolve())) or "-"
+    native_source = (
+        root
+        / "home"
+        / ".claude"
+        / "projects"
+        / project_key
+        / f"{source_id}.jsonl"
+    )
+    native_source.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    shutil.copyfile(repo / "fixtures" / "migration-demo-claude.jsonl", native_source)
+    native_source.chmod(0o600)
+
+    terminal = RealTerminal("migration", root, environment)
+    command = [
+        "oav",
+        "--fixture",
+        str(fixture),
+        "--cwd",
+        str(work),
+        "--refresh-ms",
+        "30000",
+        "--history-limit",
+        "40",
+        "--no-host-providers",
+        "--session-migrate-bin",
+        "session-migrate",
+    ]
+    terminal.type_line(shlex.join(command), "Enter · launch oav", "Terminal", 0.001)
+    terminal.wait_for(APP_HEADER_PATTERN, 45)
+    terminal.wait_selected_row("release-review", 20)
+    time.sleep(0.8)
+    return terminal
+
+
 def show_composer_guidance(
     terminal: RealTerminal,
     message: str,
@@ -2876,7 +2951,9 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
     root = Path(tempfile.mkdtemp(prefix=f"oav-real-{demo}."))
     terminal: RealTerminal | None = None
     try:
-        if demo == "rename":
+        if demo == "migration":
+            terminal = start_migration_control_dashboard(repo, root)
+        elif demo == "rename":
             terminal = start_fixture_control_dashboard(repo, root, demo)
         else:
             active = "pi" if demo == "model" else ("all" if demo == "login" else "terminal")
@@ -2912,7 +2989,43 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
 
         start = terminal.repaint_start()
         action_start_index = len(terminal.actions)
-        if demo == "rename":
+        if demo == "migration":
+            terminal.remember(
+                "Selected · release-review in Claude",
+                "open-agent-view",
+            )
+            time.sleep(1.6)
+            terminal.literal_key(
+                "\x1b[109;5u",
+                "Ctrl+M · migrate selected session",
+                "open-agent-view",
+            )
+            terminal.wait_screen(r"migrate session · target 1/14", 20)
+            terminal.wait_screen(r"from\s+Claude", 20)
+            time.sleep(1.4)
+            terminal.key("Down", "↓ · preview Pi", "open-agent-view")
+            terminal.wait_screen(r"migrate session · target 2/14", 20)
+            time.sleep(0.8)
+            terminal.key("Up", "↑ · choose Codex", "open-agent-view")
+            terminal.wait_screen(r"migrate session · target 1/14", 20)
+            time.sleep(1.0)
+            terminal.key("Enter", "Enter · choose Codex", "open-agent-view")
+            terminal.wait_screen(r"migrate to Codex · choose local name", 20)
+            terminal.wait_screen(r"release-review \(Codex\)", 20)
+            terminal.remember(
+                "Default name · release-review (Codex)",
+                "open-agent-view",
+            )
+            time.sleep(1.8)
+            terminal.key("Enter", "Enter · migrate", "open-agent-view")
+            terminal.wait_screen(r"migrated to Codex as release-review \(Codex\)", 30)
+            terminal.wait_screen(r"Migrated from Claude", 20)
+            terminal.remember(
+                "Done · imported Codex session is visible",
+                "open-agent-view",
+            )
+            time.sleep(3.0)
+        elif demo == "rename":
             show_composer_guidance(
                 terminal,
                 "Select a session, then press Ctrl+R to give it a clear local name.",
@@ -3093,6 +3206,9 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
                         "switch": "guide-select-open-double-left-reopen-shift-left",
                         "model": "guide-browse-search-select-pi-model",
                         "login": "guide-check-open-native-login-background",
+                        "migration": (
+                            "guide-ctrl-m-choose-target-confirm-default-name"
+                        ),
                     }[demo],
                     "actions": actions,
                 },
@@ -3124,6 +3240,12 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             "login": [
                 "interactive login now?",
                 "Opening Claude Code login",
+            ],
+            "migration": [
+                "release-review",
+                "migrate session",
+                "release-review (Codex)",
+                "Migrated from Claude",
             ],
         }[demo]
         validate_public_cast(target, [APP_HEADER, *required])

@@ -89,6 +89,9 @@ commands.
 current name plus the destination harness. OAV delegates the conversion to
 [session-migrate](https://github.com/xhluca/session-migrate), keeps the imported
 session visible, and stores the chosen name only as a private OAV display name.
+
+![A real Ctrl+M migration: select a Claude session, choose Codex, confirm the default local name, and return to the dashboard with the imported session visible](docs/assets/ctrl-m-migration.gif)
+
 Install the companion CLI once with
 `curl -LsSf https://session-migrate.github.io/install.sh | sh`.
 

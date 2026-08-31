@@ -10,6 +10,12 @@ for generation to finish. It does not generate HTML
 rows that imitate a terminal. Key actions are burned from the separate action
 manifest as a subtitle overlay; the recorded terminal bytes remain unchanged.
 
+`ctrl-m-migration.gif` is a second focused real-TUI recording made on
+2026-08-30. It runs the release OAV binary and the installed session-migrate
+CLI in a disposable home, starts from synthetic native Claude state, performs
+the actual Claude-to-Codex conversion, and shows the imported Codex row. The
+fixture contains no account or credential material.
+
 The source casts live in [`website/public/demos`](../../website/public/demos).
 Their exact recorded OAV version is declared in
 [`version.json`](../../website/public/demos/version.json); release metadata is
@@ -33,13 +39,22 @@ Recapture the canonical overview and all state it genuinely depends on with:
 python3 scripts/capture-real-site-demo.py overview
 ```
 
+Recapture and render the focused migration GIF with:
+
+```console
+cargo build --release --locked
+python3 scripts/capture-real-site-demo.py migration
+python3 scripts/render-demo-gif.py migration docs/assets/ctrl-m-migration.gif
+```
+
 The website publishes 22 real TUI recordings: the eleven-session overview,
 install/setup, all sixteen selectable targets, and rename/switch/model/login controls. The sixteen target recordings
 share one disposable workspace and show the exact picker, model, two-turn,
 return, rename, and next-picker loop, preserving each earlier session row.
 The control recordings add bottom-composer teaching text; rename uses a dense
 normalized fixture, while switch/model/login exercise live managed shell, Pi,
-and Claude paths respectively.
+and Claude paths respectively. The focused migration recording uses the same
+real terminal recorder with isolated native source and destination files.
 Static tests parse every cast and action manifest, reject private material, and
 browser tests mount the real vendored Asciinema player at desktop, Mac-laptop,
 and phone sizes.
