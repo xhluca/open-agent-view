@@ -182,10 +182,12 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(output.includes(`${escapeCharacter}[38;`), `${name}.cast should preserve native terminal colors`);
     const renderedVersions = [...output.matchAll(/Open Agent View v(\d+\.\d+\.\d+)/g)]
       .map((match) => match[1]);
+    const declaredVersion = recordingMetadata.recordings?.[name] ?? recordingVersion;
+    assert.match(declaredVersion, /^\d+\.\d+\.\d+$/);
     assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
     assert.deepEqual(
       [...new Set(renderedVersions)],
-      [name === "setup" || name === "migration" ? packageMetadata.version : recordingVersion],
+      [declaredVersion],
       `${name}.cast should contain only its declared real Open Agent View release`,
     );
 

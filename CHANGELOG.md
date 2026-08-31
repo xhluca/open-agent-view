@@ -8,12 +8,20 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.50] - 2026-08-31
+
 ### Added
 
 - `Ctrl+M` now migrates an exact selected host session through session-migrate:
   choose any other supported coding harness, edit a prefilled local name, and
   keep the validated imported session visible across dashboard restarts.
 - Added `--session-migrate-bin PATH` for explicit companion-CLI selection.
+
+### Fixed
+
+- Codex App Server supervision now falls back to a verified, private short
+  socket directory when a long `HOME` or `XDG_STATE_HOME` would exceed the
+  platform's Unix-socket path limit.
 
 ### Tests
 

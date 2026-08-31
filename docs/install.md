@@ -8,7 +8,7 @@ existing command at either alias path is never overwritten.
 
 ## Supported platforms
 
-The v0.1.49 release covers:
+The v0.1.50 release covers:
 
 - Linux x86_64 with glibc 2.35 or newer (Debian 12, Ubuntu 22.04+, and similar)
 - Linux ARM64 with glibc 2.35 or newer

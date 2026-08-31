@@ -10,6 +10,22 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## v0.1.50 migration and Codex supervision gate (2026-08-31)
+
+- The complete pull-request matrix passed 18 hosted checks: Rust 1.75 and
+  stable, Linux x86-64 and ARM64, macOS Intel and Apple silicon, native Windows
+  x64, and the website lint/build/visual suite.
+- `cargo test --all-targets` passed 390 library tests and every default
+  integration suite. The real-terminal suite passed 23 tests, including the
+  complete `Ctrl+M` picker, naming, migration, persistence, and reopen flow.
+- A focused regression starts a real mock Codex App Server beneath an
+  intentionally overlong state path, verifies the private short socket, and
+  reconnects a second supervisor to the same verified process.
+- A disposable authenticated Codex-to-Pi run preserved the code word
+  `LANTERN`, reopened the migrated conversation in Pi's native TUI, and left
+  both source and destination rows visible. The published cast contains no
+  Codex socket-timeout warning or provider credential material.
+
 ## v0.1.49 shorthand transition gate (2026-08-29)
 
 - The complete locked Rust suite passed with 371 library tests, all integration

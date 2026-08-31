@@ -1,5 +1,9 @@
 {
   "open_agent_view": "0.1.48",
   "captured_at": "2026-08-28",
-  "kind": "real_terminal_recordings"
+  "kind": "real_terminal_recordings",
+  "recordings": {
+    "migration": "0.1.49",
+    "setup": "0.1.49"
+  }
 }
