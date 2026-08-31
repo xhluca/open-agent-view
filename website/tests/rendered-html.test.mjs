@@ -397,13 +397,18 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     }
     if (name === "migration") {
       assert.match(visibleOutput.replace(/\s+/g, ""), /migratesession·target1\/14/i);
-      assert.match(visibleOutput.replace(/\s+/g, " "), /release-review \(Codex\)/i);
-      assert.match(visibleOutput.replace(/\s+/g, " "), /Migrated from Claude/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /release-review \(Pi\)/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /Migrated from Codex/i);
       assert.match(visibleOutput.replace(/\s+/g, " "), /I will remember LANTERN/i);
       assert.match(visibleOutput.replace(/\s+/g, " "), /Reply with only that word/i);
       assert.match(visibleOutput.replace(/\s+/g, " "), /LANTERN/i);
-      assert.match(visibleOutput, /Claude Code/i);
       assert.match(visibleOutput, /OpenAI Codex/i);
+      assert.match(visibleOutput, /Pi/i);
+      assert.doesNotMatch(
+        visibleOutput,
+        /new Codex App Server never opened|provider record is not visible|MCP startup incomplete/i,
+      );
+      assert.doesNotMatch(output, /cloudflare-api/i);
       assert.equal(manifest.proof, "real-open-agent-view-tui");
       assert.equal(
         manifest.sequence,
@@ -420,7 +425,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
         (action) => action.action === "Type · continue the conversation after migration",
       ));
       assert.ok(manifest.actions.some(
-        (action) => action.action === "Context preserved · Codex answered LANTERN",
+        (action) => action.action === "Context preserved · Pi answered LANTERN",
       ));
       assert.ok(manifest.actions.some(
         (action) => action.action === "Before and after sessions remain visible",

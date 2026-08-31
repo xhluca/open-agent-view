@@ -12,10 +12,10 @@ manifest as a subtitle overlay; the recorded terminal bytes remain unchanged.
 
 `ctrl-m-migration.gif` and `website/public/demos/migration.mp4` are focused
 real-TUI renders made on 2026-08-31 from the same cast and action timeline.
-The recording runs the release OAV binary, real Claude and Codex TUIs, and the
-installed session-migrate CLI in a disposable home. It opens a genuine Claude
-session, adds the code word `LANTERN`, performs the actual Claude-to-Codex
-conversion, opens the imported Codex session, and asks it to recall the word.
+The recording runs the release OAV binary, real Codex and Pi TUIs, and the
+installed session-migrate CLI in a disposable home. It opens a genuine Codex
+session, adds the code word `LANTERN`, performs the actual Codex-to-Pi
+conversion, opens the imported Pi session, and asks it to recall the word.
 Both renders burn the action captions into the frames and end on the dashboard
 with the source and imported sessions visible.
 

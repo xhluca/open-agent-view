@@ -90,7 +90,7 @@ current name plus the destination harness. OAV delegates the conversion to
 [session-migrate](https://github.com/xhluca/session-migrate), keeps the imported
 session visible, and stores the chosen name only as a private OAV display name.
 
-![A real Ctrl+M migration: open a Claude session, add context, migrate it to Codex, reopen the imported session, and continue the same conversation](docs/assets/ctrl-m-migration.gif)
+![A real Ctrl+M migration: open a Codex session, add context, migrate it to Pi, reopen the imported session, and continue the same conversation](docs/assets/ctrl-m-migration.gif)
 
 [Watch the subtitle-burned MP4](website/public/demos/migration.mp4) ·
 [Reuse the interactive JavaScript player](website/public/demos/migration.js)
