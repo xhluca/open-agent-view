@@ -78,11 +78,10 @@ test("server-renders real recording controls, provider tabs, and canonical metad
   assert.match(html, /<title>Open Agent View/);
   assert.match(html, /Monitor every agent/);
   assert.match(html, /Step in when it matters/);
-  assert.match(html, /One live dashboard for/);
-  assert.match(html, /15<!-- --> coding harnesses plus/);
+  assert.match(html, /One dashboard for all your coding agents/);
+  assert.match(html, /switch between harnesses with ease/);
   assert.match(html, /Every session/);
   assert.match(html, /REAL MULTI-HARNESS SESSIONS · ONE DASHBOARD/);
-  assert.match(html, /return without losing your place/);
   assert.match(html, /Choose any harness/);
   assert.match(html, /Work in its native CLI/);
   assert.match(html, /Manage every session/);

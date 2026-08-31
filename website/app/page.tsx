@@ -129,9 +129,8 @@ export default function Home() {
         <p className="eyebrow"><span /> Local agents, one workspace</p>
         <h1><span>Monitor every agent.</span><span>Step in when it matters.</span></h1>
         <p className="hero-copy">
-          One live dashboard for {codingHarnessCount} coding harnesses plus
-          Terminal. Jump into any native session, then return without losing
-          your place.
+          One dashboard for all your coding agents. See what is running, jump
+          in where needed, and switch between harnesses with ease.
         </p>
         <div className="hero-actions">
           <InstallCommandToggle />

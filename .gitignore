@@ -1,5 +1,6 @@
 /target/
 /dist/
+/dist-v*/
 /.idea/
 /.vscode/
 *.swp
@@ -11,3 +12,6 @@ __pycache__/
 # Runtime state and local exploration artifacts.
 /.open-agent-view/
 /tmp/
+
+# Generated demo exports; the checked-in sources are .cast and .actions.json.
+/website/public/demos/*.gif
