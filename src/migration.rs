@@ -125,10 +125,15 @@ impl MigrationClient {
         }
         validate_text(&result.session_id, "migrated session ID")?;
         let normalized_id = normalized_session_id(&request.target, &result.session_id)?;
+        let warnings = result
+            .warnings
+            .into_iter()
+            .map(CliWarning::into_text)
+            .collect::<Result<Vec<_>>>()?;
         Ok(MigrationOutcome {
             session_id: result.session_id,
             normalized_id,
-            warnings: result.warnings,
+            warnings,
         })
     }
 }
@@ -138,7 +143,33 @@ struct CliResult {
     session_id: String,
     target_format: String,
     #[serde(default)]
-    warnings: Vec<String>,
+    warnings: Vec<CliWarning>,
+}
+
+/// session-migrate 0.4 and newer returns structured warning objects. Accept
+/// the earlier string shape as well so OAV remains compatible with both sides
+/// of the CLI boundary while exposing one concise message to the dashboard.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CliWarning {
+    Text(String),
+    Structured { code: Option<String>, message: String },
+}
+
+impl CliWarning {
+    fn into_text(self) -> Result<String> {
+        let value = match self {
+            Self::Text(value) => value,
+            Self::Structured { code, message } => match code {
+                Some(code) if !code.trim().is_empty() => {
+                    format!("{}: {}", code.trim(), message.trim())
+                }
+                Some(_) | None => message.trim().to_owned(),
+            },
+        };
+        validate_text(&value, "session-migrate warning")?;
+        Ok(value)
+    }
 }
 
 pub fn migration_targets(source: &Provider) -> Vec<Provider> {
@@ -656,6 +687,57 @@ mod tests {
             ]
         );
         assert_eq!(request.timeout, MIGRATION_TIMEOUT);
+    }
+
+    #[test]
+    fn accepts_current_structured_warnings_and_legacy_strings() {
+        let runner = Arc::new(FakeRunner::default());
+        *runner.output.lock().unwrap() = Some(Ok(CommandOutput {
+            status: 0,
+            stdout: br#"{
+              "session_id":"target-id",
+              "target_format":"codex",
+              "warnings":[
+                {"code":"retained_context","message":"context was retained"},
+                "legacy warning"
+              ]
+            }"#
+            .to_vec(),
+            stderr: Vec::new(),
+        }));
+        let outcome = MigrationClient::with_runner("session-migrate", runner)
+            .migrate(&MigrationRequest {
+                source: source(Provider::Claude),
+                target: Provider::Codex,
+                name: "copy".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            outcome.warnings,
+            [
+                "retained_context: context was retained",
+                "legacy warning",
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_control_characters_in_cli_warnings() {
+        let runner = Arc::new(FakeRunner::default());
+        *runner.output.lock().unwrap() = Some(Ok(CommandOutput {
+            status: 0,
+            stdout: b"{\"session_id\":\"target-id\",\"target_format\":\"codex\",\"warnings\":[{\"message\":\"bad\\nnotice\"}]}".to_vec(),
+            stderr: Vec::new(),
+        }));
+        let error = MigrationClient::with_runner("session-migrate", runner)
+            .migrate(&MigrationRequest {
+                source: source(Provider::Claude),
+                target: Provider::Codex,
+                name: "copy".into(),
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cannot contain control characters"));
     }
 
     #[test]
