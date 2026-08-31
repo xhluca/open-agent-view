@@ -21,6 +21,8 @@ pub enum SelectionKey {
 
 pub const SESSION_PAGE_SIZE: usize = 25;
 pub const MODEL_PICKER_PAGE_SIZE: usize = 10;
+pub const MIGRATION_PICKER_PAGE_SIZE: usize = 10;
+const MAX_SESSION_NAME_BYTES: usize = 240;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
@@ -29,6 +31,7 @@ pub enum Overlay {
     Peek,
     HarnessPicker,
     ModelPicker,
+    MigrationTargetPicker { session_id: String },
     Composer(ComposerMode),
     Confirm(ConfirmTarget),
 }
@@ -36,7 +39,13 @@ pub enum Overlay {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ComposerMode {
     NewSession,
-    Rename { session_id: String },
+    Rename {
+        session_id: String,
+    },
+    MigrationName {
+        session_id: String,
+        target: Provider,
+    },
     Filter,
 }
 
@@ -102,6 +111,11 @@ pub enum AppAction {
         session_id: String,
         name: String,
     },
+    Migrate {
+        session_id: String,
+        target: Provider,
+        name: String,
+    },
     Interrupt {
         session_id: String,
     },
@@ -139,6 +153,8 @@ pub struct App {
     pub available_models: Vec<String>,
     pub model_filter: String,
     pub model_selection: usize,
+    pub migration_targets: Vec<Provider>,
+    pub migration_selection: usize,
     pub models_loading: bool,
     pub models_provider: Option<Provider>,
     pub models_error: Option<String>,
@@ -207,6 +223,8 @@ impl App {
             available_models: Vec::new(),
             model_filter: String::new(),
             model_selection: 0,
+            migration_targets: Vec::new(),
+            migration_selection: 0,
             models_loading: false,
             models_provider: None,
             models_error: None,
@@ -239,7 +257,11 @@ impl App {
         self.reconcile_selection();
         let selection_bound_overlay = matches!(
             self.overlay,
-            Overlay::Peek | Overlay::Composer(ComposerMode::Rename { .. }) | Overlay::Confirm(_)
+            Overlay::Peek
+                | Overlay::MigrationTargetPicker { .. }
+                | Overlay::Composer(ComposerMode::Rename { .. })
+                | Overlay::Composer(ComposerMode::MigrationName { .. })
+                | Overlay::Confirm(_)
         );
         if self.selection != previous_selection && selection_bound_overlay {
             self.overlay = Overlay::None;
@@ -448,6 +470,10 @@ impl App {
                     self.confirm_model_selection()
                 }
             }
+            Overlay::MigrationTargetPicker { .. } => {
+                self.confirm_migration_target();
+                AppAction::None
+            }
             Overlay::Composer(mode) => self.submit_composer(mode),
             Overlay::Confirm(target) => self.confirm(target),
             Overlay::None => match self.selection.clone() {
@@ -468,7 +494,7 @@ impl App {
     }
 
     pub fn escape(&mut self) -> AppAction {
-        match self.overlay {
+        match self.overlay.clone() {
             Overlay::None => {
                 self.should_quit = true;
                 AppAction::Quit
@@ -481,6 +507,18 @@ impl App {
             Overlay::ModelPicker => {
                 self.overlay = Overlay::Composer(ComposerMode::NewSession);
                 self.model_filter.clear();
+                self.notice = None;
+                AppAction::None
+            }
+            Overlay::Composer(ComposerMode::MigrationName { session_id, .. }) => {
+                self.overlay = Overlay::MigrationTargetPicker { session_id };
+                self.input.clear();
+                self.notice = None;
+                AppAction::None
+            }
+            Overlay::MigrationTargetPicker { .. } => {
+                self.overlay = Overlay::None;
+                self.input.clear();
                 self.notice = None;
                 AppAction::None
             }
@@ -832,6 +870,73 @@ impl App {
         self.overlay = Overlay::Composer(ComposerMode::Rename { session_id });
     }
 
+    pub fn start_migration(&mut self) {
+        let Some(session) = self.selected_session() else {
+            self.set_notice("select a session to migrate");
+            return;
+        };
+        if crate::migration::provider_format(&session.provider).is_none() {
+            let provider = session.provider.label().to_owned();
+            self.set_notice(format!("{provider} sessions cannot be migrated"));
+            return;
+        }
+        if session.runtime != crate::domain::Runtime::Host {
+            self.set_notice("session migration currently supports host sessions only");
+            return;
+        }
+        let session_id = session.id.clone();
+        self.migration_targets = crate::migration::migration_targets(&session.provider);
+        self.migration_selection = 0;
+        self.input.clear();
+        self.notice = None;
+        self.overlay = Overlay::MigrationTargetPicker { session_id };
+    }
+
+    pub fn move_migration_selection(&mut self, delta: isize) {
+        if self.migration_targets.is_empty() {
+            return;
+        }
+        self.migration_selection = (self.migration_selection as isize + delta)
+            .rem_euclid(self.migration_targets.len() as isize)
+            as usize;
+    }
+
+    pub fn move_migration_page(&mut self, delta: isize) {
+        if self.migration_targets.is_empty() {
+            return;
+        }
+        self.migration_selection = (self.migration_selection as isize
+            + delta * MIGRATION_PICKER_PAGE_SIZE as isize)
+            .clamp(0, self.migration_targets.len().saturating_sub(1) as isize)
+            as usize;
+    }
+
+    pub fn confirm_migration_target(&mut self) {
+        let Overlay::MigrationTargetPicker { session_id } = self.overlay.clone() else {
+            return;
+        };
+        let Some(target) = self
+            .migration_targets
+            .get(self.migration_selection)
+            .cloned()
+        else {
+            return;
+        };
+        let Some(session) = self
+            .snapshot
+            .sessions
+            .iter()
+            .find(|session| session.id == session_id)
+        else {
+            self.overlay = Overlay::None;
+            self.set_notice("the selected session disappeared during refresh");
+            return;
+        };
+        self.input = default_migration_name(&session.name, target.label());
+        self.notice = None;
+        self.overlay = Overlay::Composer(ComposerMode::MigrationName { session_id, target });
+    }
+
     pub fn start_confirm(&mut self) -> AppAction {
         if let Some(session) = self.selected_session() {
             let running = is_active_session_state(session.state);
@@ -1138,12 +1243,25 @@ impl App {
         if input.is_empty() && !matches!(mode, ComposerMode::Filter | ComposerMode::Rename { .. }) {
             return AppAction::None;
         }
+        if matches!(mode, ComposerMode::MigrationName { .. })
+            && (input.len() > MAX_SESSION_NAME_BYTES || input.chars().any(char::is_control))
+        {
+            self.set_notice(format!(
+                "migration name must contain 1 to {MAX_SESSION_NAME_BYTES} bytes without control characters"
+            ));
+            return AppAction::None;
+        }
         self.input.clear();
         self.overlay = Overlay::None;
         match mode {
             ComposerMode::NewSession => self.submit_new_session(input),
             ComposerMode::Rename { session_id } => AppAction::Rename {
                 session_id,
+                name: input,
+            },
+            ComposerMode::MigrationName { session_id, target } => AppAction::Migrate {
+                session_id,
+                target,
                 name: input,
             },
             ComposerMode::Filter => {
@@ -1358,6 +1476,16 @@ impl App {
         self.notice = None;
         self.reconcile_selection();
     }
+}
+
+fn default_migration_name(name: &str, target: &str) -> String {
+    let suffix = format!(" ({target})");
+    let available = MAX_SESSION_NAME_BYTES.saturating_sub(suffix.len());
+    let mut boundary = name.len().min(available);
+    while !name.is_char_boundary(boundary) {
+        boundary = boundary.saturating_sub(1);
+    }
+    format!("{}{}", name[..boundary].trim_end(), suffix)
 }
 
 pub(crate) fn is_active_session_state(state: SessionState) -> bool {
@@ -2039,6 +2167,98 @@ mod tests {
             }
         );
         assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn migration_picker_excludes_source_and_prefills_an_editable_local_name() {
+        let mut item = session("native-id", SessionState::Completed);
+        item.name = "review API".into();
+        item.provider = Provider::Claude;
+        let mut app = app_with(vec![item]);
+
+        app.start_migration();
+        assert_eq!(
+            app.overlay,
+            Overlay::MigrationTargetPicker {
+                session_id: "native-id".into()
+            }
+        );
+        assert_eq!(app.migration_targets.len(), 14);
+        assert!(!app.migration_targets.contains(&Provider::Claude));
+        assert_eq!(app.migration_targets[0], Provider::Codex);
+
+        assert_eq!(app.activate(), AppAction::None);
+        assert_eq!(app.input, "review API (Codex)");
+        assert_eq!(
+            app.overlay,
+            Overlay::Composer(ComposerMode::MigrationName {
+                session_id: "native-id".into(),
+                target: Provider::Codex,
+            })
+        );
+        app.input = "review API port".into();
+        assert_eq!(
+            app.activate(),
+            AppAction::Migrate {
+                session_id: "native-id".into(),
+                target: Provider::Codex,
+                name: "review API port".into(),
+            }
+        );
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn migration_escape_returns_to_targets_before_closing_and_rejects_terminal() {
+        let mut app = app_with(vec![session("source", SessionState::Completed)]);
+        app.start_migration();
+        app.move_migration_selection(-1);
+        assert_eq!(
+            app.migration_targets[app.migration_selection],
+            Provider::OpenHands
+        );
+        app.confirm_migration_target();
+        assert!(matches!(
+            app.overlay,
+            Overlay::Composer(ComposerMode::MigrationName { .. })
+        ));
+        app.escape();
+        assert!(matches!(app.overlay, Overlay::MigrationTargetPicker { .. }));
+        assert_eq!(app.migration_selection, 13);
+        app.escape();
+        assert_eq!(app.overlay, Overlay::None);
+
+        let mut terminal = session("terminal", SessionState::Completed);
+        terminal.provider = Provider::Terminal;
+        let mut app = app_with(vec![terminal]);
+        app.start_migration();
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("Terminal sessions cannot be migrated")
+        );
+
+        let mut docker = session("docker", SessionState::Completed);
+        docker.runtime = Runtime::Docker {
+            container_id: "exact".into(),
+            container_name: "agent".into(),
+            image: "image@sha256:exact".into(),
+        };
+        let mut app = app_with(vec![docker]);
+        app.start_migration();
+        assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("session migration currently supports host sessions only")
+        );
+    }
+
+    #[test]
+    fn migration_default_name_is_utf8_safe_and_within_alias_limit() {
+        let name = default_migration_name(&"é".repeat(200), "OpenHands");
+        assert!(name.is_char_boundary(name.len()));
+        assert!(name.len() <= MAX_SESSION_NAME_BYTES);
+        assert!(name.ends_with(" (OpenHands)"));
     }
 
     #[test]

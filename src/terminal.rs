@@ -5,7 +5,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -19,6 +22,7 @@ use crate::app::{App, AppAction, Overlay, SESSION_PAGE_SIZE};
 use crate::control::{ControlHub, ControlOutcome, LaunchPresentation};
 use crate::domain::{AgentSession, Capability, Provider, SessionSnapshot, SessionState};
 use crate::hidden::HiddenSessions;
+use crate::migration::{MigrationClient, MigrationOutcome, MigrationRegistry, MigrationRequest};
 use crate::ui;
 
 // Apply a burst of already-buffered terminal input before drawing. Holding an
@@ -79,6 +83,24 @@ struct LaunchJob {
     known_session_ids: BTreeSet<String>,
 }
 
+#[derive(Debug)]
+struct MigrationWorkerResult {
+    sequence: u64,
+    request: MigrationRequest,
+    result: Result<MigrationOutcome, String>,
+}
+
+pub struct MigrationServices {
+    client: MigrationClient,
+    registry: MigrationRegistry,
+}
+
+impl MigrationServices {
+    pub fn new(client: MigrationClient, registry: MigrationRegistry) -> Self {
+        Self { client, registry }
+    }
+}
+
 pub fn run_dashboard(
     engine: &DiscoveryEngine,
     request: &DiscoveryRequest,
@@ -86,11 +108,17 @@ pub fn run_dashboard(
     control: &ControlHub,
     hidden_sessions: HiddenSessions,
     session_aliases: SessionAliases,
+    migrations: MigrationServices,
 ) -> Result<()> {
+    let MigrationServices {
+        client: migration_client,
+        registry: migration_registry,
+    } = migrations;
     let (refresh_tx, refresh_rx) = mpsc::sync_channel(1);
     let (snapshot_tx, snapshot_rx) = mpsc::channel::<(SessionSnapshot, bool)>();
     let (models_tx, models_rx) = mpsc::channel::<(Provider, bool, Result<Vec<String>, String>)>();
     let (launch_tx, launch_rx) = mpsc::channel::<LaunchWorkerResult>();
+    let (migration_tx, migration_rx) = mpsc::channel::<MigrationWorkerResult>();
     let worker_engine = (*engine).clone();
     let worker_control = control.clone();
     let worker_hidden_sessions = hidden_sessions.clone();
@@ -161,6 +189,8 @@ pub fn run_dashboard(
     let mut pending_launch_retry_at: Option<Instant> = None;
     let mut latest_launch_sequence = 0u64;
     let mut launching_provider: Option<Provider> = None;
+    let mut latest_migration_sequence = 0u64;
+    let mut migrating_target: Option<Provider> = None;
     let mut launch_animation_tick = 0usize;
     let mut next_launch_animation = Instant::now();
     let mut next_live_animation = Instant::now() + LIVE_SESSION_ANIMATION_INTERVAL;
@@ -302,6 +332,75 @@ pub fn run_dashboard(
                 Err(TryRecvError::Disconnected) => break,
             }
         }
+        let mut completed_migration_needs_refresh = false;
+        loop {
+            match migration_rx.try_recv() {
+                Ok(completed) => {
+                    if completed.sequence == latest_migration_sequence {
+                        migrating_target = None;
+                        match completed.result {
+                            Ok(outcome) => {
+                                let warning_count = outcome.warnings.len();
+                                match migration_registry.record(&completed.request, &outcome) {
+                                    Ok(_) => {
+                                        let alias_result = session_aliases.set_for_id(
+                                            &outcome.normalized_id,
+                                            &completed.request.name,
+                                        );
+                                        match alias_result {
+                                            Ok(_) => app.set_notice(format!(
+                                                "migrated to {} as {}{}",
+                                                completed.request.target.label(),
+                                                completed.request.name,
+                                                if warning_count == 0 {
+                                                    String::new()
+                                                } else {
+                                                    format!(" · {warning_count} warning{}", if warning_count == 1 { "" } else { "s" })
+                                                }
+                                            )),
+                                            Err(error) => app.set_notice(format!(
+                                                "migration succeeded, but its local name could not be saved: {error:#}"
+                                            )),
+                                        }
+                                        pending_launch = Some(PendingLaunch {
+                                            provider: completed.request.target,
+                                            provider_session_id: outcome.session_id,
+                                            known_session_ids: BTreeSet::new(),
+                                            open_when_visible: false,
+                                            deadline: Instant::now() + LAUNCH_DISCOVERY_TIMEOUT,
+                                        });
+                                        pending_launch_retry_at = None;
+                                        completed_migration_needs_refresh = true;
+                                    }
+                                    Err(error) => app.set_notice(format!(
+                                        "migration succeeded, but OAV could not index it: {error:#}"
+                                    )),
+                                }
+                            }
+                            Err(error) => app.set_notice(format!("migration failed: {error}")),
+                        }
+                    }
+                    needs_draw = true;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        if completed_migration_needs_refresh {
+            if refresh_in_flight {
+                refresh_after_current = true;
+            } else {
+                schedule_refresh(
+                    &refresh_tx,
+                    &discovery_request_for_pending_launch(
+                        &current_request,
+                        pending_launch.as_ref(),
+                    ),
+                    &mut refresh_in_flight,
+                )?;
+                last_refresh = Instant::now();
+            }
+        }
         if completed_launch_needs_refresh {
             if refresh_in_flight {
                 refresh_after_current = true;
@@ -330,11 +429,21 @@ pub fn run_dashboard(
         if app.should_quit {
             break Ok(());
         }
-        if launching_provider.is_some() && Instant::now() >= next_launch_animation {
-            let provider = launching_provider.as_ref().expect("checked above");
+        if (launching_provider.is_some() || migrating_target.is_some())
+            && Instant::now() >= next_launch_animation
+        {
+            let provider = launching_provider
+                .as_ref()
+                .or(migrating_target.as_ref())
+                .expect("checked above");
             app.set_notice(format!(
-                "{} launching {}…",
+                "{} {} {}…",
                 LAUNCH_SPINNER[launch_animation_tick % LAUNCH_SPINNER.len()],
+                if migrating_target.is_some() {
+                    "migrating to"
+                } else {
+                    "launching"
+                },
                 provider.label()
             ));
             launch_animation_tick = launch_animation_tick.wrapping_add(1);
@@ -359,8 +468,56 @@ pub fn run_dashboard(
             for event_index in 0..MAX_READY_EVENTS_PER_TICK {
                 match event::read()? {
                     Event::Key(key) => {
-                        let action = handle_key(&mut app, key);
+                        let mut action = handle_key(&mut app, key);
+                        if action == AppAction::Quit && migrating_target.is_some() {
+                            app.should_quit = false;
+                            app.set_notice(
+                                "migration is still running; OAV will be ready to exit when it finishes",
+                            );
+                            action = AppAction::None;
+                        }
                         let mut effect = match action {
+                            AppAction::Migrate {
+                                session_id,
+                                target,
+                                name,
+                            } => {
+                                if migrating_target.is_some() {
+                                    app.set_notice("one session migration is already running");
+                                    needs_draw = true;
+                                    continue;
+                                }
+                                let Some(source) = app
+                                    .snapshot
+                                    .sessions
+                                    .iter()
+                                    .find(|session| session.id == session_id)
+                                    .cloned()
+                                else {
+                                    app.set_notice(
+                                        "the selected session disappeared during refresh",
+                                    );
+                                    needs_draw = true;
+                                    continue;
+                                };
+                                latest_migration_sequence =
+                                    latest_migration_sequence.wrapping_add(1);
+                                migrating_target = Some(target.clone());
+                                launch_animation_tick = 0;
+                                next_launch_animation = Instant::now();
+                                app.set_notice(format!("migrating to {}…", target.label()));
+                                schedule_migration(
+                                    migration_client.clone(),
+                                    latest_migration_sequence,
+                                    MigrationRequest {
+                                        source,
+                                        target,
+                                        name,
+                                    },
+                                    migration_tx.clone(),
+                                );
+                                ActionEffect::default()
+                            }
                             AppAction::Launch {
                                 provider,
                                 model,
@@ -598,6 +755,24 @@ fn schedule_launch(control: ControlHub, job: LaunchJob, sender: mpsc::Sender<Lau
     });
 }
 
+fn schedule_migration(
+    client: MigrationClient,
+    sequence: u64,
+    request: MigrationRequest,
+    sender: mpsc::Sender<MigrationWorkerResult>,
+) {
+    let _migration_worker = thread::spawn(move || {
+        let result = client
+            .migrate(&request)
+            .map_err(|error| format!("{error:#}"));
+        let _ = sender.send(MigrationWorkerResult {
+            sequence,
+            request,
+            result,
+        });
+    });
+}
+
 fn schedule_launch_job(
     job: LaunchJob,
     sender: mpsc::Sender<LaunchWorkerResult>,
@@ -789,6 +964,10 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
                 app.start_rename();
                 AppAction::None
             }
+            KeyCode::Char('m') if app.overlay == Overlay::None => {
+                app.start_migration();
+                AppAction::None
+            }
             KeyCode::Char('r') if app.overlay == Overlay::ModelPicker => {
                 let provider = app.launch_provider.clone();
                 app.retry_model_load(&provider);
@@ -871,6 +1050,26 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.move_model_page(1);
             AppAction::None
         }
+        KeyCode::Up | KeyCode::Left
+            if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) =>
+        {
+            app.move_migration_selection(-1);
+            AppAction::None
+        }
+        KeyCode::Down | KeyCode::Right
+            if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) =>
+        {
+            app.move_migration_selection(1);
+            AppAction::None
+        }
+        KeyCode::PageUp if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) => {
+            app.move_migration_page(-1);
+            AppAction::None
+        }
+        KeyCode::PageDown if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) => {
+            app.move_migration_page(1);
+            AppAction::None
+        }
         KeyCode::Char('l')
             if app.overlay == Overlay::ModelPicker
                 && app.models_error.is_some()
@@ -934,12 +1133,20 @@ fn handle_key(app: &mut App, key: KeyEvent) -> AppAction {
             app.move_model_selection(1);
             AppAction::None
         }
+        KeyCode::Tab if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) => {
+            app.move_migration_selection(1);
+            AppAction::None
+        }
         KeyCode::BackTab if app.overlay == Overlay::HarnessPicker => {
             app.move_harness_selection(-1);
             AppAction::None
         }
         KeyCode::BackTab if app.overlay == Overlay::ModelPicker => {
             app.move_model_selection(-1);
+            AppAction::None
+        }
+        KeyCode::BackTab if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) => {
+            app.move_migration_selection(-1);
             AppAction::None
         }
         KeyCode::Char(digit) if app.overlay == Overlay::HarnessPicker && digit.is_ascii_digit() => {
@@ -1201,6 +1408,9 @@ fn dispatch_action<T: DashboardTerminal, C: DashboardControl>(
             session_alias: Some((session_id, name)),
             ..ActionEffect::default()
         },
+        AppAction::Migrate { .. } => {
+            unreachable!("migration actions are dispatched by the asynchronous worker")
+        }
         AppAction::Launch {
             provider,
             model,
@@ -1263,6 +1473,7 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
         | AppAction::Authenticate { .. }
         | AppAction::SetupProvider { .. }
         | AppAction::SetupLaunchOption { .. }
+        | AppAction::Migrate { .. }
         | AppAction::Hide { .. } => false,
         AppAction::Refresh => {
             app.set_notice("refreshing provider sessions…");
@@ -1450,7 +1661,15 @@ impl TerminalSession {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(stdout, EnterAlternateScreen, crossterm::cursor::Hide)?;
+        execute!(
+            stdout,
+            EnterAlternateScreen,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            ),
+            crossterm::cursor::Hide
+        )?;
         let terminal = Terminal::new(CrosstermBackend::new(stdout))?;
         Ok(Self {
             terminal,
@@ -1465,6 +1684,7 @@ impl TerminalSession {
         disable_raw_mode()?;
         execute!(
             self.terminal.backend_mut(),
+            PopKeyboardEnhancementFlags,
             LeaveAlternateScreen,
             crossterm::cursor::Show
         )?;
@@ -1480,6 +1700,10 @@ impl TerminalSession {
         execute!(
             self.terminal.backend_mut(),
             EnterAlternateScreen,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            ),
             crossterm::cursor::Hide
         )?;
         self.terminal.clear()?;
@@ -1506,6 +1730,7 @@ impl Drop for TerminalSession {
         let _ = disable_raw_mode();
         let _ = execute!(
             self.terminal.backend_mut(),
+            PopKeyboardEnhancementFlags,
             LeaveAlternateScreen,
             crossterm::cursor::Show
         );
@@ -1727,6 +1952,47 @@ mod tests {
         handle_key(&mut app, control_key('r'));
         assert_eq!(app.overlay, Overlay::Help);
         assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn control_m_opens_the_two_step_migration_flow_without_replacing_enter() {
+        let mut dashboard = app();
+        assert_eq!(
+            handle_key(&mut dashboard, control_key('m')),
+            AppAction::None
+        );
+        assert_eq!(
+            dashboard.overlay,
+            Overlay::MigrationTargetPicker {
+                session_id: "worker".into()
+            }
+        );
+        handle_key(&mut dashboard, key(KeyCode::Down));
+        assert_eq!(dashboard.migration_selection, 1);
+        handle_key(&mut dashboard, key(KeyCode::PageDown));
+        assert_eq!(dashboard.migration_selection, 11);
+        handle_key(&mut dashboard, key(KeyCode::Enter));
+        assert!(matches!(
+            dashboard.overlay,
+            Overlay::Composer(ComposerMode::MigrationName { .. })
+        ));
+        dashboard.input = "worker port".into();
+        assert_eq!(
+            handle_key(&mut dashboard, key(KeyCode::Enter)),
+            AppAction::Migrate {
+                session_id: "worker".into(),
+                target: Provider::Grok,
+                name: "worker port".into(),
+            }
+        );
+
+        let mut normal_enter = app();
+        assert_eq!(
+            handle_key(&mut normal_enter, key(KeyCode::Enter)),
+            AppAction::Open {
+                session_id: "worker".into()
+            }
+        );
     }
 
     #[test]

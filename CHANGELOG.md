@@ -8,6 +8,19 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- `Ctrl+M` now migrates an exact selected host session through session-migrate:
+  choose any other supported coding harness, edit a prefilled local name, and
+  keep the validated imported session visible across dashboard restarts.
+- Added `--session-migrate-bin PATH` for explicit companion-CLI selection.
+
+### Tests
+
+- Added mapping, argv, failure, registry-permission, app-state, renderer, and
+  real-PTY coverage. The PTY test uses enhanced keyboard reporting to prove
+  that `Ctrl+M` opens migration while ordinary Enter still selects and submits.
+
 ## [0.1.49] - 2026-08-29
 
 ### Changed

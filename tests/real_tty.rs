@@ -24,6 +24,9 @@ const SHIFT_TAB: &[u8] = b"\x1b[Z";
 const CTRL_A: &[u8] = b"\x01";
 const CTRL_F: &[u8] = b"\x06";
 const CTRL_J: &[u8] = b"\x0a";
+// Kitty keyboard enhancement encoding for Ctrl+M. A legacy terminal sends CR
+// for both Ctrl+M and Enter, so this exact sequence verifies disambiguation.
+const CTRL_M_ENHANCED: &[u8] = b"\x1b[109;5u";
 const CTRL_R: &[u8] = b"\x12";
 const CTRL_S: &[u8] = b"\x13";
 const CTRL_X: &[u8] = b"\x18";
@@ -410,6 +413,98 @@ fn working_session_marker_blinks_in_a_real_terminal() {
             .any(|line| line.contains("• schema-migration")),
         "completed markers must remain stable while live work blinks"
     );
+    app.exit_cleanly();
+}
+
+#[test]
+fn ctrl_m_migrates_through_the_real_tui_and_keeps_enter_distinct() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 32, |command, home| {
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join("populated-sessions.json");
+        let migrator = home.path().join("session-migrate");
+        let args_log = home.path().join("migration-args.txt");
+        fs::write(
+            &migrator,
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$OAV_MIGRATION_ARGS"
+printf '%s\n' '{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","target_format":"claude","warnings":[]}'
+"#,
+        )
+        .expect("write fake session-migrate");
+        fs::set_permissions(&migrator, fs::Permissions::from_mode(0o755))
+            .expect("make fake session-migrate executable");
+        command.env("OAV_MIGRATION_ARGS", &args_log).args([
+            "--fixture",
+            fixture.to_str().expect("UTF-8 fixture path"),
+            "--all",
+            "--include-interactive",
+            "--session-migrate-bin",
+            migrator.to_str().expect("UTF-8 migrator path"),
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("source dashboard", |screen| {
+        screen.contains("approval-needed") && screen.contains("Needs input")
+    });
+    app.send(CTRL_F);
+    app.send(b"approval-needed");
+    app.send(ENTER);
+    app.wait_for("selected host source row", |screen| {
+        screen.contains("approval-needed") && !screen.contains("release-reviewer")
+    });
+    app.send(CTRL_M_ENHANCED);
+    let picker = app.wait_for("migration target picker", |screen| {
+        screen.contains("migrate session · target 1/14")
+            && screen.contains("from  Codex")
+            && screen.contains("Claude Code")
+    });
+    assert_lines_fit(&picker, 110);
+
+    // Enter must choose the highlighted target rather than being mistaken for
+    // another Ctrl+M after enhanced keyboard mode is enabled.
+    app.send(ENTER);
+    app.wait_for("migration name composer", |screen| {
+        screen.contains("migrate to Claude · choose local name")
+            && screen.contains("approval-needed (Claude)")
+    });
+    app.send(ENTER);
+    let migrated = app.wait_for("persisted migrated row", |screen| {
+        screen.contains("migrated to Claude as approval-needed (Claude)")
+            && screen.lines().any(|line| {
+                line.contains("approval-needed (Claude)")
+                    && line.contains("Claude")
+                    && line.contains("Migrated from Codex")
+            })
+    });
+    assert_lines_fit(&migrated, 110);
+
+    let args = fs::read_to_string(app.home_path().join("migration-args.txt"))
+        .expect("read exact migration argv");
+    assert_eq!(
+        args.lines().collect::<Vec<_>>(),
+        [
+            "transfer",
+            "thread-approval",
+            "--from",
+            "codex",
+            "--to",
+            "claude",
+            "--cwd",
+            "/workspace/beta",
+        ]
+    );
+    let registry = fs::read_to_string(
+        app.home_path()
+            .join("state/open-agent-view/migrations.json"),
+    )
+    .expect("migration registry persisted");
+    assert!(registry.contains("claude:host:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+    assert!(registry.contains("approval-needed (Claude)"));
+    assert!(contains_bytes(&app.raw, b"\x1b[>"));
     app.exit_cleanly();
 }
 

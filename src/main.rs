@@ -28,12 +28,13 @@ use open_agent_view::hidden::{HiddenSessionRecord, HiddenSessions};
 use open_agent_view::maintenance::{
     execute_completed_archive, plan_completed_archive, BulkArchiveReport,
 };
+use open_agent_view::migration::{MigrationClient, MigrationRegistry};
 #[cfg(target_os = "linux")]
 use open_agent_view::opencode_supervisor::OpenCodeSupervisor;
 use open_agent_view::pi_supervisor::run_pi_supervisor_daemon;
 #[cfg(target_os = "linux")]
 use open_agent_view::pi_supervisor::PiSupervisor;
-use open_agent_view::terminal::run_dashboard;
+use open_agent_view::terminal::{run_dashboard, MigrationServices};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum LaunchProvider {
@@ -378,6 +379,15 @@ struct Cli {
     #[arg(long, default_value = "docker", value_name = "PATH", global = true)]
     docker_bin: String,
 
+    /// session-migrate executable used by the Ctrl+M migration workflow.
+    #[arg(
+        long,
+        default_value = "session-migrate",
+        value_name = "PATH",
+        global = true
+    )]
+    session_migrate_bin: String,
+
     /// Override the protected managed-container ownership registry.
     #[arg(long, value_name = "PATH", global = true)]
     managed_docker_registry: Option<PathBuf>,
@@ -458,6 +468,10 @@ fn main() -> Result<()> {
     // hidden-session registry would correctly refuse to use it.
     let hidden_sessions = HiddenSessions::load_default()?;
     let session_aliases = SessionAliases::load_default()?;
+    let migration_registry = MigrationRegistry::load_default()?;
+    let migration_client = MigrationClient::host(cli.session_migrate_bin.clone())
+        .with_source_cli(Provider::OpenCode, cli.opencode_bin.clone())
+        .with_source_cli(Provider::KiloCode, cli.kilo_bin.clone());
     let provider_io_enabled = provider_io_enabled(&cli);
     let host_providers_enabled = provider_io_enabled && !cli.no_host_providers;
     let claude_enabled =
@@ -533,6 +547,7 @@ fn main() -> Result<()> {
         launch_cwd: launch_cwd.clone(),
         provider_io_enabled,
     })?;
+    control.register_migration_registry(migration_registry.clone());
     #[cfg(target_os = "linux")]
     let pi_supervisor = pi_session_dir
         .as_ref()
@@ -711,6 +726,9 @@ fn main() -> Result<()> {
     }
 
     let mut engine = DiscoveryEngine::new();
+    // Successful imports remain visible without broadening discovery to every
+    // historical provider conversation.
+    engine.add_source(migration_registry.clone());
     if let Some(fixture) = cli.fixture {
         engine.add_source(FixtureSource::new(fixture));
     } else {
@@ -875,6 +893,7 @@ fn main() -> Result<()> {
         &control,
         hidden_sessions,
         session_aliases,
+        MigrationServices::new(migration_client, migration_registry),
     )?;
 
     Ok(())
@@ -1746,6 +1765,7 @@ fn resolve_default_provider_bins(cli: &mut Cli) {
         &mut cli.grok_bin,
         &mut cli.kilo_bin,
         &mut cli.openhands_bin,
+        &mut cli.session_migrate_bin,
     ] {
         if let Some(path) = resolve_executable(executable) {
             *executable = path.to_string_lossy().into_owned();
@@ -2284,6 +2304,8 @@ mod tests {
             "250",
             "--docker-container",
             "explicit-container",
+            "--session-migrate-bin",
+            "/custom/session-migrate",
         ])
         .unwrap();
 
@@ -2313,6 +2335,7 @@ mod tests {
         assert_eq!(cli.launch_cwd, Some(PathBuf::from("/launch")));
         assert_eq!(cli.refresh_ms, 250);
         assert_eq!(cli.docker_containers, vec!["explicit-container"]);
+        assert_eq!(cli.session_migrate_bin, "/custom/session-migrate");
         assert!(!provider_io_enabled(&cli));
     }
 

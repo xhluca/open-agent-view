@@ -76,6 +76,7 @@ opens that harness's native interface.
 | Open the selected native session | `Enter` or `→` |
 | Return to OAV | `Shift+←`, or `←` twice at an empty prompt |
 | Rename a session in OAV | `Ctrl+R` |
+| Migrate a session to another harness | `Ctrl+M` |
 | Filter the session list | `Ctrl+F` |
 | Stop, then delete or hide a managed session | `Ctrl+X`, then `Ctrl+X` again |
 | See the complete contextual key map | `?` |
@@ -83,6 +84,13 @@ opens that harness's native interface.
 See the [CLI and keyboard guide](docs/cli.md) for model selection, login/setup,
 completed-session visibility, paging, bulk actions, and non-interactive CLI
 commands.
+
+`Ctrl+M` opens a destination picker, then a name editor prefilled with the
+current name plus the destination harness. OAV delegates the conversion to
+[session-migrate](https://github.com/xhluca/session-migrate), keeps the imported
+session visible, and stores the chosen name only as a private OAV display name.
+Install the companion CLI once with
+`curl -LsSf https://session-migrate.github.io/install.sh | sh`.
 
 ## Harnesses
 

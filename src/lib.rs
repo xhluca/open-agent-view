@@ -11,6 +11,7 @@ pub mod domain;
 pub(crate) mod fs_util;
 pub mod hidden;
 pub mod maintenance;
+pub mod migration;
 pub mod native_session;
 pub mod opencode_supervisor;
 pub mod pi_supervisor;

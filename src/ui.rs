@@ -7,7 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::app::{
     is_active_session_state, project_group_path, App, ComposerMode, ConfirmTarget, Overlay,
-    SelectionKey, ViewMode, MODEL_PICKER_PAGE_SIZE,
+    SelectionKey, ViewMode, MIGRATION_PICKER_PAGE_SIZE, MODEL_PICKER_PAGE_SIZE,
 };
 use crate::domain::{AgentSession, Capability, Provider, SessionState};
 
@@ -80,6 +80,8 @@ pub fn render(frame: &mut Frame<'_>, app: &App) {
         render_harness_picker(frame, app, area);
     } else if app.overlay == Overlay::ModelPicker {
         render_model_picker(frame, app, area);
+    } else if matches!(app.overlay, Overlay::MigrationTargetPicker { .. }) {
+        render_migration_target_picker(frame, app, area);
     }
 }
 
@@ -387,13 +389,26 @@ fn render_bottom_panel(frame: &mut Frame<'_>, app: &App, area: Rect) {
 
 fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
     let renaming = matches!(app.overlay, Overlay::Composer(ComposerMode::Rename { .. }));
+    let naming_migration = matches!(
+        app.overlay,
+        Overlay::Composer(ComposerMode::MigrationName { .. })
+    );
     let mut block = Block::default()
         .borders(Borders::TOP | Borders::BOTTOM)
-        .border_style(Style::default().fg(if renaming { ACCENT } else { DIM }))
+        .border_style(Style::default().fg(if renaming || naming_migration {
+            ACCENT
+        } else {
+            DIM
+        }))
         .style(Style::default().bg(BG));
     if renaming {
         block = block.title(Span::styled(
             " rename session ",
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        ));
+    } else if let Overlay::Composer(ComposerMode::MigrationName { target, .. }) = &app.overlay {
+        block = block.title(Span::styled(
+            format!(" migrate to {} · choose local name ", target.label()),
             Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
         ));
     } else if matches!(
@@ -415,6 +430,9 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         Overlay::Composer(ComposerMode::NewSession) => ("❯ ", app.input.as_str(), true),
         Overlay::HarnessPicker | Overlay::ModelPicker => ("❯ ", app.input.as_str(), false),
         Overlay::Composer(ComposerMode::Rename { .. }) => ("name ❯ ", app.input.as_str(), true),
+        Overlay::Composer(ComposerMode::MigrationName { .. }) => {
+            ("name ❯ ", app.input.as_str(), true)
+        }
         Overlay::Composer(ComposerMode::Filter) => ("❯ filter ", app.input.as_str(), true),
         _ => (
             "❯ ",
@@ -438,8 +456,12 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .map(|(index, line)| {
                 Line::from(vec![
                     Span::styled(if index == 0 { prefix } else { "" }, {
-                        let style = Style::default().fg(if renaming { ACCENT } else { FG });
-                        if renaming {
+                        let style = Style::default().fg(if renaming || naming_migration {
+                            ACCENT
+                        } else {
+                            FG
+                        });
+                        if renaming || naming_migration {
                             style.add_modifier(Modifier::BOLD)
                         } else {
                             style
@@ -453,7 +475,11 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         vec![Line::from(vec![
             Span::styled(
                 prefix,
-                Style::default().fg(if renaming { ACCENT } else { FG }),
+                Style::default().fg(if renaming || naming_migration {
+                    ACCENT
+                } else {
+                    FG
+                }),
             ),
             Span::styled(content.to_owned(), text_style),
         ])]
@@ -661,6 +687,12 @@ fn contextual_footer(app: &App, width: u16) -> String {
         Overlay::Composer(ComposerMode::Rename { .. }) => {
             "rename · type name · enter save · esc cancel".into()
         }
+        Overlay::Composer(ComposerMode::MigrationName { .. }) if width >= 70 => {
+            "migration name is local to OAV · enter migrate · esc target picker".into()
+        }
+        Overlay::Composer(ComposerMode::MigrationName { .. }) => {
+            "enter migrate · esc targets".into()
+        }
         Overlay::Composer(ComposerMode::NewSession) if width >= 100 => format!(
             "enter create · tab harness · shift+tab {} · ctrl+j newline · esc cancel",
             if app.launch_provider == Provider::Terminal { "shell" } else { "model" }
@@ -683,6 +715,10 @@ fn contextual_footer(app: &App, width: u16) -> String {
             if selected_shell_install(app) { "install" } else { "select" }
         ),
         Overlay::ModelPicker => "type filter · ↑/↓ · enter · esc".into(),
+        Overlay::MigrationTargetPicker { .. } if width >= 58 => {
+            "↑/↓ move · page up/down · enter choose · esc cancel".into()
+        }
+        Overlay::MigrationTargetPicker { .. } => "↑/↓ · enter · esc".into(),
         Overlay::Peek
             if app.selected_session().is_some_and(|session| {
                 session.capabilities.contains(&Capability::Approve)
@@ -827,6 +863,12 @@ fn help_actions(app: &App) -> Vec<String> {
     }
     actions.push("ctrl+s to switch views".into());
     actions.push("ctrl+l to refresh".into());
+    if app.selected_session().is_some_and(|session| {
+        session.runtime == crate::domain::Runtime::Host
+            && crate::migration::provider_format(&session.provider).is_some()
+    }) {
+        actions.push("ctrl+m to migrate session".into());
+    }
     actions.push("ctrl+f to filter".into());
     actions.push("/filter text to filter sessions".into());
     actions.push("ctrl+j for newline".into());
@@ -979,6 +1021,82 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
                         " choose harness · {}/{} ",
                         app.harness_selection + 1,
                         app.launch_targets.len()
+                    ))
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(ACCENT)),
+            )
+            .style(Style::default().bg(BG).fg(FG)),
+        popup,
+    );
+}
+
+fn render_migration_target_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
+    if app.migration_targets.is_empty() {
+        return;
+    }
+    let popup_width = area.width.saturating_sub(2).min(64).max(30);
+    let visible_rows = MIGRATION_PICKER_PAGE_SIZE
+        .min(area.height.saturating_sub(6).max(1) as usize)
+        .max(1);
+    let result_rows = app.migration_targets.len().clamp(1, visible_rows);
+    let popup_height = (result_rows as u16 + 4)
+        .min(area.height.saturating_sub(2))
+        .max(6);
+    let popup = Rect::new(
+        area.x + area.width.saturating_sub(popup_width) / 2,
+        area.y + area.height.saturating_sub(popup_height) / 2,
+        popup_width,
+        popup_height,
+    );
+    let start = (app.migration_selection / visible_rows) * visible_rows;
+    let source = app
+        .selected_session()
+        .map(|session| session.provider.label())
+        .unwrap_or("session");
+    let mut lines = vec![Line::from(vec![
+        Span::styled(" from  ", Style::default().fg(DIM)),
+        Span::styled(source, Style::default().fg(FG)),
+    ])];
+    lines.extend(
+        app.migration_targets
+            .iter()
+            .enumerate()
+            .skip(start)
+            .take(visible_rows)
+            .map(|(index, provider)| {
+                let selected = index == app.migration_selection;
+                Line::from(format!(
+                    " {} {}",
+                    if selected { "›" } else { " " },
+                    sanitize_inline(provider.public_name())
+                ))
+                .style(if selected {
+                    Style::default()
+                        .bg(SELECTED_BG)
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().bg(BG).fg(FG)
+                })
+            }),
+    );
+    lines.push(
+        Line::from(if popup_width >= 52 {
+            " ↑/↓ move · PgUp/PgDn page · enter choose · esc cancel"
+        } else {
+            " ↑/↓ · enter · esc"
+        })
+        .style(Style::default().fg(DIM)),
+    );
+    frame.render_widget(Clear, popup);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .title(format!(
+                        " migrate session · target {}/{} ",
+                        app.migration_selection + 1,
+                        app.migration_targets.len()
                     ))
                     .borders(Borders::ALL)
                     .border_style(Style::default().fg(ACCENT)),
@@ -1807,6 +1925,7 @@ mod tests {
 
         assert!(rendered.contains("shortcuts"));
         assert!(rendered.contains("ctrl+r to rename"));
+        assert!(rendered.contains("ctrl+m to migrate session"));
         assert!(rendered.contains("ctrl+s to switch views"));
         assert!(rendered.contains("/harness [name] switches harness"));
         assert!(rendered.contains("/model [name|default] selects a model"));
@@ -1837,6 +1956,33 @@ mod tests {
             .expect("dashboard shortcut row");
         assert!(dashboard_row.contains("ctrl+l to refresh"));
         assert!(!dashboard_row.contains(" · "));
+    }
+
+    #[test]
+    fn migration_target_and_name_steps_are_visually_explicit() {
+        let mut item = session("worker", SessionState::Completed);
+        item.name = "review API".into();
+        let mut app = App::new(SessionSnapshot {
+            sessions: vec![item],
+            warnings: vec![],
+        });
+        app.start_migration();
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let picker = buffer_text(terminal.backend().buffer());
+        assert!(picker.contains("migrate session · target 1/14"));
+        assert!(picker.contains("from  Claude"));
+        assert!(picker.contains("OpenAI Codex"));
+        assert!(!picker.contains("Claude Code"));
+
+        app.confirm_migration_target();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let naming = buffer_text(terminal.backend().buffer());
+        assert!(naming.contains("migrate to Codex · choose local name"));
+        assert!(naming.contains("name ❯ review API (Codex)"));
+        assert!(naming.contains("migration name is local to OAV"));
     }
 
     #[test]

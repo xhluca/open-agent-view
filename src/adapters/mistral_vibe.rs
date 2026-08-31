@@ -414,6 +414,32 @@ impl MistralVibeController {
             }
         }
     }
+
+    fn open_native(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if let Some(key) = self
+            .launch_keys
+            .lock()
+            .ok()
+            .and_then(|keys| keys.get(&session.provider_session_id).cloned())
+        {
+            if crate::native_session::is_backgrounded(&key) {
+                return native_outcome(
+                    crate::native_session::resume(&key)?,
+                    &session.provider_session_id,
+                    &session.name,
+                );
+            }
+        }
+        let mut command = Command::new(&self.executable);
+        command
+            .args(["--resume", &session.provider_session_id])
+            .current_dir(&session.cwd);
+        native_outcome(
+            crate::native_session::run(command, &session.id)?,
+            &session.provider_session_id,
+            &session.name,
+        )
+    }
 }
 
 fn same_existing_path(left: &Path, right: &Path) -> bool {
@@ -567,29 +593,12 @@ impl ProviderController for MistralVibeController {
         if !self.ownership.owns(&session.provider_session_id) {
             bail!("refusing to open a Mistral Vibe session not created by Open Agent View");
         }
-        if let Some(key) = self
-            .launch_keys
-            .lock()
-            .ok()
-            .and_then(|keys| keys.get(&session.provider_session_id).cloned())
-        {
-            if crate::native_session::is_backgrounded(&key) {
-                return native_outcome(
-                    crate::native_session::resume(&key)?,
-                    &session.provider_session_id,
-                    &session.name,
-                );
-            }
-        }
-        let mut command = Command::new(&self.executable);
-        command
-            .args(["--resume", &session.provider_session_id])
-            .current_dir(&session.cwd);
-        native_outcome(
-            crate::native_session::run(command, &session.id)?,
-            &session.provider_session_id,
-            &session.name,
-        )
+        self.open_native(session)
+    }
+
+    fn open_imported(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        validate_session(session)?;
+        self.open_native(session)
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
