@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render a genuine terminal cast and its action cues as a README GIF."""
+"""Render a genuine terminal cast with burned-in action subtitles."""
 
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     )
 
 
-def gif_dimensions(path: Path) -> tuple[int, int]:
+def media_dimensions(path: Path) -> tuple[int, int]:
     completed = subprocess.run(
         [
             require_program("ffprobe"),
@@ -109,6 +109,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("demo", help="recording name under website/public/demos")
     parser.add_argument("output", type=Path, help="destination GIF")
+    parser.add_argument(
+        "--mp4",
+        type=Path,
+        default=None,
+        help="optional destination MP4 rendered from the same cast and subtitles",
+    )
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parent.parent
@@ -144,9 +150,39 @@ def main() -> int:
                 str(raw_gif),
             ]
         )
-        width, height = gif_dimensions(raw_gif)
+        width, height = media_dimensions(raw_gif)
         write_subtitles(subtitles, manifest, width, height)
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        if args.mp4 is not None:
+            args.mp4.parent.mkdir(parents=True, exist_ok=True)
+            video_filter = (
+                f"fps=30,ass='{subtitles.as_posix()}',"
+                "pad=ceil(iw/2)*2:ceil(ih/2)*2,format=yuv420p"
+            )
+            run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(raw_gif),
+                    "-vf",
+                    video_filter,
+                    "-an",
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "slow",
+                    "-crf",
+                    "20",
+                    "-movflags",
+                    "+faststart",
+                    str(args.mp4),
+                ]
+            )
+            args.mp4.chmod(0o644)
         filter_graph = (
             f"[0:v]fps=15,ass='{subtitles.as_posix()}',split[s0][s1];"
             "[s0]palettegen=max_colors=128:stats_mode=diff[p];"
@@ -170,6 +206,8 @@ def main() -> int:
         )
     args.output.chmod(0o644)
     print(args.output)
+    if args.mp4 is not None:
+        print(args.mp4)
     return 0
 
 

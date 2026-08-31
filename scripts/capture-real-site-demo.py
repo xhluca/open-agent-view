@@ -392,9 +392,12 @@ class RealTerminal:
                 "Workspace Trust Required" in screen
                 or "Confirm folder trust" in screen
                 or "Do you trust the files in this folder" in screen
+                or "Do you trust the contents of this directory?" in screen
                 or "Trust this folder?" in screen
             ):
                 if "Confirm folder trust" in screen:
+                    key = "Enter"
+                elif "Do you trust the contents of this directory?" in screen:
                     key = "Enter"
                 elif "Trust this folder?" in screen:
                     key = "Enter"
@@ -2836,63 +2839,137 @@ def start_migration_control_dashboard(
     repo: Path,
     root: Path,
 ) -> RealTerminal:
-    """Start a deterministic dashboard backed by a real native conversion.
+    """Start a real Claude session that can be opened, migrated, and resumed.
 
-    OAV reads a normal host-runtime fixture for the visible multi-session
-    dashboard. The selected Claude ID also exists in the disposable HOME in
-    Claude's native layout, so the installed session-migrate executable does
-    the actual Claude-to-Codex conversion when the recording presses Ctrl+M.
+    Both providers run from authenticated, disposable copies of the recorder's
+    state. The pre-roll creates and locally names one genuine Claude session;
+    the published clip starts only after that source is visible on OAV's real
+    dashboard. No fixture participates in discovery or control.
     """
 
     environment = base_environment(root)
     install_local_binary(repo, root)
+    expose_installed_providers(root, ("claude", "codex"))
     bin_dir = root / "home" / ".local" / "bin"
+    # The recorder's host Codex account has optional MCP servers configured.
+    # They are unrelated to session migration and can repaint over the first
+    # characters typed while they start. Keep the genuine Codex binary/TUI,
+    # but run this disposable demo with an empty MCP table so every recorded
+    # keystroke reaches the resumed session deterministically.
+    codex_link = bin_dir / "codex"
+    real_codex = codex_link.resolve(strict=True)
+    codex_link.unlink()
+    write_private_text(
+        codex_link,
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(real_codex))} "
+        "-c 'mcp_servers={}' -c 'plugins={}' -c 'marketplaces={}' \"$@\"\n",
+    )
+    codex_link.chmod(0o700)
     migrator = Path(require_program("session-migrate")).resolve(strict=True)
     (bin_dir / "session-migrate").symlink_to(migrator)
 
-    fixture = prepare_control_fixture(root)
-    document = json.loads(fixture.read_text(encoding="utf-8"))
-    source_id = "30000000-0000-4000-8000-000000000000"
-    source = document["sessions"][0]
-    if source["provider"] != "claude" or source["name"] != "release-review":
-        raise RuntimeError("migration demo fixture no longer starts on release-review")
-    source["id"] = f"claude:host:{source_id}"
-    source["provider_session_id"] = source_id
-    write_private_text(fixture, json.dumps(document, indent=2) + "\n")
-
-    work = root / "home" / "work" / "acme-dashboard"
-    project_key = re.sub(r"[^A-Za-z0-9]", "-", str(work.resolve())) or "-"
-    native_source = (
-        root
-        / "home"
-        / ".claude"
-        / "projects"
-        / project_key
-        / f"{source_id}.jsonl"
+    claude_config = root / "claude-config"
+    private_copy(
+        Path.home() / ".claude" / ".credentials.json",
+        claude_config / ".credentials.json",
     )
-    native_source.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    shutil.copyfile(repo / "fixtures" / "migration-demo-claude.jsonl", native_source)
-    native_source.chmod(0o600)
+    private_copy(Path.home() / ".claude.json", claude_config / ".claude.json")
+    environment.update(
+        {
+            "CLAUDE_CONFIG_DIR": str(claude_config),
+            "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+            "DISABLE_AUTOUPDATER": "1",
+        }
+    )
+    work = root / "home" / "work" / "acme-dashboard"
+    prepare_provider_login("codex", root, environment)
+    write_private_text(
+        root / "home" / ".codex" / "config.toml",
+        f'''model = "gpt-5.6-sol"
+
+[projects.{json.dumps(str(work.resolve()))}]
+trust_level = "trusted"
+''',
+    )
 
     terminal = RealTerminal("migration", root, environment)
+    disabled = [
+        flag
+        for flag in provider_disable_flags("claude")
+        if flag != "--no-host-codex"
+    ]
     command = [
         "oav",
-        "--fixture",
-        str(fixture),
         "--cwd",
+        str(work),
+        "--launch-cwd",
         str(work),
         "--refresh-ms",
         "30000",
         "--history-limit",
         "40",
-        "--no-host-providers",
+        "--harness",
+        "claude",
+        *disabled,
         "--session-migrate-bin",
         "session-migrate",
     ]
     terminal.type_line(shlex.join(command), "Enter · launch oav", "Terminal", 0.001)
     terminal.wait_for(APP_HEADER_PATTERN, 45)
+
+    # Pre-roll: make one real OAV-owned Claude session. This is deliberately
+    # outside the published recording, but it uses the same native launch path
+    # that users invoke from the composer.
+    seed_prompt = "Reply exactly: The source session is ready."
+    terminal.type_line(
+        seed_prompt,
+        "Enter · prepare source Claude session",
+        "open-agent-view",
+        0.008,
+    )
+    # With Codex discovery enabled beside Claude, the first combined refresh
+    # can outlive OAV's deferred-foreground handoff deadline. The provider
+    # task still exists; reproduce the documented Ctrl+L recovery and open the
+    # exact newly discovered source instead of pretending the race did not
+    # happen in a real dashboard.
+    recovery_deadline = time.monotonic() + 90
+    while re.search(APP_HEADER_PATTERN, terminal.screen(), re.I | re.S):
+        screen = terminal.screen()
+        if "provider record is not visible yet" in screen:
+            terminal.key(
+                "C-l",
+                "Ctrl+L · discover prepared source",
+                "open-agent-view",
+            )
+            terminal.wait_screen(r"Claude", 45)
+            terminal.wait_selected_row("Claude", 30)
+            terminal.key(
+                "Right",
+                "→ · open prepared source",
+                "open-agent-view",
+            )
+            break
+        if "launch failed:" in screen:
+            raise RuntimeError(f"Claude pre-roll launch failed: {screen[-2400:]!r}")
+        if time.monotonic() >= recovery_deadline:
+            raise RuntimeError("Claude pre-roll did not open or expose a recoverable row")
+        time.sleep(0.25)
+    terminal.wait_native_screen(r"Claude Code v", 90)
+    terminal.wait_screen_occurrences("The source session is ready.", timeout=150)
+    time.sleep(1.5)
+    terminal.key("S-Left", "Shift+← · finish pre-roll", "Claude Code")
+    terminal.wait_screen(APP_HEADER_PATTERN, 30)
+    terminal.wait_selected_row("Claude", 30)
+
+    terminal.key("C-r", "Ctrl+R · prepare source name", "open-agent-view")
+    terminal.wait_screen(r"rename session", 20)
+    terminal.key("C-u", "Ctrl+U · clear generated name", "open-agent-view")
+    terminal.type_text("release-review", "Type · release-review", "open-agent-view", 0.012)
+    terminal.key("Enter", "Enter · save source name", "open-agent-view")
+    terminal.wait_screen(r"release-review.*Claude", 30)
     terminal.wait_selected_row("release-review", 20)
-    time.sleep(0.8)
+    time.sleep(1.0)
     return terminal
 
 
@@ -2991,10 +3068,54 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
         action_start_index = len(terminal.actions)
         if demo == "migration":
             terminal.remember(
-                "Selected · release-review in Claude",
+                "Before migration · release-review in Claude",
                 "open-agent-view",
             )
+            time.sleep(1.4)
+            terminal.key(
+                "Right",
+                "→ · open the source Claude session",
+                "open-agent-view",
+            )
+            terminal.wait_native_screen(r"Claude Code v", 60)
+            time.sleep(1.0)
+            source_prompt = (
+                "Before migration, remember the code word LANTERN. "
+                "Reply exactly: I will remember LANTERN."
+            )
+            baseline = terminal.screen()
+            terminal.type_text(
+                source_prompt,
+                "Type · add context before migration",
+                "Claude Code",
+                0.012,
+            )
+            terminal.key("Enter", "Enter · send to Claude", "Claude Code")
+            terminal.wait_screen_occurrences(
+                "I will remember LANTERN.",
+                count=2,
+                timeout=150,
+            )
+            terminal.wait_screen_settled(
+                baseline,
+                provider="Claude Code",
+                timeout=90,
+                minimum_wait=0.5,
+                stable_for=1.5,
+            )
+            terminal.remember(
+                "Claude saved the context",
+                "Claude Code",
+            )
             time.sleep(1.6)
+            terminal.key(
+                "S-Left",
+                "Shift+← · return to the dashboard",
+                "Claude Code",
+            )
+            terminal.wait_screen(APP_HEADER_PATTERN, 30)
+            terminal.wait_selected_row("release-review", 30)
+            time.sleep(1.2)
             terminal.literal_key(
                 "\x1b[109;5u",
                 "Ctrl+M · migrate selected session",
@@ -3018,10 +3139,110 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             )
             time.sleep(1.8)
             terminal.key("Enter", "Enter · migrate", "open-agent-view")
-            terminal.wait_screen(r"migrated to Codex as release-review \(Codex\)", 30)
+            terminal.wait_screen(
+                r"migrated to Codex as release-review \(Codex\)|migration failed:",
+                30,
+            )
+            if "migration failed:" in terminal.screen():
+                raise RuntimeError(
+                    f"real Claude-to-Codex migration failed: {terminal.screen()[-2400:]!r}"
+                )
+            # A combined Claude/Codex refresh can exceed the pending-row
+            # deadline even though session-migrate finished successfully. Use
+            # the same explicit refresh the dashboard tells a user to press,
+            # then select the exact imported row before opening it.
+            try:
+                terminal.wait_selected_row("release-review (Codex)", 8)
+            except RuntimeError:
+                terminal.key(
+                    "C-l",
+                    "Ctrl+L · discover migrated session",
+                    "open-agent-view",
+                )
+                terminal.wait_screen(r"release-review \(Codex\)", 45)
+                for _ in range(4):
+                    try:
+                        terminal.wait_selected_row("release-review (Codex)", 0.6)
+                        break
+                    except RuntimeError:
+                        pass
+                    terminal.key(
+                        "Down",
+                        "↓ · select migrated Codex session",
+                        "open-agent-view",
+                    )
+                else:
+                    raise RuntimeError(
+                        "migrated Codex row appeared but could not be selected"
+                    )
             terminal.wait_screen(r"Migrated from Claude", 20)
+            terminal.wait_selected_row("release-review (Codex)", 30)
             terminal.remember(
-                "Done · imported Codex session is visible",
+                "Converted locally · Claude → Codex",
+                "open-agent-view",
+            )
+            time.sleep(1.8)
+            before_target_open = terminal.screen()
+            terminal.key(
+                "Right",
+                "→ · open the migrated Codex session",
+                "open-agent-view",
+            )
+            terminal.wait_native_screen(r"Codex|OpenAI", 75)
+            # Codex repaints once for update/MCP status after its input first
+            # appears. Wait for the genuine native surface to settle so the
+            # recorder cannot lose the beginning of the typed continuation.
+            terminal.wait_screen_settled(
+                before_target_open,
+                provider="OpenAI Codex",
+                timeout=45,
+                minimum_wait=1.0,
+                stable_for=2.5,
+            )
+            # Codex installs its prompt key handler just after its final
+            # visual repaint. A short input-readiness grace period prevents
+            # the native CLI from legitimately discarding an early prefix.
+            time.sleep(4.0)
+            target_prompt = (
+                "What code word did I ask you to remember before migration? "
+                "Reply with only that word."
+            )
+            before_target = terminal.screen()
+            lantern_count = before_target.count("LANTERN")
+            terminal.type_text(
+                target_prompt,
+                "Type · continue the conversation after migration",
+                "OpenAI Codex",
+                0.012,
+            )
+            terminal.key("Enter", "Enter · ask Codex", "OpenAI Codex")
+            terminal.wait_screen_occurrences(
+                "LANTERN",
+                count=lantern_count + 1,
+                timeout=180,
+            )
+            terminal.wait_screen_settled(
+                before_target,
+                provider="OpenAI Codex",
+                timeout=120,
+                minimum_wait=0.5,
+                stable_for=1.5,
+            )
+            terminal.remember(
+                "Context preserved · Codex answered LANTERN",
+                "OpenAI Codex",
+            )
+            time.sleep(2.8)
+            terminal.key(
+                "S-Left",
+                "Shift+← · return with both sessions saved",
+                "OpenAI Codex",
+            )
+            terminal.wait_screen(APP_HEADER_PATTERN, 30)
+            terminal.wait_screen(r"release-review.*Claude", 30)
+            terminal.wait_screen(r"release-review \(Codex\).*Codex", 30)
+            terminal.remember(
+                "Before and after sessions remain visible",
                 "open-agent-view",
             )
             time.sleep(3.0)
@@ -3207,7 +3428,7 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
                         "model": "guide-browse-search-select-pi-model",
                         "login": "guide-check-open-native-login-background",
                         "migration": (
-                            "guide-ctrl-m-choose-target-confirm-default-name"
+                            "open-source-add-context-ctrl-m-open-target-continue"
                         ),
                     }[demo],
                     "actions": actions,
@@ -3218,6 +3439,11 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             encoding="utf-8",
         )
         action_path.chmod(0o644)
+        if demo == "migration":
+            # Keep every genuine terminal byte and action in order while
+            # capping provider/discovery waits that would otherwise dominate
+            # the focused documentation clip.
+            compact_recording(target, action_path, max_gap=3.0)
         required = {
             "rename": [
                 "release-review",
@@ -3243,9 +3469,15 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             ],
             "migration": [
                 "release-review",
+                "Before migration, remember the code word LANTERN",
+                "I will remember LANTERN",
                 "migrate session",
                 "release-review (Codex)",
                 "Migrated from Claude",
+                # Codex horizontally scrolls long composer input while it is
+                # typed; validate the stable submitted suffix plus the answer.
+                "Reply with only that word",
+                "LANTERN",
             ],
         }[demo]
         validate_public_cast(target, [APP_HEADER, *required])

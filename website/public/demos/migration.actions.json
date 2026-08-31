@@ -1,46 +1,116 @@
 {
-  "duration": 14.098777617996216,
+  "duration": 38.198,
   "proof": "real-open-agent-view-tui",
-  "sequence": "guide-ctrl-m-choose-target-confirm-default-name",
+  "sequence": "open-source-add-context-ctrl-m-open-target-continue",
   "actions": [
     {
-      "at": 0.801,
-      "action": "Selected \u00b7 release-review in Claude",
+      "at": 0.773,
+      "action": "Before migration \u00b7 release-review in Claude",
       "window": "open-agent-view"
     },
     {
-      "at": 2.526,
+      "at": 2.298,
+      "action": "\u2192 \u00b7 open the source Claude session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.863,
+      "action": "Type \u00b7 add context before migration",
+      "window": "Claude Code"
+    },
+    {
+      "at": 4.987,
+      "action": "Enter \u00b7 send to Claude",
+      "window": "Claude Code"
+    },
+    {
+      "at": 7.987,
+      "action": "Claude saved the context",
+      "window": "Claude Code"
+    },
+    {
+      "at": 9.713,
+      "action": "Shift+\u2190 \u00b7 return to the dashboard",
+      "window": "Claude Code"
+    },
+    {
+      "at": 11.297,
       "action": "Ctrl+M \u00b7 migrate selected session",
       "window": "open-agent-view"
     },
     {
-      "at": 4.059,
+      "at": 12.829,
       "action": "\u2193 \u00b7 preview Pi",
       "window": "open-agent-view"
     },
     {
-      "at": 4.986,
+      "at": 13.756,
       "action": "\u2191 \u00b7 choose Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 6.114,
+      "at": 14.884,
       "action": "Enter \u00b7 choose Codex",
       "window": "open-agent-view"
     },
     {
-      "at": 6.241,
+      "at": 15.01,
       "action": "Default name \u00b7 release-review (Codex)",
       "window": "open-agent-view"
     },
     {
-      "at": 8.166,
+      "at": 16.942,
       "action": "Enter \u00b7 migrate",
       "window": "open-agent-view"
     },
     {
-      "at": 8.546,
-      "action": "Done \u00b7 imported Codex session is visible",
+      "at": 19.942,
+      "action": "Ctrl+L \u00b7 discover migrated session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 22.942,
+      "action": "\u2193 \u00b7 select migrated Codex session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 23.679,
+      "action": "\u2193 \u00b7 select migrated Codex session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 23.811,
+      "action": "Converted locally \u00b7 Claude \u2192 Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 25.738,
+      "action": "\u2192 \u00b7 open the migrated Codex session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 28.738,
+      "action": "Type \u00b7 continue the conversation after migration",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 28.862,
+      "action": "Enter \u00b7 ask Codex",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 31.862,
+      "action": "Context preserved \u00b7 Codex answered LANTERN",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 34.793,
+      "action": "Shift+\u2190 \u00b7 return with both sessions saved",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 35.198,
+      "action": "Before and after sessions remain visible",
       "window": "open-agent-view"
     }
   ]
