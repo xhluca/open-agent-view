@@ -379,6 +379,17 @@ impl QwenController {
             ownership,
         }
     }
+
+    fn open_native(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        if crate::native_session::is_backgrounded(&session.id) {
+            return resume_native(&session.id, &session.provider_session_id, &session.name);
+        }
+        let mut command = Command::new(&self.executable);
+        command
+            .args(["--resume", &session.provider_session_id])
+            .current_dir(&session.cwd);
+        run_native(command, &session.id, &session.provider_session_id)
+    }
 }
 
 impl ProviderController for QwenController {
@@ -466,14 +477,12 @@ impl ProviderController for QwenController {
         if !self.ownership.owns(&session.provider_session_id) {
             bail!("refusing to open a Qwen Code session not created by Open Agent View");
         }
-        if crate::native_session::is_backgrounded(&session.id) {
-            return resume_native(&session.id, &session.provider_session_id, &session.name);
-        }
-        let mut command = Command::new(&self.executable);
-        command
-            .args(["--resume", &session.provider_session_id])
-            .current_dir(&session.cwd);
-        run_native(command, &session.id, &session.provider_session_id)
+        self.open_native(session)
+    }
+
+    fn open_imported(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        validate_session(session)?;
+        self.open_native(session)
     }
 
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {

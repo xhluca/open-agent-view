@@ -17,6 +17,7 @@ use crate::domain::{
     AgentSession, Capability, LaunchTarget, Provider, Runtime, SessionKind, SessionSnapshot,
     SessionState,
 };
+use crate::migration::MigrationRegistry;
 use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -154,6 +155,13 @@ pub trait ProviderController: Send + Sync {
     fn open(&self, _session: &AgentSession) -> Result<ControlOutcome> {
         bail!("{} native open is unavailable", self.provider().label())
     }
+
+    /// Open one exact session imported by session-migrate. The hub calls this
+    /// only after matching OAV's private migration record; mutation authority
+    /// is deliberately not inherited.
+    fn open_imported(&self, session: &AgentSession) -> Result<ControlOutcome> {
+        self.open(session)
+    }
 }
 
 #[derive(Clone)]
@@ -164,6 +172,7 @@ pub struct ControlHub {
     launch_provider: Provider,
     launch_cwd: PathBuf,
     provider_io_enabled: bool,
+    migration_registry: Option<MigrationRegistry>,
 }
 
 impl ControlHub {
@@ -215,7 +224,12 @@ impl ControlHub {
             launch_provider: config.launch_provider,
             launch_cwd: config.launch_cwd,
             provider_io_enabled: config.provider_io_enabled,
+            migration_registry: None,
         })
+    }
+
+    pub fn register_migration_registry(&mut self, registry: MigrationRegistry) {
+        self.migration_registry = Some(registry);
     }
 
     pub fn register_controller(&mut self, controller: Arc<dyn ProviderController>) -> Result<()> {
@@ -237,9 +251,16 @@ impl ControlHub {
     /// Other default sources are owned-by-construction (durable supervisors or
     /// private managed registries), so they do not need a second history scan.
     pub fn retain_owned(&self, snapshot: &mut SessionSnapshot) {
+        let migrated = |session: &AgentSession| {
+            self.migration_registry
+                .as_ref()
+                .is_some_and(|registry| registry.contains_exact(session))
+        };
         let Some(registry) = &self.claude_registry else {
             snapshot.sessions.retain(|session| {
-                session.provider != Provider::Claude || session.runtime != Runtime::Host
+                session.provider != Provider::Claude
+                    || session.runtime != Runtime::Host
+                    || migrated(session)
             });
             return;
         };
@@ -248,13 +269,16 @@ impl ControlHub {
                 session.provider != Provider::Claude
                     || session.runtime != Runtime::Host
                     || registry.owns(session)
+                    || migrated(session)
             }),
             Err(_) => {
                 snapshot
                     .warnings
                     .push("Claude ownership registry lock was poisoned".into());
                 snapshot.sessions.retain(|session| {
-                    session.provider != Provider::Claude || session.runtime != Runtime::Host
+                    session.provider != Provider::Claude
+                        || session.runtime != Runtime::Host
+                        || migrated(session)
                 });
             }
         }
@@ -496,7 +520,16 @@ impl ControlHub {
 
     pub fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
         self.ensure_provider_io()?;
-        self.controller(&session.provider)?.open(session)
+        let controller = self.controller(&session.provider)?;
+        if self
+            .migration_registry
+            .as_ref()
+            .is_some_and(|registry| registry.contains_exact(session))
+        {
+            controller.open_imported(session)
+        } else {
+            controller.open(session)
+        }
     }
 
     fn controller(&self, provider: &Provider) -> Result<&Arc<dyn ProviderController>> {
@@ -1665,6 +1698,7 @@ mod tests {
     use tempfile::tempdir;
 
     use crate::domain::{Runtime, SessionKind, SessionState};
+    use crate::migration::{MigrationOutcome, MigrationRequest};
     use crate::process::CommandOutput;
 
     use super::*;
@@ -1729,6 +1763,7 @@ mod tests {
             launch_provider: Provider::Claude,
             launch_cwd: PathBuf::from("/work"),
             provider_io_enabled: true,
+            migration_registry: None,
         };
         let mut owned = session("owned123-full");
         let external = session("external-full");
@@ -2081,6 +2116,7 @@ exit 0
             launch_provider: Provider::Claude,
             launch_cwd: directory.path().into(),
             provider_io_enabled: false,
+            migration_registry: None,
         };
         let mut item = session("fixture-session");
         item.provider = Provider::Codex;
@@ -2135,6 +2171,7 @@ exit 0
             launch_provider,
             launch_cwd: PathBuf::from("/work"),
             provider_io_enabled: true,
+            migration_registry: None,
         }
     }
 
@@ -2342,6 +2379,22 @@ exit 0
             assert_eq!(session.provider, self.provider);
             Ok(format!("inspected {}", self.marker))
         }
+
+        fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            assert_eq!(session.provider, self.provider);
+            Ok(ControlOutcome {
+                message: format!("opened {} normally", self.marker),
+                provider_session_hint: None,
+            })
+        }
+
+        fn open_imported(&self, session: &AgentSession) -> Result<ControlOutcome> {
+            assert_eq!(session.provider, self.provider);
+            Ok(ControlOutcome {
+                message: format!("opened {} import", self.marker),
+                provider_session_hint: None,
+            })
+        }
     }
 
     impl CommandRunner for QueueRunner {
@@ -2409,6 +2462,57 @@ exit 0
             hub.inspect(&snapshot.sessions[0]).unwrap(),
             "inspected first"
         );
+    }
+
+    #[test]
+    fn exact_migration_record_selects_import_open_and_survives_claude_filter() {
+        let directory = tempdir().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(directory.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let registry = MigrationRegistry::load(directory.path().join("migrations.json")).unwrap();
+        let mut source_session = session("source");
+        source_session.provider = Provider::Codex;
+        source_session.id = "codex:host:source".into();
+        registry
+            .record(
+                &MigrationRequest {
+                    source: source_session,
+                    target: Provider::Claude,
+                    name: "source (Claude)".into(),
+                },
+                &MigrationOutcome {
+                    session_id: "target".into(),
+                    normalized_id: "claude:host:target".into(),
+                    warnings: Vec::new(),
+                },
+            )
+            .unwrap();
+
+        let mut hub = uncontrolled_hub(Provider::Claude);
+        hub.register_migration_registry(registry);
+        hub.register_controller(Arc::new(StubController {
+            provider: Provider::Claude,
+            marker: "claude",
+        }))
+        .unwrap();
+        let imported = session("target");
+        assert_eq!(hub.open(&imported).unwrap().message, "opened claude import");
+
+        let lookalike = session("target-other");
+        assert_eq!(
+            hub.open(&lookalike).unwrap().message,
+            "opened claude normally"
+        );
+        let mut snapshot = SessionSnapshot {
+            sessions: vec![imported, lookalike],
+            warnings: Vec::new(),
+        };
+        hub.retain_owned(&mut snapshot);
+        assert_eq!(snapshot.sessions.len(), 1);
+        assert_eq!(snapshot.sessions[0].provider_session_id, "target");
     }
 
     fn session(id: &str) -> AgentSession {

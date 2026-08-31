@@ -1,0 +1,97 @@
+{
+  "duration": 30.491,
+  "proof": "real-open-agent-view-tui",
+  "sequence": "open-source-add-context-ctrl-m-open-target-continue",
+  "actions": [
+    {
+      "at": 0.771,
+      "action": "Before migration \u00b7 release-review in Codex",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 2.3,
+      "action": "\u2192 \u00b7 open the source Codex session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 4.843,
+      "action": "Type \u00b7 add context before migration",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 4.967,
+      "action": "Enter \u00b7 send to Codex",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 7.967,
+      "action": "Codex saved the context",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 9.692,
+      "action": "Shift+\u2190 \u00b7 return to the dashboard",
+      "window": "OpenAI Codex"
+    },
+    {
+      "at": 11.278,
+      "action": "Ctrl+M \u00b7 migrate selected session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 12.81,
+      "action": "\u2193 \u00b7 choose Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 13.738,
+      "action": "Enter \u00b7 choose Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 13.865,
+      "action": "Default name \u00b7 release-review (Pi)",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 15.791,
+      "action": "Enter \u00b7 migrate",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 16.129,
+      "action": "Converted locally \u00b7 Codex \u2192 Pi",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 18.057,
+      "action": "\u2192 \u00b7 open the migrated Pi session",
+      "window": "open-agent-view"
+    },
+    {
+      "at": 21.057,
+      "action": "Type \u00b7 continue the conversation after migration",
+      "window": "Pi"
+    },
+    {
+      "at": 21.181,
+      "action": "Enter \u00b7 ask Pi",
+      "window": "Pi"
+    },
+    {
+      "at": 24.181,
+      "action": "Context preserved \u00b7 Pi answered LANTERN",
+      "window": "Pi"
+    },
+    {
+      "at": 27.107,
+      "action": "Shift+\u2190 \u00b7 return with both sessions saved",
+      "window": "Pi"
+    },
+    {
+      "at": 27.491,
+      "action": "Before and after sessions remain visible",
+      "window": "open-agent-view"
+    }
+  ]
+}

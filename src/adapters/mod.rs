@@ -20,6 +20,7 @@ mod qwen;
 mod session_migrate_native;
 mod terminal_harness;
 
+use std::collections::BTreeMap;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -216,6 +217,7 @@ impl DiscoveryEngine {
                             ));
                         }
                         snapshot.sessions.append(&mut discovered.sessions);
+                        deduplicate_sessions(&mut snapshot.sessions);
                         snapshot.warnings.append(&mut discovered.warnings);
                     }
                     Ok(Err(error)) => snapshot.warnings.push(format!("{label}: {error:#}")),
@@ -241,6 +243,26 @@ impl DiscoveryEngine {
             source.cancel();
         }
     }
+}
+
+fn deduplicate_sessions(sessions: &mut Vec<AgentSession>) {
+    let mut unique = BTreeMap::<String, AgentSession>::new();
+    for session in sessions.drain(..) {
+        let imported_placeholder = session.raw_state.as_deref() == Some("session-migrate import");
+        match unique.get(&session.id) {
+            Some(current)
+                if !imported_placeholder
+                    && current.raw_state.as_deref() == Some("session-migrate import") =>
+            {
+                unique.insert(session.id.clone(), session);
+            }
+            Some(_) => {}
+            None => {
+                unique.insert(session.id.clone(), session);
+            }
+        }
+    }
+    sessions.extend(unique.into_values());
 }
 
 fn bound_completed_history(sessions: &mut Vec<AgentSession>, request: &DiscoveryRequest) -> bool {
@@ -621,5 +643,42 @@ mod tests {
         );
         assert_eq!(snapshot.warnings.len(), 1);
         assert!(snapshot.warnings[0].contains("limited to 2 records"));
+    }
+
+    #[test]
+    fn native_discovery_replaces_the_import_placeholder_for_the_same_exact_id() {
+        let session = |name: &str, raw_state: Option<&str>| AgentSession {
+            id: "codex:host:exact".into(),
+            provider_session_id: "exact".into(),
+            provider: Provider::Codex,
+            runtime: Runtime::Host,
+            kind: SessionKind::Managed,
+            name: name.into(),
+            cwd: PathBuf::from("/workspace"),
+            state: SessionState::Completed,
+            summary: String::new(),
+            raw_state: raw_state.map(str::to_owned),
+            pid: None,
+            started_at: None,
+            updated_at: None,
+            pull_requests: None,
+            capabilities: BTreeSet::new(),
+        };
+        for sessions in [
+            vec![
+                session("local migration name", Some("session-migrate import")),
+                session("native provider title", Some("native")),
+            ],
+            vec![
+                session("native provider title", Some("native")),
+                session("local migration name", Some("session-migrate import")),
+            ],
+        ] {
+            let mut sessions = sessions;
+            deduplicate_sessions(&mut sessions);
+            assert_eq!(sessions.len(), 1);
+            assert_eq!(sessions[0].name, "native provider title");
+            assert_eq!(sessions[0].raw_state.as_deref(), Some("native"));
+        }
     }
 }

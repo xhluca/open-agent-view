@@ -76,6 +76,7 @@ opens that harness's native interface.
 | Open the selected native session | `Enter` or `→` |
 | Return to OAV | `Shift+←`, or `←` twice at an empty prompt |
 | Rename a session in OAV | `Ctrl+R` |
+| Migrate a session to another harness | `Ctrl+M` |
 | Filter the session list | `Ctrl+F` |
 | Stop, then delete or hide a managed session | `Ctrl+X`, then `Ctrl+X` again |
 | See the complete contextual key map | `?` |
@@ -83,6 +84,19 @@ opens that harness's native interface.
 See the [CLI and keyboard guide](docs/cli.md) for model selection, login/setup,
 completed-session visibility, paging, bulk actions, and non-interactive CLI
 commands.
+
+`Ctrl+M` opens a destination picker, then a name editor prefilled with the
+current name plus the destination harness. OAV delegates the conversion to
+[session-migrate](https://github.com/xhluca/session-migrate), keeps the imported
+session visible, and stores the chosen name only as a private OAV display name.
+
+![A real Ctrl+M migration: open a Codex session, add context, migrate it to Pi, reopen the imported session, and continue the same conversation](docs/assets/ctrl-m-migration.gif)
+
+[Watch the subtitle-burned MP4](website/public/demos/migration.mp4) ·
+[Reuse the interactive JavaScript player](website/public/demos/migration.js)
+
+Install the companion CLI once with
+`curl -LsSf https://session-migrate.github.io/install.sh | sh`.
 
 ## Harnesses
 

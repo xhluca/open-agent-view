@@ -61,6 +61,7 @@ Open Agent View is already up to date.
 | `--openhands-bin PATH` / `--no-host-openhands` | Select or disable OpenHands native control plus bounded event-store discovery. |
 | `--docker-container NAME_OR_ID` | Observe Claude and Codex in one explicitly selected running container; repeatable. |
 | `--docker-bin PATH` | Use a particular Docker executable; default `docker`. |
+| `--session-migrate-bin PATH` | Use a particular session-migrate executable for `ctrl+m`; default `session-migrate`. |
 | `--harness` / `--launch-provider claude\|codex\|pi\|omp\|opencode\|cursor\|copilot\|antigravity\|mistral-vibe\|muse\|qwen\|kimi\|grok\|kilo\|openhands\|terminal` | Initial harness for new-session prompts; default Claude. Each configured coding harness opens its native full-screen UI; Terminal opens the user's shell. `oh-my-pi` and `kilo-code` are accepted aliases. |
 | `--launch-cwd PATH` | Working directory for newly launched host sessions; default current directory. |
 | `--refresh-ms N` | Refresh interval, at least 250 ms; default 15000 ms. Refresh runs off the input thread, and first-launch results appear provider by provider. Use `ctrl+l` for an immediate refresh. |
@@ -407,6 +408,7 @@ label.
 | Writable composer/model filter | `option+backspace` or `ctrl+w` | Remove the previous word. |
 | Writable composer/model filter | `cmd+backspace` or `ctrl+u` | Remove to the beginning of the current line. |
 | Session row | `ctrl+r` | Open the accented `rename session` composer. The `name ❯` mode label is separate from the editable display name; empty submission clears it and follows the latest provider title again. |
+| Host coding-harness session row | `ctrl+m` | Choose a different supported harness, edit the prefilled local name, and migrate the exact selected session through `session-migrate`. The default is `CURRENT NAME (TARGET HARNESS)`. Escape returns from the name editor to the target picker before closing the workflow. |
 | Idle owned Codex row | `ctrl+a`, then `enter` | Confirm archive. |
 | Session row or Peek | `ctrl+x` | Stop an exact active owned session; after refresh reports it idle, press again to delete it or remove it reversibly from OAV's view. Active rows without stop authority require a local-hide confirmation. |
 | Completed group | `ctrl+x`, then `enter` or `ctrl+x` | Delete only when every member grants Delete; otherwise offer to hide the undeletable rows locally. |
@@ -420,6 +422,32 @@ show an authority notice for an observe-only, mismatched, expired, or otherwise
 unsupported target. Approval `y` is never offered for a file change lacking a
 correlated diff, expanded permissions, or unknown request form. See the
 [control model](control-model.md) for the exact boundary.
+
+### Session migration
+
+The `ctrl+m` workflow supports all 15 coding harnesses in the OAV picker as
+sources and destinations. It is intentionally limited to host sessions because
+session-migrate reads each harness's local native state. Terminal jobs and
+Docker-observed sessions are not offered as sources, and the source harness is
+removed from the destination menu.
+
+OAV runs `session-migrate transfer` off the input thread, passes the exact
+provider session ID and working directory without a shell, and validates the
+returned JSON and target before indexing the result. A failed transfer leaves
+no OAV migration record; OAV itself never edits the source session. Successful
+imports are stored in the private OAV state directory so they remain visible
+without enabling all external provider history. The name selected in OAV is a
+local display alias; it does not claim to rewrite the destination harness's
+native title. OpenCode and Kilo virtual exports reuse the executable selected
+by `--opencode-bin` or `--kilo-bin`.
+
+Install session-migrate with:
+
+```sh
+curl -LsSf https://session-migrate.github.io/install.sh | sh
+```
+
+Use `--session-migrate-bin PATH` to select another executable.
 
 Paging affects only the interactive list. Counts, filtering, JSON output, and
 group-level safety checks always use the complete discovered session set. Each

@@ -236,6 +236,13 @@ class RealTerminal:
                 str(root / "home" / "work" / "acme-dashboard"),
             ]
         )
+        # Pi checks this option before enabling modified Enter/arrow keys. Set
+        # it on the private recorder server so its native TUI does not display
+        # an environment warning that is unrelated to OAV or migration.
+        run(
+            ["tmux", "set-option", "-t", self.session, "-g", "extended-keys", "on"],
+            check=False,
+        )
         # Never place login/API material in the long-lived Asciinema process
         # argv. Keep the complete environment in this owned mode-0600 file and
         # expose only its disposable path to the recorded shell command.
@@ -392,9 +399,12 @@ class RealTerminal:
                 "Workspace Trust Required" in screen
                 or "Confirm folder trust" in screen
                 or "Do you trust the files in this folder" in screen
+                or "Do you trust the contents of this directory?" in screen
                 or "Trust this folder?" in screen
             ):
                 if "Confirm folder trust" in screen:
+                    key = "Enter"
+                elif "Do you trust the contents of this directory?" in screen:
                     key = "Enter"
                 elif "Trust this folder?" in screen:
                     key = "Enter"
@@ -541,6 +551,17 @@ class RealTerminal:
 
     def key(self, key: str, label: str, window: str) -> None:
         run(["tmux", "send-keys", "-t", self.session, key])
+        self.remember(label, window)
+
+    def literal_key(self, sequence: str, label: str, window: str) -> None:
+        """Send an exact terminal key sequence and record its visible cue.
+
+        Enhanced keyboard mode distinguishes Ctrl+M from Enter with the CSI-u
+        sequence below. tmux's named ``C-m`` key is the legacy carriage return,
+        so focused recordings must send the negotiated bytes literally.
+        """
+
+        run(["tmux", "send-keys", "-t", self.session, "-l", sequence])
         self.remember(label, window)
 
     def type_text(self, value: str, label: str, window: str, delay: float = 0.024) -> None:
@@ -937,6 +958,15 @@ def prepare_provider_login(provider: str, root: Path, environment: dict[str, str
         private_copy(source / "auth.json", target / "auth.json")
         optional_private_copy(source / "models-store.json", target / "models-store.json")
         optional_private_copy(source / "settings.json", target / "settings.json")
+        # Pi manages fd as a local runtime dependency. Reuse the recorder's
+        # genuine downloaded binary so offline demo homes do not perform a
+        # network install or emit a missing-tool warning at native startup.
+        fd_source = source / "bin" / "fd"
+        if fd_source.is_file():
+            fd_target = target / "bin" / "fd"
+            fd_target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            shutil.copyfile(fd_source, fd_target)
+            fd_target.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     elif provider == "opencode":
         private_copy(
             Path.home() / ".local" / "share" / "opencode" / "auth.json",
@@ -1379,7 +1409,7 @@ PROVIDER_DEMOS = {
     "terminal": ProviderDemo("terminal", "Terminal", "terminal", r"[$#]\s*$"),
 }
 
-CONTROL_DEMOS = ("rename", "switch", "model", "login")
+CONTROL_DEMOS = ("rename", "switch", "model", "login", "migration")
 
 
 def provider_disable_flags(active: str) -> list[str]:
@@ -2821,6 +2851,141 @@ def start_fixture_control_dashboard(
     return terminal
 
 
+def start_migration_control_dashboard(
+    repo: Path,
+    root: Path,
+) -> RealTerminal:
+    """Start a real Codex session that can be opened, migrated, and resumed.
+
+    Both providers run from authenticated, disposable copies of the recorder's
+    state. The pre-roll creates and locally names one genuine Codex session;
+    the published clip starts only after that source is visible on OAV's real
+    dashboard. No fixture participates in discovery or control.
+    """
+
+    environment = base_environment(root)
+    # Model inference remains online; this only disables Pi's startup catalog
+    # and self-update checks so the disposable demo is deterministic.
+    environment["PI_OFFLINE"] = "1"
+    install_local_binary(repo, root)
+    expose_installed_providers(root, ("codex", "pi"))
+    bin_dir = root / "home" / ".local" / "bin"
+    # The recorder's host Codex account has optional MCP servers configured.
+    # They are unrelated to session migration and can repaint over the first
+    # characters typed while they start. Keep the genuine Codex binary/TUI,
+    # but run this disposable demo with an empty MCP table so every recorded
+    # keystroke reaches the resumed session deterministically.
+    codex_link = bin_dir / "codex"
+    real_codex = codex_link.resolve(strict=True)
+    codex_link.unlink()
+    write_private_text(
+        codex_link,
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(real_codex))} "
+        "--disable apps --disable plugins --disable remote_plugin "
+        "-c 'mcp_servers={}' -c 'plugins={}' -c 'marketplaces={}' \"$@\"\n",
+    )
+    codex_link.chmod(0o700)
+    pi_link = bin_dir / "pi"
+    real_pi = pi_link.resolve(strict=True)
+    pi_link.unlink()
+    write_private_text(
+        pi_link,
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(real_pi))} "
+        "--offline --no-extensions --no-skills --no-prompt-templates "
+        "--no-themes --no-context-files \"$@\"\n",
+    )
+    pi_link.chmod(0o700)
+    migrator = Path(require_program("session-migrate")).resolve(strict=True)
+    (bin_dir / "session-migrate").symlink_to(migrator)
+
+    work = root / "home" / "work" / "acme-dashboard"
+    prepare_provider_login("codex", root, environment)
+    prepare_provider_login("pi", root, environment)
+    write_private_text(
+        root / "home" / ".codex" / "config.toml",
+        f'''model = "gpt-5.6-sol"
+
+[projects.{json.dumps(str(work.resolve()))}]
+trust_level = "trusted"
+''',
+    )
+
+    terminal = RealTerminal("migration", root, environment)
+    disabled = [flag for flag in provider_disable_flags("codex") if flag != "--no-host-pi"]
+    command = [
+        "oav",
+        "--cwd",
+        str(work),
+        "--launch-cwd",
+        str(work),
+        "--refresh-ms",
+        "30000",
+        "--history-limit",
+        "40",
+        "--harness",
+        "codex",
+        *disabled,
+        "--session-migrate-bin",
+        "session-migrate",
+    ]
+    terminal.type_line(shlex.join(command), "Enter · launch oav", "Terminal", 0.001)
+    terminal.wait_for(APP_HEADER_PATTERN, 45)
+
+    # Pre-roll: make one real OAV-owned Codex session. This is deliberately
+    # outside the published recording, but it uses the same native launch path
+    # that users invoke from the composer.
+    seed_prompt = "Reply exactly: The source session is ready."
+    terminal.type_line(
+        seed_prompt,
+        "Enter · prepare source Codex session",
+        "open-agent-view",
+        0.008,
+    )
+    # A provider refresh can outlive OAV's deferred-foreground handoff
+    # deadline. If that happens, exercise the documented recovery and open the
+    # exact newly discovered source instead of fabricating a foreground view.
+    recovery_deadline = time.monotonic() + 90
+    while re.search(APP_HEADER_PATTERN, terminal.screen(), re.I | re.S):
+        screen = terminal.screen()
+        if "provider record is not visible yet" in screen:
+            terminal.key(
+                "C-l",
+                "Ctrl+L · discover prepared source",
+                "open-agent-view",
+            )
+            terminal.wait_screen(r"Codex", 45)
+            terminal.wait_selected_row("Codex", 30)
+            terminal.key(
+                "Right",
+                "→ · open prepared source",
+                "open-agent-view",
+            )
+            break
+        if "launch failed:" in screen:
+            raise RuntimeError(f"Codex pre-roll launch failed: {screen[-2400:]!r}")
+        if time.monotonic() >= recovery_deadline:
+            raise RuntimeError("Codex pre-roll did not open or expose a recoverable row")
+        time.sleep(0.25)
+    terminal.wait_native_screen(r"Codex|OpenAI", 90)
+    terminal.wait_screen_occurrences("The source session is ready.", timeout=150)
+    time.sleep(1.5)
+    terminal.key("S-Left", "Shift+← · finish pre-roll", "OpenAI Codex")
+    terminal.wait_screen(APP_HEADER_PATTERN, 30)
+    terminal.wait_selected_row("Codex", 30)
+
+    terminal.key("C-r", "Ctrl+R · prepare source name", "open-agent-view")
+    terminal.wait_screen(r"rename session", 20)
+    terminal.key("C-u", "Ctrl+U · clear generated name", "open-agent-view")
+    terminal.type_text("release-review", "Type · release-review", "open-agent-view", 0.012)
+    terminal.key("Enter", "Enter · save source name", "open-agent-view")
+    terminal.wait_screen(r"release-review.*Codex", 30)
+    terminal.wait_selected_row("release-review", 20)
+    time.sleep(1.0)
+    return terminal
+
+
 def show_composer_guidance(
     terminal: RealTerminal,
     message: str,
@@ -2876,7 +3041,9 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
     root = Path(tempfile.mkdtemp(prefix=f"oav-real-{demo}."))
     terminal: RealTerminal | None = None
     try:
-        if demo == "rename":
+        if demo == "migration":
+            terminal = start_migration_control_dashboard(repo, root)
+        elif demo == "rename":
             terminal = start_fixture_control_dashboard(repo, root, demo)
         else:
             active = "pi" if demo == "model" else ("all" if demo == "login" else "terminal")
@@ -2912,7 +3079,183 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
 
         start = terminal.repaint_start()
         action_start_index = len(terminal.actions)
-        if demo == "rename":
+        if demo == "migration":
+            terminal.remember(
+                "Before migration · release-review in Codex",
+                "open-agent-view",
+            )
+            time.sleep(1.4)
+            terminal.key(
+                "Right",
+                "→ · open the source Codex session",
+                "open-agent-view",
+            )
+            terminal.wait_native_screen(r"Codex|OpenAI", 60)
+            time.sleep(1.0)
+            source_prompt = (
+                "Before migration, remember the code word LANTERN. "
+                "Reply exactly: I will remember LANTERN."
+            )
+            baseline = terminal.screen()
+            terminal.type_text(
+                source_prompt,
+                "Type · add context before migration",
+                "OpenAI Codex",
+                0.012,
+            )
+            terminal.key("Enter", "Enter · send to Codex", "OpenAI Codex")
+            terminal.wait_screen_occurrences(
+                "I will remember LANTERN.",
+                count=2,
+                timeout=150,
+            )
+            terminal.wait_screen_settled(
+                baseline,
+                provider="OpenAI Codex",
+                timeout=90,
+                minimum_wait=0.5,
+                stable_for=1.5,
+            )
+            terminal.remember(
+                "Codex saved the context",
+                "OpenAI Codex",
+            )
+            time.sleep(1.6)
+            terminal.key(
+                "S-Left",
+                "Shift+← · return to the dashboard",
+                "OpenAI Codex",
+            )
+            terminal.wait_screen(APP_HEADER_PATTERN, 30)
+            terminal.wait_selected_row("release-review", 30)
+            time.sleep(1.2)
+            terminal.literal_key(
+                "\x1b[109;5u",
+                "Ctrl+M · migrate selected session",
+                "open-agent-view",
+            )
+            terminal.wait_screen(r"migrate session · target 1/14", 20)
+            terminal.wait_screen(r"from\s+Codex", 20)
+            time.sleep(1.4)
+            terminal.key("Down", "↓ · choose Pi", "open-agent-view")
+            terminal.wait_screen(r"migrate session · target 2/14", 20)
+            time.sleep(0.8)
+            terminal.key("Enter", "Enter · choose Pi", "open-agent-view")
+            terminal.wait_screen(r"migrate to Pi · choose local name", 20)
+            terminal.wait_screen(r"release-review \(Pi\)", 20)
+            terminal.remember(
+                "Default name · release-review (Pi)",
+                "open-agent-view",
+            )
+            time.sleep(1.8)
+            terminal.key("Enter", "Enter · migrate", "open-agent-view")
+            terminal.wait_screen(
+                r"migrated to Pi as release-review \(Pi\)|migration failed:",
+                30,
+            )
+            if "migration failed:" in terminal.screen():
+                raise RuntimeError(
+                    f"real Codex-to-Pi migration failed: {terminal.screen()[-2400:]!r}"
+                )
+            # A combined Codex/Pi refresh can exceed the pending-row
+            # deadline even though session-migrate finished successfully. Use
+            # the same explicit refresh the dashboard tells a user to press,
+            # then select the exact imported row before opening it.
+            try:
+                terminal.wait_selected_row("release-review (Pi)", 8)
+            except RuntimeError:
+                terminal.key(
+                    "C-l",
+                    "Ctrl+L · discover migrated session",
+                    "open-agent-view",
+                )
+                terminal.wait_screen(r"release-review \(Pi\)", 45)
+                for _ in range(4):
+                    try:
+                        terminal.wait_selected_row("release-review (Pi)", 0.6)
+                        break
+                    except RuntimeError:
+                        pass
+                    terminal.key(
+                        "Down",
+                        "↓ · select migrated Pi session",
+                        "open-agent-view",
+                    )
+                else:
+                    raise RuntimeError(
+                        "migrated Pi row appeared but could not be selected"
+                    )
+            terminal.wait_screen(r"Migrated from Codex", 20)
+            terminal.wait_selected_row("release-review (Pi)", 30)
+            terminal.remember(
+                "Converted locally · Codex → Pi",
+                "open-agent-view",
+            )
+            time.sleep(1.8)
+            before_target_open = terminal.screen()
+            terminal.key(
+                "Right",
+                "→ · open the migrated Pi session",
+                "open-agent-view",
+            )
+            # Offline startup intentionally removes Pi's update banner, so
+            # identify the native surface by its provider/model footer instead
+            # of relying on the word "Pi" appearing in a notice.
+            terminal.wait_native_screen(r"\(openai\).*gpt-5\.6-sol", 75)
+            # Wait for the genuine native surface to settle so the recorder
+            # cannot lose the beginning of the typed continuation.
+            terminal.wait_screen_settled(
+                before_target_open,
+                provider="Pi",
+                timeout=45,
+                minimum_wait=1.0,
+                stable_for=2.5,
+            )
+            time.sleep(2.0)
+            target_prompt = (
+                "What code word did I ask you to remember before migration? "
+                "Reply with only that word."
+            )
+            before_target = terminal.screen()
+            lantern_count = before_target.count("LANTERN")
+            terminal.type_text(
+                target_prompt,
+                "Type · continue the conversation after migration",
+                "Pi",
+                0.012,
+            )
+            terminal.key("Enter", "Enter · ask Pi", "Pi")
+            terminal.wait_screen_occurrences(
+                "LANTERN",
+                count=lantern_count + 1,
+                timeout=180,
+            )
+            terminal.wait_screen_settled(
+                before_target,
+                provider="Pi",
+                timeout=120,
+                minimum_wait=0.5,
+                stable_for=1.5,
+            )
+            terminal.remember(
+                "Context preserved · Pi answered LANTERN",
+                "Pi",
+            )
+            time.sleep(2.8)
+            terminal.key(
+                "S-Left",
+                "Shift+← · return with both sessions saved",
+                "Pi",
+            )
+            terminal.wait_screen(APP_HEADER_PATTERN, 30)
+            terminal.wait_screen(r"release-review.*Codex", 30)
+            terminal.wait_screen(r"release-review \(Pi\).*Pi", 30)
+            terminal.remember(
+                "Before and after sessions remain visible",
+                "open-agent-view",
+            )
+            time.sleep(3.0)
+        elif demo == "rename":
             show_composer_guidance(
                 terminal,
                 "Select a session, then press Ctrl+R to give it a clear local name.",
@@ -3093,6 +3436,9 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
                         "switch": "guide-select-open-double-left-reopen-shift-left",
                         "model": "guide-browse-search-select-pi-model",
                         "login": "guide-check-open-native-login-background",
+                        "migration": (
+                            "open-source-add-context-ctrl-m-open-target-continue"
+                        ),
                     }[demo],
                     "actions": actions,
                 },
@@ -3102,6 +3448,11 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             encoding="utf-8",
         )
         action_path.chmod(0o644)
+        if demo == "migration":
+            # Keep every genuine terminal byte and action in order while
+            # capping provider/discovery waits that would otherwise dominate
+            # the focused documentation clip.
+            compact_recording(target, action_path, max_gap=3.0)
         required = {
             "rename": [
                 "release-review",
@@ -3124,6 +3475,18 @@ def capture_control(repo: Path, output: Path, demo: str) -> None:
             "login": [
                 "interactive login now?",
                 "Opening Claude Code login",
+            ],
+            "migration": [
+                "release-review",
+                "Before migration, remember the code word LANTERN",
+                "I will remember LANTERN",
+                "migrate session",
+                "release-review (Pi)",
+                "Migrated from Codex",
+                # Pi horizontally scrolls long composer input while it is
+                # typed; validate the stable submitted suffix plus the answer.
+                "Reply with only that word",
+                "LANTERN",
             ],
         }[demo]
         validate_public_cast(target, [APP_HEADER, *required])

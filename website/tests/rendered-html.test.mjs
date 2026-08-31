@@ -32,6 +32,7 @@ const demos = [
   ["switch", null, null],
   ["model", null, null],
   ["login", null, null],
+  ["migration", null, null],
 ];
 
 const privateMaterial = [
@@ -184,7 +185,7 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     assert.ok(renderedVersions.length > 0, `${name}.cast should show the real application`);
     assert.deepEqual(
       [...new Set(renderedVersions)],
-      [name === "setup" ? packageMetadata.version : recordingVersion],
+      [name === "setup" || name === "migration" ? packageMetadata.version : recordingVersion],
       `${name}.cast should contain only its declared real Open Agent View release`,
     );
 
@@ -394,6 +395,42 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
       assert.ok(manifest.actions.some((action) => action.action === "Native login ready"));
       assert.ok(manifest.actions.some((action) => action.action === "Returned without losing setup"));
     }
+    if (name === "migration") {
+      assert.match(visibleOutput.replace(/\s+/g, ""), /migratesession·target1\/14/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /release-review \(Pi\)/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /Migrated from Codex/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /I will remember LANTERN/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /Reply with only that word/i);
+      assert.match(visibleOutput.replace(/\s+/g, " "), /LANTERN/i);
+      assert.match(visibleOutput, /OpenAI Codex/i);
+      assert.match(visibleOutput, /Pi/i);
+      assert.doesNotMatch(
+        visibleOutput,
+        /new Codex App Server never opened|provider record is not visible|MCP startup incomplete/i,
+      );
+      assert.doesNotMatch(output, /cloudflare-api/i);
+      assert.equal(manifest.proof, "real-open-agent-view-tui");
+      assert.equal(
+        manifest.sequence,
+        "open-source-add-context-ctrl-m-open-target-continue",
+      );
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Ctrl+M · migrate selected session",
+      ));
+      assert.ok(manifest.actions.some((action) => action.action === "Enter · migrate"));
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Type · add context before migration",
+      ));
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Type · continue the conversation after migration",
+      ));
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Context preserved · Pi answered LANTERN",
+      ));
+      assert.ok(manifest.actions.some(
+        (action) => action.action === "Before and after sessions remain visible",
+      ));
+    }
 
     for (const pattern of privateMaterial) {
       assert.doesNotMatch(`${cast}\n${actionsSource}`, pattern, `${name} must not publish secrets or private machine paths`);
@@ -411,6 +448,36 @@ test("publishes genuine cast v2 recordings and action timelines for setup and ev
     [recordingVersion],
     "README media should contain only its declared real Open Agent View release",
   );
+
+  const [readme, migrationGif, migrationMp4, migrationModuleSource] = await Promise.all([
+    readFile(new URL("../README.md", root), "utf8"),
+    readFile(new URL("../docs/assets/ctrl-m-migration.gif", root)),
+    readFile(new URL("public/demos/migration.mp4", root)),
+    readFile(new URL("public/demos/migration.js", root), "utf8"),
+  ]);
+  assert.match(readme, /docs\/assets\/ctrl-m-migration\.gif/);
+  assert.match(readme, /website\/public\/demos\/migration\.mp4/);
+  assert.match(readme, /website\/public\/demos\/migration\.js/);
+  assert.equal(migrationGif.subarray(0, 6).toString("ascii"), "GIF89a");
+  assert.ok(migrationGif.length > 100_000 && migrationGif.length < 2_000_000);
+  assert.ok(migrationGif.readUInt16LE(6) >= 1_200);
+  assert.ok(migrationGif.readUInt16LE(8) >= 700);
+  assert.equal(
+    migrationGif.includes(Buffer.from("NETSCAPE2.0", "ascii")),
+    false,
+    "the focused migration GIF should finish on the imported row instead of looping",
+  );
+  assert.equal(migrationMp4.subarray(4, 8).toString("ascii"), "ftyp");
+  assert.ok(migrationMp4.length > 100_000 && migrationMp4.length < 5_000_000);
+  assert.ok(migrationMp4.includes(Buffer.from("avc1", "ascii")));
+  assert.match(migrationModuleSource, /export const ctrlMMigrationDemoAssets/);
+  assert.match(migrationModuleSource, /export async function mountCtrlMMigrationDemo/);
+  assert.match(migrationModuleSource, /migration\.cast/);
+  assert.match(migrationModuleSource, /migration\.actions\.json/);
+  assert.match(migrationModuleSource, /migration\.mp4/);
+  assert.match(migrationModuleSource, /aria-live/);
+  assert.match(migrationModuleSource, /loop: false/);
+  assert.doesNotMatch(migrationModuleSource, /terminalRows|synthetic/i);
 });
 
 test("uses the local asciinema player without a synthetic terminal generator or playback loop", async () => {
