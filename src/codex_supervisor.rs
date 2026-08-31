@@ -17,6 +17,10 @@ use crate::domain::{AgentSession, Capability, Provider, Runtime, SessionSnapshot
 const RECORD_VERSION: u32 = 1;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(8);
 const MAX_TRANSCRIPT_CHARS: usize = 32 * 1024;
+// macOS exposes a 104-byte sockaddr_un.sun_path while Linux exposes 108.
+// Leave a small margin for the terminating NUL and platform differences.
+#[cfg(unix)]
+const SAFE_UNIX_SOCKET_PATH_BYTES: usize = 100;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -174,6 +178,10 @@ impl CodexSupervisor {
         client_transport: SupervisorClientTransport,
     ) -> Result<Self> {
         ensure_private_directory(&state_dir)?;
+        // Validate or create the short private socket directory up front. The
+        // durable record and locks remain in state_dir even when its absolute
+        // path is too long for sockaddr_un.sun_path.
+        let _ = socket_directory(&state_dir)?;
         let response_lease = ResponseLease::try_acquire(&state_dir.join("controller.lock"))?;
         Ok(Self {
             codex_bin: codex_bin.into(),
@@ -1109,11 +1117,18 @@ impl CodexSupervisor {
     }
 
     fn start_endpoint(&self) -> Result<SupervisorRecord> {
-        let socket_path = self.state_dir.join(format!(
+        let socket_dir = socket_directory(&self.state_dir)?;
+        let socket_path = socket_dir.join(format!(
             "app-server-{}-{}.sock",
             std::process::id(),
-            now_millis()
+            random_socket_suffix()?
         ));
+        if !unix_socket_path_fits(&socket_path) {
+            bail!(
+                "Codex App Server socket path is too long for this platform: {}",
+                socket_path.display()
+            );
+        }
         if fs::symlink_metadata(&socket_path).is_ok() {
             bail!(
                 "refusing to replace existing socket {}",
@@ -1844,6 +1859,48 @@ fn default_state_dir() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".local/state/open-agent-view/codex-supervisor"))
 }
 
+#[cfg(unix)]
+fn unix_socket_path_fits(path: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+
+    path.as_os_str().as_bytes().len() < SAFE_UNIX_SOCKET_PATH_BYTES
+}
+
+#[cfg(not(unix))]
+fn unix_socket_path_fits(_: &Path) -> bool {
+    false
+}
+
+fn socket_directory(state_dir: &Path) -> Result<PathBuf> {
+    let longest_name = "app-server-4294967295-ffffffffffffffff.sock";
+    if unix_socket_path_fits(&state_dir.join(longest_name)) {
+        return Ok(state_dir.to_path_buf());
+    }
+
+    #[cfg(not(unix))]
+    {
+        bail!("durable Codex supervision requires Unix sockets")
+    }
+    #[cfg(unix)]
+    {
+        // A single current-user-owned leaf below /tmp is short on Linux and
+        // macOS and cannot be redirected through an attacker-created symlink:
+        // ensure_private_directory rejects symlinks and foreign ownership.
+        let directory = PathBuf::from("/tmp").join(format!("oav-codex-{}", effective_uid()?));
+        ensure_private_directory(&directory)?;
+        if !unix_socket_path_fits(&directory.join(longest_name)) {
+            bail!("no safe short directory is available for the Codex App Server socket");
+        }
+        Ok(directory)
+    }
+}
+
+fn random_socket_suffix() -> Result<String> {
+    let mut bytes = [0_u8; 8];
+    getrandom::getrandom(&mut bytes).context("failed to randomize Codex socket path")?;
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
 fn ensure_private_directory(path: &Path) -> Result<()> {
     #[cfg(not(unix))]
     {
@@ -1935,8 +1992,9 @@ fn load_record(path: &Path, state_dir: &Path) -> Result<Option<SupervisorRecord>
     let input = fs::read(path)?;
     let record: SupervisorRecord = serde_json::from_slice(&input)
         .with_context(|| format!("invalid Codex supervisor record {}", path.display()))?;
-    if record.socket_path.parent() != Some(state_dir) {
-        bail!("Codex supervisor socket escaped the private state directory");
+    let socket_dir = socket_directory(state_dir)?;
+    if record.socket_path.parent() != Some(socket_dir.as_path()) {
+        bail!("Codex supervisor socket escaped its private socket directory");
     }
     Ok(Some(record))
 }
@@ -2618,6 +2676,62 @@ mod tests {
             vec!["gpt-visible", "gpt-second"]
         );
         assert!(second.live_record().unwrap().same_process(&first_record));
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn overlong_state_path_uses_a_short_private_socket_and_reconnects() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let directory = tempdir().unwrap();
+        let state_dir = directory
+            .path()
+            .join("state-path-that-is-deliberately-long-enough-to-overflow-sockaddr-un")
+            .join("codex-supervisor");
+        assert!(
+            state_dir
+                .join("app-server-4294967295-ffffffffffffffff.sock")
+                .as_os_str()
+                .as_bytes()
+                .len()
+                >= SAFE_UNIX_SOCKET_PATH_BYTES
+        );
+        let mock = directory.path().join("mock-codex.py");
+        fs::write(&mock, MOCK_CODEX).unwrap();
+        fs::set_permissions(&mock, fs::Permissions::from_mode(0o700)).unwrap();
+
+        let first =
+            CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir.clone()).unwrap();
+        assert_eq!(
+            first.available_models().unwrap(),
+            vec!["gpt-visible", "gpt-second"]
+        );
+        let record = first.live_record().unwrap();
+        let process_guard = VerifiedTestProcess(record.clone());
+        assert_ne!(record.socket_path.parent(), Some(state_dir.as_path()));
+        assert!(unix_socket_path_fits(&record.socket_path));
+        assert_eq!(
+            fs::metadata(record.socket_path.parent().unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+
+        let second = CodexSupervisor::with_state_dir(mock.to_string_lossy(), state_dir).unwrap();
+        assert_eq!(
+            second.available_models().unwrap(),
+            vec!["gpt-visible", "gpt-second"]
+        );
+        assert!(second.live_record().unwrap().same_process(&record));
+
+        drop(second);
+        drop(first);
+        drop(process_guard);
+        if record.socket_path.exists() {
+            fs::remove_file(record.socket_path).unwrap();
+        }
     }
 
     #[cfg(target_os = "linux")]
