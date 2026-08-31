@@ -1898,7 +1898,13 @@ fn socket_directory(state_dir: &Path) -> Result<PathBuf> {
 fn random_socket_suffix() -> Result<String> {
     let mut bytes = [0_u8; 8];
     getrandom::getrandom(&mut bytes).context("failed to randomize Codex socket path")?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut suffix = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        suffix.push(HEX[usize::from(byte >> 4)] as char);
+        suffix.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    Ok(suffix)
 }
 
 fn ensure_private_directory(path: &Path) -> Result<()> {
