@@ -8,6 +8,13 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.51] - 2026-09-02
+
+### Changed
+
+- Simplified the website introduction and ignored local generated release and
+  demo exports.
+
 ### Fixed
 
 - Native Windows no longer exits before drawing the dashboard with
