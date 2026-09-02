@@ -8,6 +8,19 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- Native Windows no longer exits before drawing the dashboard with
+  `Keyboard progressive enhancement not implemented for the legacy Windows
+  API`. OAV now relies on Windows' modifier-aware console key events and keeps
+  Kitty keyboard enhancement commands on the Unix terminal path.
+
+### Tests
+
+- Added a regression that proves the native Windows terminal path omits the
+  unsupported keyboard enhancement protocol while Unix retains Ctrl+M and
+  Enter disambiguation. The native Windows CI matrix exercises the same code.
+
 ## [0.1.50] - 2026-08-31
 
 ### Added

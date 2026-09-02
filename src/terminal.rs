@@ -1655,25 +1655,38 @@ fn handle_action_legacy<T: DashboardTerminal, C: DashboardControl>(
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     active: bool,
+    keyboard_enhancement: bool,
+}
+
+fn use_keyboard_enhancement(windows_legacy_event_api: bool) -> bool {
+    // Crossterm's Windows event reader already distinguishes Enter from a
+    // control-modified M key. Its legacy WinAPI command backend explicitly
+    // rejects the Kitty keyboard-protocol push/pop commands, so those commands
+    // are both unnecessary and startup-fatal on native Windows.
+    !windows_legacy_event_api
 }
 
 impl TerminalSession {
     fn enter() -> Result<Self> {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
-        execute!(
-            stdout,
-            EnterAlternateScreen,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-            ),
-            crossterm::cursor::Hide
-        )?;
+        let keyboard_enhancement = use_keyboard_enhancement(cfg!(windows));
+        execute!(stdout, EnterAlternateScreen)?;
+        if keyboard_enhancement {
+            execute!(
+                stdout,
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
+            )?;
+        }
+        execute!(stdout, crossterm::cursor::Hide)?;
         let terminal = Terminal::new(CrosstermBackend::new(stdout))?;
         Ok(Self {
             terminal,
             active: true,
+            keyboard_enhancement,
         })
     }
 
@@ -1682,9 +1695,11 @@ impl TerminalSession {
             return Ok(());
         }
         disable_raw_mode()?;
+        if self.keyboard_enhancement {
+            execute!(self.terminal.backend_mut(), PopKeyboardEnhancementFlags)?;
+        }
         execute!(
             self.terminal.backend_mut(),
-            PopKeyboardEnhancementFlags,
             LeaveAlternateScreen,
             crossterm::cursor::Show
         )?;
@@ -1697,15 +1712,17 @@ impl TerminalSession {
             return Ok(());
         }
         enable_raw_mode()?;
-        execute!(
-            self.terminal.backend_mut(),
-            EnterAlternateScreen,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-            ),
-            crossterm::cursor::Hide
-        )?;
+        execute!(self.terminal.backend_mut(), EnterAlternateScreen)?;
+        if self.keyboard_enhancement {
+            execute!(
+                self.terminal.backend_mut(),
+                PushKeyboardEnhancementFlags(
+                    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                        | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+                )
+            )?;
+        }
+        execute!(self.terminal.backend_mut(), crossterm::cursor::Hide)?;
         self.terminal.clear()?;
         self.active = true;
         Ok(())
@@ -1728,9 +1745,11 @@ impl Drop for TerminalSession {
             return;
         }
         let _ = disable_raw_mode();
+        if self.keyboard_enhancement {
+            let _ = execute!(self.terminal.backend_mut(), PopKeyboardEnhancementFlags);
+        }
         let _ = execute!(
             self.terminal.backend_mut(),
-            PopKeyboardEnhancementFlags,
             LeaveAlternateScreen,
             crossterm::cursor::Show
         );
@@ -1753,6 +1772,12 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn keyboard_enhancement_is_omitted_for_the_legacy_windows_event_api() {
+        assert!(!use_keyboard_enhancement(true));
+        assert!(use_keyboard_enhancement(false));
+    }
 
     #[test]
     fn terminal_height_keeps_the_show_more_control_in_view() {
