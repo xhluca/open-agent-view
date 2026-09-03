@@ -51,6 +51,8 @@ struct OwnedCursorSession {
     process: Option<CursorProcessIdentity>,
     #[serde(default)]
     model: Option<String>,
+    #[serde(default)]
+    yolo: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -80,6 +82,8 @@ struct CursorLogState {
 ///
 /// The provider session remains Cursor's source of conversation truth. This
 /// supervisor persists only ownership, process identity, and bounded logs.
+type PendingNativeTurn = (String, Option<String>, bool);
+
 pub struct CursorSupervisor {
     executable: String,
     state_dir: PathBuf,
@@ -89,7 +93,7 @@ pub struct CursorSupervisor {
     runner: Arc<dyn CommandRunner>,
     /// Initial foreground prompts are process-local and are never written to
     /// the ownership registry or provider logs by OAV.
-    pending_native: Mutex<BTreeMap<String, (String, Option<String>)>>,
+    pending_native: Mutex<BTreeMap<String, PendingNativeTurn>>,
 }
 
 impl CursorSupervisor {
@@ -157,7 +161,7 @@ impl CursorSupervisor {
             );
         }
         let session_id = parse_cursor_chat_id(output.stdout_text()?)?;
-        self.spawn_turn(&session_id, cwd, prompt, model, true)?;
+        self.spawn_turn(&session_id, cwd, prompt, model, true, false)?;
         Ok(session_id)
     }
 
@@ -169,6 +173,25 @@ impl CursorSupervisor {
         prompt: &str,
         cwd: &Path,
         model: Option<&str>,
+    ) -> Result<String> {
+        self.allocate_chat_with_model_security(prompt, cwd, model, false)
+    }
+
+    pub fn allocate_chat_with_model_yolo(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+    ) -> Result<String> {
+        self.allocate_chat_with_model_security(prompt, cwd, model, true)
+    }
+
+    fn allocate_chat_with_model_security(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+        yolo: bool,
     ) -> Result<String> {
         require_process_identity_support()?;
         let prompt = prompt.trim();
@@ -221,6 +244,7 @@ impl CursorSupervisor {
             stderr_path,
             process: None,
             model: model.map(str::to_owned),
+            yolo,
         };
         self.with_locked_registry(|registry| {
             if registry.sessions.contains_key(&session_id) {
@@ -234,7 +258,7 @@ impl CursorSupervisor {
             .map_err(|_| anyhow::anyhow!("Cursor pending-launch lock was poisoned"))?
             .insert(
                 session_id.clone(),
-                (prompt.to_owned(), model.map(str::to_owned)),
+                (prompt.to_owned(), model.map(str::to_owned), yolo),
             );
         Ok(session_id)
     }
@@ -259,7 +283,7 @@ impl CursorSupervisor {
     pub fn pending_native_launch(
         &self,
         session: &AgentSession,
-    ) -> Result<Option<(String, Option<String>)>> {
+    ) -> Result<Option<(String, Option<String>, bool)>> {
         self.require_owned_host(session)?;
         Ok(self
             .pending_native
@@ -339,6 +363,7 @@ impl CursorSupervisor {
             prompt,
             record.model.as_deref(),
             false,
+            record.yolo,
         )
     }
 
@@ -371,6 +396,11 @@ impl CursorSupervisor {
         session.provider == Provider::Cursor
             && session.runtime == Runtime::Host
             && self.lookup(&session.provider_session_id).is_ok()
+    }
+
+    pub fn yolo_if_owned(&self, session: &AgentSession) -> bool {
+        self.lookup(&session.provider_session_id)
+            .is_ok_and(|record| record.yolo)
     }
 
     pub fn is_running(&self, session: &AgentSession) -> Result<bool> {
@@ -498,6 +528,7 @@ impl CursorSupervisor {
         prompt: &str,
         model: Option<&str>,
         new: bool,
+        yolo: bool,
     ) -> Result<()> {
         require_safe_session_id(session_id)?;
         require_absolute_workspace(cwd)?;
@@ -531,7 +562,12 @@ impl CursorSupervisor {
             .join(format!("{session_id}.stderr.log"));
         let stdout = private_append_file(&stdout_path)?;
         let stderr = private_append_file(&stderr_path)?;
-        let spec = self.invocation.print_turn(session_id, cwd, prompt, model)?;
+        let spec = if yolo {
+            self.invocation
+                .print_turn_yolo(session_id, cwd, prompt, model)?
+        } else {
+            self.invocation.print_turn(session_id, cwd, prompt, model)?
+        };
         let mut command = spec.command();
         command
             .stdin(Stdio::null())
@@ -576,6 +612,7 @@ impl CursorSupervisor {
             model: model
                 .map(str::to_owned)
                 .or_else(|| existing.as_ref().and_then(|record| record.model.clone())),
+            yolo: existing.as_ref().map_or(yolo, |record| record.yolo),
         };
         let process_for_cleanup = record.process.clone();
         if let Err(error) = self.with_locked_registry(|registry| {

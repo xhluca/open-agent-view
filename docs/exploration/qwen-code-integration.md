@@ -15,6 +15,7 @@ numeric-string milliseconds and floors only the sub-millisecond portion.
 - `qwen --session-id UUID --prompt-interactive TEXT` starts an exact native
   interactive session; `--model ID` selects an explicit model.
 - `qwen --resume UUID` opens an exact saved session.
+- `qwen --yolo` automatically accepts native actions.
 - `qwen sessions list --json --limit N` emits bounded JSONL history.
 - `qwen sessions ps --json` emits the current live session/PID inventory.
 - Authentication is handled by `/auth` in the native Qwen UI. The former
@@ -44,6 +45,10 @@ and working state, but stop authority is granted only for the exact native PTY
 retained by the current OAV process. Saved sessions open through
 `qwen --resume UUID`; provider-side delete, archive, inline reply, and approval
 controls are not claimed.
+
+Normal OAV launches preserve Qwen's approval behavior. The explicit top-level
+OAV `--yolo` mode adds Qwen's verified `--yolo` option to a fresh managed
+launch and marks both the dashboard and native PTY.
 
 ## Tests
 

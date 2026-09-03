@@ -33,6 +33,7 @@ Open Agent View is already up to date.
 | Option | Meaning |
 | --- | --- |
 | `--json` | Print a normalized snapshot and do not enter the TUI. |
+| `--yolo` | **Dangerous, explicit opt-in.** Launch new sessions with a verified provider-native permission-bypass mode. Unsupported harnesses fail closed. Existing sessions are not changed. |
 | `--all` | Compatibility flag that explicitly includes completed sessions; completed is already the default. |
 | `--hide-completed` / `--active-only` | Hide completed sessions at startup. `/completed show` restores them without restarting. |
 | `--include-interactive` | Include provider sessions reported as foreground/interactive. |
@@ -69,6 +70,44 @@ Open Agent View is already up to date.
 The `--managed-docker-registry PATH` global option applies to the managed
 Docker subcommands described below. Provider discovery warnings appear in the
 snapshot rather than hiding healthy sessions from another adapter.
+
+### Explicit YOLO mode
+
+`oav --yolo` is deliberately off by default. While it is active, the dashboard,
+new-task composer, and every native session launched in that mode display a
+persistent warning. Returning to or resuming the native screen does not clear
+the warning. Stop OAV and restart without `--yolo` to return new launches to
+their normal security settings.
+
+OAV enables the mode only where the installed harness exposes a verified native
+equivalent:
+
+| Harness | Native setting used for a new session |
+| --- | --- |
+| Claude Code | `--dangerously-skip-permissions` |
+| OpenAI Codex | `--dangerously-bypass-approvals-and-sandbox` for the native CLI; App Server uses `approvalPolicy=never` and `sandbox=danger-full-access` |
+| Cursor | `--force` (Linux managed sessions) |
+| Antigravity | `--dangerously-skip-permissions` |
+| Mistral Vibe | `--auto-approve` (the native `--yolo` alias) |
+| Muse Code | `--yolo` |
+| Qwen Code | `--yolo` |
+| Kimi Code | `--yolo` |
+| Oh My Pi | `--yolo` |
+| Grok | `--yolo` |
+| Kilo Code | `--yolo` |
+| OpenHands | `--always-approve` |
+
+Pi, OpenCode, GitHub Copilot, and Terminal are intentionally unsupported.
+Pi's `--approve` only trusts a project; it is not a permission bypass. OAV's
+managed OpenCode path starts a server and attaches a client, and the attach
+command does not accept OpenCode's top-level YOLO flag. No equivalent is claimed
+for Copilot or a shell. Selecting any unsupported harness while `--yolo` is
+active returns an error before a provider process is launched. OAV never guesses
+at a similar-looking flag.
+
+The setting applies only to new sessions created by this OAV process. It does
+not weaken discovery, adopt external sessions, change credentials, or grant OAV
+additional control over an existing session.
 
 Bare provider command defaults are resolved from `PATH` first, then from the
 provider's conventional user-local install directories. This includes

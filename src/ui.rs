@@ -117,6 +117,10 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled("◇ ", Style::default().fg(ACCENT)),
                 Span::styled(title, Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    if app.yolo { "  ⚠ YOLO" } else { "" },
+                    Style::default().fg(ATTENTION).add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(format!(
                 "{awaiting} awaiting · {working} working · {completed_status}"
@@ -141,6 +145,16 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
                     Style::default().fg(DIM),
                 ),
             ]),
+            Line::from(Span::styled(
+                if app.yolo {
+                    "       ⚠ YOLO MODE · native permission safeguards are relaxed"
+                } else {
+                    ""
+                },
+                Style::default()
+                    .fg(ATTENTION)
+                    .add_modifier(Modifier::BOLD),
+            )),
         ]
     } else {
         vec![
@@ -155,6 +169,14 @@ fn render_header(frame: &mut Frame<'_>, app: &App, area: Rect) {
             Line::from(Span::styled(
                 format!("{awaiting} awaiting · {working} working · {completed_status}"),
                 Style::default().fg(DIM),
+            )),
+            Line::from(Span::styled(
+                if app.yolo {
+                    "⚠ YOLO · permission safeguards relaxed"
+                } else {
+                    ""
+                },
+                Style::default().fg(ATTENTION).add_modifier(Modifier::BOLD),
             )),
         ]
     };
@@ -421,9 +443,17 @@ fn render_composer(frame: &mut Frame<'_>, app: &App, area: Rect) {
         } else {
             "model"
         };
-        block = block.title(format!(
-            " new task · harness {} · {option_label} {launch_option} ",
-            app.launch_provider.label(),
+        let yolo = if app.yolo { " · ⚠ YOLO" } else { "" };
+        block = block.title(Span::styled(
+            format!(
+                " new task · harness {} · {option_label} {launch_option}{yolo} ",
+                app.launch_provider.label(),
+            ),
+            if app.yolo {
+                Style::default().fg(ATTENTION).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            },
         ));
     }
     let (prefix, content, editable) = match &app.overlay {
@@ -972,7 +1002,11 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
         .map(|(index, target)| {
             let selected = index == app.harness_selection;
             let current = target.provider == app.launch_provider;
-            let detail = if popup_width >= 46 {
+            let yolo_unavailable =
+                app.yolo && !app.yolo_supported_providers.contains(&target.provider);
+            let detail = if yolo_unavailable {
+                "YOLO unavailable"
+            } else if popup_width >= 46 {
                 if target.supports_model {
                     "selectable model"
                 } else {
@@ -996,6 +1030,8 @@ fn render_harness_picker(frame: &mut Frame<'_>, app: &App, area: Rect) {
                     .bg(SELECTED_BG)
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD)
+            } else if yolo_unavailable {
+                Style::default().bg(BG).fg(ATTENTION)
             } else if current {
                 Style::default().bg(BG).fg(ACCENT)
             } else {
@@ -1582,6 +1618,46 @@ mod tests {
         assert!(rendered.contains("Completed"));
         assert!(rendered.contains("describe a task · /help for commands"));
         assert!(rendered.contains("1 awaiting input · 2 working · 1 completed"));
+    }
+
+    #[test]
+    fn yolo_mode_is_persistently_visible_in_dashboard_and_composer() {
+        let mut app = App::with_launch_targets(
+            SessionSnapshot {
+                sessions: vec![],
+                warnings: vec![],
+            },
+            true,
+            Provider::Claude,
+            vec![
+                LaunchTarget {
+                    provider: Provider::Claude,
+                    supports_model: true,
+                },
+                LaunchTarget {
+                    provider: Provider::Pi,
+                    supports_model: true,
+                },
+            ],
+        );
+        app.set_yolo(true, BTreeSet::from([Provider::Claude]));
+        let backend = TestBackend::new(120, 30);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let dashboard = buffer_text(terminal.backend().buffer());
+        assert!(dashboard.contains("⚠ YOLO MODE · native permission safeguards are relaxed"));
+
+        app.start_new_session(None);
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let composer = buffer_text(terminal.backend().buffer());
+        assert!(composer.contains("⚠ YOLO"));
+
+        app.open_harness_picker();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let picker = buffer_text(terminal.backend().buffer());
+        assert!(picker.contains("Pi"));
+        assert!(picker.contains("YOLO unavailable"));
     }
 
     #[test]

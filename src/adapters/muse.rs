@@ -60,9 +60,31 @@ impl MuseInvocation {
     }
 
     pub fn launch(&self, cwd: &Path, prompt: &str, model: Option<&str>) -> Result<MuseCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, false)
+    }
+
+    pub fn yolo_launch(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<MuseCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, true)
+    }
+
+    fn launch_with_security(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<MuseCommandSpec> {
         require_cwd(cwd)?;
         require_text(prompt, "prompt")?;
         let mut args = Vec::new();
+        if yolo {
+            args.push("--yolo".into());
+        }
         if let Some(model) = model {
             require_text(model, "model")?;
             args.extend(["--model".into(), model.into()]);
@@ -220,6 +242,61 @@ impl MuseController {
     ) -> Result<Self> {
         Ok(Self::host(executable, default_muse_data_root()?, ownership))
     }
+
+    fn launch_foreground_with_security(
+        &self,
+        request: &LaunchRequest,
+        yolo: bool,
+    ) -> Result<ControlOutcome> {
+        if request.provider != Provider::MuseCode {
+            bail!("the Muse Code controller cannot launch another provider");
+        }
+        let before = list_muse_sessions(&self.data_root)?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect::<BTreeSet<_>>();
+        let launch_id = crate::native_session::new_session_id()?;
+        let launch_key = format!("muse:host:launch-{launch_id}");
+        let spec = if yolo {
+            self.invocation
+                .yolo_launch(&request.cwd, &request.prompt, request.model.as_deref())?
+        } else {
+            self.invocation
+                .launch(&request.cwd, &request.prompt, request.model.as_deref())?
+        };
+        let exit = if yolo {
+            crate::native_session::run_yolo(spec.command(), &launch_key, "Muse Code")?
+        } else {
+            crate::native_session::run(spec.command(), &launch_key)?
+        };
+        let (session_id, path) = poll_unique(
+            "one new Muse Code session in the requested workspace",
+            Duration::from_secs(5),
+            || {
+                Ok(list_muse_sessions(&self.data_root)?
+                    .into_iter()
+                    .filter(|(id, _)| !before.contains(id))
+                    .filter_map(|(id, path)| {
+                        parse_muse_log(&path)
+                            .ok()
+                            .filter(|log| log.cwd.as_deref() == Some(request.cwd.as_path()))
+                            .map(|_| (id, path))
+                    })
+                    .collect())
+            },
+        )?;
+        self.ownership.inner.record(
+            &session_id,
+            &request.cwd,
+            &request.prompt,
+            Some(&path),
+            "Muse Code",
+        )?;
+        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
+            crate::native_session::rename_key(&launch_key, &format!("muse:host:{session_id}"))?;
+        }
+        native_outcome(exit, &session_id, "Muse Code")
+    }
 }
 
 impl ProviderController for MuseController {
@@ -233,6 +310,10 @@ impl ProviderController for MuseController {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Foreground
+    }
+
+    fn supports_yolo(&self) -> bool {
+        true
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -261,46 +342,15 @@ impl ProviderController for MuseController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        if request.provider != Provider::MuseCode {
-            bail!("the Muse Code controller cannot launch another provider");
-        }
-        let before = list_muse_sessions(&self.data_root)?
-            .into_iter()
-            .map(|(id, _)| id)
-            .collect::<BTreeSet<_>>();
-        let launch_id = crate::native_session::new_session_id()?;
-        let launch_key = format!("muse:host:launch-{launch_id}");
-        let spec =
-            self.invocation
-                .launch(&request.cwd, &request.prompt, request.model.as_deref())?;
-        let exit = crate::native_session::run(spec.command(), &launch_key)?;
-        let (session_id, path) = poll_unique(
-            "one new Muse Code session in the requested workspace",
-            Duration::from_secs(5),
-            || {
-                Ok(list_muse_sessions(&self.data_root)?
-                    .into_iter()
-                    .filter(|(id, _)| !before.contains(id))
-                    .filter_map(|(id, path)| {
-                        parse_muse_log(&path)
-                            .ok()
-                            .filter(|log| log.cwd.as_deref() == Some(request.cwd.as_path()))
-                            .map(|_| (id, path))
-                    })
-                    .collect())
-            },
-        )?;
-        self.ownership.inner.record(
-            &session_id,
-            &request.cwd,
-            &request.prompt,
-            Some(&path),
-            "Muse Code",
-        )?;
-        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
-            crate::native_session::rename_key(&launch_key, &format!("muse:host:{session_id}"))?;
-        }
-        native_outcome(exit, &session_id, "Muse Code")
+        self.launch_foreground_with_security(request, false)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -652,6 +702,13 @@ mod tests {
                 .unwrap()
                 .args,
             ["--model", "muse-spark", "--", "fix parser"]
+        );
+        assert_eq!(
+            invocation
+                .yolo_launch(Path::new("/work"), "fix parser", Some("muse-spark"))
+                .unwrap()
+                .args,
+            ["--yolo", "--model", "muse-spark", "--", "fix parser"]
         );
         assert_eq!(
             invocation

@@ -8,6 +8,26 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.52] - 2026-09-03
+
+### Added
+
+- Added an explicit top-level `--yolo` mode for unattended launches. OAV maps
+  it only to verified native permission settings for Claude Code, Codex,
+  Cursor, Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Oh My Pi,
+  Grok, Kilo Code, and OpenHands.
+
+### Security
+
+- YOLO mode is off by default, remains visibly marked in the dashboard,
+  composer, and native PTY, and refuses unsupported harnesses before starting
+  a provider process.
+
+### Tests
+
+- Added exact safe/YOLO argument mapping, fail-closed dispatch, persisted-mode,
+  renderer, CLI parsing, and real-PTY foreground/background coverage.
+
 ## [0.1.51] - 2026-09-02
 
 ### Changed

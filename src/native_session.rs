@@ -62,6 +62,7 @@ struct DetachedSession {
     child: std::process::Child,
     master: std::fs::File,
     screen: vt100::Parser,
+    warning: Option<String>,
 }
 
 #[cfg(unix)]
@@ -69,11 +70,28 @@ static DETACHED: OnceLock<Mutex<BTreeMap<String, DetachedSession>>> = OnceLock::
 
 /// Run or reattach one provider-native client. Non-TTY callers retain the
 /// ordinary inherited-stdio behavior used by scripts and unit-test fixtures.
-pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit> {
+pub fn run(command: Command, session_key: &str) -> Result<NativeSessionExit> {
+    run_with_warning(command, session_key, None)
+}
+
+/// Run a provider-native client while keeping OAV's dangerous-mode warning
+/// visible in the terminal title for the full foreground handoff.
+pub fn run_yolo(command: Command, session_key: &str, provider: &str) -> Result<NativeSessionExit> {
+    run_with_warning(command, session_key, Some(yolo_warning(provider)))
+}
+
+fn run_with_warning(
+    mut command: Command,
+    session_key: &str,
+    warning: Option<String>,
+) -> Result<NativeSessionExit> {
     validate_session_key(session_key)?;
     #[cfg(unix)]
     if terminal_is_interactive() {
-        return run_pty(command, session_key, None);
+        return run_pty(command, session_key, None, warning);
+    }
+    if let Some(warning) = warning.as_deref() {
+        eprintln!("{warning}");
     }
     command
         .stdin(Stdio::inherit())
@@ -87,6 +105,10 @@ pub fn run(mut command: Command, session_key: &str) -> Result<NativeSessionExit>
         .status()
         .context("failed to open provider session")?;
     Ok(NativeSessionExit::Exited(status))
+}
+
+fn yolo_warning(provider: &str) -> String {
+    format!("⚠ YOLO MODE · {provider} permission safeguards are relaxed")
 }
 
 #[cfg(unix)]
@@ -117,6 +139,40 @@ pub fn run_with_initial_input_after_screen(
     initial_input: &[u8],
     ready_marker: &str,
 ) -> Result<NativeSessionExit> {
+    run_with_initial_input_after_screen_security(
+        command,
+        session_key,
+        initial_input,
+        ready_marker,
+        None,
+    )
+}
+
+/// Run a fresh provider-native client in explicit YOLO mode, while delaying
+/// the initial input until the provider's authenticated editor is visible.
+pub fn run_with_initial_input_after_screen_yolo(
+    command: Command,
+    session_key: &str,
+    initial_input: &[u8],
+    ready_marker: &str,
+    provider: &str,
+) -> Result<NativeSessionExit> {
+    run_with_initial_input_after_screen_security(
+        command,
+        session_key,
+        initial_input,
+        ready_marker,
+        Some(yolo_warning(provider)),
+    )
+}
+
+fn run_with_initial_input_after_screen_security(
+    command: Command,
+    session_key: &str,
+    initial_input: &[u8],
+    ready_marker: &str,
+    warning: Option<String>,
+) -> Result<NativeSessionExit> {
     validate_session_key(session_key)?;
     if initial_input.is_empty() || initial_input.len() > MAX_INITIAL_INPUT_BYTES {
         bail!("provider-native initial input must contain 1 to {MAX_INITIAL_INPUT_BYTES} bytes");
@@ -139,6 +195,7 @@ pub fn run_with_initial_input_after_screen(
                 bytes: initial_input.to_vec(),
                 ready_marker: ready_marker.to_owned(),
             }),
+            warning,
         )
     }
     #[cfg(not(unix))]
@@ -166,6 +223,7 @@ pub fn resume(session_key: &str) -> Result<NativeSessionExit> {
             session_key,
             false,
             None,
+            detached.warning,
         )
     }
     #[cfg(not(unix))]
@@ -305,10 +363,17 @@ fn run_pty(
     mut command: Command,
     session_key: &str,
     initial_input: Option<ScreenTriggeredInput>,
+    warning: Option<String>,
 ) -> Result<NativeSessionExit> {
     let detached = take_detached(session_key)?;
-    let (child, master, screen, fresh) = match detached {
-        Some(detached) => (detached.child, detached.master, detached.screen, false),
+    let (child, master, screen, fresh, warning) = match detached {
+        Some(detached) => (
+            detached.child,
+            detached.master,
+            detached.screen,
+            false,
+            detached.warning,
+        ),
         None => {
             clear_physical_screen()?;
             let (child, master) = spawn_pty(&mut command)?;
@@ -323,6 +388,7 @@ fn run_pty(
                 master,
                 vt100::Parser::new(size.ws_row, size.ws_col, 0),
                 true,
+                warning,
             )
         }
     };
@@ -333,6 +399,7 @@ fn run_pty(
         session_key,
         fresh,
         fresh.then_some(initial_input).flatten(),
+        warning,
     )
 }
 
@@ -472,8 +539,10 @@ fn bridge_session(
     session_key: &str,
     fresh: bool,
     mut initial_input: Option<ScreenTriggeredInput>,
+    warning: Option<String>,
 ) -> Result<NativeSessionExit> {
     let _raw = RawModeGuard::enter()?;
+    let _title = NativeTitleGuard::enter(warning.as_deref())?;
     let mut stdout = io::stdout().lock();
     if !fresh {
         stdout.write_all(b"\x1b[2J\x1b[H")?;
@@ -481,6 +550,12 @@ fn bridge_session(
         stdout.flush()?;
         signal_group(child.id(), libc::SIGCONT);
         signal_group(child.id(), libc::SIGWINCH);
+    }
+    if fresh {
+        if let Some(warning) = warning.as_deref() {
+            writeln!(stdout, "\x1b[1;33m{warning}\x1b[0m\r")?;
+            stdout.flush()?;
+        }
     }
     let mut parser = DetachParser::default();
     let mut return_gesture = ReturnGesture::default();
@@ -572,6 +647,7 @@ fn bridge_session(
                                     child,
                                     master,
                                     screen,
+                                    warning,
                                 },
                             );
                         return Ok(NativeSessionExit::Backgrounded);
@@ -599,6 +675,30 @@ fn bridge_session(
             copy_available(&mut master, &mut stdout, &mut screen)?;
             return Ok(NativeSessionExit::Exited(status));
         }
+    }
+}
+
+#[cfg(unix)]
+struct NativeTitleGuard;
+
+#[cfg(unix)]
+impl NativeTitleGuard {
+    fn enter(warning: Option<&str>) -> Result<Self> {
+        if let Some(warning) = warning {
+            let mut output = io::stdout().lock();
+            let warning = warning.replace(['\x07', '\x1b'], "");
+            write!(output, "\x1b]0;{warning}\x07")?;
+            output.flush()?;
+        }
+        Ok(Self)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for NativeTitleGuard {
+    fn drop(&mut self) {
+        let _ = io::stdout().write_all(b"\x1b]0;Open Agent View\x07");
+        let _ = io::stdout().flush();
     }
 }
 
@@ -1072,6 +1172,14 @@ fn truncate_to_columns(value: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn yolo_warning_names_the_provider_without_overclaiming_sandbox_behavior() {
+        assert_eq!(
+            yolo_warning("OpenHands"),
+            "⚠ YOLO MODE · OpenHands permission safeguards are relaxed"
+        );
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

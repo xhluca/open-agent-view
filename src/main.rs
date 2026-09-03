@@ -409,6 +409,11 @@ struct Cli {
     /// Provider refresh interval in milliseconds.
     #[arg(long, default_value_t = 15000, value_parser = clap::value_parser!(u64).range(250..))]
     refresh_ms: u64,
+
+    /// DANGEROUS: relax native permission safeguards for new sessions.
+    /// Only harnesses with an exact, verified equivalent can launch.
+    #[arg(long)]
+    yolo: bool,
 }
 
 fn main() -> Result<()> {
@@ -546,6 +551,7 @@ fn main() -> Result<()> {
         launch_provider,
         launch_cwd: launch_cwd.clone(),
         provider_io_enabled,
+        yolo: cli.yolo,
     })?;
     control.register_migration_registry(migration_registry.clone());
     #[cfg(target_os = "linux")]
@@ -1134,6 +1140,7 @@ fn run_completed_archive(
         launch_provider: Provider::Codex,
         launch_cwd: std::env::current_dir()?,
         provider_io_enabled: true,
+        yolo: false,
     })?;
     let supervisor = control
         .codex_supervisor()
@@ -2344,6 +2351,16 @@ mod tests {
         let cli = Cli::try_parse_from(["open-agent-view", "--json"]).unwrap();
         assert!(provider_io_enabled(&cli));
         assert_eq!(cli.refresh_ms, 15_000);
+        assert!(!cli.yolo);
+    }
+
+    #[test]
+    fn yolo_is_an_explicit_long_flag_for_the_canonical_and_short_commands() {
+        for command in ["open-agent-view", "oav"] {
+            let cli = Cli::try_parse_from([command, "--yolo", "--json"]).unwrap();
+            assert!(cli.yolo);
+        }
+        assert!(Cli::try_parse_from(["open-agent-view", "--yol"]).is_err());
     }
 
     #[test]

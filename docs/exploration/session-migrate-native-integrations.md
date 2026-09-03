@@ -8,12 +8,12 @@ created by that launch.
 
 ## Supported native surfaces
 
-| Harness | Session inventory | Model catalog | New session | Resume | Login |
-| --- | --- | --- | --- | --- | --- |
-| Oh My Pi | Bounded JSONL journals under `$PI_CODING_AGENT_DIR` or `~/.omp/agent` | `omp models list --no-extensions --json` | `omp --model ID -- PROMPT` | `omp --resume PATH_OR_ID` | `omp --no-session`, then `/login` |
-| Grok | `summary.json` plus `updates.jsonl` under `$GROK_HOME/sessions` | `grok models` | `grok --no-auto-update --model ID -- PROMPT` | `grok --no-auto-update --resume UUID` | `grok login` |
-| Kilo Code | bounded read-only `kilo db "SELECT … FROM session" --format json` | `kilo models` | `kilo run --interactive --model ID PROMPT` | `kilo --session ID` | `kilo auth login` |
-| OpenHands | Bounded event files under `$OPENHANDS_CONVERSATIONS_DIR` or `~/.openhands/conversations` | Saved `agent.llm.model` values and `LLM_MODEL`; exact IDs remain accepted | `LLM_MODEL=ID openhands --override-with-envs --task PROMPT` | `openhands --resume UUID` | `openhands login` |
+| Harness | Session inventory | Model catalog | New session | YOLO setting | Resume | Login |
+| --- | --- | --- | --- | --- | --- | --- |
+| Oh My Pi | Bounded JSONL journals under `$PI_CODING_AGENT_DIR` or `~/.omp/agent` | `omp models list --no-extensions --json` | `omp --model ID -- PROMPT` | `--yolo` | `omp --resume PATH_OR_ID` | `omp --no-session`, then `/login` |
+| Grok | `summary.json` plus `updates.jsonl` under `$GROK_HOME/sessions` | `grok models` | `grok --no-auto-update --model ID -- PROMPT` | `--yolo` | `grok --no-auto-update --resume UUID` | `grok login` |
+| Kilo Code | bounded read-only `kilo db "SELECT … FROM session" --format json` | `kilo models` | `kilo run --interactive --model ID PROMPT` | `--yolo` | `kilo --session ID` | `kilo auth login` |
+| OpenHands | Bounded event files under `$OPENHANDS_CONVERSATIONS_DIR` or `~/.openhands/conversations` | Saved `agent.llm.model` values and `LLM_MODEL`; exact IDs remain accepted | `LLM_MODEL=ID openhands --override-with-envs --task PROMPT` | `--always-approve` | `openhands --resume UUID` | `openhands login` |
 
 The defaults and commands above were checked against the same upstream
 interfaces used by Session Migrate. Provider credentials stay inside the
@@ -40,6 +40,9 @@ Primary upstream references:
   transcript bodies or credentials.
 - Ctrl+X can stop only an exact OAV-owned native frontend retained by the
   current dashboard process. Saved external sessions remain inspect/open only.
+- Normal launches keep provider approvals enabled. OAV passes the verified
+  setting in the table only after explicit startup with `--yolo`, and keeps the
+  dangerous mode visibly marked.
 
 ## Verification
 

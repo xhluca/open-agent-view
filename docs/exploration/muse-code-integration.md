@@ -28,10 +28,13 @@ muse [OPTIONS] [PROMPT]
 muse resume <session-uuid>
 muse login
 muse --model <MODEL> [PROMPT]
+muse --yolo [PROMPT]
 muse exec --provider echo <PROMPT>
 ```
 
-OAV never adds `--yolo`, `--disable-approval`, or `--disable-sandbox`.
+Normal OAV launches never add a permission-bypass option. The explicit
+top-level OAV `--yolo` mode passes Muse's verified `--yolo` flag and marks the
+dashboard and native PTY; OAV does not infer that choice from provider state.
 
 ## Persistence and discovery
 

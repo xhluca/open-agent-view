@@ -178,6 +178,7 @@ pub fn run_dashboard(
         control.default_launch_provider(),
         control.launch_targets(),
     );
+    app.set_yolo(control.yolo_enabled(), control.yolo_supported_providers());
     let mut terminal = TerminalSession::enter()?;
     let initial_size = terminal.terminal.size()?;
     app.set_session_page_size(session_page_size_for_terminal(initial_size.height));
