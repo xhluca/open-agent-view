@@ -61,6 +61,10 @@ pub struct ControlHubConfig {
     pub launch_provider: Provider,
     pub launch_cwd: PathBuf,
     pub provider_io_enabled: bool,
+    /// Explicitly opt newly launched sessions into the provider's verified
+    /// permission-bypass mode. Providers without an exact native equivalent
+    /// reject launch instead of guessing.
+    pub yolo: bool,
 }
 
 /// Provider-specific lifecycle operations registered with the shared dashboard.
@@ -96,6 +100,12 @@ pub trait ProviderController: Send + Sync {
         LaunchPresentation::Background
     }
 
+    /// Whether this controller has a verified native equivalent for OAV's
+    /// explicit `--yolo` mode.
+    fn supports_yolo(&self) -> bool {
+        false
+    }
+
     /// Whether the provider has a native, interactive authentication flow.
     fn supports_authentication(&self) -> bool {
         false
@@ -119,6 +129,17 @@ pub trait ProviderController: Send + Sync {
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
         self.launch(request)
+    }
+
+    fn launch_yolo(&self, _request: &LaunchRequest) -> Result<ControlOutcome> {
+        bail!(
+            "{} does not expose a verified permission-bypass mode",
+            self.provider().label()
+        )
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_yolo(request)
     }
 
     fn interrupt(&self, _session: &AgentSession) -> Result<ControlOutcome> {
@@ -172,6 +193,7 @@ pub struct ControlHub {
     launch_provider: Provider,
     launch_cwd: PathBuf,
     provider_io_enabled: bool,
+    yolo: bool,
     migration_registry: Option<MigrationRegistry>,
 }
 
@@ -224,6 +246,7 @@ impl ControlHub {
             launch_provider: config.launch_provider,
             launch_cwd: config.launch_cwd,
             provider_io_enabled: config.provider_io_enabled,
+            yolo: config.yolo,
             migration_registry: None,
         })
     }
@@ -290,6 +313,18 @@ impl ControlHub {
 
     pub fn default_launch_provider(&self) -> Provider {
         self.launch_provider.clone()
+    }
+
+    pub fn yolo_enabled(&self) -> bool {
+        self.yolo
+    }
+
+    pub fn yolo_supported_providers(&self) -> BTreeSet<Provider> {
+        self.controllers
+            .values()
+            .filter(|controller| controller.supports_yolo())
+            .map(|controller| controller.provider())
+            .collect()
     }
 
     pub fn launch_targets(&self) -> Vec<LaunchTarget> {
@@ -411,6 +446,12 @@ impl ControlHub {
         self.ensure_provider_io()?;
         let controller = self.controller(&provider)?;
         let model = validate_model(model)?;
+        if self.yolo && !controller.supports_yolo() {
+            bail!(
+                "{} does not expose a verified permission-bypass mode; restart without --yolo",
+                provider.label()
+            );
+        }
         match (controller.launch_mode(), model.as_ref()) {
             (LaunchMode::Unavailable, _) => {
                 bail!("{} launch is unavailable", provider.label())
@@ -426,7 +467,11 @@ impl ControlHub {
             prompt,
             cwd: self.launch_cwd.clone(),
         };
-        controller.launch(&request)
+        if self.yolo {
+            controller.launch_yolo(&request)
+        } else {
+            controller.launch(&request)
+        }
     }
 
     pub fn launch_foreground_with(
@@ -438,6 +483,12 @@ impl ControlHub {
         self.ensure_provider_io()?;
         let controller = self.controller(&provider)?;
         let model = validate_model(model)?;
+        if self.yolo && !controller.supports_yolo() {
+            bail!(
+                "{} does not expose a verified permission-bypass mode; restart without --yolo",
+                provider.label()
+            );
+        }
         match (controller.launch_mode(), model.as_ref()) {
             (LaunchMode::Unavailable, _) => {
                 bail!("{} launch is unavailable", provider.label())
@@ -447,12 +498,17 @@ impl ControlHub {
             }
             _ => {}
         }
-        controller.launch_foreground(&LaunchRequest {
+        let request = LaunchRequest {
             provider,
             model,
             prompt,
             cwd: self.launch_cwd.clone(),
-        })
+        };
+        if self.yolo {
+            controller.launch_foreground_yolo(&request)
+        } else {
+            controller.launch_foreground(&request)
+        }
     }
 
     pub fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -667,7 +723,11 @@ impl ClaudeController {
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        let session_id = self.start_background(request)?;
+        self.launch_with_security(request, false)
+    }
+
+    fn launch_with_security(&self, request: &LaunchRequest, yolo: bool) -> Result<ControlOutcome> {
+        let session_id = self.start_background(request, yolo)?;
         Ok(ControlOutcome {
             message: format!(
                 "started Claude background session {}",
@@ -677,11 +737,14 @@ impl ClaudeController {
         })
     }
 
-    fn start_background(&self, request: &LaunchRequest) -> Result<String> {
+    fn start_background(&self, request: &LaunchRequest, yolo: bool) -> Result<String> {
         if request.prompt.trim().is_empty() {
             bail!("the launch prompt cannot be empty");
         }
         let mut args = self.invocation.prefix_args.clone();
+        if yolo {
+            args.push("--dangerously-skip-permissions".into());
+        }
         if let Some(model) = &request.model {
             args.extend(["--model".into(), model.clone()]);
         }
@@ -709,6 +772,7 @@ impl ClaudeController {
             runtime_key: runtime_key(&self.runtime),
             provider_id_prefix: session_id.clone(),
             created_at_ms: now_millis(),
+            yolo,
         };
         if let Err(error) = self
             .registry
@@ -731,20 +795,35 @@ impl ClaudeController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, false)
+    }
+
+    fn launch_foreground_with_security(
+        &self,
+        request: &LaunchRequest,
+        yolo: bool,
+    ) -> Result<ControlOutcome> {
         if request.prompt.trim().is_empty() {
             bail!("the launch prompt cannot be empty");
         }
         if self.runtime != Runtime::Host {
             bail!("foreground Claude launch is supported only on the host");
         }
-        let session_id = self.start_background(request)?;
+        let session_id = self.start_background(request, yolo)?;
         let mut attach = Command::new(&self.invocation.program);
+        attach.args(&self.invocation.prefix_args);
+        if yolo {
+            attach.arg("--dangerously-skip-permissions");
+        }
         attach
-            .args(&self.invocation.prefix_args)
             .args(["attach", &short_claude_id(&session_id)])
             .current_dir(&request.cwd);
         let session_key = format!("claude:host:{session_id}");
-        let exit = crate::native_session::run(attach, &session_key)?;
+        let exit = if yolo {
+            crate::native_session::run_yolo(attach, &session_key, "Claude Code")?
+        } else {
+            crate::native_session::run(attach, &session_key)?
+        };
         match exit {
             crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
                 message: format!(
@@ -890,6 +969,10 @@ impl ProviderController for ClaudeController {
         }
     }
 
+    fn supports_yolo(&self) -> bool {
+        self.runtime == Runtime::Host
+    }
+
     fn supports_authentication(&self) -> bool {
         self.runtime == Runtime::Host
     }
@@ -933,6 +1016,14 @@ impl ProviderController for ClaudeController {
         ClaudeController::launch_foreground(self, request)
     }
 
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_with_security(request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
+    }
+
     fn interrupt(&self, session: &AgentSession) -> Result<ControlOutcome> {
         self.stop(session)
     }
@@ -962,10 +1053,23 @@ impl ProviderController for ClaudeController {
         match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.invocation.program);
+                let yolo = self
+                    .registry
+                    .lock()
+                    .map_err(|_| anyhow::anyhow!("ownership registry lock was poisoned"))?
+                    .yolo_for(session);
+                if yolo {
+                    command.arg("--dangerously-skip-permissions");
+                }
                 command
                     .args(["attach", &short_claude_id(&session.provider_session_id)])
                     .current_dir(&session.cwd);
-                match crate::native_session::run(command, &session.id)? {
+                let exit = if yolo {
+                    crate::native_session::run_yolo(command, &session.id, "Claude Code")?
+                } else {
+                    crate::native_session::run(command, &session.id)?
+                };
+                match exit {
                     crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
                         message: format!("backgrounded {}; Enter/Right resumes it", session.name),
                         provider_session_hint: Some(session.provider_session_id.clone()),
@@ -1005,6 +1109,42 @@ struct CodexController {
     docker_bin: String,
 }
 
+impl CodexController {
+    fn launch_portable(&self, request: &LaunchRequest, yolo: bool) -> Result<ControlOutcome> {
+        if request.provider != Provider::Codex || request.prompt.trim().is_empty() {
+            bail!("the Codex launch prompt cannot be empty");
+        }
+        let mut command = Command::new(&self.codex_bin);
+        if yolo {
+            command.arg("--dangerously-bypass-approvals-and-sandbox");
+        }
+        if let Some(model) = request.model.as_deref() {
+            command.args(["--model", model]);
+        }
+        command.arg(request.prompt.trim()).current_dir(&request.cwd);
+        let exit = if yolo {
+            crate::native_session::run_yolo(command, "codex:portable:new", "Codex")?
+        } else {
+            crate::native_session::run(command, "codex:portable:new")?
+        };
+        match exit {
+            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
+                message: "backgrounded Codex session; refresh to discover its thread".into(),
+                provider_session_hint: None,
+            }),
+            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+                Ok(ControlOutcome {
+                    message: "returned from Codex; refresh to discover its thread".into(),
+                    provider_session_hint: None,
+                })
+            }
+            crate::native_session::NativeSessionExit::Exited(status) => {
+                bail!("Codex exited with status {status}")
+            }
+        }
+    }
+}
+
 impl ProviderController for CodexController {
     fn provider(&self) -> Provider {
         Provider::Codex
@@ -1020,6 +1160,10 @@ impl ProviderController for CodexController {
         } else {
             LaunchPresentation::Foreground
         }
+    }
+
+    fn supports_yolo(&self) -> bool {
+        true
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -1063,28 +1207,31 @@ impl ProviderController for CodexController {
         if self.supervisor.is_some() {
             return self.launch(request);
         }
-        if request.provider != Provider::Codex || request.prompt.trim().is_empty() {
-            bail!("the Codex launch prompt cannot be empty");
-        }
-        let mut command = Command::new(&self.codex_bin);
-        if let Some(model) = request.model.as_deref() {
-            command.args(["--model", model]);
-        }
-        command.arg(request.prompt.trim()).current_dir(&request.cwd);
-        match crate::native_session::run(command, "codex:portable:new")? {
-            crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
-                message: "backgrounded Codex session; refresh to discover its thread".into(),
-                provider_session_hint: None,
-            }),
-            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
-                Ok(ControlOutcome {
-                    message: "returned from Codex; refresh to discover its thread".into(),
-                    provider_session_hint: None,
-                })
-            }
-            crate::native_session::NativeSessionExit::Exited(status) => {
-                bail!("Codex exited with status {status}")
-            }
+        self.launch_portable(request, false)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        let supervisor = self
+            .supervisor
+            .as_ref()
+            .context("durable Codex YOLO launch is unavailable on this platform")?;
+        let thread_id = supervisor.launch_with_model_and_security(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+            true,
+        )?;
+        Ok(ControlOutcome {
+            message: format!("started managed Codex YOLO thread {thread_id}"),
+            provider_session_hint: Some(thread_id),
+        })
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if self.supervisor.is_some() {
+            self.launch_yolo(request)
+        } else {
+            self.launch_portable(request, true)
         }
     }
 
@@ -1218,9 +1365,16 @@ impl ProviderController for CodexController {
             .supervisor
             .as_ref()
             .and_then(|supervisor| supervisor.remote_url_if_owned(session));
+        let yolo = self
+            .supervisor
+            .as_ref()
+            .is_some_and(|supervisor| supervisor.yolo_if_owned(session));
         let command = match &session.runtime {
             Runtime::Host => {
                 let mut command = Command::new(&self.codex_bin);
+                if yolo {
+                    command.arg("--dangerously-bypass-approvals-and-sandbox");
+                }
                 if let Some(remote) = remote.as_deref() {
                     command.args(["--remote", remote, "resume", &session.provider_session_id]);
                 } else {
@@ -1242,7 +1396,11 @@ impl ProviderController for CodexController {
                 command
             }
         };
-        run_interactive(command, session)
+        if yolo {
+            run_interactive_yolo(command, session, "Codex")
+        } else {
+            run_interactive(command, session)
+        }
     }
 }
 
@@ -1301,7 +1459,27 @@ fn portable_codex_models(executable: &str) -> Result<Vec<String>> {
 }
 
 fn run_interactive(command: Command, session: &AgentSession) -> Result<ControlOutcome> {
-    match crate::native_session::run(command, &session.id)? {
+    run_interactive_with_security(command, session, None)
+}
+
+fn run_interactive_yolo(
+    command: Command,
+    session: &AgentSession,
+    provider: &str,
+) -> Result<ControlOutcome> {
+    run_interactive_with_security(command, session, Some(provider))
+}
+
+fn run_interactive_with_security(
+    command: Command,
+    session: &AgentSession,
+    yolo_provider: Option<&str>,
+) -> Result<ControlOutcome> {
+    let exit = match yolo_provider {
+        Some(provider) => crate::native_session::run_yolo(command, &session.id, provider)?,
+        None => crate::native_session::run(command, &session.id)?,
+    };
+    match exit {
         crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
             message: format!("backgrounded {}; Enter/Right resumes it", session.name),
             provider_session_hint: Some(session.provider_session_id.clone()),
@@ -1362,6 +1540,8 @@ struct OwnedSession {
     runtime_key: String,
     provider_id_prefix: String,
     created_at_ms: u64,
+    #[serde(default)]
+    yolo: bool,
 }
 
 #[derive(Debug)]
@@ -1399,6 +1579,21 @@ impl OwnershipRegistry {
                     .provider_session_id
                     .starts_with(&record.provider_id_prefix)
         })
+    }
+
+    fn yolo_for(&self, session: &AgentSession) -> bool {
+        let runtime = runtime_key(&session.runtime);
+        self.records
+            .iter()
+            .rev()
+            .find(|record| {
+                record.provider == session.provider
+                    && record.runtime_key == runtime
+                    && session
+                        .provider_session_id
+                        .starts_with(&record.provider_id_prefix)
+            })
+            .is_some_and(|record| record.yolo)
     }
 
     fn save(&self) -> Result<()> {
@@ -1735,6 +1930,7 @@ mod tests {
                 runtime_key: "host".into(),
                 provider_id_prefix: "4b34abd1".into(),
                 created_at_ms: 1,
+                yolo: false,
             })
             .unwrap();
         let registry = OwnershipRegistry::load(path).unwrap();
@@ -1754,6 +1950,7 @@ mod tests {
                 runtime_key: "host".into(),
                 provider_id_prefix: "owned123".into(),
                 created_at_ms: 1,
+                yolo: false,
             })
             .unwrap();
         let hub = ControlHub {
@@ -1763,6 +1960,7 @@ mod tests {
             launch_provider: Provider::Claude,
             launch_cwd: PathBuf::from("/work"),
             provider_io_enabled: true,
+            yolo: false,
             migration_registry: None,
         };
         let mut owned = session("owned123-full");
@@ -1888,6 +2086,67 @@ mod tests {
     }
 
     #[test]
+    fn claude_yolo_launch_uses_the_exact_native_flag_and_persists_the_mode() {
+        let directory = tempdir().unwrap();
+        let registry = OwnershipRegistry::load(directory.path().join("ownership.json")).unwrap();
+        let session_id = "deadcafe-91dc-4b50-a43f-6db2837576fe";
+        let inventory = format!(
+            r#"[{{"id":"deadcafe","sessionId":"{session_id}","cwd":"/work/project","kind":"background","name":"dashboard","state":"working"}}]"#
+        );
+        let runner = Arc::new(QueueRunner {
+            requests: Mutex::new(Vec::new()),
+            outputs: Mutex::new(VecDeque::from([
+                CommandOutput {
+                    status: 0,
+                    stdout: "backgrounded · deadcafe\n".as_bytes().to_vec(),
+                    stderr: vec![],
+                },
+                CommandOutput {
+                    status: 0,
+                    stdout: inventory.into_bytes(),
+                    stderr: vec![],
+                },
+            ])),
+        });
+        let controller = ClaudeController {
+            invocation: ControlInvocation {
+                program: "claude-test".into(),
+                prefix_args: Vec::new(),
+            },
+            docker_bin: "must-not-run-docker".into(),
+            runtime: Runtime::Host,
+            runner: runner.clone(),
+            registry: Arc::new(Mutex::new(registry)),
+            summary_cache: Mutex::new(BTreeMap::new()),
+        };
+        let request = LaunchRequest {
+            provider: Provider::Claude,
+            model: Some("opus".into()),
+            prompt: "Implement the dashboard".into(),
+            cwd: PathBuf::from("/work/project"),
+        };
+
+        <ClaudeController as ProviderController>::launch_yolo(&controller, &request).unwrap();
+
+        let requests = runner.requests.lock().unwrap();
+        assert_eq!(
+            requests[0].args,
+            vec![
+                "--dangerously-skip-permissions",
+                "--model",
+                "opus",
+                "--background",
+                "Implement the dashboard",
+            ]
+        );
+        assert!(controller
+            .registry
+            .lock()
+            .unwrap()
+            .yolo_for(&session(session_id)));
+    }
+
+    #[test]
     fn claude_background_id_parser_accepts_only_the_current_exact_contract() {
         assert_eq!(
             parse_claude_background_id("backgrounded · A1b2C3d4\n").unwrap(),
@@ -1985,6 +2244,7 @@ exit 0
                 runtime_key: "host".into(),
                 provider_id_prefix: "4b34abd1".into(),
                 created_at_ms: 1,
+                yolo: false,
             })
             .unwrap();
         let inventory = format!(
@@ -2116,6 +2376,7 @@ exit 0
             launch_provider: Provider::Claude,
             launch_cwd: directory.path().into(),
             provider_io_enabled: false,
+            yolo: false,
             migration_registry: None,
         };
         let mut item = session("fixture-session");
@@ -2171,6 +2432,7 @@ exit 0
             launch_provider,
             launch_cwd: PathBuf::from("/work"),
             provider_io_enabled: true,
+            yolo: false,
             migration_registry: None,
         }
     }
@@ -2462,6 +2724,28 @@ exit 0
             hub.inspect(&snapshot.sessions[0]).unwrap(),
             "inspected first"
         );
+    }
+
+    #[test]
+    fn yolo_hub_refuses_unverified_harnesses_before_dispatch() {
+        let mut hub = uncontrolled_hub(Provider::Pi);
+        hub.yolo = true;
+        hub.register_controller(Arc::new(StubController {
+            provider: Provider::Pi,
+            marker: "must-not-launch",
+        }))
+        .unwrap();
+
+        let error = hub
+            .launch_with(Provider::Pi, None, "safe prompt".into())
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(
+            error,
+            "Pi does not expose a verified permission-bypass mode; restart without --yolo"
+        );
+        assert!(hub.yolo_supported_providers().is_empty());
     }
 
     #[test]

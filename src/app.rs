@@ -149,6 +149,8 @@ pub struct App {
     pub launch_targets: Vec<LaunchTarget>,
     pub launch_provider: Provider,
     pub launch_model: Option<String>,
+    pub yolo: bool,
+    pub yolo_supported_providers: BTreeSet<Provider>,
     pub harness_selection: usize,
     pub available_models: Vec<String>,
     pub model_filter: String,
@@ -219,6 +221,8 @@ impl App {
             launch_targets,
             launch_provider,
             launch_model: None,
+            yolo: false,
+            yolo_supported_providers: BTreeSet::new(),
             harness_selection,
             available_models: Vec::new(),
             model_filter: String::new(),
@@ -247,6 +251,11 @@ impl App {
         app.rebuild_snapshot_cache();
         app.reconcile_selection();
         app
+    }
+
+    pub fn set_yolo(&mut self, enabled: bool, supported_providers: BTreeSet<Provider>) {
+        self.yolo = enabled;
+        self.yolo_supported_providers = supported_providers;
     }
 
     pub fn replace_snapshot(&mut self, snapshot: SessionSnapshot) {

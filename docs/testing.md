@@ -16,6 +16,26 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## Unreleased explicit-YOLO gate (2026-09-03)
+
+- Rust 1.75 Rustfmt and warning-free Clippy passed in the documented read-only
+  Docker quality environment.
+- The complete locked suite passed: 399 library tests, 19 CLI tests, every
+  default integration suite, and 24 deterministic real-TTY scenarios. Four
+  credential-gated host probes remained explicitly ignored.
+- Exact argv tests cover the verified native mappings for Claude Code, Codex,
+  Cursor, Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Oh My Pi,
+  Grok, Kilo Code, and OpenHands. Safe launches are checked separately so the
+  flags cannot leak into the default path.
+- A hub-level regression rejects an unsupported harness before provider
+  dispatch. Renderer and parser tests prove that the option is explicit for
+  both `open-agent-view` and `oav`, unsupported picker rows are marked, and the
+  dangerous mode stays visible in the dashboard and composer.
+- A real outer PTY starts OAV with `--yolo`, selects Antigravity and an exact
+  model, verifies the native argument and absence of the mutually exclusive
+  sandbox flag, sees the warning in the provider screen, backgrounds it, and
+  stops the exact retained session from the still-marked dashboard.
+
 ## v0.1.50 migration and Codex supervision gate (2026-08-31)
 
 - The complete pull-request matrix passed 18 hosted checks: Rust 1.75 and

@@ -468,6 +468,10 @@ impl ProviderController for MistralVibeController {
         LaunchPresentation::Foreground
     }
 
+    fn supports_yolo(&self) -> bool {
+        true
+    }
+
     fn supports_authentication(&self) -> bool {
         true
     }
@@ -495,97 +499,15 @@ impl ProviderController for MistralVibeController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        if request.provider != Provider::MistralVibe {
-            bail!("the Mistral Vibe controller cannot launch another provider");
-        }
-        if request.prompt.trim().is_empty() {
-            bail!("the Mistral Vibe launch prompt cannot be empty");
-        }
-        let before = self
-            .rpc
-            .sessions(Some(&request.cwd), 100)?
-            .into_iter()
-            .map(|session| session.id)
-            .collect::<HashSet<_>>();
-        let launched_at_ms = now_millis();
-        let launch_key = format!(
-            "mistral-vibe:launch:{}",
-            crate::native_session::new_session_id()?
-        );
-        let mut command = Command::new(&self.executable);
-        command.arg(request.prompt.trim()).current_dir(&request.cwd);
-        if let Some(model) = request.model.as_deref() {
-            command.env("VIBE_ACTIVE_MODEL", model);
-        }
-        let native_exit = crate::native_session::run(command, &launch_key)?;
-        if let crate::native_session::NativeSessionExit::Exited(status) = &native_exit {
-            if !status.success() {
-                bail!("Mistral Vibe session exited with status {status}");
-            }
-        }
-        let correlated = match self.correlate(&before, request, launched_at_ms) {
-            Ok(session) => session,
-            Err(error) => {
-                if matches!(
-                    native_exit,
-                    crate::native_session::NativeSessionExit::Backgrounded
-                ) {
-                    let _ = crate::native_session::terminate(&launch_key);
-                }
-                return Err(error).context(
-                    "could not correlate the new Mistral Vibe session; stopped its live foreground bridge",
-                );
-            }
-        };
-        let Some(session) = correlated else {
-            if matches!(
-                native_exit,
-                crate::native_session::NativeSessionExit::Backgrounded
-            ) {
-                let _ = crate::native_session::terminate(&launch_key);
-            }
-            return Ok(ControlOutcome {
-                message: "returned from Mistral Vibe; its app server did not expose one unambiguous new session, so OAV did not claim ownership or keep a live frontend".into(),
-                provider_session_hint: None,
-            });
-        };
-        if let Err(error) =
-            self.ownership
-                .record(&session, &request.cwd, &summarize(&request.prompt, 48))
-        {
-            if matches!(
-                native_exit,
-                crate::native_session::NativeSessionExit::Backgrounded
-            ) {
-                let _ = crate::native_session::terminate(&launch_key);
-            }
-            return Err(error).context(
-                "could not persist Mistral Vibe ownership; stopped its live foreground bridge",
-            );
-        }
-        self.launch_keys
-            .lock()
-            .map_err(|_| anyhow!("Mistral Vibe launch-key lock was poisoned"))?
-            .insert(session.id.clone(), launch_key);
-        let message = match native_exit {
-            crate::native_session::NativeSessionExit::Backgrounded => format!(
-                "backgrounded Mistral Vibe session {}; Enter/Right resumes it",
-                session.id.chars().take(8).collect::<String>()
-            ),
-            crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
-                format!(
-                    "returned from Mistral Vibe session {}",
-                    session.id.chars().take(8).collect::<String>()
-                )
-            }
-            crate::native_session::NativeSessionExit::Exited(status) => {
-                bail!("Mistral Vibe session exited with status {status}")
-            }
-        };
-        Ok(ControlOutcome {
-            message,
-            provider_session_hint: Some(session.id),
-        })
+        launch_mistral_vibe(self, request, false)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        launch_mistral_vibe(self, request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        launch_mistral_vibe(self, request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -630,6 +552,118 @@ impl ProviderController for MistralVibeController {
             session.state.heading()
         ))
     }
+}
+
+fn launch_mistral_vibe(
+    controller: &MistralVibeController,
+    request: &LaunchRequest,
+    yolo: bool,
+) -> Result<ControlOutcome> {
+    if request.provider != Provider::MistralVibe {
+        bail!("the Mistral Vibe controller cannot launch another provider");
+    }
+    if request.prompt.trim().is_empty() {
+        bail!("the Mistral Vibe launch prompt cannot be empty");
+    }
+    let before = controller
+        .rpc
+        .sessions(Some(&request.cwd), 100)?
+        .into_iter()
+        .map(|session| session.id)
+        .collect::<HashSet<_>>();
+    let launched_at_ms = now_millis();
+    let launch_key = format!(
+        "mistral-vibe:launch:{}",
+        crate::native_session::new_session_id()?
+    );
+    let command = mistral_vibe_launch_command(&controller.executable, request, yolo);
+    let native_exit = if yolo {
+        crate::native_session::run_yolo(command, &launch_key, "Mistral Vibe")?
+    } else {
+        crate::native_session::run(command, &launch_key)?
+    };
+    if let crate::native_session::NativeSessionExit::Exited(status) = &native_exit {
+        if !status.success() {
+            bail!("Mistral Vibe session exited with status {status}");
+        }
+    }
+    let correlated = match controller.correlate(&before, request, launched_at_ms) {
+        Ok(session) => session,
+        Err(error) => {
+            if matches!(
+                native_exit,
+                crate::native_session::NativeSessionExit::Backgrounded
+            ) {
+                let _ = crate::native_session::terminate(&launch_key);
+            }
+            return Err(error).context(
+                "could not correlate the new Mistral Vibe session; stopped its live foreground bridge",
+            );
+        }
+    };
+    let Some(session) = correlated else {
+        if matches!(
+            native_exit,
+            crate::native_session::NativeSessionExit::Backgrounded
+        ) {
+            let _ = crate::native_session::terminate(&launch_key);
+        }
+        return Ok(ControlOutcome {
+            message: "returned from Mistral Vibe; its app server did not expose one unambiguous new session, so OAV did not claim ownership or keep a live frontend".into(),
+            provider_session_hint: None,
+        });
+    };
+    if let Err(error) =
+        controller
+            .ownership
+            .record(&session, &request.cwd, &summarize(&request.prompt, 48))
+    {
+        if matches!(
+            native_exit,
+            crate::native_session::NativeSessionExit::Backgrounded
+        ) {
+            let _ = crate::native_session::terminate(&launch_key);
+        }
+        return Err(error).context(
+            "could not persist Mistral Vibe ownership; stopped its live foreground bridge",
+        );
+    }
+    controller
+        .launch_keys
+        .lock()
+        .map_err(|_| anyhow!("Mistral Vibe launch-key lock was poisoned"))?
+        .insert(session.id.clone(), launch_key);
+    let message = match native_exit {
+        crate::native_session::NativeSessionExit::Backgrounded => format!(
+            "backgrounded Mistral Vibe session {}; Enter/Right resumes it",
+            session.id.chars().take(8).collect::<String>()
+        ),
+        crate::native_session::NativeSessionExit::Exited(status) if status.success() => {
+            format!(
+                "returned from Mistral Vibe session {}",
+                session.id.chars().take(8).collect::<String>()
+            )
+        }
+        crate::native_session::NativeSessionExit::Exited(status) => {
+            bail!("Mistral Vibe session exited with status {status}")
+        }
+    };
+    Ok(ControlOutcome {
+        message,
+        provider_session_hint: Some(session.id),
+    })
+}
+
+fn mistral_vibe_launch_command(executable: &str, request: &LaunchRequest, yolo: bool) -> Command {
+    let mut command = Command::new(executable);
+    if yolo {
+        command.arg("--auto-approve");
+    }
+    command.arg(request.prompt.trim()).current_dir(&request.cwd);
+    if let Some(model) = request.model.as_deref() {
+        command.env("VIBE_ACTIVE_MODEL", model);
+    }
+    command
 }
 
 fn normalize_session(
@@ -1002,6 +1036,26 @@ mod tests {
             cwd: Some(PathBuf::from("/work")),
             model: Some("devstral".into()),
         }
+    }
+
+    #[test]
+    fn yolo_launch_uses_vibes_verified_auto_approve_alias() {
+        let request = LaunchRequest {
+            provider: Provider::MistralVibe,
+            model: Some("devstral".into()),
+            prompt: "fix the parser".into(),
+            cwd: PathBuf::from("/work"),
+        };
+        let safe = mistral_vibe_launch_command("vibe", &request, false);
+        assert_eq!(safe.get_args().collect::<Vec<_>>(), ["fix the parser"]);
+        let yolo = mistral_vibe_launch_command("vibe", &request, true);
+        assert_eq!(
+            yolo.get_args().collect::<Vec<_>>(),
+            ["--auto-approve", "fix the parser"]
+        );
+        assert!(yolo.get_envs().any(|(key, value)| {
+            key == "VIBE_ACTIVE_MODEL" && value == Some(std::ffi::OsStr::new("devstral"))
+        }));
     }
 
     #[test]

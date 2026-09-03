@@ -63,8 +63,10 @@ external management protocols.
 `agy models`, `--model ID`, `--new-project`, and `--prompt-interactive PROMPT`
 are also exposed.
 `--dangerously-skip-permissions` is an explicit authority bypass. Open Agent
-View never adds it. Its new-session builder selects `--sandbox`, the exact
-account-selected model, and an interactive initial prompt.
+View adds it only after explicit startup with OAV's top-level `--yolo` option,
+and keeps that mode visibly marked. Normal new-session launch instead selects
+`--sandbox`, the exact account-selected model, and an interactive initial
+prompt. The two modes are mutually exclusive.
 
 ## The only documented discovery cache
 

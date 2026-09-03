@@ -65,6 +65,34 @@ neither reads the resulting token nor persists
 answers; it only retries the provider-native model catalog after the command
 returns. Providers revalidate an exact selected model at launch.
 
+## Explicit YOLO mode
+
+The default remains each harness's normal approval and sandbox policy. The
+top-level `--yolo` flag is an explicit launch policy for people who knowingly
+want the harness's own unattended or permission-bypass mode. It never changes
+which sessions OAV owns, and it is never inferred from an environment variable,
+saved session, configuration file, or provider state.
+
+The verified mappings are Claude Code
+`--dangerously-skip-permissions`, Codex
+`--dangerously-bypass-approvals-and-sandbox` (or App Server
+`approvalPolicy=never` plus `sandbox=danger-full-access`), Cursor `--force` on
+Linux managed sessions, Antigravity `--dangerously-skip-permissions`, Muse Code
+`--yolo`, Mistral Vibe `--auto-approve`, Qwen Code `--yolo`, Kimi Code
+`--yolo`, Oh My Pi `--yolo`, Grok `--yolo`, Kilo Code `--yolo`, and OpenHands
+`--always-approve`. OAV refuses every other harness before launch. In
+particular, Pi's project-trust `--approve` option is not treated as a permission
+bypass, and OpenCode's top-level YOLO mode is not claimed because its attach
+client does not accept that flag.
+
+The dashboard and task composer keep a visible warning for the entire OAV
+process. A provider-native PTY prints the same warning on first entry and keeps
+it in the terminal title when first entered or resumed. Persisted Claude,
+Codex, and Cursor ownership
+records remember which OAV-created sessions need that native warning after a
+dashboard restart. Existing sessions retain the policy with which they were
+created; starting OAV with `--yolo` does not retrofit them.
+
 Missing-harness setup is a separate explicit mutation. `open-agent-view setup
 HARNESS` names the official source and requires a terminal confirmation (or
 literal `--yes`). Downloaded shell installers are staged in a private temporary

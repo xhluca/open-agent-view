@@ -22,6 +22,7 @@ Verified command contracts are:
 kimi                         # native interactive TUI
 kimi --session <ID>          # exact native resume
 kimi --model <ALIAS>         # select configured model alias
+kimi --yolo                  # auto-approve tool calls
 kimi login                   # RFC 8628 device-code login
 kimi provider list --json    # configured providers and model aliases
 ```
@@ -70,6 +71,10 @@ OAV waits for the official authenticated welcome text
 `Send /help for help information.` before writing `PROMPT` and Enter to the
 PTY. Logged-out, provider-setup, and trust dialogs do not contain this marker
 and therefore never receive task text.
+
+Normal OAV launches retain Kimi's tool-call approvals. The explicit top-level
+OAV `--yolo` mode passes Kimi's verified `--yolo` option and keeps a warning
+visible in the dashboard and native PTY.
 
 After native return/background, OAV polls for up to five seconds for exactly
 one new same-workspace index row. Zero rows time out without claiming

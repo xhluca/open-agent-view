@@ -14,6 +14,7 @@ at commit `a84be0391bf93e93a4025a5e08e8032ecb587123` and its official installer 
 - `vibe [PROMPT]` opens a new native interactive session.
 - `vibe --resume SESSION_ID` opens an exact saved session.
 - `vibe --setup` owns authentication and first-run configuration.
+- `vibe --auto-approve` (also exposed as `--yolo`) approves all tool calls.
 - `VIBE_ACTIVE_MODEL=ALIAS` selects one configured model for native launch.
 - The installed `vibe-app-server` JSON-RPC program exposes `session/list` and
   `config/read`. The latter returns configured model aliases.
@@ -37,6 +38,9 @@ only when the exact OAV ownership record supplies the verified launch
 directory; unowned records with no directory are omitted. If correlation or
 ownership persistence fails while the new native frontend is backgrounded,
 OAV stops that exact private PTY instead of leaving an unreachable process.
+Normal OAV launches retain Vibe's approval prompts. The explicit top-level OAV
+`--yolo` mode passes Vibe's verified `--auto-approve` option and marks the
+dashboard and native PTY with a persistent warning.
 
 The provider-native frontend can be backgrounded and resumed in the current
 dashboard process. Interrupt is granted only while that exact private PTY is

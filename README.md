@@ -85,6 +85,11 @@ See the [CLI and keyboard guide](docs/cli.md) for model selection, login/setup,
 completed-session visibility, paging, bulk actions, and non-interactive CLI
 commands.
 
+For deliberately unattended work, `oav --yolo` maps to a verified native
+permission-bypass mode on supported harnesses, stays visibly marked, and fails
+closed everywhere else. It is off by default; see the
+[security and provider mapping](docs/cli.md#explicit-yolo-mode) before using it.
+
 `Ctrl+M` opens a destination picker, then a name editor prefilled with the
 current name plus the destination harness. OAV delegates the conversion to
 [session-migrate](https://github.com/xhluca/session-migrate), keeps the imported

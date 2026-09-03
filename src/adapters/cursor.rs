@@ -68,12 +68,36 @@ impl CursorInvocation {
         prompt: &str,
         model: Option<&str>,
     ) -> Result<CursorCommandSpec> {
+        self.resume_with_prompt_security(session_id, cwd, prompt, model, false)
+    }
+
+    pub fn resume_with_prompt_yolo(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<CursorCommandSpec> {
+        self.resume_with_prompt_security(session_id, cwd, prompt, model, true)
+    }
+
+    fn resume_with_prompt_security(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<CursorCommandSpec> {
         require_session_id(session_id)?;
         require_absolute_cwd(cwd)?;
         if prompt.trim().is_empty() {
             bail!("Cursor prompt must not be empty");
         }
         let mut spec = self.resume(session_id, cwd)?;
+        if yolo {
+            spec.args.insert(0, "--force".into());
+        }
         if let Some(model) = model {
             require_model(model)?;
             spec.args.extend(["--model".into(), model.into()]);
@@ -121,12 +145,37 @@ impl CursorInvocation {
         prompt: &str,
         model: Option<&str>,
     ) -> Result<CursorCommandSpec> {
+        self.print_turn_with_security(session_id, cwd, prompt, model, false)
+    }
+
+    pub fn print_turn_yolo(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<CursorCommandSpec> {
+        self.print_turn_with_security(session_id, cwd, prompt, model, true)
+    }
+
+    fn print_turn_with_security(
+        &self,
+        session_id: &str,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<CursorCommandSpec> {
         require_session_id(session_id)?;
         require_absolute_cwd(cwd)?;
         if prompt.trim().is_empty() {
             bail!("Cursor prompt must not be empty");
         }
-        let mut args = vec![
+        let mut args = Vec::new();
+        if yolo {
+            args.push("--force".into());
+        }
+        args.extend([
             "--resume".into(),
             session_id.into(),
             "--print".into(),
@@ -134,7 +183,7 @@ impl CursorInvocation {
             "stream-json".into(),
             "--workspace".into(),
             cwd.display().to_string(),
-        ];
+        ]);
         if let Some(model) = model {
             require_model(model)?;
             args.extend(["--model".into(), model.into()]);
@@ -274,6 +323,10 @@ impl ProviderController for CursorController {
         LaunchPresentation::DeferredForeground
     }
 
+    fn supports_yolo(&self) -> bool {
+        cfg!(target_os = "linux") && self.supervisor.is_some()
+    }
+
     fn available_models(&self) -> Result<Vec<String>> {
         #[cfg(target_os = "linux")]
         {
@@ -317,6 +370,25 @@ impl ProviderController for CursorController {
         #[cfg(target_os = "linux")]
         Ok(ControlOutcome {
             message: format!("launched managed Cursor session {session_id}"),
+            provider_session_hint: Some(session_id),
+        })
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        if request.provider != Provider::Cursor {
+            bail!("the Cursor controller cannot launch another provider");
+        }
+        #[cfg(target_os = "linux")]
+        let session_id = self.managed_supervisor()?.allocate_chat_with_model_yolo(
+            &request.prompt,
+            &request.cwd,
+            request.model.as_deref(),
+        )?;
+        #[cfg(not(target_os = "linux"))]
+        bail!("managed Cursor YOLO launch is unavailable on this platform");
+        #[cfg(target_os = "linux")]
+        Ok(ControlOutcome {
+            message: format!("launched managed Cursor YOLO session {session_id}"),
             provider_session_hint: Some(session_id),
         })
     }
@@ -428,19 +500,43 @@ impl ProviderController for CursorController {
             .transpose()?
             .flatten();
         #[cfg(not(target_os = "linux"))]
-        let pending_native: Option<(String, Option<String>)> = None;
-        let spec = if let Some((prompt, model)) = pending_native {
-            self.invocation.resume_with_prompt(
-                &session.provider_session_id,
-                &session.cwd,
-                &prompt,
-                model.as_deref(),
-            )?
+        let pending_native: Option<(String, Option<String>, bool)> = None;
+        let (spec, yolo) = if let Some((prompt, model, yolo)) = pending_native {
+            let spec = if yolo {
+                self.invocation.resume_with_prompt_yolo(
+                    &session.provider_session_id,
+                    &session.cwd,
+                    &prompt,
+                    model.as_deref(),
+                )?
+            } else {
+                self.invocation.resume_with_prompt(
+                    &session.provider_session_id,
+                    &session.cwd,
+                    &prompt,
+                    model.as_deref(),
+                )?
+            };
+            (spec, yolo)
         } else {
-            self.invocation
-                .resume(&session.provider_session_id, &session.cwd)?
+            let yolo = self
+                .supervisor
+                .as_ref()
+                .is_some_and(|supervisor| supervisor.yolo_if_owned(session));
+            let mut spec = self
+                .invocation
+                .resume(&session.provider_session_id, &session.cwd)?;
+            if yolo {
+                spec.args.insert(0, "--force".into());
+            }
+            (spec, yolo)
         };
-        match crate::native_session::run(spec.command(), &session.id)? {
+        let exit = if yolo {
+            crate::native_session::run_yolo(spec.command(), &session.id, "Cursor")?
+        } else {
+            crate::native_session::run(spec.command(), &session.id)?
+        };
+        match exit {
             crate::native_session::NativeSessionExit::Backgrounded => {
                 #[cfg(target_os = "linux")]
                 if let Some(supervisor) = &self.supervisor {
@@ -605,6 +701,27 @@ mod tests {
             ]
         );
         assert!(!foreground.args.iter().any(|arg| arg == "--print"));
+        let yolo_foreground = invocation
+            .resume_with_prompt_yolo(
+                "chat-id",
+                Path::new("/work/repo"),
+                "check interactively",
+                Some("auto"),
+            )
+            .unwrap();
+        assert_eq!(yolo_foreground.args[0], "--force");
+        assert!(!yolo_foreground.args.iter().any(|arg| arg == "--yolo"));
+        let yolo_print = invocation
+            .print_turn_yolo(
+                "chat-id",
+                Path::new("/work/repo"),
+                "check tests",
+                Some("auto"),
+            )
+            .unwrap();
+        assert_eq!(yolo_print.args[0], "--force");
+        assert!(yolo_print.args.iter().any(|arg| arg == "--print"));
+        assert!(!yolo_print.args.iter().any(|arg| arg == "--yolo"));
         assert_eq!(
             invocation
                 .create_chat_with_model(Path::new("/work/repo"), Some("auto"))

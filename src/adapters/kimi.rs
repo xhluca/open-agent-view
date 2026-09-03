@@ -65,9 +65,31 @@ impl KimiInvocation {
     }
 
     pub fn launch(&self, cwd: &Path, prompt: &str, model: Option<&str>) -> Result<KimiCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, false)
+    }
+
+    pub fn yolo_launch(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<KimiCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, true)
+    }
+
+    fn launch_with_security(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<KimiCommandSpec> {
         require_cwd(cwd)?;
         require_text(prompt, "prompt")?;
         let mut args = Vec::new();
+        if yolo {
+            args.push("--yolo".into());
+        }
         if let Some(model) = model {
             require_text(model, "model")?;
             args.extend(["--model".into(), model.into()]);
@@ -208,6 +230,70 @@ impl KimiController {
         controller.runner = runner;
         controller
     }
+
+    fn launch_foreground_with_security(
+        &self,
+        request: &LaunchRequest,
+        yolo: bool,
+    ) -> Result<ControlOutcome> {
+        if request.provider != Provider::KimiCode {
+            bail!("the Kimi Code controller cannot launch another provider");
+        }
+        let before = read_kimi_index(&self.data_root)?
+            .into_keys()
+            .collect::<BTreeSet<_>>();
+        let launch_id = crate::native_session::new_session_id()?;
+        let launch_key = format!("kimi:host:launch-{launch_id}");
+        let spec = if yolo {
+            self.invocation
+                .yolo_launch(&request.cwd, &request.prompt, request.model.as_deref())?
+        } else {
+            self.invocation
+                .launch(&request.cwd, &request.prompt, request.model.as_deref())?
+        };
+        let exit = if yolo {
+            crate::native_session::run_with_initial_input_after_screen_yolo(
+                spec.command(),
+                &launch_key,
+                &spec.initial_input,
+                "Send /help for help information.",
+                "Kimi Code",
+            )?
+        } else {
+            crate::native_session::run_with_initial_input_after_screen(
+                spec.command(),
+                &launch_key,
+                &spec.initial_input,
+                "Send /help for help information.",
+            )?
+        };
+        let entry = poll_unique(
+            "one new Kimi Code session in the requested workspace",
+            Duration::from_secs(5),
+            || {
+                Ok(read_kimi_index(&self.data_root)?
+                    .into_values()
+                    .filter(|entry| {
+                        !before.contains(&entry.session_id) && entry.work_dir == request.cwd
+                    })
+                    .collect())
+            },
+        )?;
+        self.ownership.inner.record(
+            &entry.session_id,
+            &request.cwd,
+            &request.prompt,
+            Some(&entry.session_dir),
+            "Kimi Code",
+        )?;
+        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
+            crate::native_session::rename_key(
+                &launch_key,
+                &format!("kimi:host:{}", entry.session_id),
+            )?;
+        }
+        native_outcome(exit, &entry.session_id)
+    }
 }
 
 impl ProviderController for KimiController {
@@ -221,6 +307,10 @@ impl ProviderController for KimiController {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Foreground
+    }
+
+    fn supports_yolo(&self) -> bool {
+        true
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -265,49 +355,15 @@ impl ProviderController for KimiController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        if request.provider != Provider::KimiCode {
-            bail!("the Kimi Code controller cannot launch another provider");
-        }
-        let before = read_kimi_index(&self.data_root)?
-            .into_keys()
-            .collect::<BTreeSet<_>>();
-        let launch_id = crate::native_session::new_session_id()?;
-        let launch_key = format!("kimi:host:launch-{launch_id}");
-        let spec =
-            self.invocation
-                .launch(&request.cwd, &request.prompt, request.model.as_deref())?;
-        let exit = crate::native_session::run_with_initial_input_after_screen(
-            spec.command(),
-            &launch_key,
-            &spec.initial_input,
-            "Send /help for help information.",
-        )?;
-        let entry = poll_unique(
-            "one new Kimi Code session in the requested workspace",
-            Duration::from_secs(5),
-            || {
-                Ok(read_kimi_index(&self.data_root)?
-                    .into_values()
-                    .filter(|entry| {
-                        !before.contains(&entry.session_id) && entry.work_dir == request.cwd
-                    })
-                    .collect())
-            },
-        )?;
-        self.ownership.inner.record(
-            &entry.session_id,
-            &request.cwd,
-            &request.prompt,
-            Some(&entry.session_dir),
-            "Kimi Code",
-        )?;
-        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
-            crate::native_session::rename_key(
-                &launch_key,
-                &format!("kimi:host:{}", entry.session_id),
-            )?;
-        }
-        native_outcome(exit, &entry.session_id)
+        self.launch_foreground_with_security(request, false)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -649,6 +705,11 @@ mod tests {
             .unwrap();
         assert_eq!(launch.args, ["--model", "kimi-code/model"]);
         assert_eq!(launch.initial_input, b"fix parser\r");
+        let yolo = invocation
+            .yolo_launch(Path::new("/work"), "fix parser", Some("kimi-code/model"))
+            .unwrap();
+        assert_eq!(yolo.args, ["--yolo", "--model", "kimi-code/model"]);
+        assert_eq!(yolo.initial_input, b"fix parser\r");
         assert_eq!(
             invocation
                 .resume(Path::new("/work"), "session_owned")

@@ -449,7 +449,9 @@ Before `create-chat`, version 0.1.18 runs Cursor's read-only model catalog with
 a four-second bound. An account reporting no models gets an immediate
 `cursor-agent login` instruction instead of waiting for the old 15-second
 create timeout. A successful catalog is still followed by a bounded
-`create-chat`; OAV never adds Cursor's `--force`/`--yolo` flags.
+`create-chat`. Normal launches never add Cursor's permission-bypass flags;
+starting OAV explicitly with `--yolo` records the mode and passes Cursor's
+documented `--force` flag to the subsequent native turn on Linux.
 
 ## Copilot session is visible but read-only
 

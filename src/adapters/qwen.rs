@@ -390,6 +390,39 @@ impl QwenController {
             .current_dir(&session.cwd);
         run_native(command, &session.id, &session.provider_session_id)
     }
+
+    fn launch_foreground_with_security(
+        &self,
+        request: &LaunchRequest,
+        yolo: bool,
+    ) -> Result<ControlOutcome> {
+        if request.provider != Provider::QwenCode {
+            bail!("the Qwen Code controller cannot launch another provider");
+        }
+        if request.prompt.trim().is_empty() {
+            bail!("the Qwen Code launch prompt cannot be empty");
+        }
+        let session_id = crate::native_session::new_session_id()?;
+        let command = qwen_launch_command(&self.executable, request, &session_id, yolo);
+        let launch_key = format!("qwen:host:{session_id}");
+        let outcome = run_native_with_security(command, &launch_key, &session_id, yolo)?;
+        // Persist ownership only after the native provider started and either
+        // returned successfully or handed an exact live PTY back to OAV. A
+        // spawn error or immediate non-zero exit therefore leaves no stale
+        // ownership claim.
+        if let Err(error) =
+            self.ownership
+                .record(&session_id, &request.cwd, &summarize(&request.prompt, 48))
+        {
+            if crate::native_session::is_backgrounded(&launch_key) {
+                let _ = crate::native_session::terminate(&launch_key);
+            }
+            return Err(error).context(
+                "could not persist Qwen Code ownership; stopped its live foreground bridge",
+            );
+        }
+        Ok(outcome)
+    }
 }
 
 impl ProviderController for QwenController {
@@ -411,6 +444,10 @@ impl ProviderController for QwenController {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Foreground
+    }
+
+    fn supports_yolo(&self) -> bool {
+        true
     }
 
     fn supports_authentication(&self) -> bool {
@@ -437,39 +474,15 @@ impl ProviderController for QwenController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        if request.provider != Provider::QwenCode {
-            bail!("the Qwen Code controller cannot launch another provider");
-        }
-        if request.prompt.trim().is_empty() {
-            bail!("the Qwen Code launch prompt cannot be empty");
-        }
-        let session_id = crate::native_session::new_session_id()?;
-        let mut command = Command::new(&self.executable);
-        command.args(["--session-id", &session_id]);
-        if let Some(model) = request.model.as_deref() {
-            command.args(["--model", model]);
-        }
-        command
-            .args(["--prompt-interactive", request.prompt.trim()])
-            .current_dir(&request.cwd);
-        let launch_key = format!("qwen:host:{session_id}");
-        let outcome = run_native(command, &launch_key, &session_id)?;
-        // Persist ownership only after the native provider started and either
-        // returned successfully or handed an exact live PTY back to OAV. A
-        // spawn error or immediate non-zero exit therefore leaves no stale
-        // ownership claim.
-        if let Err(error) =
-            self.ownership
-                .record(&session_id, &request.cwd, &summarize(&request.prompt, 48))
-        {
-            if crate::native_session::is_backgrounded(&launch_key) {
-                let _ = crate::native_session::terminate(&launch_key);
-            }
-            return Err(error).context(
-                "could not persist Qwen Code ownership; stopped its live foreground bridge",
-            );
-        }
-        Ok(outcome)
+        self.launch_foreground_with_security(request, false)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -512,8 +525,42 @@ impl ProviderController for QwenController {
     }
 }
 
+fn qwen_launch_command(
+    executable: &str,
+    request: &LaunchRequest,
+    session_id: &str,
+    yolo: bool,
+) -> Command {
+    let mut command = Command::new(executable);
+    if yolo {
+        command.arg("--yolo");
+    }
+    command.args(["--session-id", session_id]);
+    if let Some(model) = request.model.as_deref() {
+        command.args(["--model", model]);
+    }
+    command
+        .args(["--prompt-interactive", request.prompt.trim()])
+        .current_dir(&request.cwd);
+    command
+}
+
 fn run_native(command: Command, key: &str, provider_id: &str) -> Result<ControlOutcome> {
-    match crate::native_session::run(command, key)? {
+    run_native_with_security(command, key, provider_id, false)
+}
+
+fn run_native_with_security(
+    command: Command,
+    key: &str,
+    provider_id: &str,
+    yolo: bool,
+) -> Result<ControlOutcome> {
+    let exit = if yolo {
+        crate::native_session::run_yolo(command, key, "Qwen Code")?
+    } else {
+        crate::native_session::run(command, key)?
+    };
+    match exit {
         crate::native_session::NativeSessionExit::Backgrounded => Ok(ControlOutcome {
             message: format!(
                 "backgrounded Qwen Code session {}; Enter/Right resumes it",
@@ -758,6 +805,41 @@ mod tests {
                 stderr: b"provider store is busy".to_vec(),
             })
         }
+    }
+
+    #[test]
+    fn qwen_yolo_launch_uses_only_the_verified_native_flag() {
+        let request = LaunchRequest {
+            provider: Provider::QwenCode,
+            model: Some("qwen3-coder-plus".into()),
+            prompt: "fix the parser".into(),
+            cwd: PathBuf::from("/work"),
+        };
+        let safe = qwen_launch_command("qwen", &request, "session-id", false);
+        assert_eq!(
+            safe.get_args().collect::<Vec<_>>(),
+            [
+                "--session-id",
+                "session-id",
+                "--model",
+                "qwen3-coder-plus",
+                "--prompt-interactive",
+                "fix the parser",
+            ]
+        );
+        let yolo = qwen_launch_command("qwen", &request, "session-id", true);
+        assert_eq!(
+            yolo.get_args().collect::<Vec<_>>(),
+            [
+                "--yolo",
+                "--session-id",
+                "session-id",
+                "--model",
+                "qwen3-coder-plus",
+                "--prompt-interactive",
+                "fix the parser",
+            ]
+        );
     }
 
     #[test]

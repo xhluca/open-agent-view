@@ -186,6 +186,88 @@ impl SessionMigrateNativeController {
             runner: Arc::new(ProcessRunner),
         })
     }
+
+    fn launch_foreground_with_security(
+        &self,
+        request: &LaunchRequest,
+        yolo: bool,
+    ) -> Result<ControlOutcome> {
+        if request.provider != self.provider {
+            bail!(
+                "the {} controller cannot launch another provider",
+                self.provider.label()
+            );
+        }
+        require_cwd(&request.cwd, self.provider.label())?;
+        if !valid_text(&request.prompt) {
+            bail!("{} prompt is invalid", self.provider.label());
+        }
+        if request
+            .model
+            .as_deref()
+            .is_some_and(|model| !valid_text(model))
+        {
+            bail!("{} model is invalid", self.provider.label());
+        }
+
+        let before = list_sessions(
+            &self.provider,
+            &self.executable,
+            &self.data_root,
+            MAX_SESSION_SCAN,
+            self.runner.as_ref(),
+        )?
+        .into_iter()
+        .map(|record| record.session_id)
+        .collect::<BTreeSet<_>>();
+        let launch_nonce = crate::native_session::new_session_id()?;
+        let launch_key = format!(
+            "{}:host:launch-{launch_nonce}",
+            provider_slug(&self.provider)
+        );
+        let command = launch_command(&self.provider, &self.executable, request, yolo)?;
+        let exit = if yolo {
+            crate::native_session::run_yolo(command, &launch_key, self.provider.label())?
+        } else {
+            crate::native_session::run(command, &launch_key)?
+        };
+        let record = poll_unique(
+            &format!(
+                "one new {} session in the requested workspace",
+                self.provider.label()
+            ),
+            Duration::from_secs(8),
+            || {
+                Ok(list_sessions(
+                    &self.provider,
+                    &self.executable,
+                    &self.data_root,
+                    MAX_SESSION_SCAN,
+                    self.runner.as_ref(),
+                )?
+                .into_iter()
+                .filter(|record| {
+                    !before.contains(&record.session_id)
+                        && same_workspace(&record.cwd, &request.cwd)
+                })
+                .collect())
+            },
+        )?;
+        self.ownership.inner.record(
+            &record.session_id,
+            &request.cwd,
+            &request.prompt,
+            record.path.as_deref(),
+            self.provider.label(),
+        )?;
+        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
+            crate::native_session::rename_key(
+                &launch_key,
+                &session_key(&self.provider, &record.session_id),
+            )?;
+        }
+        native_outcome(exit, &self.provider, &record.session_id)
+    }
 }
 
 impl ProviderController for SessionMigrateNativeController {
@@ -199,6 +281,13 @@ impl ProviderController for SessionMigrateNativeController {
 
     fn launch_presentation(&self) -> LaunchPresentation {
         LaunchPresentation::Foreground
+    }
+
+    fn supports_yolo(&self) -> bool {
+        matches!(
+            self.provider,
+            Provider::OhMyPi | Provider::Grok | Provider::KiloCode | Provider::OpenHands
+        )
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -274,77 +363,15 @@ impl ProviderController for SessionMigrateNativeController {
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        if request.provider != self.provider {
-            bail!(
-                "the {} controller cannot launch another provider",
-                self.provider.label()
-            );
-        }
-        require_cwd(&request.cwd, self.provider.label())?;
-        if !valid_text(&request.prompt) {
-            bail!("{} prompt is invalid", self.provider.label());
-        }
-        if request
-            .model
-            .as_deref()
-            .is_some_and(|model| !valid_text(model))
-        {
-            bail!("{} model is invalid", self.provider.label());
-        }
+        self.launch_foreground_with_security(request, false)
+    }
 
-        let before = list_sessions(
-            &self.provider,
-            &self.executable,
-            &self.data_root,
-            MAX_SESSION_SCAN,
-            self.runner.as_ref(),
-        )?
-        .into_iter()
-        .map(|record| record.session_id)
-        .collect::<BTreeSet<_>>();
-        let launch_nonce = crate::native_session::new_session_id()?;
-        let launch_key = format!(
-            "{}:host:launch-{launch_nonce}",
-            provider_slug(&self.provider)
-        );
-        let command = launch_command(&self.provider, &self.executable, request)?;
-        let exit = crate::native_session::run(command, &launch_key)?;
-        let record = poll_unique(
-            &format!(
-                "one new {} session in the requested workspace",
-                self.provider.label()
-            ),
-            Duration::from_secs(8),
-            || {
-                Ok(list_sessions(
-                    &self.provider,
-                    &self.executable,
-                    &self.data_root,
-                    MAX_SESSION_SCAN,
-                    self.runner.as_ref(),
-                )?
-                .into_iter()
-                .filter(|record| {
-                    !before.contains(&record.session_id)
-                        && same_workspace(&record.cwd, &request.cwd)
-                })
-                .collect())
-            },
-        )?;
-        self.ownership.inner.record(
-            &record.session_id,
-            &request.cwd,
-            &request.prompt,
-            record.path.as_deref(),
-            self.provider.label(),
-        )?;
-        if matches!(exit, crate::native_session::NativeSessionExit::Backgrounded) {
-            crate::native_session::rename_key(
-                &launch_key,
-                &session_key(&self.provider, &record.session_id),
-            )?;
-        }
-        native_outcome(exit, &self.provider, &record.session_id)
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_foreground_with_security(request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -599,11 +626,15 @@ fn launch_command(
     provider: &Provider,
     executable: &str,
     request: &LaunchRequest,
+    yolo: bool,
 ) -> Result<Command> {
     let mut command = Command::new(executable);
     command.current_dir(&request.cwd);
     match provider {
         Provider::OhMyPi => {
+            if yolo {
+                command.arg("--yolo");
+            }
             command.arg("--no-title");
             if let Some(model) = &request.model {
                 command.args(["--model", model]);
@@ -611,6 +642,9 @@ fn launch_command(
             command.args(["--", request.prompt.trim()]);
         }
         Provider::Grok => {
+            if yolo {
+                command.arg("--yolo");
+            }
             command.arg("--no-auto-update");
             if let Some(model) = &request.model {
                 command.args(["--model", model]);
@@ -619,12 +653,18 @@ fn launch_command(
         }
         Provider::KiloCode => {
             command.args(["run", "--interactive"]);
+            if yolo {
+                command.arg("--yolo");
+            }
             if let Some(model) = &request.model {
                 command.args(["--model", model]);
             }
             command.arg(request.prompt.trim());
         }
         Provider::OpenHands => {
+            if yolo {
+                command.arg("--always-approve");
+            }
             if let Some(model) = &request.model {
                 command.env("LLM_MODEL", model).arg("--override-with-envs");
             }
@@ -1347,6 +1387,99 @@ mod tests {
     use crate::test_support::tempfile;
 
     const UUID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+    #[test]
+    fn extended_harness_yolo_launches_use_only_verified_native_flags() {
+        let cases = [
+            (
+                Provider::OhMyPi,
+                "omp",
+                vec!["--no-title", "--model", "flagship", "--", "fix the parser"],
+                vec![
+                    "--yolo",
+                    "--no-title",
+                    "--model",
+                    "flagship",
+                    "--",
+                    "fix the parser",
+                ],
+            ),
+            (
+                Provider::Grok,
+                "grok",
+                vec![
+                    "--no-auto-update",
+                    "--model",
+                    "flagship",
+                    "--",
+                    "fix the parser",
+                ],
+                vec![
+                    "--yolo",
+                    "--no-auto-update",
+                    "--model",
+                    "flagship",
+                    "--",
+                    "fix the parser",
+                ],
+            ),
+            (
+                Provider::KiloCode,
+                "kilo",
+                vec![
+                    "run",
+                    "--interactive",
+                    "--model",
+                    "flagship",
+                    "fix the parser",
+                ],
+                vec![
+                    "run",
+                    "--interactive",
+                    "--yolo",
+                    "--model",
+                    "flagship",
+                    "fix the parser",
+                ],
+            ),
+            (
+                Provider::OpenHands,
+                "openhands",
+                vec!["--override-with-envs", "--task", "fix the parser"],
+                vec![
+                    "--always-approve",
+                    "--override-with-envs",
+                    "--task",
+                    "fix the parser",
+                ],
+            ),
+        ];
+        for (provider, executable, safe_args, yolo_args) in cases {
+            let request = LaunchRequest {
+                provider: provider.clone(),
+                model: Some("flagship".into()),
+                prompt: "fix the parser".into(),
+                cwd: PathBuf::from("/work"),
+            };
+            let safe = launch_command(&provider, executable, &request, false).unwrap();
+            assert_eq!(
+                safe.get_args().collect::<Vec<_>>(),
+                safe_args,
+                "{provider:?}"
+            );
+            let yolo = launch_command(&provider, executable, &request, true).unwrap();
+            assert_eq!(
+                yolo.get_args().collect::<Vec<_>>(),
+                yolo_args,
+                "{provider:?}"
+            );
+            if provider == Provider::OpenHands {
+                assert!(yolo.get_envs().any(|(key, value)| {
+                    key == "LLM_MODEL" && value == Some(std::ffi::OsStr::new("flagship"))
+                }));
+            }
+        }
+    }
 
     #[cfg(unix)]
     #[test]

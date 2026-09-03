@@ -1599,6 +1599,100 @@ while :; do sleep 1; done
 }
 
 #[test]
+fn yolo_mode_is_visible_and_reaches_the_native_antigravity_tui_explicitly() {
+    let _serial = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(110, 30, |command, home| {
+        let executable = home.path().join("agy");
+        let workspace = home.path().join("antigravity-yolo-workspace");
+        fs::create_dir(&workspace).expect("create Antigravity workspace");
+        fs::write(home.path().join("antigravity-authenticated"), "yes")
+            .expect("preauthenticate fake Antigravity");
+        fs::write(
+            &executable,
+            r##"#!/bin/sh
+if [ "${1:-}" = "models" ]; then
+  printf '%s\n' 'gemini-3-pro  Gemini 3 Pro'
+  exit 0
+fi
+mkdir -p "$HOME/.gemini/antigravity-cli/cache"
+printf '{"%s":"agy-yolo-owned-session"}\n' "$PWD" > "$HOME/.gemini/antigravity-cli/cache/last_conversations.json"
+printf '%s\n' "$*" > "$HOME/antigravity-yolo-arguments"
+printf '%s\n' 'ANTIGRAVITY YOLO FULL SCREEN SESSION'
+while :; do sleep 1; done
+"##,
+        )
+        .expect("write fake Antigravity executable");
+        fs::set_permissions(&executable, fs::Permissions::from_mode(0o700))
+            .expect("make fake Antigravity executable runnable");
+        command.args([
+            "--yolo",
+            "--cwd",
+            workspace.to_str().expect("UTF-8 Antigravity workspace"),
+            "--launch-cwd",
+            workspace.to_str().expect("UTF-8 Antigravity workspace"),
+            "--launch-provider",
+            "antigravity",
+            "--antigravity-bin",
+            executable.to_str().expect("UTF-8 fake Antigravity path"),
+            "--no-host-claude",
+            "--no-host-codex",
+            "--no-host-pi",
+            "--no-host-opencode",
+            "--no-host-copilot",
+            "--no-host-cursor",
+            "--refresh-ms",
+            "60000",
+        ]);
+    });
+
+    app.wait_for("persistent dashboard YOLO warning", |screen| {
+        screen.contains("⚠ YOLO MODE")
+            && screen.contains("native permission safeguards are relaxed")
+            && !screen.contains("loading provider sessions")
+    });
+    app.send(b"explicit yolo task");
+    app.send(ENTER);
+    app.wait_for("authenticated Antigravity YOLO model picker", |screen| {
+        screen.contains("choose Antigravity model") && screen.contains("gemini-3-pro")
+    });
+    app.send(DOWN);
+    app.send(ENTER);
+    app.wait_for("selected Antigravity YOLO model", |screen| {
+        screen.contains("model gemini-3-pro") && screen.contains("explicit yolo task")
+    });
+    app.send(ENTER);
+    app.wait_for(
+        "native Antigravity YOLO warning and full screen",
+        |screen| {
+            screen.contains("⚠ YOLO MODE")
+                && screen.contains("Antigravity permission safeguards are relaxed")
+                && screen.contains("ANTIGRAVITY YOLO FULL SCREEN SESSION")
+        },
+    );
+    let arguments = fs::read_to_string(app.home_path().join("antigravity-yolo-arguments"))
+        .expect("read Antigravity YOLO launch arguments");
+    assert!(arguments.contains("--dangerously-skip-permissions"));
+    assert!(arguments.contains("--new-project"));
+    assert!(arguments.contains("--model gemini-3-pro"));
+    assert!(!arguments.contains("--sandbox"));
+
+    app.send(SHIFT_LEFT);
+    app.wait_for(
+        "dashboard warning after backgrounding YOLO session",
+        |screen| {
+            screen.contains("Open Agent View")
+                && screen.contains("⚠ YOLO MODE")
+                && screen.contains("Antigravity native session is backgrounded")
+        },
+    );
+    app.send(CTRL_X);
+    app.wait_for("stop backgrounded Antigravity YOLO session", |screen| {
+        screen.contains("stopped native Antigravity session")
+    });
+    app.exit_cleanly();
+}
+
+#[test]
 fn completed_history_is_visible_by_default_and_stays_responsive() {
     let _serial = serialize_real_tty_test();
     let mut app = PtyApp::spawn_configured(120, 34, |command, home| {

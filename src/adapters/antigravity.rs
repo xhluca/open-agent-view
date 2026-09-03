@@ -70,6 +70,25 @@ impl AntigravityInvocation {
         prompt: &str,
         model: Option<&str>,
     ) -> Result<AntigravityCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, false)
+    }
+
+    pub fn yolo_launch(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<AntigravityCommandSpec> {
+        self.launch_with_security(cwd, prompt, model, true)
+    }
+
+    fn launch_with_security(
+        &self,
+        cwd: &Path,
+        prompt: &str,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<AntigravityCommandSpec> {
         require_absolute_workspace(cwd)?;
         if prompt.trim().is_empty() {
             bail!("Antigravity prompt must not be empty");
@@ -78,7 +97,14 @@ impl AntigravityInvocation {
         // Without this flag Antigravity may continue the workspace's existing
         // default conversation, leaving the documented last-conversation
         // cache unchanged and making exact post-launch correlation impossible.
-        let mut args = vec!["--sandbox".into(), "--new-project".into()];
+        let mut args = if yolo {
+            vec![
+                "--dangerously-skip-permissions".into(),
+                "--new-project".into(),
+            ]
+        } else {
+            vec!["--sandbox".into(), "--new-project".into()]
+        };
         if let Some(model) = model {
             require_model(model)?;
             args.extend(["--model".into(), model.into()]);
@@ -770,7 +796,7 @@ impl AntigravityController {
         }
     }
 
-    fn launch_native(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+    fn launch_native(&self, request: &LaunchRequest, yolo: bool) -> Result<ControlOutcome> {
         let ownership = self
             .ownership
             .as_ref()
@@ -779,9 +805,13 @@ impl AntigravityController {
         let model = request.model.as_deref().context(
             "Antigravity requires an exact model selection because its CLI can terminate a default-model launch when the account advertises no PlanModel/RequestedModel",
         )?;
-        let spec = self
-            .invocation
-            .sandboxed_launch(&request.cwd, &request.prompt, Some(model))?;
+        let spec = if yolo {
+            self.invocation
+                .yolo_launch(&request.cwd, &request.prompt, Some(model))?
+        } else {
+            self.invocation
+                .sandboxed_launch(&request.cwd, &request.prompt, Some(model))?
+        };
         let launch_key = format!(
             "antigravity:new:{}",
             crate::native_session::new_session_id()?
@@ -809,7 +839,11 @@ impl AntigravityController {
             cancelled: cancelled.clone(),
             sender: conversation_tx,
         });
-        let exit = crate::native_session::run(spec.command(), &launch_key);
+        let exit = if yolo {
+            crate::native_session::run_yolo(spec.command(), &launch_key, "Antigravity")
+        } else {
+            crate::native_session::run(spec.command(), &launch_key)
+        };
         let exit = match exit {
             Ok(exit) => exit,
             Err(error) => {
@@ -884,6 +918,10 @@ impl ProviderController for AntigravityController {
         LaunchPresentation::Foreground
     }
 
+    fn supports_yolo(&self) -> bool {
+        true
+    }
+
     fn available_models(&self) -> Result<Vec<String>> {
         self.available_model_ids()
     }
@@ -900,11 +938,19 @@ impl ProviderController for AntigravityController {
     }
 
     fn launch(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        self.launch_native(request)
+        self.launch_native(request, false)
     }
 
     fn launch_foreground(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
-        self.launch_native(request)
+        self.launch_native(request, false)
+    }
+
+    fn launch_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_native(request, true)
+    }
+
+    fn launch_foreground_yolo(&self, request: &LaunchRequest) -> Result<ControlOutcome> {
+        self.launch_native(request, true)
     }
 
     fn open(&self, session: &AgentSession) -> Result<ControlOutcome> {
@@ -1309,7 +1355,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn builds_shell_free_native_resume_and_never_bypasses_permissions() {
+    fn builds_shell_free_native_resume_and_explicit_security_modes() {
         let invocation = AntigravityInvocation::host("agy");
         let resume = invocation
             .resume("conversation-id", Path::new("/work/repo"))
@@ -1339,6 +1385,21 @@ mod tests {
         assert!(!launch
             .args
             .contains(&"--dangerously-skip-permissions".into()));
+        let yolo = invocation
+            .yolo_launch(Path::new("/work/repo"), "fix tests", Some("gemini-3-pro"))
+            .unwrap();
+        assert_eq!(
+            yolo.args,
+            vec![
+                "--dangerously-skip-permissions",
+                "--new-project",
+                "--model",
+                "gemini-3-pro",
+                "--prompt-interactive",
+                "fix tests",
+            ]
+        );
+        assert!(!yolo.args.contains(&"--sandbox".into()));
     }
 
     #[test]

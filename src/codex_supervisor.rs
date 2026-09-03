@@ -22,12 +22,22 @@ const MAX_TRANSCRIPT_CHARS: usize = 32 * 1024;
 #[cfg(unix)]
 const SAFE_UNIX_SOCKET_PATH_BYTES: usize = 100;
 
+fn codex_security_params(yolo: bool) -> (&'static str, &'static str) {
+    if yolo {
+        ("never", "danger-full-access")
+    } else {
+        ("on-request", "workspace-write")
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct OwnedThread {
     cwd: PathBuf,
     created_at_ms: u64,
     active_turn_id: Option<String>,
+    #[serde(default)]
+    yolo: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -271,6 +281,16 @@ impl CodexSupervisor {
         cwd: &Path,
         model: Option<&str>,
     ) -> Result<String> {
+        self.launch_with_model_and_security(prompt, cwd, model, false)
+    }
+
+    pub fn launch_with_model_and_security(
+        &self,
+        prompt: &str,
+        cwd: &Path,
+        model: Option<&str>,
+        yolo: bool,
+    ) -> Result<String> {
         let prompt = prompt.trim();
         if prompt.is_empty() {
             bail!("the launch prompt cannot be empty");
@@ -284,10 +304,11 @@ impl CodexSupervisor {
             .lock()
             .map_err(|_| anyhow!("Codex supervisor connection lock was poisoned"))?;
         let client = self.control_client(&mut control, &server)?;
+        let (approval_policy, sandbox) = codex_security_params(yolo);
         let mut start_params = json!({
             "cwd": cwd,
-            "approvalPolicy": "on-request",
-            "sandbox": "workspace-write",
+            "approvalPolicy": approval_policy,
+            "sandbox": sandbox,
             "serviceName": "open_agent_view"
         });
         if let Some(model) = model {
@@ -306,6 +327,7 @@ impl CodexSupervisor {
                     cwd: cwd.to_path_buf(),
                     created_at_ms: now_millis(),
                     active_turn_id: None,
+                    yolo,
                 },
             );
             Ok(())
@@ -983,6 +1005,16 @@ impl CodexSupervisor {
             .then(|| format!("unix://{}", record.socket_path.display()))
     }
 
+    pub fn yolo_if_owned(&self, session: &AgentSession) -> bool {
+        if session.provider != Provider::Codex || session.runtime != Runtime::Host {
+            return false;
+        }
+        self.live_record()
+            .ok()
+            .and_then(|record| record.threads.get(&session.provider_session_id).cloned())
+            .is_some_and(|thread| thread.yolo)
+    }
+
     fn control_client<'a>(
         &self,
         control: &'a mut ControlConnection,
@@ -1004,8 +1036,8 @@ impl CodexSupervisor {
                     json!({
                         "threadId": thread_id,
                         "cwd": thread.cwd,
-                        "approvalPolicy": "on-request",
-                        "sandbox": "workspace-write"
+                        "approvalPolicy": codex_security_params(thread.yolo).0,
+                        "sandbox": codex_security_params(thread.yolo).1
                     }),
                 )?;
                 if resume_reports_terminal_turn(&resumed, active_turn_id) {
@@ -2635,6 +2667,15 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn yolo_maps_to_codex_app_servers_exact_security_parameters() {
+        assert_eq!(
+            codex_security_params(false),
+            ("on-request", "workspace-write")
+        );
+        assert_eq!(codex_security_params(true), ("never", "danger-full-access"));
+    }
+
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn stale_pid_identity_is_never_treated_as_live() {
@@ -2802,6 +2843,7 @@ mod tests {
                 cwd: PathBuf::from("/tmp"),
                 created_at_ms: 1,
                 active_turn_id: Some("owned-turn".into()),
+                yolo: false,
             },
         );
         let server = SupervisorRecord {
@@ -2906,6 +2948,7 @@ mod tests {
                 cwd: PathBuf::from("/tmp"),
                 created_at_ms: 1,
                 active_turn_id: Some("owned-turn".into()),
+                yolo: false,
             },
         );
         let server = SupervisorRecord {
@@ -2955,6 +2998,7 @@ mod tests {
                 cwd: PathBuf::from("/tmp"),
                 created_at_ms: 1,
                 active_turn_id: Some("owned-turn".into()),
+                yolo: false,
             },
         );
         let mut server = SupervisorRecord {
