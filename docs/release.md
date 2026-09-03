@@ -6,21 +6,21 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.51 is the release described by this guide. Its
-[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.51)
+Version 0.1.52 is the release described by this guide. Its
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.52)
 contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.51-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.51-x86_64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.51-aarch64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.51-aarch64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.51-x86_64-apple-darwin.tar.gz
-open-agent-view-0.1.51-x86_64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.51-aarch64-apple-darwin.tar.gz
-open-agent-view-0.1.51-aarch64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.51-x86_64-pc-windows-msvc.zip
-open-agent-view-0.1.51-x86_64-pc-windows-msvc.zip.sha256
+open-agent-view-0.1.52-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.52-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.52-aarch64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.52-aarch64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.52-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.52-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.52-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.52-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.52-x86_64-pc-windows-msvc.zip
+open-agent-view-0.1.52-x86_64-pc-windows-msvc.zip.sha256
 ```
 
 The archive was built, tested, packaged, checksum-verified, installer-tested,

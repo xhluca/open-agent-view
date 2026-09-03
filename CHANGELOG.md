@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.52] - 2026-09-03
+
 ### Added
 
 - Added an explicit top-level `--yolo` mode for unattended launches. OAV maps
