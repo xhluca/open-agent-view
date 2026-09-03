@@ -14,6 +14,7 @@ harnesses plus Terminal.
 
 [![Tests](https://img.shields.io/badge/tests-verified-2ea44f.svg)](docs/testing.md)
 [![Release](https://img.shields.io/badge/release-v0.1.52-55d3da.svg)](https://github.com/xhluca/open-agent-view/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/xhluca/open-agent-view/total?label=downloads&color=55d3da)](https://github.com/xhluca/open-agent-view/releases)
 [![License](https://img.shields.io/badge/license-MIT-55d3da.svg)](LICENSE)
 
 </div>
