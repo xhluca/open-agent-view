@@ -324,7 +324,14 @@ impl ProviderController for CursorController {
     }
 
     fn supports_yolo(&self) -> bool {
-        cfg!(target_os = "linux") && self.supervisor.is_some()
+        #[cfg(target_os = "linux")]
+        {
+            self.supervisor.is_some()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            false
+        }
     }
 
     fn available_models(&self) -> Result<Vec<String>> {
@@ -519,10 +526,13 @@ impl ProviderController for CursorController {
             };
             (spec, yolo)
         } else {
+            #[cfg(target_os = "linux")]
             let yolo = self
                 .supervisor
                 .as_ref()
                 .is_some_and(|supervisor| supervisor.yolo_if_owned(session));
+            #[cfg(not(target_os = "linux"))]
+            let yolo = false;
             let mut spec = self
                 .invocation
                 .resume(&session.provider_session_id, &session.cwd)?;
