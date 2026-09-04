@@ -258,6 +258,15 @@ mod tests {
     const MASTRA_ID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const DEVIN_ID: &str = "repair-parser";
 
+    fn fixture_cwd() -> &'static str {
+        // A drive-less /work/demo is not an absolute native Windows workspace.
+        if cfg!(windows) {
+            "C:/work/demo"
+        } else {
+            "/work/demo"
+        }
+    }
+
     #[test]
     #[ignore = "requires Session Migrate's sanitized native-client corpus"]
     fn reads_actual_native_client_databases() {
@@ -295,6 +304,7 @@ mod tests {
     }
 
     fn fixture(provider: &Provider, path: &Path) -> Connection {
+        let cwd = fixture_cwd();
         let db = Connection::open(path).unwrap();
         db.execute_batch("PRAGMA journal_mode=WAL;").unwrap();
         match provider {
@@ -302,7 +312,7 @@ mod tests {
                 "CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,title TEXT,model TEXT,started_at REAL,ended_at REAL,last_activity_at REAL,hidden INTEGER,archived INTEGER);
                  CREATE TABLE messages(id INTEGER PRIMARY KEY,session_id TEXT,role TEXT,content TEXT,timestamp REAL,active INTEGER);
                  CREATE INDEX messages_session ON messages(session_id,id);
-                 INSERT INTO sessions VALUES('{HERMES_ID}','/work/demo','Hermes title','provider/model',1000,NULL,1001,0,0);
+                 INSERT INTO sessions VALUES('{HERMES_ID}','{cwd}','Hermes title','provider/model',1000,NULL,1001,0,0);
                  INSERT INTO messages VALUES(1,'{HERMES_ID}','user','hello',1001,1);
                  INSERT INTO messages VALUES(2,'{HERMES_ID}','assistant','latest Hermes reply',1002,1);
                  INSERT INTO messages VALUES(3,'{HERMES_ID}','assistant','rewound text',1003,0);"
@@ -311,7 +321,7 @@ mod tests {
                 "CREATE TABLE mastra_threads(id TEXT PRIMARY KEY,resourceId TEXT,title TEXT,metadata BLOB,createdAt TEXT,updatedAt TEXT);
                  CREATE TABLE mastra_messages(id TEXT PRIMARY KEY,thread_id TEXT,content TEXT,role TEXT,createdAt TEXT);
                  CREATE INDEX messages_thread ON mastra_messages(thread_id,createdAt);
-                 INSERT INTO mastra_threads VALUES('{MASTRA_ID}','work-demo','Mastra title',jsonb('{{\"projectPath\":\"/work/demo\",\"currentModelId\":\"provider/model\"}}'),'2026-08-30T12:00:00Z','2026-08-30T12:00:01Z');
+                 INSERT INTO mastra_threads VALUES('{MASTRA_ID}','work-demo','Mastra title',jsonb('{{\"projectPath\":\"{cwd}\",\"currentModelId\":\"provider/model\"}}'),'2026-08-30T12:00:00Z','2026-08-30T12:00:01Z');
                  INSERT INTO mastra_messages VALUES('m1','{MASTRA_ID}','{{\"format\":2,\"parts\":[{{\"type\":\"text\",\"text\":\"hello\"}}]}}','signal','2026-08-30T12:00:01Z');
                  INSERT INTO mastra_messages VALUES('m2','{MASTRA_ID}','{{\"format\":2,\"parts\":[{{\"type\":\"reasoning\",\"text\":\"private\"}},{{\"type\":\"text\",\"text\":\"latest Mastra reply\"}}]}}','assistant','2026-08-30T12:00:05Z');"
             )).unwrap(),
@@ -319,7 +329,7 @@ mod tests {
                 "CREATE TABLE sessions(id TEXT PRIMARY KEY,working_directory TEXT,title TEXT,model TEXT,created_at INTEGER,last_activity_at INTEGER,hidden INTEGER,main_chain_id TEXT);
                  CREATE TABLE message_nodes(row_id INTEGER PRIMARY KEY,session_id TEXT,node_id TEXT,parent_node_id TEXT,chat_message TEXT);
                  CREATE INDEX nodes_session ON message_nodes(session_id,node_id);
-                 INSERT INTO sessions VALUES('{DEVIN_ID}','/work/demo','Devin title','model',1000,1005,0,'tool');
+                 INSERT INTO sessions VALUES('{DEVIN_ID}','{cwd}','Devin title','model',1000,1005,0,'tool');
                  INSERT INTO message_nodes VALUES(1,'{DEVIN_ID}','root',NULL,'{{\"role\":\"user\",\"content\":\"hello\"}}');
                  INSERT INTO message_nodes VALUES(2,'{DEVIN_ID}','reply','root','{{\"role\":\"assistant\",\"content\":\"latest Devin reply\"}}');
                  INSERT INTO message_nodes VALUES(3,'{DEVIN_ID}','tool','reply','{{\"role\":\"tool\",\"content\":\"tool output\"}}');
@@ -344,7 +354,7 @@ mod tests {
             assert_eq!(found.len(), 1);
             assert_eq!(found[0].summary, text);
             assert!(found[0].updated_at > found[0].created_at);
-            assert_eq!(found[0].cwd, PathBuf::from("/work/demo"));
+            assert_eq!(found[0].cwd, PathBuf::from(fixture_cwd()));
             assert_eq!(list(&provider, &path, None, 100).unwrap().len(), 1);
             assert!(list(&provider, &path, None, 0).unwrap().is_empty());
             drop(db);
@@ -377,7 +387,7 @@ mod tests {
                 .inner
                 .record(
                     id,
-                    Path::new("/work/demo"),
+                    Path::new(fixture_cwd()),
                     "hello",
                     Some(&path),
                     provider.label(),
