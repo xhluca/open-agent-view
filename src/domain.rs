@@ -32,13 +32,16 @@ pub enum Provider {
     #[serde(rename = "kilo_code")]
     KiloCode,
     OpenHands,
+    Hermes,
+    MastraCode,
+    Devin,
     Terminal,
     Other(String),
 }
 
 impl Provider {
     /// Every coding harness supported by the product, in dashboard-picker order.
-    pub const CODING_HARNESSES: [Self; 15] = [
+    pub const CODING_HARNESSES: [Self; 18] = [
         Self::Claude,
         Self::Codex,
         Self::Pi,
@@ -54,6 +57,9 @@ impl Provider {
         Self::Grok,
         Self::KiloCode,
         Self::OpenHands,
+        Self::Hermes,
+        Self::MastraCode,
+        Self::Devin,
     ];
 
     pub const CODING_HARNESS_COUNT: usize = Self::CODING_HARNESSES.len();
@@ -84,6 +90,9 @@ impl Provider {
             Self::Grok => "Grok",
             Self::KiloCode => "Kilo Code",
             Self::OpenHands => "OpenHands",
+            Self::Hermes => "Hermes Agent",
+            Self::MastraCode => "MastraCode",
+            Self::Devin => "Devin",
             Self::Terminal => "Terminal",
             Self::Other(name) => name,
         }
@@ -345,6 +354,9 @@ mod tests {
             (Provider::Grok, "\"grok\"", "Grok"),
             (Provider::KiloCode, "\"kilo_code\"", "Kilo Code"),
             (Provider::OpenHands, "\"open_hands\"", "OpenHands"),
+            (Provider::Hermes, "\"hermes\"", "Hermes Agent"),
+            (Provider::MastraCode, "\"mastra_code\"", "MastraCode"),
+            (Provider::Devin, "\"devin\"", "Devin"),
             (Provider::Terminal, "\"terminal\"", "Terminal"),
         ];
 

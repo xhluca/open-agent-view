@@ -200,6 +200,9 @@ pub fn provider_format(provider: &Provider) -> Option<&'static str> {
         Provider::Grok => "grok",
         Provider::KiloCode => "kilo",
         Provider::OpenHands => "openhands",
+        Provider::Hermes => "hermes",
+        Provider::MastraCode => "mastracode",
+        Provider::Devin => "devin",
         Provider::Terminal | Provider::Other(_) => return None,
     })
 }
@@ -236,6 +239,9 @@ pub fn normalized_session_id(provider: &Provider, provider_session_id: &str) -> 
         Provider::Grok => "grok",
         Provider::KiloCode => "kilo",
         Provider::OpenHands => "openhands",
+        Provider::Hermes => "hermes",
+        Provider::MastraCode => "mastracode",
+        Provider::Devin => "devin",
         Provider::Terminal | Provider::Other(_) => bail!("unsupported migration target"),
     };
     Ok(format!("{slug}:host:{provider_session_id}"))
@@ -649,10 +655,13 @@ mod tests {
 
     #[test]
     fn every_coding_harness_has_an_exact_session_migrate_mapping() {
-        assert_eq!(Provider::CODING_HARNESS_COUNT, 15);
+        assert_eq!(Provider::CODING_HARNESS_COUNT, 18);
         for provider in Provider::CODING_HARNESSES {
             assert!(provider_format(&provider).is_some(), "{provider:?}");
-            assert_eq!(migration_targets(&provider).len(), 14);
+            assert_eq!(
+                migration_targets(&provider).len(),
+                Provider::CODING_HARNESS_COUNT - 1
+            );
             assert!(!migration_targets(&provider).contains(&provider));
         }
         assert_eq!(provider_format(&Provider::Terminal), None);

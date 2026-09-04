@@ -16,6 +16,40 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
+## Unreleased 18-harness parity gate (2026-09-03)
+
+- Added Hermes Agent, MastraCode, and Devin, matching Session Migrate's 18
+  coding harnesses; Terminal is counted separately. Product, README, website,
+  migration picker, and doctor inventory checks share that count.
+- The complete locked suite passed: 410 library tests, 19 CLI tests, all
+  default integration suites, and 25 deterministic real-TTY scenarios. The
+  opt-in native-corpus test also passed on actual sanitized client databases
+  for Hermes 0.20.6, MastraCode 0.37.1, and Devin 3000.6.7.
+- Actual Hermes 0.20.6 and MastraCode 0.37.1 TUIs each completed three
+  credential-free loopback-model turns through OAV: foreground launch,
+  detach/reattach, refreshed dashboard text, OAV restart, exact native resume,
+  and continued conversation. The native runs caught and fixed premature
+  Hermes input and MastraCode's extra empty startup thread.
+- A mixed-provider PTY regression launches all three in one workspace, renames
+  them, resumes them, checks their latest previews, stops each exact frontend,
+  and hides each row locally while retaining its database. Installer fixtures
+  cover missing/existing binaries, consent, failure, and native setup handoff
+  for all 18 coding harnesses.
+- Fresh Debian containers installed Hermes 0.21.0, MastraCode 0.38.0, and
+  Devin 3000.6.14 and reached native setup/login. The Hermes test's login wait
+  was terminated after the setup menu appeared, then version/help checks
+  passed. No Devin account authentication or model reply is claimed by these
+  installer checks. Hermes setup skips the installer's wizard and hands off
+  to native setup once from OAV.
+- Rust 1.75 all-target Clippy passed in fresh Docker. Website build and all
+  five rendered-page tests, lint, and 21 browser tests passed (desktop,
+  Mac-laptop-sized Chrome, phone, keyboard, playback, accessibility). Native
+  macOS/Windows execution remains the
+  required hosted portability gate, not something Linux Docker proves.
+
+Reproduction and limitations:
+[shared-SQLite harness guide](exploration/shared-sqlite-harnesses.md).
+
 ## Unreleased explicit-YOLO gate (2026-09-03)
 
 - Rust 1.75 Rustfmt and warning-free Clippy passed in the documented read-only

@@ -2048,7 +2048,7 @@ mod tests {
 
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let picker = buffer_text(terminal.backend().buffer());
-        assert!(picker.contains("migrate session · target 1/14"));
+        assert!(picker.contains("migrate session · target 1/17"));
         assert!(picker.contains("from  Claude"));
         assert!(picker.contains("OpenAI Codex"));
         assert!(!picker.contains("Claude Code"));

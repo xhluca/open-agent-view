@@ -9,6 +9,22 @@ permissions:
   contents: read
 
 jobs:
+  native-session-corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: xhluca/session-migrate
+          ref: aa4bfa8dc3145217e76eb5225efbfa39a73e2936
+          path: .native-corpus
+          sparse-checkout: tests/native_corpus/v1/sources
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - name: Read sanitized databases produced by the actual three CLIs
+        env:
+          OAV_NATIVE_CORPUS_ROOT: ${{ github.workspace }}/.native-corpus/tests/native_corpus/v1/sources
+        run: cargo test --locked --lib reads_actual_native_client_databases -- --ignored
+
   quality:
     runs-on: ubuntu-latest
     steps:

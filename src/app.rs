@@ -1520,6 +1520,9 @@ fn provider_alias(provider: &Provider) -> String {
         Provider::OhMyPi => "omp".into(),
         Provider::KiloCode => "kilo".into(),
         Provider::OpenHands => "openhands".into(),
+        Provider::Hermes => "hermes".into(),
+        Provider::MastraCode => "mastracode".into(),
+        Provider::Devin => "devin".into(),
         _ => normalize_provider_name(provider.label()),
     }
 }
@@ -1541,6 +1544,9 @@ fn known_provider(value: &str) -> Option<Provider> {
         "grok" | "grokbuild" => Some(Provider::Grok),
         "kilo" | "kilocode" => Some(Provider::KiloCode),
         "openhands" => Some(Provider::OpenHands),
+        "hermes" | "hermesagent" => Some(Provider::Hermes),
+        "mastra" | "mastracode" => Some(Provider::MastraCode),
+        "devin" => Some(Provider::Devin),
         "terminal" | "shell" => Some(Provider::Terminal),
         _ => None,
     }
@@ -2192,7 +2198,10 @@ mod tests {
                 session_id: "native-id".into()
             }
         );
-        assert_eq!(app.migration_targets.len(), 14);
+        assert_eq!(
+            app.migration_targets.len(),
+            Provider::CODING_HARNESS_COUNT - 1
+        );
         assert!(!app.migration_targets.contains(&Provider::Claude));
         assert_eq!(app.migration_targets[0], Provider::Codex);
 
@@ -2224,7 +2233,7 @@ mod tests {
         app.move_migration_selection(-1);
         assert_eq!(
             app.migration_targets[app.migration_selection],
-            Provider::OpenHands
+            Provider::Devin
         );
         app.confirm_migration_target();
         assert!(matches!(
@@ -2233,7 +2242,7 @@ mod tests {
         ));
         app.escape();
         assert!(matches!(app.overlay, Overlay::MigrationTargetPicker { .. }));
-        assert_eq!(app.migration_selection, 13);
+        assert_eq!(app.migration_selection, Provider::CODING_HARNESS_COUNT - 2);
         app.escape();
         assert_eq!(app.overlay, Overlay::None);
 

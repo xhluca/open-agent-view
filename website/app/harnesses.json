@@ -14,7 +14,10 @@
     { "id": "omp", "name": "Oh My Pi", "icon": null, "mark": "OMP", "hasDemo": true },
     { "id": "grok", "name": "Grok", "icon": null, "mark": "G", "hasDemo": true },
     { "id": "kilo", "name": "Kilo Code", "icon": null, "mark": "Ki", "hasDemo": true },
-    { "id": "openhands", "name": "OpenHands", "icon": null, "mark": "OH", "hasDemo": true }
+    { "id": "openhands", "name": "OpenHands", "icon": null, "mark": "OH", "hasDemo": true },
+    { "id": "hermes", "name": "Hermes Agent", "icon": null, "mark": "H", "hasDemo": false },
+    { "id": "mastracode", "name": "MastraCode", "icon": null, "mark": "M", "hasDemo": false },
+    { "id": "devin", "name": "Devin", "icon": null, "mark": "D", "hasDemo": false }
   ],
   "terminal": { "id": "terminal", "name": "Terminal", "icon": "/providers/terminal.svg", "mark": null, "hasDemo": true }
 }

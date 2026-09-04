@@ -33,6 +33,134 @@ const CTRL_X: &[u8] = b"\x18";
 
 static PTY_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+#[test]
+fn sqlite_harnesses_launch_foreground_detach_rename_and_resume_together() {
+    let _lock = serialize_real_tty_test();
+    let mut app = PtyApp::spawn_configured(120, 35, |command, home| {
+        let root = home.path();
+        command
+            .env("OAV_TEST_DATABASE_ROOT", root)
+            .env("HERMES_HOME", root.join("hermes-home"))
+            .env("MASTRA_DB_PATH", root.join("mastracode.db"))
+            .env("XDG_DATA_HOME", root.join("data"))
+            .args([
+                "--no-host-claude",
+                "--no-host-codex",
+                "--no-host-pi",
+                "--no-host-opencode",
+                "--no-host-cursor",
+                "--no-host-copilot",
+                "--no-host-antigravity",
+                "--no-host-mistral-vibe",
+                "--no-host-muse",
+                "--no-host-qwen",
+                "--no-host-kimi",
+                "--no-host-omp",
+                "--no-host-grok",
+                "--no-host-kilo",
+                "--no-host-openhands",
+                "--refresh-ms",
+                "250",
+                "--all",
+            ]);
+        fs::create_dir_all(root.join("hermes-home")).unwrap();
+        let devin_path = if cfg!(target_os = "macos") {
+            "Library/Application Support/devin/cli/sessions.db"
+        } else {
+            "data/devin/cli/sessions.db"
+        };
+        fs::create_dir_all(root.join(devin_path).parent().unwrap()).unwrap();
+        // The fixture uses the actual configured stores, not symlink aliases.
+        let body = include_str!("../fixtures/sqlite-native-cli.py")
+            .replace("path = root / (provider + \".db\")", &format!("path = root / ({{'hermes':'hermes-home/state.db','mastracode':'mastracode.db','devin':'{devin_path}'}}[provider])"));
+        for provider in ["hermes", "mastracode", "devin"] {
+            let path = root.join(provider);
+            fs::write(&path, &body).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            command.arg(format!("--{provider}-bin")).arg(path);
+        }
+    });
+    app.wait_for("SQLite dashboard", |s| s.contains("Open Agent View"));
+    for (provider, label) in [
+        ("hermes", "Hermes Agent"),
+        ("mastracode", "MastraCode"),
+        ("devin", "Devin"),
+    ] {
+        app.send(format!("/harness {provider}\r").as_bytes());
+        app.wait_for("harness selected", |s| {
+            s.contains(&format!("new tasks will use the {label} harness"))
+        });
+        app.send(b"hello from fixture\r");
+        app.wait_for("native foreground reply", |s| {
+            s.contains(&format!("NATIVE {provider} reply: hello from fixture"))
+        });
+        app.send(SHIFT_LEFT);
+        app.wait_for("owned dashboard row", |s| {
+            s.contains("Open Agent View") && s.contains("hello from fixture") && s.contains(label)
+        });
+        app.send(CTRL_R);
+        app.wait_for("rename", |s| s.contains("rename session"));
+        app.send(b"\x15");
+        app.send(format!("{provider}-renamed\r").as_bytes());
+        app.wait_for("renamed row", |s| {
+            s.contains(&format!("{provider}-renamed")) && !s.contains("rename session")
+        });
+        app.send(ENTER);
+        app.wait_for("reattached native foreground", |s| {
+            s.contains(&format!("NATIVE {provider} reply:"))
+        });
+        app.send(b"continued conversation\r");
+        app.wait_for("continued native reply", |s| {
+            s.contains("continued conversation")
+        });
+        app.send(SHIFT_LEFT);
+        app.wait_for("live preview refreshed", |s| {
+            s.contains("Open Agent View") && s.contains("continued conversation")
+        });
+    }
+    let screen = app.screen();
+    for name in ["hermes-renamed", "mastracode-renamed", "devin-renamed"] {
+        assert!(screen.contains(name), "{screen}");
+    }
+    for (index, (provider, label)) in [
+        ("hermes", "Hermes Agent"),
+        ("mastracode", "MastraCode"),
+        ("devin", "Devin"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        app.send(format!("/filter {provider}-renamed\r").as_bytes());
+        app.wait_for("select exact provider to stop", |s| {
+            s.contains(&format!("filter: {provider}-renamed"))
+        });
+        app.send(b"\x18");
+        app.wait_for("only the owned native frontend stops", |s| {
+            s.contains(&format!("stopped {label} session"))
+                && s.contains(&format!("{} working", 2 - index))
+        });
+        app.send(b"\x18");
+        app.wait_for("second Ctrl+X hides locally", |s| {
+            s.contains("hid 1 session locally")
+        });
+    }
+    for relative in [
+        "hermes-home/state.db",
+        "mastracode.db",
+        if cfg!(target_os = "macos") {
+            "Library/Application Support/devin/cli/sessions.db"
+        } else {
+            "data/devin/cli/sessions.db"
+        },
+    ] {
+        assert!(
+            app._home.path().join(relative).is_file(),
+            "local hide must retain provider history"
+        );
+    }
+    app.exit_cleanly();
+}
+
 fn serialize_real_tty_test() -> MutexGuard<'static, ()> {
     PTY_TEST_LOCK
         .lock()
@@ -458,7 +586,7 @@ printf '%s\n' '{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","target_form
     });
     app.send(CTRL_M_ENHANCED);
     let picker = app.wait_for("migration target picker", |screen| {
-        screen.contains("migrate session · target 1/14")
+        screen.contains("migrate session · target 1/17")
             && screen.contains("from  Codex")
             && screen.contains("Claude Code")
     });
@@ -997,6 +1125,7 @@ exit 0"#,
         app.wait_for("model picker returns to preserved draft", |screen| {
             screen.contains(&format!("harness {label} · model default"))
                 && screen.contains("test every harness")
+                && !screen.contains(&format!("choose {label} model"))
         });
         if choice != b"4" {
             app.send(b"\t");

@@ -1,4 +1,5 @@
 /target/
+/.native-corpus/
 /dist/
 /dist-v*/
 /.idea/

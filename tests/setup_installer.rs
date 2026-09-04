@@ -23,6 +23,9 @@ struct SetupCase {
 }
 
 const SETUP_CASES: &[SetupCase] = &[
+    SetupCase { harness: "hermes", binary_flag: "--hermes-bin", installer: InstallerKind::Script("https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh"), login_args: "setup" },
+    SetupCase { harness: "mastracode", binary_flag: "--mastracode-bin", installer: InstallerKind::Npm("mastracode"), login_args: "" },
+    SetupCase { harness: "devin", binary_flag: "--devin-bin", installer: InstallerKind::Script("https://cli.devin.ai/install.sh"), login_args: "auth login" },
     SetupCase {
         harness: "claude",
         binary_flag: "--claude-bin",
@@ -166,7 +169,8 @@ printf '%s\n' 'download progress 100%' >&2
             &bin.join("bash"),
             r##"#!/bin/sh
 [ -f "$1" ] || exit 82
-/bin/bash "$1"
+printf '%s\n' "$*" > "$HOME/installer-args.log"
+/bin/bash "$@"
 printf '%s\n' 'provider install progress 100%'
 "##,
         );
@@ -233,12 +237,56 @@ printf '%s\n' 'npm install progress 100%'
                     case.harness
                 );
                 assert!(!npm_log.exists());
+                let args = fs::read_to_string(directory.path().join("installer-args.log")).unwrap();
+                assert_eq!(args.contains("--skip-setup"), case.harness == "hermes");
             }
             InstallerKind::Npm(package) => {
                 let log = fs::read_to_string(&npm_log).expect("npm installer log");
                 assert_eq!(log.trim(), format!("install --global {package}"));
                 assert!(!curl_log.exists());
             }
+        }
+    }
+}
+
+#[test]
+fn failed_downloads_and_installers_never_report_success_or_start_login() {
+    for case in SETUP_CASES {
+        for phase in ["download", "install"] {
+            let directory = tempfile::tempdir().unwrap();
+            let bin = directory.path().join("bin");
+            fs::create_dir(&bin).unwrap();
+            let executable = directory.path().join("missing-provider");
+            write_executable(
+                &bin.join("curl"),
+                if phase == "download" {
+                    "#!/bin/sh\nexit 22\n"
+                } else {
+                    "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = --output ]; then shift; printf '#!/bin/sh\\nexit 23\\n' > \"$1\"; exit 0; fi; shift; done; exit 24\n"
+                },
+            );
+            write_executable(&bin.join("npm"), "#!/bin/sh\nexit 23\n");
+            write_executable(&bin.join("bash"), "#!/bin/sh\nexec /bin/bash \"$@\"\n");
+            let mut command = Command::new(env!("CARGO_BIN_EXE_open-agent-view"));
+            configure(&mut command, directory.path(), &bin, &executable);
+            let output = command
+                .args([
+                    case.binary_flag,
+                    executable.to_str().unwrap(),
+                    "setup",
+                    case.harness,
+                    "--yes",
+                ])
+                .output()
+                .unwrap();
+            assert!(!output.status.success(), "{} {phase}", case.harness);
+            assert!(!String::from_utf8_lossy(&output.stdout).contains("installation completed"));
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                error.contains("installer") || error.contains("download"),
+                "{error}"
+            );
+            assert!(!executable.exists());
         }
     }
 }
