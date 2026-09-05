@@ -6,30 +6,29 @@ artifacts consumed by [`install.sh`](../install.sh).
 
 ## Current release status
 
-Version 0.1.52 is the release described by this guide. Its
-[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.52)
+Version 0.1.53 is the release described by this guide. Its
+[published release](https://github.com/xhluca/open-agent-view/releases/tag/v0.1.53)
 contains verified archives and adjacent checksums for:
 
 ```text
-open-agent-view-0.1.52-x86_64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.52-x86_64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.52-aarch64-unknown-linux-gnu.tar.gz
-open-agent-view-0.1.52-aarch64-unknown-linux-gnu.tar.gz.sha256
-open-agent-view-0.1.52-x86_64-apple-darwin.tar.gz
-open-agent-view-0.1.52-x86_64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.52-aarch64-apple-darwin.tar.gz
-open-agent-view-0.1.52-aarch64-apple-darwin.tar.gz.sha256
-open-agent-view-0.1.52-x86_64-pc-windows-msvc.zip
-open-agent-view-0.1.52-x86_64-pc-windows-msvc.zip.sha256
+open-agent-view-0.1.53-x86_64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.53-x86_64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.53-aarch64-unknown-linux-gnu.tar.gz
+open-agent-view-0.1.53-aarch64-unknown-linux-gnu.tar.gz.sha256
+open-agent-view-0.1.53-x86_64-apple-darwin.tar.gz
+open-agent-view-0.1.53-x86_64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.53-aarch64-apple-darwin.tar.gz
+open-agent-view-0.1.53-aarch64-apple-darwin.tar.gz.sha256
+open-agent-view-0.1.53-x86_64-pc-windows-msvc.zip
+open-agent-view-0.1.53-x86_64-pc-windows-msvc.zip.sha256
 ```
 
-The archive was built, tested, packaged, checksum-verified, installer-tested,
-and smoke-tested both before publication and through the published release.
+Release archives must be built, tested, packaged, checksum-verified, and
+installer-tested on the exact tagged commit before manual publication.
 The adjacent `.sha256` release asset records the verified archive digest.
-Apple silicon was exercised on the native `mbp` host. The Intel archive was
-executed through Rosetta and the same commit was built and tested by the native
-Intel macOS CI runner. Linux ARM64 and Windows x64 were built, tested, packaged,
-and installer-tested on native hosted runners. Version
+Native hosted runners cover both Linux architectures, both macOS architectures,
+and Windows x64. Public-download smoke checks are recorded separately in
+[`testing.md`](testing.md); native CI is not a substitute for those checks. Version
 0.1.2 was the initial published release. The
 unpublished `v0.1.0`, `v0.1.1`, and `v0.1.9`
 build tags were retained rather than moved after their native release gates

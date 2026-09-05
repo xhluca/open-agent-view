@@ -16,7 +16,14 @@ visual acceptance criteria, and evidence template live in
 [the real-TTY validation guide](tui-validation.md). This file records completed
 checks; the guide also contains release gates that are not yet complete.
 
-## Unreleased 18-harness parity gate (2026-09-03)
+## v0.1.53 18-harness parity gate (2026-09-03–04)
+
+- The final feature commit `4fffb203ec8685ebe9d500d3bb5f3bcce85447c3`
+  passed all ten jobs in [PR CI run 33829276786](https://github.com/xhluca/open-agent-view/actions/runs/33829276786),
+  including native Linux x86-64/ARM64, macOS Intel/Apple silicon, Windows
+  x64, both Rust versions, quality, native-client corpus, and website gates.
+  Release packages must come from a separate successful run on the exact
+  versioned release commit, following the cross-platform procedure above.
 
 - Added Hermes Agent, MastraCode, and Devin, matching Session Migrate's 18
   coding harnesses; Terminal is counted separately. Product, README, website,

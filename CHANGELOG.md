@@ -8,6 +8,8 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.1.53] - 2026-09-04
+
 ### Added
 
 - Hermes Agent, MastraCode, and Devin CLI integrations: foreground sessions,
