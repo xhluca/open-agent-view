@@ -1,5 +1,8 @@
 # Exploration notebook
 
+- [Hermes Agent, MastraCode, and Devin](shared-sqlite-harnesses.md): shared
+  databases, native foreground controls, setup, platform limits, and tests.
+
 These notes capture observable behavior and compatibility constraints before
 implementation. Each document separates direct observations from inference so
 future CLI changes can be re-tested without treating reverse-engineered details

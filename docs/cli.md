@@ -140,7 +140,7 @@ open-agent-view setup HARNESS
 open-agent-view setup HARNESS --yes
 ```
 
-`HARNESS` accepts the fifteen coding-harness values plus `terminal` (which is built
+`HARNESS` accepts the eighteen coding-harness values plus `terminal` (which is built
 in and needs no installation). Without `--yes`, setup requires
 an interactive terminal confirmation naming the exact download/package source.
 In non-interactive use it refuses before network or installer execution. Shell
@@ -464,7 +464,7 @@ correlated diff, expanded permissions, or unknown request form. See the
 
 ### Session migration
 
-The `ctrl+m` workflow supports all 15 coding harnesses in the OAV picker as
+The `ctrl+m` workflow supports all 18 coding harnesses in the OAV picker as
 sources and destinations. It is intentionally limited to host sessions because
 session-migrate reads each harness's local native state. Terminal jobs and
 Docker-observed sessions are not offered as sources, and the source harness is

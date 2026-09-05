@@ -1,7 +1,7 @@
 //! Native integrations shared with Session Migrate's extended harness matrix.
 //!
-//! Oh My Pi, Grok, Kilo Code, and OpenHands all expose durable native session
-//! identifiers and a native resume command. OAV observes their bounded public
+//! Oh My Pi, Grok, Kilo Code, OpenHands, Hermes, MastraCode, and Devin expose
+//! durable session identifiers and native resume controls. OAV observes bounded
 //! session stores, but grants stop authority only after it has correlated one
 //! new exact ID with a foreground launch and persisted that ownership privately.
 
@@ -34,6 +34,9 @@ use crate::process::{CommandRequest, CommandRunner, ProcessRunner};
 const MAX_JSON_BYTES: u64 = 8 * 1024 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_SESSION_SCAN: usize = 10_000;
+
+#[path = "session_sqlite.rs"]
+mod sqlite;
 
 pub struct SessionMigrateNativeOwnership {
     provider: Provider,
@@ -107,11 +110,15 @@ impl SessionSource for SessionMigrateNativeSource {
             Provider::Grok => "Grok (host)",
             Provider::KiloCode => "Kilo Code (host)",
             Provider::OpenHands => "OpenHands (host)",
+            Provider::Hermes => "Hermes Agent (host)",
+            Provider::MastraCode => "MastraCode (host)",
+            Provider::Devin => "Devin (host)",
             _ => "unsupported native harness",
         }
     }
 
     fn discover(&self, request: &DiscoveryRequest) -> Result<Vec<AgentSession>> {
+        sqlite::require_local_store(&self.provider)?;
         let owned = self
             .ownership
             .inner
@@ -199,6 +206,7 @@ impl SessionMigrateNativeController {
             );
         }
         require_cwd(&request.cwd, self.provider.label())?;
+        sqlite::require_local_store(&self.provider)?;
         if !valid_text(&request.prompt) {
             bail!("{} prompt is invalid", self.provider.label());
         }
@@ -226,7 +234,25 @@ impl SessionMigrateNativeController {
             provider_slug(&self.provider)
         );
         let command = launch_command(&self.provider, &self.executable, request, yolo)?;
-        let exit = if yolo {
+        let exit = if sqlite::supports(&self.provider) && self.provider != Provider::Devin {
+            if yolo {
+                bail!("YOLO is not verified for this harness");
+            }
+            let mut steps = Vec::new();
+            if self.provider == Provider::MastraCode {
+                steps.push((sqlite::MASTRA_READY.into(), b"/new\r".to_vec()));
+                steps.push((
+                    "Ready for new conversation".into(),
+                    sqlite::prompt_input(&request.prompt),
+                ));
+            } else {
+                steps.push((
+                    sqlite::HERMES_READY.into(),
+                    sqlite::prompt_input(&request.prompt),
+                ));
+            }
+            crate::native_session::run_with_screen_steps(command, &launch_key, steps)?
+        } else if yolo {
             crate::native_session::run_yolo(command, &launch_key, self.provider.label())?
         } else {
             crate::native_session::run(command, &launch_key)?
@@ -248,7 +274,13 @@ impl SessionMigrateNativeController {
                 .into_iter()
                 .filter(|record| {
                     !before.contains(&record.session_id)
-                        && same_workspace(&record.cwd, &request.cwd)
+                        // MastraCode creates an empty startup thread before
+                        // /new creates the conversation that receives our task.
+                        && (self.provider != Provider::MastraCode
+                            || !record.summary.trim().is_empty())
+                        && (same_workspace(&record.cwd, &request.cwd)
+                            || (self.provider == Provider::Hermes
+                                && record.cwd.as_os_str().is_empty()))
                 })
                 .collect())
             },
@@ -276,6 +308,9 @@ impl ProviderController for SessionMigrateNativeController {
     }
 
     fn launch_mode(&self) -> LaunchMode {
+        if !cfg!(unix) && matches!(self.provider, Provider::Hermes | Provider::MastraCode) {
+            return LaunchMode::Unavailable;
+        }
         LaunchMode::SelectableModel
     }
 
@@ -323,6 +358,15 @@ impl ProviderController for SessionMigrateNativeController {
                 }
                 Ok(models.into_iter().collect())
             }
+            Provider::Hermes | Provider::MastraCode => {
+                sqlite::saved_models(&self.provider, &self.data_root)
+            }
+            Provider::Devin => run_models(
+                &self.executable,
+                &["models", "list", "--format", "json"],
+                sqlite::devin_models,
+                self.runner.as_ref(),
+            ),
             _ => bail!("unsupported native harness"),
         }
     }
@@ -344,6 +388,15 @@ impl ProviderController for SessionMigrateNativeController {
             }
             Provider::OpenHands => {
                 run_native_authentication(&self.executable, &["login"], Provider::OpenHands)
+            }
+            Provider::Hermes => {
+                run_native_authentication(&self.executable, &["setup"], Provider::Hermes)
+            }
+            Provider::MastraCode => {
+                run_native_authentication(&self.executable, &[], Provider::MastraCode)
+            }
+            Provider::Devin => {
+                run_native_authentication(&self.executable, &["auth", "login"], Provider::Devin)
             }
             _ => bail!("unsupported native harness"),
         }
@@ -390,13 +443,36 @@ impl ProviderController for SessionMigrateNativeController {
             .into_iter()
             .find(|record| record.session_id == session.provider_session_id)
             .and_then(|record| record.session_path);
-        let command = resume_command(
+        let mut command = resume_command(
             &self.provider,
             &self.executable,
             &session.cwd,
             &session.provider_session_id,
             resume_path.as_deref(),
         )?;
+        if self.provider == Provider::MastraCode {
+            command.env(
+                "MASTRA_RESOURCE_ID",
+                sqlite::mastra_resource(&self.data_root, &session.provider_session_id)?,
+            );
+            // --thread is headless-only in MastraCode. Use its real searchable
+            // thread picker, which matches exact UUIDs as well as titles.
+            return native_outcome(
+                crate::native_session::run_with_screen_steps(
+                    command,
+                    &session.id,
+                    vec![
+                        (sqlite::MASTRA_READY.into(), b"/threads\r".to_vec()),
+                        (
+                            "Type to search".into(),
+                            format!("{}\r", session.provider_session_id).into_bytes(),
+                        ),
+                    ],
+                )?,
+                &self.provider,
+                &session.provider_session_id,
+            );
+        }
         native_outcome(
             crate::native_session::run(command, &session.id)?,
             &self.provider,
@@ -453,7 +529,13 @@ struct StoredSession {
 fn require_supported(provider: &Provider) -> Result<()> {
     if matches!(
         provider,
-        Provider::OhMyPi | Provider::Grok | Provider::KiloCode | Provider::OpenHands
+        Provider::OhMyPi
+            | Provider::Grok
+            | Provider::KiloCode
+            | Provider::OpenHands
+            | Provider::Hermes
+            | Provider::MastraCode
+            | Provider::Devin
     ) {
         Ok(())
     } else {
@@ -495,6 +577,7 @@ fn default_data_root(provider: &Provider) -> Result<PathBuf> {
         Provider::OpenHands => Ok(std::env::var_os("OPENHANDS_CONVERSATIONS_DIR")
             .map(PathBuf::from)
             .unwrap_or(home()?.join(".openhands/conversations"))),
+        Provider::Hermes | Provider::MastraCode | Provider::Devin => sqlite::default_path(provider),
         _ => bail!("unsupported native harness"),
     }
 }
@@ -505,6 +588,9 @@ fn provider_slug(provider: &Provider) -> &'static str {
         Provider::Grok => "grok",
         Provider::KiloCode => "kilo",
         Provider::OpenHands => "openhands",
+        Provider::Hermes => "hermes",
+        Provider::MastraCode => "mastracode",
+        Provider::Devin => "devin",
         _ => "unsupported",
     }
 }
@@ -525,6 +611,9 @@ fn list_sessions(
         Provider::Grok => list_grok_sessions(data_root, limit)?,
         Provider::KiloCode => list_kilo_sessions(executable, limit, runner)?,
         Provider::OpenHands => list_openhands_sessions(data_root, limit)?,
+        Provider::Hermes | Provider::MastraCode | Provider::Devin => {
+            sqlite::list(provider, data_root, None, limit)?
+        }
         _ => bail!("unsupported native harness"),
     };
     sessions.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
@@ -537,6 +626,15 @@ fn read_owned_session(
     data_root: &Path,
     record: &OwnedNativeSession,
 ) -> Result<Option<StoredSession>> {
+    if sqlite::supports(provider) {
+        let mut session = sqlite::list(provider, data_root, Some(&record.session_id), 1)?.pop();
+        if let Some(session) = &mut session {
+            if session.cwd.as_os_str().is_empty() {
+                session.cwd = record.cwd.clone();
+            }
+        }
+        return Ok(session);
+    }
     let Some(path) = record.session_path.as_deref() else {
         return Ok(None);
     };
@@ -670,6 +768,32 @@ fn launch_command(
             }
             command.args(["--task", request.prompt.trim()]);
         }
+        Provider::Hermes => {
+            if yolo {
+                bail!("YOLO is not verified for Hermes Agent");
+            }
+            command.args(["chat", "--cli"]);
+            if let Some(model) = &request.model {
+                command.args(["--model", model]);
+            }
+        }
+        Provider::MastraCode => {
+            if yolo {
+                bail!("YOLO is not verified for MastraCode");
+            }
+            if let Some(model) = &request.model {
+                command.env("MASTRACODE_MODEL_ID", model);
+            }
+        }
+        Provider::Devin => {
+            if yolo {
+                bail!("YOLO is not verified for Devin");
+            }
+            if let Some(model) = &request.model {
+                command.args(["--model", model]);
+            }
+            command.args(["--", request.prompt.trim()]);
+        }
         _ => bail!("unsupported native harness"),
     }
     Ok(command)
@@ -700,6 +824,13 @@ fn resume_command(
             command.args(["--session", session_id]);
         }
         Provider::OpenHands => {
+            command.args(["--resume", session_id]);
+        }
+        Provider::Hermes => {
+            command.args(["chat", "--cli", "--resume", session_id]);
+        }
+        Provider::MastraCode => {}
+        Provider::Devin => {
             command.args(["--resume", session_id]);
         }
         _ => bail!("unsupported native harness"),
@@ -1301,6 +1432,26 @@ fn validate_provider_id(provider: &Provider, value: &str) -> Result<()> {
     validate_id(value, provider.label())?;
     let valid = match provider {
         Provider::Grok | Provider::OpenHands => is_uuid(value),
+        Provider::MastraCode => is_uuid(value),
+        Provider::Hermes => {
+            let parts = value.split('_').collect::<Vec<_>>();
+            parts.len() == 3
+                && parts[0].len() == 8
+                && parts[1].len() == 6
+                && parts[0]
+                    .bytes()
+                    .chain(parts[1].bytes())
+                    .all(|b| b.is_ascii_digit())
+                && (6..=8).contains(&parts[2].len())
+                && parts[2].bytes().all(|b| b.is_ascii_hexdigit())
+        }
+        Provider::Devin => {
+            value.len() <= 128
+                && value.as_bytes()[0].is_ascii_alphanumeric()
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        }
         Provider::OhMyPi | Provider::KiloCode => value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')),
@@ -1387,6 +1538,42 @@ mod tests {
     use crate::test_support::tempfile;
 
     const UUID: &str = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+    #[test]
+    fn sqlite_native_commands_do_not_accidentally_use_headless_modes() {
+        let dir = tempfile::tempdir().unwrap();
+        for provider in [Provider::Hermes, Provider::MastraCode, Provider::Devin] {
+            let request = LaunchRequest {
+                provider: provider.clone(),
+                model: Some("provider/model".into()),
+                prompt: "hello\nworld".into(),
+                cwd: dir.path().to_owned(),
+            };
+            let command = launch_command(&provider, "native-cli", &request, false).unwrap();
+            let args = command
+                .get_args()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            match provider {
+                Provider::Hermes => {
+                    assert_eq!(args, ["chat", "--cli", "--model", "provider/model"])
+                }
+                Provider::MastraCode => {
+                    assert!(
+                        args.is_empty(),
+                        "--prompt/--thread would invoke the wrong interface"
+                    );
+                    assert!(command.get_envs().any(|(k, v)| k == "MASTRACODE_MODEL_ID"
+                        && v == Some(std::ffi::OsStr::new("provider/model"))));
+                }
+                Provider::Devin => {
+                    assert_eq!(args, ["--model", "provider/model", "--", "hello\nworld"])
+                }
+                _ => unreachable!(),
+            }
+            assert!(launch_command(&provider, "native-cli", &request, true).is_err());
+        }
+    }
 
     #[test]
     fn extended_harness_yolo_launches_use_only_verified_native_flags() {

@@ -24,6 +24,7 @@ libc = "=0.2.189"
 ratatui = "=0.26.3"
 serde = { version = "=1.0.203", features = ["derive"] }
 serde_json = "=1.0.117"
+rusqlite = { version = "=0.31.0", features = ["bundled", "hooks"] }
 tungstenite = { version = "=0.21.0", default-features = false, features = ["handshake"] }
 # Keep the transitive URL parser compatible with the project's Rust 1.75 MSRV.
 # Newer url 2.5.x releases pull in edition-2024 IDNA crates.

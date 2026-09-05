@@ -53,6 +53,14 @@ provider probes are opt-in; an ignored credentialed test is not a passing live
 provider test. Follow [`tui-validation.md`](tui-validation.md) for the exhaustive
 keyboard route, populated-session fixture, and visual acceptance criteria.
 
+Hermes and MastraCode have additional credential-free **actual native CLI**
+probes, including three conversation turns and exact resume after OAV restarts.
+See [their integration guide](exploration/shared-sqlite-harnesses.md#tests)
+for the commands. All three new SQLite readers, including Devin, also run
+against Session Migrate's pinned sanitized native-client corpus in CI. Their
+fixture tests run in the ordinary platform matrix; Hermes/MastraCode queued
+native prompt input remains Unix-only.
+
 For website changes, also run:
 
 ```console

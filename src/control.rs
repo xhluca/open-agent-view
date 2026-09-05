@@ -403,6 +403,9 @@ impl ControlHub {
             Provider::Grok => "grok",
             Provider::KiloCode => "kilo",
             Provider::OpenHands => "openhands",
+            Provider::Hermes => "hermes",
+            Provider::MastraCode => "mastracode",
+            Provider::Devin => "devin",
             Provider::Terminal => unreachable!("handled above"),
             Provider::Other(_) => bail!("setup is unavailable for this provider"),
         };

@@ -194,6 +194,7 @@ fn run_with_initial_input_after_screen_security(
             Some(ScreenTriggeredInput {
                 bytes: initial_input.to_vec(),
                 ready_marker: ready_marker.to_owned(),
+                next: Vec::new(),
             }),
             warning,
         )
@@ -407,6 +408,54 @@ fn run_pty(
 struct ScreenTriggeredInput {
     bytes: Vec<u8>,
     ready_marker: String,
+    next: Vec<(String, Vec<u8>)>,
+}
+
+/// Drive native slash commands only as each corresponding screen becomes ready.
+/// Never use fixed delays: login and trust prompts must remain interactive.
+/// Newline-separated marker fragments must all be present on the same screen.
+pub fn run_with_screen_steps(
+    command: Command,
+    session_key: &str,
+    steps: Vec<(String, Vec<u8>)>,
+) -> Result<NativeSessionExit> {
+    validate_session_key(session_key)?;
+    if steps.is_empty()
+        || steps.len() > 8
+        || steps.iter().any(|(marker, bytes)| {
+            marker.is_empty()
+                || marker.len() > 512
+                || marker.lines().any(str::is_empty)
+                || marker.chars().any(|ch| ch.is_control() && ch != '\n')
+                || bytes.is_empty()
+                || bytes.len() > MAX_INITIAL_INPUT_BYTES
+        })
+    {
+        bail!("invalid provider-native screen steps");
+    }
+    #[cfg(unix)]
+    {
+        if !terminal_is_interactive() {
+            bail!("screen-gated native input requires an interactive terminal");
+        }
+        let mut steps = steps;
+        let (ready_marker, bytes) = steps.remove(0);
+        run_pty(
+            command,
+            session_key,
+            Some(ScreenTriggeredInput {
+                bytes,
+                ready_marker,
+                next: steps,
+            }),
+            None,
+        )
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+        bail!("screen-gated native input is unavailable on this platform");
+    }
 }
 
 #[cfg(unix)]
@@ -711,12 +760,25 @@ fn forward_ready_initial_input(
     let Some(input) = pending.as_ref() else {
         return Ok(false);
     };
-    if !screen.screen().contents().contains(&input.ready_marker) {
+    let contents = screen.screen().contents();
+    if !input
+        .ready_marker
+        .lines()
+        .all(|marker| contents.contains(marker))
+    {
         return Ok(false);
     }
     output.write_all(&input.bytes)?;
     output.flush()?;
-    *pending = None;
+    let mut remaining = pending.take().expect("pending input exists").next;
+    if !remaining.is_empty() {
+        let (ready_marker, bytes) = remaining.remove(0);
+        *pending = Some(ScreenTriggeredInput {
+            bytes,
+            ready_marker,
+            next: remaining,
+        });
+    }
     Ok(true)
 }
 
@@ -1269,6 +1331,7 @@ mod tests {
         let mut pending = Some(ScreenTriggeredInput {
             bytes: b"fix the parser\r".to_vec(),
             ready_marker: "Send /help for help information.".into(),
+            next: Vec::new(),
         });
         let mut forwarded = Vec::new();
 
@@ -1283,6 +1346,28 @@ mod tests {
 
         assert!(!forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
         assert_eq!(forwarded, b"fix the parser\r");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn screen_steps_require_all_markers_and_wait_for_each_acknowledgement() {
+        let mut screen = vt100::Parser::new(12, 80, 0);
+        let mut pending = Some(ScreenTriggeredInput {
+            ready_marker: "welcome\neditor ready".into(),
+            bytes: b"/new\r".to_vec(),
+            next: vec![("new conversation ready".into(), b"hello\r".to_vec())],
+        });
+        let mut forwarded = Vec::new();
+        screen.process(b"welcome");
+        assert!(!forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        screen.process(b"\r\neditor ready");
+        assert!(forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        assert_eq!(forwarded, b"/new\r");
+        assert!(!forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        screen.process(b"\r\nnew conversation ready");
+        assert!(forward_ready_initial_input(&mut pending, &screen, &mut forwarded).unwrap());
+        assert_eq!(forwarded, b"/new\rhello\r");
+        assert!(pending.is_none());
     }
 
     #[test]

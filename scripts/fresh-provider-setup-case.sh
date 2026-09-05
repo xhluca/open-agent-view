@@ -3,6 +3,13 @@
 set -euo pipefail
 
 provider="${1:?provider is required}"
+# Avoid an unrelated npm vulnerability-audit request hanging native installers
+# in restricted test networks. Package downloads and lifecycle scripts still run.
+export NPM_CONFIG_AUDIT=false
+export NPM_CONFIG_FUND=false
+# This test has already consented with setup --yes; allow upstream npx to
+# install dependencies without waiting for a second package-install prompt.
+export NPM_CONFIG_YES=true
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_CACHE_HOME="${HOME}/.cache"
 export XDG_STATE_HOME="${HOME}/.local/state"
@@ -16,8 +23,12 @@ export QWEN_NO_MODIFY_PATH=1
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 
 log="/tmp/${provider}-setup.log"
+setup_timeout=300
+# Hermes installs Python, native build dependencies, and its Node workspace
+# before the login handoff; a cold install needs a larger bounded budget.
+[[ "$provider" != hermes ]] || setup_timeout=900
 set +e
-timeout 120 script -qefc "/usr/local/bin/open-agent-view setup '${provider}' --yes" "$log" \
+timeout "${OAV_SETUP_TIMEOUT:-$setup_timeout}" script -qefc "/usr/local/bin/open-agent-view setup '${provider}' --yes" "$log" \
   >"/tmp/${provider}-setup.console" 2>&1
 status=$?
 set -e
@@ -50,11 +61,15 @@ case "$provider" in
   grok) executable="$(command -v grok)" ;;
   kilo) executable="$(command -v kilo)" ;;
   openhands) executable="$(command -v openhands)" ;;
+  hermes) executable="$(command -v hermes || true)" ;;
+  mastracode) executable="$(command -v mastracode)" ;;
+  devin) executable="$(command -v devin)" ;;
   *) printf 'unknown provider: %s\n' "$provider" >&2; exit 2 ;;
 esac
 
 [[ -x "$executable" ]] || {
   printf 'setup did not install %s\n' "$provider" >&2
+  tail -n 80 "$log" >&2
   exit 1
 }
 
@@ -64,7 +79,12 @@ grep -Eiq 'install|download|auth|login|browser|device|setup|welcome|provider' "$
   exit 1
 }
 
-version="$($executable --version 2>&1 | grep -m1 -E '[0-9]+\.[0-9]+' || true)"
+if [[ "$provider" == mastracode ]]; then
+  # This CLI's --version is not a version probe: it starts its interactive UI.
+  version="$(npm list --global mastracode --depth=0 --json | node -e 'let s="";process.stdin.on("data",c=>s+=c).on("end",()=>console.log(JSON.parse(s).dependencies.mastracode.version))')"
+else
+  version="$(timeout 30 "$executable" --version 2>&1 | grep -m1 -E '[0-9]+\.[0-9]+' || true)"
+fi
 [[ -n "$version" ]] || {
   printf 'installed %s executable did not report a version\n' "$provider" >&2
   exit 1

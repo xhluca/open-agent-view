@@ -31,20 +31,10 @@ impl DoctorReport {
         self.checks
             .iter()
             .filter(|check| {
-                matches!(
-                    check.name.as_str(),
-                    "Claude"
-                        | "Codex"
-                        | "Pi"
-                        | "OpenCode"
-                        | "Cursor"
-                        | "GitHub Copilot"
-                        | "Antigravity"
-                        | "Mistral Vibe"
-                        | "Muse Code"
-                        | "Qwen Code"
-                        | "Kimi Code"
-                ) && check.status == CheckStatus::Ok
+                Provider::CODING_HARNESSES
+                    .iter()
+                    .any(|provider| provider.label() == check.name)
+                    && check.status == CheckStatus::Ok
             })
             .count()
     }
@@ -63,7 +53,16 @@ pub fn diagnose(
 ) -> DoctorReport {
     let mut checks = Vec::new();
     for (provider, executable) in provider_bins {
-        checks.push(version_check(provider.label(), executable, &["--version"]));
+        let args = if provider == &Provider::MastraCode {
+            &["--help"]
+        } else {
+            &["--version"]
+        };
+        let mut check = version_check(provider.label(), executable, args);
+        if provider == &Provider::MastraCode && check.status == CheckStatus::Ok {
+            check.detail = "available (native help probe; this CLI has no --version flag)".into();
+        }
+        checks.push(check);
     }
     checks.push(version_check(
         "Docker",
@@ -155,6 +154,24 @@ fn version_check(name: &str, program: &str, args: &[&str]) -> DoctorCheck {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn healthy_count_includes_every_coding_harness() {
+        let report = DoctorReport {
+            checks: Provider::CODING_HARNESSES
+                .iter()
+                .map(|p| DoctorCheck {
+                    name: p.label().into(),
+                    status: CheckStatus::Ok,
+                    detail: "available".into(),
+                })
+                .collect(),
+        };
+        assert_eq!(
+            report.healthy_provider_count(),
+            Provider::CODING_HARNESS_COUNT
+        );
+    }
 
     #[test]
     fn text_report_is_compact_and_actionable() {

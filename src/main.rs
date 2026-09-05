@@ -57,6 +57,10 @@ enum LaunchProvider {
     Kilo,
     #[value(name = "openhands")]
     OpenHands,
+    Hermes,
+    #[value(name = "mastracode", alias = "mastra-code")]
+    MastraCode,
+    Devin,
     Terminal,
 }
 
@@ -371,6 +375,30 @@ struct Cli {
     #[arg(long)]
     no_host_openhands: bool,
 
+    /// Hermes Agent executable used for native launch and resume.
+    #[arg(long, default_value = "hermes", value_name = "PATH", global = true)]
+    hermes_bin: String,
+
+    /// Disable Hermes Agent discovery and control on the host.
+    #[arg(long)]
+    no_host_hermes: bool,
+
+    /// MastraCode executable used for native launch and resume.
+    #[arg(long, default_value = "mastracode", value_name = "PATH", global = true)]
+    mastracode_bin: String,
+
+    /// Disable MastraCode discovery and control on the host.
+    #[arg(long)]
+    no_host_mastracode: bool,
+
+    /// Devin executable used for native launch and resume.
+    #[arg(long, default_value = "devin", value_name = "PATH", global = true)]
+    devin_bin: String,
+
+    /// Disable Devin discovery and control on the host.
+    #[arg(long)]
+    no_host_devin: bool,
+
     /// Explicitly observe Claude and Codex sessions in this running Docker container.
     #[arg(long = "docker-container", value_name = "NAME_OR_ID", global = true)]
     docker_containers: Vec<String>,
@@ -440,6 +468,9 @@ fn main() -> Result<()> {
                     (Provider::Grok, cli.grok_bin.clone()),
                     (Provider::KiloCode, cli.kilo_bin.clone()),
                     (Provider::OpenHands, cli.openhands_bin.clone()),
+                    (Provider::Hermes, cli.hermes_bin.clone()),
+                    (Provider::MastraCode, cli.mastracode_bin.clone()),
+                    (Provider::Devin, cli.devin_bin.clone()),
                 ];
                 let report = diagnose(&provider_bins, &cli.docker_bin, &cli.docker_containers);
                 if cli.json {
@@ -512,6 +543,13 @@ fn main() -> Result<()> {
     let openhands_enabled = host_providers_enabled
         && !cli.no_host_openhands
         && executable_available(&cli.openhands_bin);
+    let hermes_enabled =
+        host_providers_enabled && !cli.no_host_hermes && executable_available(&cli.hermes_bin);
+    let mastracode_enabled = host_providers_enabled
+        && !cli.no_host_mastracode
+        && executable_available(&cli.mastracode_bin);
+    let devin_enabled =
+        host_providers_enabled && !cli.no_host_devin && executable_available(&cli.devin_bin);
     let launch_cwd = match cli.launch_cwd {
         Some(path) => path,
         None => std::env::current_dir()?,
@@ -532,6 +570,9 @@ fn main() -> Result<()> {
         LaunchProvider::Grok => Provider::Grok,
         LaunchProvider::Kilo => Provider::KiloCode,
         LaunchProvider::OpenHands => Provider::OpenHands,
+        LaunchProvider::Hermes => Provider::Hermes,
+        LaunchProvider::MastraCode => Provider::MastraCode,
+        LaunchProvider::Devin => Provider::Devin,
         LaunchProvider::Terminal => Provider::Terminal,
     };
     let pi_session_dir = if !pi_enabled {
@@ -590,6 +631,15 @@ fn main() -> Result<()> {
         .transpose()?;
     let openhands_ownership = openhands_enabled
         .then(|| SessionMigrateNativeOwnership::load_default(Provider::OpenHands))
+        .transpose()?;
+    let hermes_ownership = hermes_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::Hermes))
+        .transpose()?;
+    let mastracode_ownership = mastracode_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::MastraCode))
+        .transpose()?;
+    let devin_ownership = devin_enabled
+        .then(|| SessionMigrateNativeOwnership::load_default(Provider::Devin))
         .transpose()?;
     let terminal_harness = provider_io_enabled.then(|| Arc::new(TerminalHarness::new()));
     if provider_io_enabled {
@@ -711,6 +761,24 @@ fn main() -> Result<()> {
                 Provider::OpenHands,
                 cli.openhands_bin.clone(),
                 openhands_ownership.clone(),
+            ),
+            (
+                hermes_enabled,
+                Provider::Hermes,
+                cli.hermes_bin.clone(),
+                hermes_ownership.clone(),
+            ),
+            (
+                mastracode_enabled,
+                Provider::MastraCode,
+                cli.mastracode_bin.clone(),
+                mastracode_ownership.clone(),
+            ),
+            (
+                devin_enabled,
+                Provider::Devin,
+                cli.devin_bin.clone(),
+                devin_ownership.clone(),
             ),
         ] {
             if enabled {
@@ -851,6 +919,24 @@ fn main() -> Result<()> {
                 Provider::OpenHands,
                 cli.openhands_bin,
                 openhands_ownership,
+            ),
+            (
+                hermes_enabled,
+                Provider::Hermes,
+                cli.hermes_bin,
+                hermes_ownership,
+            ),
+            (
+                mastracode_enabled,
+                Provider::MastraCode,
+                cli.mastracode_bin,
+                mastracode_ownership,
+            ),
+            (
+                devin_enabled,
+                Provider::Devin,
+                cli.devin_bin,
+                devin_ownership,
             ),
         ] {
             if enabled {
@@ -1383,6 +1469,26 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
                 url: "https://install.openhands.dev/install.sh",
             },
         ),
+        LaunchProvider::Hermes => (
+            "Hermes Agent",
+            cli.hermes_bin.as_str(),
+            vec!["setup"],
+            HarnessInstaller::Script {
+                url: "https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh",
+            },
+        ),
+        LaunchProvider::MastraCode => (
+            "MastraCode",
+            cli.mastracode_bin.as_str(),
+            Vec::new(),
+            HarnessInstaller::Npm { package: "mastracode" },
+        ),
+        LaunchProvider::Devin => (
+            "Devin",
+            cli.devin_bin.as_str(),
+            vec!["auth", "login"],
+            HarnessInstaller::Script { url: "https://cli.devin.ai/install.sh" },
+        ),
         LaunchProvider::Terminal => unreachable!("handled above"),
     };
     let already_installed = executable_available(executable);
@@ -1410,7 +1516,16 @@ fn run_harness_setup(provider: LaunchProvider, confirmed: bool, cli: &Cli) -> Re
     } else {
         println!("Installing {label}…");
         let status = match installer {
-            HarnessInstaller::Script { url } => run_official_script_installer(url)?,
+            HarnessInstaller::Script { url } => {
+                // OAV performs the native setup handoff below. Do not run the
+                // Hermes wizard twice (inside the installer, then again here).
+                let args: &[&str] = if matches!(provider, LaunchProvider::Hermes) {
+                    &["--skip-setup"]
+                } else {
+                    &[]
+                };
+                run_official_script_installer(url, args)?
+            }
             HarnessInstaller::Npm { package } => Command::new("npm")
                 .args(["install", "--global", package])
                 .stdin(Stdio::inherit())
@@ -1496,11 +1611,14 @@ fn launch_provider_value(provider: LaunchProvider) -> &'static str {
         LaunchProvider::Grok => "grok",
         LaunchProvider::Kilo => "kilo",
         LaunchProvider::OpenHands => "openhands",
+        LaunchProvider::Hermes => "hermes",
+        LaunchProvider::MastraCode => "mastracode",
+        LaunchProvider::Devin => "devin",
         LaunchProvider::Terminal => "terminal",
     }
 }
 
-fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> {
+fn run_official_script_installer(url: &str, args: &[&str]) -> Result<std::process::ExitStatus> {
     let directory = std::env::temp_dir().join(format!(
         "open-agent-view-installer-{}-{}",
         std::process::id(),
@@ -1543,6 +1661,7 @@ fn run_official_script_installer(url: &str) -> Result<std::process::ExitStatus> 
     }
     let status = Command::new("bash")
         .arg(&script)
+        .args(args)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
@@ -1772,6 +1891,9 @@ fn resolve_default_provider_bins(cli: &mut Cli) {
         &mut cli.grok_bin,
         &mut cli.kilo_bin,
         &mut cli.openhands_bin,
+        &mut cli.hermes_bin,
+        &mut cli.mastracode_bin,
+        &mut cli.devin_bin,
         &mut cli.session_migrate_bin,
     ] {
         if let Some(path) = resolve_executable(executable) {
@@ -1857,7 +1979,8 @@ fn provider_fallback_directories(program: &str) -> &'static [&'static str] {
         "muse" => &[".local/bin"],
         "qwen" => &[".local/bin", ".npm-global/bin"],
         "kimi" => &[".local/bin"],
-        "omp" | "openhands" => &[".local/bin"],
+        "omp" | "openhands" | "devin" | "mastracode" => &[".local/bin"],
+        "hermes" => &[".local/bin", ".hermes/hermes-agent/.venv/bin"],
         "grok" => &[".grok/bin", ".local/bin"],
         "kilo" => &[".local/bin", ".npm-global/bin"],
         "claude" | "pi" => &[".local/bin", ".npm-global/bin"],
@@ -2383,6 +2506,9 @@ mod tests {
             ("kilo", LaunchProvider::Kilo),
             ("kilo-code", LaunchProvider::Kilo),
             ("openhands", LaunchProvider::OpenHands),
+            ("hermes", LaunchProvider::Hermes),
+            ("mastracode", LaunchProvider::MastraCode),
+            ("devin", LaunchProvider::Devin),
             ("terminal", LaunchProvider::Terminal),
         ] {
             let cli =

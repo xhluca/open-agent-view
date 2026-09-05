@@ -3,7 +3,7 @@
 <h1><img src="website/public/favicon.svg" alt="Open Agent View logo" width="40" height="40"> Open Agent View</h1>
 
 **One agent view for every coding harness.**<br>
-See what’s running, what needs you, and where to step in across 15 coding
+See what’s running, what needs you, and where to step in across 18 coding
 harnesses plus Terminal.
 
 <table align="center">
@@ -56,7 +56,7 @@ should not require a separate pile of terminal tabs.
 
 Open Agent View brings Claude Code, Codex, Pi, OpenCode, Cursor, GitHub Copilot,
 Antigravity, Mistral Vibe, Muse Code, Qwen Code, Kimi Code, Oh My Pi, Grok,
-Kilo Code, OpenHands, and ordinary terminal jobs into one open-source dashboard.
+Kilo Code, OpenHands, Hermes Agent, MastraCode, Devin, and ordinary terminal jobs into one open-source dashboard.
 The conversation still lives in the harness that created it; selecting a row
 opens that harness's native interface.
 
@@ -106,7 +106,7 @@ Install the companion CLI once with
 
 ## Harnesses
 
-Open Agent View brings 15 local coding harnesses plus Terminal into one
+Open Agent View brings 18 local coding harnesses plus Terminal into one
 dashboard. This inventory follows the same order as the in-app harness picker.
 
 <table>
@@ -132,6 +132,11 @@ dashboard. This inventory follows the same order as the in-app harness picker.
     <td align="center"><a href="https://github.com/xai-org/grok-build"><img src="https://session-migrate.github.io/agents/grok.svg" width="64" height="64" alt="Grok logo"><br><strong>Grok</strong></a></td>
     <td align="center"><a href="https://github.com/Kilo-Org/kilocode"><img src="https://session-migrate.github.io/agents/kilo-code.svg" width="64" height="64" alt="Kilo Code logo"><br><strong>Kilo Code</strong></a></td>
     <td align="center"><a href="https://github.com/OpenHands/OpenHands-CLI"><img src="https://session-migrate.github.io/agents/openhands.svg" width="64" height="64" alt="OpenHands logo"><br><strong>OpenHands</strong></a></td>
+    <td align="center"><a href="https://github.com/NousResearch/hermes-agent"><strong>Hermes Agent</strong></a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/mastra-ai/mastra/tree/main/mastracode"><strong>MastraCode</strong></a></td>
+    <td align="center"><a href="https://github.com/CognitionAI/devin-cli"><strong>Devin</strong></a></td>
     <td align="center"><a href="docs/cli.md"><img src="website/public/providers/terminal.svg" width="64" height="64" alt="Terminal icon"><br><strong>Terminal</strong></a></td>
   </tr>
 </table>
@@ -156,6 +161,9 @@ dashboard. This inventory follows the same order as the in-app harness picker.
 | Grok | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | Kilo Code | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | OpenHands | ✓ | ✓¹ | ✓ | ✓ | — | — | ✓ | — |
+| Hermes Agent | ✓² | ✓¹ | ✓² | ✓ | — | — | ✓² | — |
+| MastraCode | ✓² | ✓¹ | ✓² | ✓ | — | — | ✓² | — |
+| Devin | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | — |
 | Terminal | ✓ | ✓ | ✓ | ✓ | — | — | ✓ | ✓ |
 
 `✓` means OAV exposes the feature for sessions it owns. A dash means the
@@ -163,7 +171,13 @@ session still appears in the dashboard, but that action stays in the harness's
 native interface. “Delete / archive” is checked when at least one safe removal
 operation is available.
 
-¹ OpenHands model choices are read from its saved configurations and
+² Hermes and MastraCode foreground prompt automation requires a Unix terminal;
+their saved sessions can also be inspected on Windows. See the
+[integration notes](docs/exploration/shared-sqlite-harnesses.md) for native
+version coverage and model-picker limits.
+
+¹ Hermes and MastraCode offer models seen in saved sessions and accept exact
+model IDs. Their native setup handles provider configuration. OpenHands model choices are read from its saved configurations and
 `LLM_MODEL`; an exact model ID can also be entered directly.
 
 </details>

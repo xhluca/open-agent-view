@@ -121,8 +121,15 @@ fn product_readme_and_website_share_one_exact_harness_inventory() {
     assert_eq!(catalog_names.len(), Provider::CODING_HARNESS_COUNT);
 
     let readme = read_readme();
+    assert!(readme.contains(&format!(
+        "brings {} local coding harnesses plus Terminal",
+        Provider::CODING_HARNESS_COUNT
+    )));
     assert!(
-        readme.contains("15 coding\nharnesses plus Terminal"),
+        readme.contains(&format!(
+            "{} coding\nharnesses plus Terminal",
+            Provider::CODING_HARNESS_COUNT
+        )),
         "README must state the exact coding-harness and Terminal counts"
     );
 

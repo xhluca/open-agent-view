@@ -8,6 +8,16 @@ and future released versions are intended to follow Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- Hermes Agent, MastraCode, and Devin CLI integrations: foreground sessions,
+  exact native resume, read-only live previews, private ownership tracking,
+  model choices, native setup, and Ctrl+M migration mappings.
+- Coverage for shared SQLite/WAL stores, MastraCode JSONB, active branches,
+  persisted ownership, installer/login handoffs, and large inventories.
+- Consistent inventory of 18 coding harnesses plus Terminal in the product,
+  README, and website. New integrations have documented platform/model limits.
+
 ## [0.1.52] - 2026-09-03
 
 ### Added

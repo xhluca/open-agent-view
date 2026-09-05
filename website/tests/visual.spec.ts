@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
+import harnessCatalog from "../app/harnesses.json" with { type: "json" };
 
 type BrowserPlayer = {
   activelyPlaying: boolean;
@@ -68,9 +69,9 @@ for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await openReady(page);
     await expect(page.getByRole("heading", { name: /Monitor every agent/ })).toBeVisible();
-    await expect(page.locator(".provider-row > a")).toHaveCount(16);
+    await expect(page.locator(".provider-row > a")).toHaveCount(harnessCatalog.codingHarnesses.length + 1);
     await expect(page.locator(".provider-row img")).toHaveCount(10);
-    await expect(page.locator(".provider-stack .provider-mark")).toHaveCount(15);
+    await expect(page.locator(".provider-stack .provider-mark")).toHaveCount(harnessCatalog.codingHarnesses.length);
     await expect(page.locator("video")).toHaveCount(0);
     await expect(page.locator("#start .ap-wrapper")).toHaveCount(1);
     await expect(page.locator("#install .ap-wrapper")).toHaveCount(1);
