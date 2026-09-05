@@ -22,8 +22,28 @@ checks; the guide also contains release gates that are not yet complete.
   passed all ten jobs in [PR CI run 33829276786](https://github.com/xhluca/open-agent-view/actions/runs/33829276786),
   including native Linux x86-64/ARM64, macOS Intel/Apple silicon, Windows
   x64, both Rust versions, quality, native-client corpus, and website gates.
-  Release packages must come from a separate successful run on the exact
-  versioned release commit, following the cross-platform procedure above.
+- Published `v0.1.53` from release commit
+  `a8614e15f8dd7fd36135ffc68441b006f819ac6e`, after all ten jobs in
+  [release CI run 33938216092](https://github.com/xhluca/open-agent-view/actions/runs/33938216092)
+  passed. All five archives and adjacent checksums were downloaded from that
+  run, checked locally, and uploaded manually. The immutable annotated tag
+  peels to that exact SHA; GitHub's published archive digests match locally.
+- On the versioned commit, the complete local locked suite and installer
+  script passed again. The separately serialized real-TTY run passed all 25
+  default scenarios; credential-gated probes remained explicitly ignored.
+- Public installer downloads passed in a fresh Debian-based Linux x86-64
+  container, native Apple-silicon macOS, and Intel mode under Rosetta. Each
+  checked `open-agent-view`, `oav`, legacy `opav`, and empty provider-free JSON
+  startup using isolated state. A fresh Ubuntu bootstrap was stopped after
+  its package manager stalled before the OAV installer; Ubuntu 22.04 binary
+  and installer acceptance is covered by the successful native CI job.
+- Linux ARM64, native Intel macOS, and Windows x64 passed native build/test/
+  packaging/installer CI. Separate post-publication downloads were not run
+  on native ARM Linux or Windows; Rosetta is supplemental to Intel CI.
+- Website publication passed audit (zero vulnerabilities), lint, five
+  rendered-page tests, 21 browser tests, and export. Pages commit
+  `500c17170e49a2e1dd9197e251e6548564a6c6aa` deployed successfully; the public
+  page was checked for the 18-harness count and all three added names.
 
 - Added Hermes Agent, MastraCode, and Devin, matching Session Migrate's 18
   coding harnesses; Terminal is counted separately. Product, README, website,
