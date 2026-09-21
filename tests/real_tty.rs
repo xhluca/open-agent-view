@@ -1534,6 +1534,7 @@ send({'jsonrpc':'2.0','id':request['id'],'result':{'models':[
             screen.contains("Open Agent View")
                 && screen.contains("copilot account task")
                 && screen.contains("GitHub Copilot")
+                && screen.contains("Copilot native session is backgrounded")
         },
     );
     let arguments = fs::read_to_string(app.home_path().join("copilot-native-arguments"))
